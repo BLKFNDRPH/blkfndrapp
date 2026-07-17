@@ -23,7 +23,6 @@ services:
         - NEXT_PUBLIC_STELLAR_FALLBACK_ADDRESS=${NEXT_PUBLIC_STELLAR_FALLBACK_ADDRESS}
         - NEXT_PUBLIC_GOOGLE_CLIENT_ID=${NEXT_PUBLIC_GOOGLE_CLIENT_ID}
         - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL}
-    container_name: blkfndr-app
     restart: unless-stopped
     ports:
       - "9002:3000"
@@ -66,7 +65,6 @@ services:
     labels:
       # Portainer labels for better management
       - "io.portainer.accesscontrol.teams=admins"
-      - "com.docker.compose.project=blkfndr3"
       - "app.name=blkfndr3"
       - "app.version=1.0.0"
       - "app.description=Blockchain crowdfunding platform on Stellar"
@@ -74,11 +72,7 @@ services:
 volumes:
   next-cache:
     driver: local
-    labels:
-      - "com.docker.compose.project=blkfndr3"
 
 networks:
   blkfndr-network:
     driver: bridge
-    labels:
-      - "com.docker.compose.project=blkfndr3"
