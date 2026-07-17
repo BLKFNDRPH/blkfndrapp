@@ -25,7 +25,7 @@ services:
         - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL}
     restart: unless-stopped
     ports:
-      - "9002:3000"
+      - "8788:3000"
     environment:
       # ── Runtime config ─────────────────────────────────────────────────────
       # Read by server code at request time. Never enters the image; lives only
