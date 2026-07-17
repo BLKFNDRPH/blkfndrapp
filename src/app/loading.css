@@ -1,0 +1,27 @@
+.loading-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100%;
+  width: 100%;
+  position: fixed;
+  top: 0;
+  left: 0;
+  background-color: hsl(var(--background) / 0.8);
+  backdrop-filter: blur(4px);
+  z-index: 9999;
+}
+
+.jumpy-cube {
+  animation: jump 1.2s infinite ease-in-out;
+  transform-origin: bottom;
+}
+
+@keyframes jump {
+  0%, 100% {
+    transform: translateY(0) scale(1);
+  }
+  50% {
+    transform: translateY(-20px) scale(1.05);
+  }
+}

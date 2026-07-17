@@ -1,0 +1,49 @@
+.section-wave-container {
+  width: 100%;
+  line-height: 0;
+  pointer-events: none;
+  display: flex;
+  justify-content: center;
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  transform: translateY(-99%); /* Pull up to sit on top of the section */
+}
+
+.section-wave-svg {
+  height: 120px; /* Control the height of the wave */
+  width: 100%;
+}
+
+.section-wave-svg path {
+  fill: hsl(var(--background));
+}
+
+/* Hide 2nd and 3rd SVG on mobile by default */
+.section-wave-svg:nth-child(n + 2) {
+  display: none;
+}
+
+/* For tablets and small laptops (2 repeating SVGs) */
+@media (min-width: 768px) and (max-width: 1049px) {
+  .section-wave-svg {
+    width: 50%;
+  }
+  .section-wave-svg:nth-child(2) {
+    display: block;
+  }
+  .section-wave-svg:nth-child(3) {
+    display: none; /* Keep the third one hidden */
+  }
+}
+
+/* For large desktops (3 repeating SVGs) */
+@media (min-width: 1050px) {
+  .section-wave-svg {
+    width: 33.34%;
+  }
+  .section-wave-svg:not(:first-child) {
+    display: block;
+  }
+}

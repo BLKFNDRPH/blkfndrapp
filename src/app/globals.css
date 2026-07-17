@@ -1,0 +1,243 @@
+@font-face {
+  font-family: "Compressa VF";
+  src: url("https://res.cloudinary.com/dr6lvwubh/raw/upload/v1529908256/CompressaPRO-GX.woff2") format("woff2-variations");
+  font-weight: 100 900;
+  font-style: normal;
+}
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 206 27% 96%;
+    --foreground: 201 100% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 201 100% 10%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 201 100% 10%;
+    --primary: 201 100% 14.3%;
+    --primary-foreground: 206 27% 96%;
+    --secondary: 206 20% 90%;
+    --secondary-foreground: 201 100% 10%;
+    --muted: 206 15% 92%;
+    --muted-foreground: 201 40% 30%;
+    --accent: 0 69% 49.8%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 206 20% 85%;
+    --input: 206 20% 85%;
+    --ring: 201 100% 14.3%;
+    --chart-1: 201 100% 14.3%;
+    --chart-2: 0 69% 49.8%;
+    --chart-3: 206 27% 96%;
+    --chart-4: 201 100% 30%;
+    --chart-5: 0 69% 65%;
+    --radius: 0.5rem;
+    --sidebar-background: 201 100% 14.3%;
+    --sidebar-foreground: 206 27% 96%;
+    --sidebar-primary: 0 69% 49.8%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 0 69% 49.8%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 201 100% 10%;
+    --sidebar-ring: 0 69% 49.8%;
+    --close-button-bg-color: rgba(0, 0, 0, 0.05);
+    --nav-button-bg: hsl(var(--primary));
+    --nav-button-hover-bg: hsl(var(--primary) / 0.9);
+  }
+
+  .dark {
+    --background: 201 100% 8%;
+    --foreground: 206 27% 96%;
+    --card: 201 100% 11%;
+    --card-foreground: 206 27% 96%;
+    --popover: 201 100% 11%;
+    --popover-foreground: 206 27% 96%;
+    --primary: 206 27% 96%;
+    --primary-foreground: 201 100% 8%;
+    --secondary: 201 60% 18%;
+    --secondary-foreground: 206 27% 96%;
+    --muted: 201 40% 16%;
+    --muted-foreground: 206 20% 70%;
+    --accent: 0 69% 49.8%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 74% 41%;
+    --destructive-foreground: 210 20% 98%;
+    --border: 201 60% 18%;
+    --input: 201 60% 18%;
+    --ring: 206 27% 96%;
+    --chart-1: 206 27% 96%;
+    --chart-2: 0 69% 49.8%;
+    --chart-3: 201 100% 11%;
+    --chart-4: 201 60% 30%;
+    --chart-5: 0 69% 65%;
+    --sidebar-background: 201 100% 8%;
+    --sidebar-foreground: 206 27% 96%;
+    --sidebar-primary: 0 69% 49.8%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 0 69% 49.8%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 201 60% 18%;
+    --sidebar-ring: 0 69% 49.8%;
+    --close-button-bg-color: rgba(255, 255, 255, 0.1);
+    --nav-button-bg: hsl(var(--primary));
+    --nav-button-hover-bg: hsl(var(--primary) / 0.9);
+  }
+
+  .dark .hero-light,
+  .dark .hero-light * {
+    --background: 260 80% 98%;
+    --foreground: 224 76% 15%;
+    --card: 260 80% 100%;
+    --card-foreground: 224 76% 15%;
+    --popover: 260 80% 100%;
+    --popover-foreground: 224 76% 15%;
+    --primary: 224 76% 28%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 260 80% 95%;
+    --secondary-foreground: 224 76% 15%;
+    --muted: 260 80% 97%;
+    --muted-foreground: 224 76% 40%;
+    --accent: 239 79% 60%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 66% 50%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 260 80% 90%;
+    --input: 260 80% 90%;
+    --ring: 239 79% 60%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+
+  .font-logo {
+    font-family: "Compressa VF", sans-serif;
+    font-weight: 700;
+    font-variation-settings:
+      "wght" 700,
+      "wdth" 50;
+  }
+}
+
+@layer components {
+  .dapp-kit-connect-button {
+    background-color: hsl(var(--primary)) !important;
+    color: hsl(var(--primary-foreground)) !important;
+  }
+
+  .dapp-kit-connect-button[data-connected="true"] div {
+    color: hsl(var(--primary-foreground)) !important;
+  }
+
+  /* Override dapp-kit connected account address color */
+  [data-dapp-kit] .AccountDropdownMenu_connectedAccount__div2ql0,
+  [data-dapp-kit] .AccountDropdownMenu_connectedAccount__div2ql0 * {
+    color: #000000 !important;
+  }
+
+  /* Ensure hover (and focus) also shows black text */
+  [data-dapp-kit] .AccountDropdownMenu_connectedAccount__div2ql0:hover,
+  [data-dapp-kit] .AccountDropdownMenu_connectedAccount__div2ql0:focus,
+  [data-dapp-kit] .AccountDropdownMenu_connectedAccount__div2ql0:hover *,
+  [data-dapp-kit] .AccountDropdownMenu_connectedAccount__div2ql0:focus * {
+    color: #000000 !important;
+  }
+
+  .animated-close-button {
+    width: 24px;
+    height: 24px;
+    position: relative;
+    background-color: var(--close-button-bg-color);
+    border: none;
+    cursor: pointer;
+    border-radius: 50%;
+  }
+
+  .animated-close-button::before,
+  .animated-close-button::after {
+    content: "";
+    position: absolute;
+    height: 2px;
+    width: 100%;
+    background-color: hsl(var(--foreground));
+    left: 50%;
+    top: 50%;
+    transition: all 0.3s ease-out;
+  }
+
+  .animated-close-button::before {
+    transform: translate(-50%, -50%) rotate(-45deg);
+  }
+
+  .animated-close-button::after {
+    transform: translate(-50%, -50%) rotate(45deg);
+  }
+
+  .animated-close-button:hover::before,
+  .animated-close-button:focus::before {
+    transform: translate(-50%, -50%) rotate(135deg);
+  }
+
+  .animated-close-button:hover::after,
+  .animated-close-button:focus::after {
+    transform: translate(-50%, -50%) rotate(225deg);
+  }
+
+  .menu-item-ripple {
+    position: relative;
+    overflow: hidden;
+    transition: color 0.4s ease-in-out;
+    z-index: 1;
+    border-radius: var(--radius);
+  }
+
+  .menu-item-ripple>.ripple-span {
+    width: 0;
+    height: 0;
+    opacity: 0.5;
+    background: hsl(var(--accent));
+    position: absolute;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    transition:
+      width 0.6s ease,
+      padding-top 0.6s ease;
+    z-index: -1;
+  }
+
+  .menu-item-ripple:hover {
+    color: hsl(var(--accent-foreground));
+  }
+
+  .menu-item-ripple:focus {
+    background-color: transparent;
+  }
+
+  .menu-item-ripple:hover>.ripple-span {
+    width: 250%;
+    padding-top: 250%;
+    opacity: 1;
+  }
+
+  [data-radix-scroll-area-viewport]>div[style*="display: table"] {
+    display: block !important;
+  }
+
+  .nav-button {
+    background-color: var(--nav-button-bg);
+  }
+
+  .nav-button:hover {
+    background-color: var(--nav-button-hover-bg);
+  }
+}

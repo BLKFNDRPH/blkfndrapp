@@ -1,0 +1,227 @@
+.scene {
+  width: 32px;
+  height: 32px;
+  perspective: 400px;
+  position: relative;
+}
+
+.cube {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  transform-style: preserve-3d;
+  transition-property: transform;
+  transition-timing-function: ease-out;
+}
+
+.cube-paused {
+  animation-play-state: paused;
+}
+
+@keyframes rotate {
+  from {
+    transform: rotateX(0deg) rotateY(0deg);
+  }
+  to {
+    transform: rotateX(360deg) rotateY(360deg);
+  }
+}
+
+.face {
+  position: absolute;
+  width: 32px;
+  height: 32px;
+  background: hsl(207 100% 15%);
+  border: 1px solid white;
+  color: white;
+  text-align: center;
+  font-size: 20px;
+  line-height: 32px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.front {
+  transform: rotateY(0deg) translateZ(16px);
+}
+.back {
+  transform: rotateY(180deg) translateZ(16px);
+}
+.right {
+  transform: rotateY(90deg) translateZ(16px);
+}
+.left {
+  transform: rotateY(-90deg) translateZ(16px);
+}
+.top {
+  transform: rotateX(90deg) translateZ(16px);
+}
+.bottom {
+  transform: rotateX(-90deg) translateZ(16px);
+}
+
+.front {
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 4px;
+}
+
+.eyes {
+  display: flex;
+  gap: 4px;
+}
+
+.eye {
+  width: 10px;
+  height: 12px;
+  background-color: white;
+  border-radius: 50% / 50%;
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
+}
+
+.pupil {
+  width: 6px;
+  height: 6px;
+  background-color: #222;
+  border-radius: 50%;
+  position: absolute;
+  transition: transform 0.1s linear;
+}
+
+.highlight {
+  position: absolute;
+  top: 2px;
+  left: 4px;
+  width: 3px;
+  height: 3px;
+  background-color: white;
+  border-radius: 50%;
+  opacity: 0.8;
+}
+
+.mouth {
+  width: 12px;
+  height: 4px;
+  border-bottom-left-radius: 12px;
+  border-bottom-right-radius: 12px;
+  border: 2px solid white;
+  border-top: 0;
+  margin-top: 2px;
+}
+
+/* Allow overriding width/height for AnimatedCubeAvatar */
+.scene.\!w-40 {
+  width: 160px;
+}
+.scene.\!h-40 {
+  height: 160px;
+}
+
+.cube.\!w-full {
+  width: 100%;
+}
+
+.cube.\!h-full {
+  height: 100%;
+}
+
+.face.\!w-40 {
+  width: 160px;
+}
+.face.\!h-40 {
+  height: 160px;
+}
+
+.front.\!translate-z-\[80px\] {
+  transform: rotateY(0deg) translateZ(80px);
+}
+.back.\!translate-z-\[80px\] {
+  transform: rotateY(180deg) translateZ(80px);
+}
+.right.\!translate-z-\[80px\] {
+  transform: rotateY(90deg) translateZ(80px);
+}
+.left.\!translate-z-\[80px\] {
+  transform: rotateY(-90deg) translateZ(80px);
+}
+.top.\!translate-z-\[80px\] {
+  transform: rotateX(90deg) translateZ(80px);
+}
+.bottom.\!translate-z-\[80px\] {
+  transform: rotateX(-90deg) translateZ(80px);
+}
+
+.eyes.\!gap-5 {
+  gap: 20px;
+}
+
+.face.\!bg-primary {
+  background: hsl(var(--primary));
+}
+
+.speech-bubble {
+  position: absolute;
+  top: -25px;
+  right: -50px;
+  background-color: white;
+  color: black;
+  padding: 12px 20px;
+  border-radius: 25px;
+  font-weight: bold;
+  font-size: 22px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+  transform-origin: bottom left;
+  animation: speech-bubble-pop-in 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)
+    forwards;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.speech-bubble::after {
+  content: "";
+  position: absolute;
+  bottom: 0px;
+  left: 25px;
+  width: 0;
+  height: 0;
+  border: 12px solid transparent;
+  border-top-color: white;
+  border-bottom: 0;
+  border-left: 0;
+  margin-left: -12px;
+  margin-bottom: -10px;
+}
+
+.scene:not(:hover) .speech-bubble {
+  animation: speech-bubble-pop-out 0.3s cubic-bezier(0.6, -0.28, 0.735, 0.045)
+    forwards;
+}
+
+@keyframes speech-bubble-pop-in {
+  from {
+    transform: scale(0);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes speech-bubble-pop-out {
+  from {
+    transform: scale(1);
+    opacity: 1;
+  }
+  to {
+    transform: scale(0);
+    opacity: 0;
+  }
+}

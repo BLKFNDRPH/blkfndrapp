@@ -1,0 +1,45 @@
+
+.cityscape-container {
+  width: 100%;
+  line-height: 0;
+  pointer-events: none; /* Make sure it doesn't interfere with mouse events */
+  display: flex;
+  justify-content: center;
+}
+
+.cityscape-svg {
+  height: auto;
+  width: 100%;
+}
+
+.cityscape-svg path {
+  fill: hsl(var(--card));
+}
+
+/* Hide 2nd and 3rd SVG on mobile by default */
+.cityscape-svg:nth-child(n+2) {
+  display: none;
+}
+
+/* For tablets and small laptops (2 repeating SVGs) */
+@media (min-width: 768px) and (max-width: 1049px) {
+  .cityscape-svg {
+    width: 50%;
+  }
+  .cityscape-svg:nth-child(2) {
+    display: block;
+  }
+  .cityscape-svg:nth-child(3) {
+    display: none; /* Keep the third one hidden */
+  }
+}
+
+/* For large desktops (3 repeating SVGs) */
+@media (min-width: 1050px) {
+  .cityscape-svg {
+    width: 33.34%;
+  }
+  .cityscape-svg:not(:first-child) {
+    display: block;
+  }
+}

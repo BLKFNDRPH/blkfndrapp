@@ -1,0 +1,84 @@
+services:
+  blkfndr-app:
+    image: blkfndr3:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # ── Build-time public config ────────────────────────────────────────
+        # Inlined into the client JS bundle by `next build`. Public by design —
+        # visible in DevTools to any visitor. Never put a secret here.
+        # Changing any of these requires a rebuild, not just a restart.
+        - NODE_ENV=production
+        - NEXT_PUBLIC_BLKFNDR_CONTRACT_ID=${NEXT_PUBLIC_BLKFNDR_CONTRACT_ID}
+        - NEXT_PUBLIC_BLKFNDR_FACTORY_CONTRACT_ID=${NEXT_PUBLIC_BLKFNDR_FACTORY_CONTRACT_ID}
+        - NEXT_PUBLIC_BLKFNDR_IDENTITY_CONTRACT_ID=${NEXT_PUBLIC_BLKFNDR_IDENTITY_CONTRACT_ID}
+        - NEXT_PUBLIC_BLKFNDR_APPROVAL_CONTRACT_ID=${NEXT_PUBLIC_BLKFNDR_APPROVAL_CONTRACT_ID}
+        - NEXT_PUBLIC_STELLAR_XLM_TOKEN_ID=${NEXT_PUBLIC_STELLAR_XLM_TOKEN_ID}
+        - NEXT_PUBLIC_STELLAR_USDC_TOKEN_ID=${NEXT_PUBLIC_STELLAR_USDC_TOKEN_ID}
+        - NEXT_PUBLIC_STELLAR_USDT_TOKEN_ID=${NEXT_PUBLIC_STELLAR_USDT_TOKEN_ID}
+        - NEXT_PUBLIC_STELLAR_WBTC_TOKEN_ID=${NEXT_PUBLIC_STELLAR_WBTC_TOKEN_ID}
+        - NEXT_PUBLIC_STELLAR_WETH_TOKEN_ID=${NEXT_PUBLIC_STELLAR_WETH_TOKEN_ID}
+        - NEXT_PUBLIC_STELLAR_ADMIN_ADDRESS=${NEXT_PUBLIC_STELLAR_ADMIN_ADDRESS}
+        - NEXT_PUBLIC_STELLAR_FALLBACK_ADDRESS=${NEXT_PUBLIC_STELLAR_FALLBACK_ADDRESS}
+        - NEXT_PUBLIC_GOOGLE_CLIENT_ID=${NEXT_PUBLIC_GOOGLE_CLIENT_ID}
+        - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL}
+    container_name: blkfndr-app
+    restart: unless-stopped
+    ports:
+      - "9002:3000"
+    environment:
+      # ── Runtime config ─────────────────────────────────────────────────────
+      # Read by server code at request time. Never enters the image; lives only
+      # in the container's environment. Secrets belong here, not in build args.
+      # Changing any of these takes effect on restart — no rebuild needed.
+      - NODE_ENV=production
+      - PORT=3000
+      - NEXT_TELEMETRY_DISABLED=1
+      # Database — src/lib/mongodb.ts
+      - MONGODB_URI=${MONGODB_URI}
+      # Session signing — src/lib/auth/session.ts, src/lib/authOptions.ts
+      # Generate with: openssl rand -base64 32
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      - NEXTAUTH_URL=${NEXTAUTH_URL}
+      # Google OAuth — src/lib/authOptions.ts
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      # Pinata / IPFS uploads — src/app/api/upload-image/route.ts
+      - PINATA_JWT=${PINATA_JWT}
+      - PINATA_GATEWAY_URL=${PINATA_GATEWAY_URL}
+      - PINATA_GROUP_BLKDFNDR=${PINATA_GROUP_BLKDFNDR}
+      # Indexer endpoint auth — src/app/api/indexer/route.ts
+      - INDEXER_SECRET=${INDEXER_SECRET}
+      # Genkit — src/ai
+      - GOOGLE_GENERATIVEAI_API_KEY=${GOOGLE_GENERATIVEAI_API_KEY}
+    volumes:
+      # Persist Next.js cache for faster rebuilds
+      - next-cache:/app/.next/cache
+    networks:
+      - blkfndr-network
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    labels:
+      # Portainer labels for better management
+      - "io.portainer.accesscontrol.teams=admins"
+      - "com.docker.compose.project=blkfndr3"
+      - "app.name=blkfndr3"
+      - "app.version=1.0.0"
+      - "app.description=Blockchain crowdfunding platform on Stellar"
+
+volumes:
+  next-cache:
+    driver: local
+    labels:
+      - "com.docker.compose.project=blkfndr3"
+
+networks:
+  blkfndr-network:
+    driver: bridge
+    labels:
+      - "com.docker.compose.project=blkfndr3"

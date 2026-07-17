@@ -1,0 +1,129 @@
+.project-card-wrapper {
+  position: relative;
+  z-index: 1;
+  height: 100%;
+}
+
+.project-card-wrapper::before,
+.project-card-wrapper::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  transition: all 0.2s;
+  transition-delay: 0.2s;
+  transform: translateY(0px) translateX(0px);
+  z-index: -1;
+  border-radius: var(--radius);
+  pointer-events: none;
+}
+
+.project-card-wrapper::before {
+  background: #d8b4fe; /* purple-300 */
+}
+
+.project-card-wrapper::after {
+  background: #1e40af; /* dark blue */
+}
+
+.project-card-wrapper:hover > .project-card {
+  animation-name: hoverPop;
+  animation-duration: 0.4s;
+  animation-fill-mode: forwards; /* Changed from 'forward' to 'forwards' */
+  box-shadow: 0px 0px 30px 0px hsla(var(--foreground) / 0.2);
+}
+
+.project-card-wrapper:hover::before {
+  animation: slick-hover-2 3s 0.4s linear infinite;
+  transform: translateY(-20px) translateX(-20px);
+}
+
+.project-card-wrapper:hover::after {
+  animation: slick-hover 3s 0.4s linear infinite reverse;
+  transform: translateY(20px) translateX(20px);
+}
+
+@keyframes hoverPop {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  33% {
+    transform: scale(1.05);
+  }
+  66% {
+    transform: scale(0.95);
+  }
+}
+
+@keyframes slick-hover {
+  0.00% {
+    transform: translateY(20px) translateX(20px);
+  }
+  16.67% {
+    transform: translateY(-13px) translateX(-9px);
+  }
+  33.33% {
+    transform: translateY(4px) translateX(12px);
+  }
+  50.00% {
+    transform: translateY(20px) translateX(-20px);
+  }
+  66.67% {
+    transform: translateY(-3px) translateX(8px);
+  }
+  83.33% {
+    transform: translateY(-15px) translateX(-11px);
+  }
+  100.00% {
+    transform: translateY(20px) translateX(20px);
+  }
+}
+
+@keyframes slick-hover-2 {
+  0.00% {
+    transform: translateY(-20px) translateX(-20px);
+  }
+  16.67% {
+    transform: translateY(3px) translateX(-5px);
+  }
+  33.33% {
+    transform: translateY(18px) translateX(-10px);
+  }
+  50.00% {
+    transform: translateY(-20px) translateX(20px);
+  }
+  66.67% {
+    transform: translateY(15px) translateX(-4px);
+  }
+  83.33% {
+    transform: translateY(-1px) translateX(15px);
+  }
+  100.00% {
+    transform: translateY(-20px) translateX(-20px);
+  }
+}
+
+/* Tagline styling: allow wrapping and ensure it pushes content down */
+.project-tagline {
+  padding-right: 0.75rem;
+  display: block;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: pre-wrap;
+  box-sizing: border-box;
+}
+
+/* Ensure tagline in the project details dialog doesn't overflow the dialog */
+.project-dialog-tagline {
+  display: block;
+  max-width: calc(100% - 4rem); /* account for top-right buttons */
+  box-sizing: border-box;
+  padding-right: 0.5rem; /* reduced right padding */
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: normal;
+  text-overflow: ellipsis;
+}
