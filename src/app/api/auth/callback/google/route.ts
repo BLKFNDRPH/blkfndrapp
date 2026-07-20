@@ -5,9 +5,7 @@ import { createSessionToken } from '@/lib/auth/session';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 
 export async function POST(req: NextRequest) {
-  const baseUrl = process.env.NODE_ENV === 'production'
-    ? 'https://testnetv2.blkfndr.com'
-    : 'http://localhost:9002';
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:9002';
 
   let idToken: string | null = null;
   let callbackUrl = '/profile';

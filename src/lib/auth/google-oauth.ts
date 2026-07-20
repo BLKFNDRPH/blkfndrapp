@@ -1,7 +1,5 @@
 export function getGoogleAuthUrl(nonce: string, callbackUrl: string): string {
-  const appUrl = process.env.NODE_ENV === 'production'
-    ? 'https://testnetv2.blkfndr.com'
-    : 'http://localhost:9002';
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:9002';
 
   const params = new URLSearchParams({
     client_id: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '',
