@@ -8,6 +8,16 @@ This repository is the technical source of truth for blkfndr documentation. The 
 
 blkfndr enables creators to launch fundraising campaigns on the Stellar blockchain. Projects are submitted by creators, reviewed by admins through a multi-sig governance system, and funded by investors using Stellar assets (XLM, USDC, USDT, WBTC, WETH). All campaign logic is managed by Soroban smart contracts, ensuring transparency and trustless execution.
 
+## Status
+
+**Current phase: Testnet** — live at [testnetv2.blkfndr.com](https://testnetv2.blkfndr.com)
+
+- ✅ **Smart contracts deployed** to Stellar testnet — crowdfunding, factory, identity, and approval contracts (see [Deployed Contracts](#deployed-contracts-testnet) below)
+- ✅ **Core platform live** — project creation, admin approval, multi-currency funding, investment receipts (SBTs), and multi-sig governance
+- ✅ **AI listing quality analysis** — implemented via Genkit + Gemini 2.5 Flash
+- 📝 **AI query analysis & sentiment tracking** — documented and ready for implementation, not yet live
+- 🔜 **Mainnet** — planned; not yet deployed
+
 ## Tech Stack
 
 | Layer | Technology |
