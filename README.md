@@ -20,6 +20,17 @@ blkfndr enables creators to launch fundraising campaigns on the Stellar blockcha
 | **Auth** | Stellar Freighter wallet |
 | **Deployment** | Docker, Portainer |
 
+## Deployed Contracts (Testnet)
+
+All Soroban smart contracts are deployed to the **Stellar testnet**. View them on Stellar Expert:
+
+| Contract | Description | Explorer Link |
+|---|---|---|
+| **blkfndr (Crowdfunding)** | Core campaign, investment, and refund logic | [`CAWH7WBX...WVZ45FSS`](https://stellar.expert/explorer/testnet/contract/CAWH7WBXWROIDJ5ZGYVRZGUAY2B7537Z6QNTIZRZ2CZKHCNEWVZ45FSS) |
+| **Factory** | Deploys and tracks per-project campaign contracts | [`CDWTUCD5...XBATIH3I`](https://stellar.expert/explorer/testnet/contract/CDWTUCD5AUO3LR5GSWXGULGWWMHE5IW6TGTKEPYN34OWFD5GXBATIH3I) |
+| **Identity** | On-chain identity registry and KYC attestation | [`CDAJP56Q...LAJ6LR2IQ`](https://stellar.expert/explorer/testnet/contract/CDAJP56QRHPLDXHUYZ54XJCPHA7Y2EPN3XBZA7JZQBIYFBPLAJ6LR2IQ) |
+| **Approval** | Multi-sig admin approval workflow | [`CAK6ZR2U...HY3FHCU5`](https://stellar.expert/explorer/testnet/contract/CAK6ZR2U5Y2J2J22NU73V5LMDSGWYXGZITK5TDFTH7ZFIQCYHY3FHCU5) |
+
 ## Features
 
 - **Project Listing Creation** — Creators submit campaigns with title, description, category, funding goal, and images stored on IPFS via Pinata.
@@ -64,20 +75,24 @@ The app runs on **http://localhost:9002**.
 
 | Variable | Required | Description |
 |---|---|---|
-| `NEXT_PUBLIC_STELLAR_NETWORK` | Yes | `testnet` or `mainnet` |
-| `NEXT_PUBLIC_SOROBAN_RPC_URL` | Yes | Soroban RPC endpoint (e.g., `https://soroban-testnet.stellar.org`) |
-| `NEXT_PUBLIC_CONTRACT_ADDRESS` | Yes | Deployed crowdfunding Soroban contract ID |
-| `NEXT_PUBLIC_PLATFORM_ADDRESS` | Yes | Platform admin account public key |
-| `NEXT_PUBLIC_PINATA_JWT` | Yes | Pinata API JWT for IPFS uploads |
-| `NEXT_PUBLIC_PINATA_GATEWAY_URL` | Yes | Pinata IPFS gateway URL |
-| `NEXT_PUBLIC_PINATA_API_KEY` | Yes | Pinata API key |
-| `NEXT_PUBLIC_PINATA_API_SECRET` | Yes | Pinata API secret |
+| `NEXT_PUBLIC_BLKFNDR_CONTRACT_ID` | Yes | Core crowdfunding Soroban contract ID (see [Deployed Contracts](#deployed-contracts-testnet)) |
+| `NEXT_PUBLIC_BLKFNDR_FACTORY_CONTRACT_ID` | Yes | Factory contract ID |
+| `NEXT_PUBLIC_BLKFNDR_IDENTITY_CONTRACT_ID` | Yes | Identity/KYC registry contract ID |
+| `NEXT_PUBLIC_BLKFNDR_APPROVAL_CONTRACT_ID` | Yes | Multi-sig approval contract ID |
+| `NEXT_PUBLIC_STELLAR_XLM_TOKEN_ID` | Yes | XLM token contract ID (also `_USDC_`, `_USDT_`, `_WBTC_`, `_WETH_` variants) |
+| `NEXT_PUBLIC_STELLAR_ADMIN_ADDRESS` | Yes | Platform admin account public key |
+| `NEXT_PUBLIC_STELLAR_FALLBACK_ADDRESS` | Yes | Fallback Stellar account public key |
 | `NEXT_PUBLIC_APP_URL` | Yes | Application URL (e.g., `http://localhost:9002`) |
-| `GOOGLE_GENERATIVEAI_API_KEY` | Yes | Gemini API key for AI features |
 | `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Yes | Google OAuth client ID |
+| `PINATA_JWT` | Yes | Pinata API JWT for IPFS uploads (server-side) |
+| `PINATA_GATEWAY_URL` | Yes | Pinata IPFS gateway URL (server-side) |
+| `GOOGLE_GENERATIVEAI_API_KEY` | Yes | Gemini API key for AI features |
 | `MONGODB_URI` | Yes | MongoDB connection string |
-| `NEXTAUTH_SECRET` | Yes | NextAuth secret key |
+| `NEXTAUTH_SECRET` | Yes | Session JWT signing secret (generate with `openssl rand -base64 32`) |
 | `NEXTAUTH_URL` | Yes | NextAuth callback URL |
+| `INDEXER_SECRET` | Yes | Bearer token for `POST /api/indexer` (generate with `openssl rand -hex 32`) |
+
+See [.env.example](.env.example) for the full list and how each variable reaches the container.
 
 See [Deployment](docs/deployment.md) for container and production configuration details.
 
