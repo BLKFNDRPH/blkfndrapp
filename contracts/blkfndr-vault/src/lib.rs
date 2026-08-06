@@ -1,4 +1,8 @@
 #![no_std]
+// Contract entrypoints are an ABI: their parameters are the wire format, and
+// bundling them into structs to satisfy an argument-count lint would only move
+// the same fields behind a type that every caller must then construct.
+#![allow(clippy::too_many_arguments)]
 
 //! BLKFNDR bonded funding vault.
 //!
@@ -330,7 +334,7 @@ fn write_attestation(env: &Env, info: &mut ProjectInfo, outcome: Outcome) {
         &outcome,
         &info.raised_amount,
         &info.bond_amount,
-        &(info.milestones.len() as u32),
+        &info.milestones.len(),
         &approved,
     );
 
@@ -366,7 +370,7 @@ impl BlkfndrVault {
             || config.platform_fee < 0
             || config.min_contribution <= 0
             || config.voting_window_secs == 0
-            || config.milestones.len() == 0
+            || config.milestones.is_empty()
             || config.deadline <= env.ledger().timestamp()
         {
             panic_with_error!(&env, Error::InvalidConfiguration);

@@ -71,7 +71,29 @@ export function getIPFSFetchUrl(cid: string): string | null {
   const isCidV1 = /^b[a-z2-7]{50,}$/.test(value);
   if (!isCidV0 && !isCidV1) return null;
 
-  return `https://gateway.pinata.cloud/ipfs/${value}`;
+  return `https://${resolveGatewayHost()}/ipfs/${value}`;
+}
+
+/**
+ * Gateway hostname for server-side fetches.
+ *
+ * A dedicated Pinata gateway should be configured via PINATA_GATEWAY_URL — the
+ * shared public one rate-limits aggressively, which shows up as an indexer that
+ * silently stops enriching projects with their metadata.
+ *
+ * Only the hostname is taken, so a misconfigured value carrying a path or query
+ * cannot redirect the fetch somewhere else.
+ */
+function resolveGatewayHost(): string {
+  const configured = process.env.PINATA_GATEWAY_URL?.trim();
+  if (!configured) return "gateway.pinata.cloud";
+
+  try {
+    const withProtocol = /^https?:\/\//i.test(configured) ? configured : `https://${configured}`;
+    return new URL(withProtocol).hostname || "gateway.pinata.cloud";
+  } catch {
+    return "gateway.pinata.cloud";
+  }
 }
 
 /**

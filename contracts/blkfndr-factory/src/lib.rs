@@ -1,4 +1,8 @@
 #![no_std]
+// Contract entrypoints are an ABI: their parameters are the wire format, and
+// bundling them into structs to satisfy an argument-count lint would only move
+// the same fields behind a type that every caller must then construct.
+#![allow(clippy::too_many_arguments)]
 
 //! Deploys and registers BLKFNDR bonded vaults.
 //!
@@ -146,7 +150,6 @@ pub struct BlkfndrFactory;
 impl BlkfndrFactory {
     /// Configure the factory. `admin` must authorise, so a deployed but
     /// unconfigured factory cannot be claimed by whoever spots it first.
-    #[allow(clippy::too_many_arguments)]
     pub fn initialize(
         env:                  Env,
         admin:                Address,
@@ -163,8 +166,7 @@ impl BlkfndrFactory {
         }
         admin.require_auth();
 
-        if platform_fee < 0
-            || platform_fee > MAX_PLATFORM_FEE
+        if !(0..=MAX_PLATFORM_FEE).contains(&platform_fee)
             || voting_window_secs == 0
             || min_contribution <= 0
         {
@@ -195,7 +197,7 @@ impl BlkfndrFactory {
         extend_instance_ttl(&env);
         config.creator.require_auth();
 
-        if config.goal <= 0 || config.milestones.len() == 0 {
+        if config.goal <= 0 || config.milestones.is_empty() {
             panic_with_error!(&env, Error::InvalidConfiguration);
         }
         if config.deadline <= env.ledger().timestamp() {
@@ -342,7 +344,7 @@ impl BlkfndrFactory {
     pub fn update_platform_fee(env: Env, new_fee: i128) {
         extend_instance_ttl(&env);
         let admin = require_admin(&env);
-        if new_fee < 0 || new_fee > MAX_PLATFORM_FEE {
+        if !(0..=MAX_PLATFORM_FEE).contains(&new_fee) {
             panic_with_error!(&env, Error::InvalidConfiguration);
         }
         env.storage().instance().set(&DataKey::PlatformFee, &new_fee);

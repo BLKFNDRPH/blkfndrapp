@@ -49,9 +49,22 @@ async function fetchMetadata(cid: string): Promise<any> {
     
     const response = await fetch(url, { signal: controller.signal });
     clearTimeout(timeoutId);
-    
+
     if (response.ok) {
-      return await response.json();
+      // Listing metadata is a small JSON object. Anyone can pin anything at a
+      // CID, so cap what we are willing to pull into memory and parse.
+      const MAX_METADATA_BYTES = 256 * 1024;
+      const declared = Number(response.headers.get("content-length") ?? 0);
+      if (declared > MAX_METADATA_BYTES) {
+        console.warn(`[Indexer] Metadata for ${cid} exceeds ${MAX_METADATA_BYTES} bytes — ignoring`);
+        return null;
+      }
+      const body = await response.text();
+      if (body.length > MAX_METADATA_BYTES) {
+        console.warn(`[Indexer] Metadata for ${cid} exceeds ${MAX_METADATA_BYTES} bytes — ignoring`);
+        return null;
+      }
+      return JSON.parse(body);
     }
   } catch (err) {
     console.warn(`[Indexer] Could not fetch IPFS metadata for CID: ${cid}`, err);

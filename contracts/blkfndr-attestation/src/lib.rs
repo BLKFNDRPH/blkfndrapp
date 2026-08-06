@@ -1,4 +1,8 @@
 #![no_std]
+// Contract entrypoints are an ABI: their parameters are the wire format, and
+// bundling them into structs to satisfy an argument-count lint would only move
+// the same fields behind a type that every caller must then construct.
+#![allow(clippy::too_many_arguments)]
 
 //! Builder completion attestation registry.
 //!

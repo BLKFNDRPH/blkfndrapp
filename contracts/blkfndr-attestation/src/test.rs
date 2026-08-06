@@ -1,5 +1,3 @@
-#![cfg(test)]
-
 use soroban_sdk::{
     contract, contractimpl, testutils::Address as _, Address, Env, Vec,
 };
@@ -70,8 +68,8 @@ fn records_a_completed_project() {
         &s.builder,
         &7u64,
         &Outcome::Completed,
-        &1_000_0000000i128,
-        &50_0000000i128,
+        &10_000_000_000i128,
+        &500_000_000i128,
         &3u32,
         &3u32,
     );
@@ -80,8 +78,8 @@ fn records_a_completed_project() {
     assert_eq!(record.builder, s.builder);
     assert_eq!(record.project_id, 7);
     assert_eq!(record.outcome, Outcome::Completed);
-    assert_eq!(record.total_raised, 1_000_0000000);
-    assert_eq!(record.bond_posted, 50_0000000);
+    assert_eq!(record.total_raised, 10_000_000_000);
+    assert_eq!(record.bond_posted, 500_000_000);
     assert_eq!(record.milestones_approved, 3);
     assert!(s.registry.has_record(&7u64));
 }

@@ -1,4 +1,8 @@
 #![no_std]
+// Contract entrypoints are an ABI: their parameters are the wire format, and
+// bundling them into structs to satisfy an argument-count lint would only move
+// the same fields behind a type that every caller must then construct.
+#![allow(clippy::too_many_arguments)]
 
 use soroban_sdk::{
     contract, contractimpl, contracterror, contracttype,
@@ -252,17 +256,17 @@ fn already_voted(proposal: &AdminProposal, addr: &Address) -> bool {
 }
 
 fn validate_status_transition(old_status: ProjectStatus, new_status: ProjectStatus) -> bool {
-    match (old_status, new_status) {
-        (ProjectStatus::Hidden, ProjectStatus::Pending) => true,
-        (ProjectStatus::Pending, ProjectStatus::Approved) => true,
-        (ProjectStatus::Pending, ProjectStatus::Rejected) => true,
-        (ProjectStatus::Rejected, ProjectStatus::Pending) => true,
-        (ProjectStatus::Approved, ProjectStatus::Funded) => true,
-        (ProjectStatus::Approved, ProjectStatus::Expired) => true,
-        (ProjectStatus::Approved, ProjectStatus::Hidden) => true,
-        (ProjectStatus::Funded, ProjectStatus::Completed) => true,
-        _ => false,
-    }
+    matches!(
+        (old_status, new_status),
+        (ProjectStatus::Hidden, ProjectStatus::Pending)
+            | (ProjectStatus::Pending, ProjectStatus::Approved)
+            | (ProjectStatus::Pending, ProjectStatus::Rejected)
+            | (ProjectStatus::Rejected, ProjectStatus::Pending)
+            | (ProjectStatus::Approved, ProjectStatus::Funded)
+            | (ProjectStatus::Approved, ProjectStatus::Expired)
+            | (ProjectStatus::Approved, ProjectStatus::Hidden)
+            | (ProjectStatus::Funded, ProjectStatus::Completed)
+    )
 }
 
 // CONTRACT DEFINITION
@@ -604,7 +608,7 @@ impl CrowdfundingContract {
             }
         }
 
-        if remaining_ids.len() == 0 {
+        if remaining_ids.is_empty() {
             env.storage().persistent().remove(&user_key);
         } else {
             env.storage().persistent().set(&user_key, &remaining_ids);
