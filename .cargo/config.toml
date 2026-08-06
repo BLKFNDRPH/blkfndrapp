@@ -1,0 +1,8 @@
+# Soroban contracts are cdylibs. On the windows-gnu host, linking the test
+# harness against one overruns the PE export-ordinal limit:
+#   ld: error: export ordinal too large
+# Contract symbols are reached through the Soroban host, never the PE export
+# table, so excluding them costs nothing. Scoped to the host target so wasm32
+# builds — the ones that actually ship — are untouched.
+[target.x86_64-pc-windows-gnu]
+rustflags = ["-C", "link-arg=-Wl,--exclude-all-symbols"]

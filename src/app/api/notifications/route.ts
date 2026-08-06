@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/mongodb';
 import Notification from '@/lib/models/Notification';
 import User from '@/lib/models/User';
-import { getSession } from '@/lib/auth/get-session';
+import { getSession } from '@/lib/auth/session';
 
 // GET /api/notifications — fetch all notifications for the current user
 
@@ -105,8 +105,9 @@ export async function PATCH(req: NextRequest) {
 
   await connectToDatabase();
 
+  // Scoped to the caller: ids alone would let anyone mark anyone's notifications.
   await Notification.updateMany(
-    { _id: { $in: ids } },
+    { _id: { $in: ids }, userId: session.user.uid },
     { $set: { isRead: true } }
   );
 
@@ -128,7 +129,7 @@ export async function DELETE(req: NextRequest) {
   if (all === 'true') {
     await Notification.deleteMany({ userId: uid });
   } else if (id) {
-    await Notification.findByIdAndDelete(id);
+    await Notification.deleteOne({ _id: id, userId: uid });
   } else {
     return NextResponse.json({ error: 'Provide id or all=true' }, { status: 400 });
   }

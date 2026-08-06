@@ -11,7 +11,8 @@ import { connectToDatabase } from "./mongodb";
 import ProjectCache from "./models/ProjectCache";
 import EventLog from "./models/EventLog";
 import IndexerState from "./models/IndexerState";
-import { getIPFSGatewayUrl } from "./pinata-client";
+import { getIPFSFetchUrl } from "./pinata-client";
+import { addressMatcher } from "./stellar-address";
 import { SOROBAN_RPC_URL, CONTRACT_ID, NETWORK_PASSPHRASE } from "./stellar";
 import { Client as VaultClient } from "../packages/blkfndr_vault/src";
 
@@ -35,16 +36,35 @@ async function fetchMetadata(cid: string): Promise<any> {
   if (!cid || cid.trim() === "" || cid === "test_cid") {
     return null;
   }
+  // Strict CID resolution only. The CID arrives from an on-chain event that any
+  // project creator controls, so an absolute URL here would be an SSRF.
+  const url = getIPFSFetchUrl(cid);
+  if (!url) {
+    console.warn(`[Indexer] Ignoring non-CID metadata reference: ${cid}`);
+    return null;
+  }
   try {
-    const url = getIPFSGatewayUrl(cid);
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 seconds timeout
     
     const response = await fetch(url, { signal: controller.signal });
     clearTimeout(timeoutId);
-    
+
     if (response.ok) {
-      return await response.json();
+      // Listing metadata is a small JSON object. Anyone can pin anything at a
+      // CID, so cap what we are willing to pull into memory and parse.
+      const MAX_METADATA_BYTES = 256 * 1024;
+      const declared = Number(response.headers.get("content-length") ?? 0);
+      if (declared > MAX_METADATA_BYTES) {
+        console.warn(`[Indexer] Metadata for ${cid} exceeds ${MAX_METADATA_BYTES} bytes — ignoring`);
+        return null;
+      }
+      const body = await response.text();
+      if (body.length > MAX_METADATA_BYTES) {
+        console.warn(`[Indexer] Metadata for ${cid} exceeds ${MAX_METADATA_BYTES} bytes — ignoring`);
+        return null;
+      }
+      return JSON.parse(body);
     }
   } catch (err) {
     console.warn(`[Indexer] Could not fetch IPFS metadata for CID: ${cid}`, err);
@@ -427,10 +447,15 @@ export async function runIndexer() {
         console.log(`[Indexer] Processing REFUND for Project ${projectId}, Contributor: ${contributor}, Refund Total: ${refundTotalVal}`);
 
         // Find all CONTRIB event logs for this project and contributor to sum the contribution amount
+        const matcher = addressMatcher(String(contributor));
+        if (!matcher) {
+          console.warn(`[Indexer] REFUND event carried a malformed contributor address: ${contributor}`);
+          continue;
+        }
         const contribLogs = await EventLog.find({
           topic1: "DEPOSIT",
           topic2: "CONTRIB",
-          data: { $regex: contributor, $options: "i" }
+          data: { $regex: matcher }
         }).lean();
 
         let totalContributed = BigInt(0);

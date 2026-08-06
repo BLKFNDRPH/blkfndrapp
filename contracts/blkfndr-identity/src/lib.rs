@@ -49,10 +49,15 @@ impl IdentityRegistry {
     // SETUP
 
     /// Initialize the registry with an admin address.
+    ///
+    /// `admin` must authorise: without it, a deployed-but-unconfigured registry
+    /// belongs to whoever calls this first, and whoever holds it decides who
+    /// counts as KYC-approved.
     pub fn initialize(env: Env, admin: Address) {
         if env.storage().instance().has(&DataKey::Admin) {
             panic_with_error!(&env, Error::AlreadyInitialized);
         }
+        admin.require_auth();
 
         env.storage().instance().set(&DataKey::Admin, &admin);
         extend_instance_ttl(&env);

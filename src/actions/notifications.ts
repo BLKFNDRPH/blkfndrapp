@@ -65,7 +65,7 @@ export async function dismissNotification(notificationId: string) {
   if (!session?.user) {
     throw new Error("Unauthorized");
   }
-  return dbDismissNotification(notificationId);
+  return dbDismissNotification(notificationId, session.user.uid);
 }
 
 export async function dismissAllNotifications(userAddress: string) {
@@ -94,5 +94,5 @@ export async function markNotificationsAsRead(notificationIds: string[]) {
   if (!session?.user) {
     throw new Error("Unauthorized");
   }
-  return dbMarkNotificationsAsRead(notificationIds);
+  return dbMarkNotificationsAsRead(notificationIds, session.user.uid);
 }

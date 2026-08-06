@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    name: Web app
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Audit production dependencies
+        # Advisory: reports without failing the build, so a new advisory in a
+        # transitive dependency does not block an unrelated change.
+        run: npm audit --omit=dev || true
+
+  contracts:
+    name: Soroban contracts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          # Kept in step with rust-toolchain.toml.
+          toolchain: "1.81.0"
+          targets: wasm32-unknown-unknown
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build wasm artifacts
+        # Must run before the tests: the factory's deployment tests need
+        # blkfndr_vault.wasm and skip themselves when it is absent.
+        run: bash scripts/build-contracts.sh
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test --workspace
+
+      - name: Record build hashes
+        # A reviewer checks the deployed contract against these.
+        run: |
+          {
+            echo "## Contract build hashes"
+            echo
+            echo '| Contract | Bytes | sha256 |'
+            echo '|---|---:|---|'
+            for wasm in target/wasm32-unknown-unknown/release/*.wasm; do
+              name=$(basename "$wasm" .wasm)
+              size=$(wc -c < "$wasm" | tr -d ' ')
+              hash=$(sha256sum "$wasm" | cut -d' ' -f1)
+              echo "| \`$name\` | $size | \`$hash\` |"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload wasm artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: soroban-contracts
+          path: target/wasm32-unknown-unknown/release/*.wasm
+          if-no-files-found: error

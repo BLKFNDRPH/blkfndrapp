@@ -10,7 +10,6 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { ProjectDetailsProvider } from "@/context/ProjectDetailsContext";
 import { CurrencyProvider } from "@/context/CurrencyContext";
 import { BlockchainProvider } from "@/context/BlockchainContext";
-import { NextAuthProvider } from "@/components/NextAuthProvider";
 import { FreighterWalletProvider } from "@/context/FreighterWalletProvider";
 
 export const metadata: Metadata = {
@@ -47,9 +46,7 @@ export default async function RootLayout({
           defaultTheme="dark"
           enableSystem
           disableTransitionOnChange
-        >
-          <NextAuthProvider>
-            <FreighterWalletProvider>
+        >            <FreighterWalletProvider>
               <AuthProvider>
                 <CurrencyProvider>
                   {/* Real-time updates via Stellar event subscription */}
@@ -65,9 +62,7 @@ export default async function RootLayout({
                   </BlockchainProvider>
                 </CurrencyProvider>
               </AuthProvider>
-            </FreighterWalletProvider>
-          </NextAuthProvider>
-        </ThemeProvider>
+            </FreighterWalletProvider>        </ThemeProvider>
       </body>
     </html>
   );

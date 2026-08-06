@@ -1,640 +1,780 @@
-#[cfg(test)]
-mod tests {
-    use soroban_sdk::{
-        contract, contractimpl, testutils::{Address as _, Ledger}, token::{StellarAssetClient, TokenClient}, Address, Env, Vec, String
-    };
-    use crate::{BlkfndrVault, BlkfndrVaultClient, Milestone, VaultState, VaultInitConfig};
+use soroban_sdk::{
+    contract, contractimpl,
+    testutils::{Address as _, Ledger},
+    token::{StellarAssetClient, TokenClient},
+    Address, Env, String, Vec,
+};
 
-    // MOCK CONSTRUCTS
+use crate::{
+    BlkfndrVault, BlkfndrVaultClient, MilestoneInput, VaultInitConfig, VaultState,
+};
+use blkfndr_attestation::{
+    AttestationRegistry, AttestationRegistryClient, Outcome as RegistryOutcome,
+};
 
-    /// Configurable mock: reads "approve" flag from instance storage.
-    /// Set to `true` for approve-all, `false` for reject-all.
-    #[contract]
-    pub struct MockApprovalModule;
+// ── Test doubles ───────────────────────────────────────────────────────────
 
-    #[contractimpl]
-    impl MockApprovalModule {
-        pub fn is_approved(env: Env, _project_id: u64, _milestone_id: u32) -> bool {
-            env.storage().instance().get::<_, bool>(&"approve").unwrap_or(true)
-        }
-        pub fn is_slash_approved(env: Env, _project_id: u64) -> bool {
-            env.storage().instance().get::<_, bool>(&"approve").unwrap_or(true)
-        }
+#[contract]
+pub struct MockIdentity;
+
+#[contractimpl]
+impl MockIdentity {
+    pub fn set_approved(env: Env, address: Address, approved: bool) {
+        env.storage().instance().set(&address, &approved);
     }
 
-    #[contract]
-    pub struct MockIdentityRegistry;
-
-    #[contractimpl]
-    impl MockIdentityRegistry {
-        pub fn is_kyc_approved(env: Env, address: Address) -> bool {
-            let creator = env.storage().instance().get::<_, Address>(&"creator").unwrap();
-            creator == address
-        }
-    }
-
-    // TEST SETUP
-    struct Setup {
-        env: Env,
-        client: BlkfndrVaultClient<'static>,
-        creator: Address,
-        investor: Address,
-        fee_wallet: Address,
-        token_id: Address,
-        token_client: TokenClient<'static>,
-        token_admin_client: StellarAssetClient<'static>,
-        approval_module: Address,
-        identity_registry: Address,
-        admin: Address,
-    }
-
-    fn setup() -> Setup {
-        let env = Env::default();
-        env.mock_all_auths();
-
-        let contract_id = env.register(BlkfndrVault, ());
-        let client = BlkfndrVaultClient::new(&env, &contract_id);
-
-        let creator = Address::generate(&env);
-        let investor = Address::generate(&env);
-        let fee_wallet = Address::generate(&env);
-        let admin = Address::generate(&env);
-
-        let token_admin = Address::generate(&env);
-        let token_contract = env.register_stellar_asset_contract_v2(token_admin.clone());
-        let token_admin_client = StellarAssetClient::new(&env, &token_contract.address());
-        let token_client = TokenClient::new(&env, &token_contract.address());
-
-        token_admin_client.mint(&creator, &100_000_000);
-        token_admin_client.mint(&investor, &100_000_000);
-
-        let approval_id = env.register(MockApprovalModule, ());
-        let identity_id = env.register(MockIdentityRegistry, ());
-
-        env.as_contract(&identity_id, || {
-            env.storage().instance().set(&"creator", &creator);
-        });
-
-        Setup {
-            env,
-            client,
-            creator,
-            investor,
-            fee_wallet,
-            token_id: token_contract.address(),
-            token_client,
-            token_admin_client,
-            approval_module: approval_id,
-            identity_registry: identity_id,
-            admin,
-        }
-    }
-
-    /// Helper: create a standard VaultInitConfig for reuse across tests.
-    fn make_config(s: &Setup, goal: i128, bond: i128, milestones: Vec<Milestone>) -> VaultInitConfig {
-        VaultInitConfig {
-            project_id: 1,
-            creator: s.creator.clone(),
-            token: s.token_id.clone(),
-            goal,
-            deadline: 1000,
-            bond_amount: bond,
-            approval_module: s.approval_module.clone(),
-            identity_registry: s.identity_registry.clone(),
-            fee_wallet_address: s.fee_wallet.clone(),
-            fee_percentage: 300, // 3%
-            milestones,
-            metadata_cid: String::from_str(&s.env, "test_cid"),
-            admin: s.admin.clone(),
-        }
-    }
-
-    // EXISTING TESTS 
-    #[test]
-    fn test_initialize_and_validation() {
-        let s = setup();
-
-        let mut milestones = Vec::new(&s.env);
-        milestones.push_back(Milestone { id: 1, amount: 4_000_000, released: false });
-        milestones.push_back(Milestone { id: 2, amount: 6_000_000, released: false });
-
-        let config = make_config(&s, 10_000_000, 2_000_000, milestones);
-        s.client.initialize(&config);
-
-        let info = s.client.get_info();
-        assert_eq!(info.project_id, 1);
-        assert_eq!(info.goal, 10_000_000i128);
-        assert_eq!(s.client.get_state() as u32, VaultState::Raising as u32);
-    }
-
-    #[test]
-    fn test_kyc_fails_initialization() {
-        let s = setup();
-        let unkyc_address = Address::generate(&s.env);
-
-        let mut milestones = Vec::new(&s.env);
-        milestones.push_back(Milestone { id: 1, amount: 10_000_000, released: false });
-
-        let mut config = make_config(&s, 10_000_000, 2_000_000, milestones);
-        config.creator = unkyc_address;
-
-        let result = s.client.try_initialize(&config);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_milestones_sum_invalid() {
-        let s = setup();
-
-        let mut milestones = Vec::new(&s.env);
-        milestones.push_back(Milestone { id: 1, amount: 5_000_000, released: false });
-
-        let config = make_config(&s, 10_000_000, 2_000_000, milestones);
-
-        let result = s.client.try_initialize(&config);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_contribute_and_post_bond() {
-        let s = setup();
-
-        let mut milestones = Vec::new(&s.env);
-        milestones.push_back(Milestone { id: 1, amount: 10_000_000, released: false });
-
-        let config = make_config(&s, 10_000_000, 2_000_000, milestones);
-        s.client.initialize(&config);
-
-        s.client.post_bond();
-        assert!(s.client.get_info().bond_posted);
-        assert_eq!(s.token_client.balance(&s.client.address), 2_000_000);
-
-        s.client.contribute(&s.investor, &10_000_000);
-        assert_eq!(s.client.get_info().raised_amount, 10_000_000i128);
-        assert_eq!(s.client.get_balance(&s.investor), 10_000_000i128);
-        // Vault holds: bond(2M) + contribution(10M) + fee(300K) = 12.3M
-        assert_eq!(s.token_client.balance(&s.client.address), 12_300_000);
-    }
-
-    #[test]
-    fn test_milestone_releases() {
-        let s = setup();
-
-        let mut milestones = Vec::new(&s.env);
-        milestones.push_back(Milestone { id: 1, amount: 4_000_000, released: false });
-        milestones.push_back(Milestone { id: 2, amount: 6_000_000, released: false });
-
-        let config = make_config(&s, 10_000_000, 2_000_000, milestones);
-        s.client.initialize(&config);
-
-        s.client.post_bond();
-        s.client.contribute(&s.investor, &10_000_000);
-
-        s.env.ledger().with_mut(|l| l.timestamp = 2000);
-        s.client.finalize_raise();
-        assert_eq!(s.client.get_state() as u32, VaultState::Funded as u32);
-
-        // Release milestone 1: creator gets 4M (no fee deduction — FEE-1 fix)
-        s.client.release_milestone(&1);
-        assert_eq!(s.client.get_state() as u32, VaultState::Active as u32);
-        // Creator started at 100M, posted 2M bond → 98M, now +4M = 102M
-        assert_eq!(s.token_client.balance(&s.creator), 102_000_000);
-        // Fee wallet gets milestone pro-rata fee on release (4M * 3% = 120,000)
-        assert_eq!(s.token_client.balance(&s.fee_wallet), 120_000);
-
-        // Release milestone 2: creator gets 6M + 2M bond returned = +8M → 110M
-        s.client.release_milestone(&2);
-        assert_eq!(s.client.get_state() as u32, VaultState::Completed as u32);
-        assert_eq!(s.token_client.balance(&s.creator), 110_000_000);
-    }
-
-    #[test]
-    fn test_expired_refund() {
-        let s = setup();
-
-        let mut milestones = Vec::new(&s.env);
-        milestones.push_back(Milestone { id: 1, amount: 10_000_000, released: false });
-
-        let config = make_config(&s, 10_000_000, 2_000_000, milestones);
-        s.client.initialize(&config);
-
-        s.client.contribute(&s.investor, &5_000_000);
-
-        s.env.ledger().with_mut(|l| l.timestamp = 2000);
-        s.client.finalize_raise();
-        assert_eq!(s.client.get_state() as u32, VaultState::Failed as u32);
-
-        // Failed state: full refund (contribution + fee)
-        s.client.claim_refund(&s.investor);
-        // Investor started at 100M, contributed 5M + 150K fee = 94.85M, refund = 5.15M → 100M
-        assert_eq!(s.token_client.balance(&s.investor), 100_000_000);
-    }
-
-    #[test]
-    fn test_slash_bond_refund() {
-        let s = setup();
-
-        let mut milestones = Vec::new(&s.env);
-        milestones.push_back(Milestone { id: 1, amount: 10_000_000, released: false });
-
-        let config = make_config(&s, 10_000_000, 2_000_000, milestones);
-        s.client.initialize(&config);
-
-        s.client.post_bond();
-        s.client.contribute(&s.investor, &10_000_000);
-
-        s.env.ledger().with_mut(|l| l.timestamp = 2000);
-        s.client.finalize_raise();
-
-        s.client.slash_bond();
-        assert_eq!(s.client.get_state() as u32, VaultState::Refunding as u32);
-
-        // Refunding with NO milestones released:
-        // remaining_contributions = 10M - 0 = 10M
-        // total_fees = 10M * 300 / 10000 = 300K
-        // contrib_share = (10M * 10M) / 10M = 10M
-        // fee_share = (10M * 300K) / 10M = 300K
-        // slash_share = (10M * 2M) / 10M = 2M
-        // total = 10M + 300K + 2M = 12.3M
-        s.client.claim_refund(&s.investor);
-        // Vault had 12.3M, investor gets all 12.3M back.
-        // Investor started at 100M, paid 10.3M (10M + 300K fee), gets 12.3M → 102M
-        assert_eq!(s.token_client.balance(&s.investor), 102_000_000);
-    }
-
-    // NEW TESTS 
-    #[test]
-    fn test_contribute_after_deadline() {
-        let s = setup();
-
-        let mut milestones = Vec::new(&s.env);
-        milestones.push_back(Milestone { id: 1, amount: 10_000_000, released: false });
-
-        let config = make_config(&s, 10_000_000, 2_000_000, milestones);
-        s.client.initialize(&config);
-
-        // Set time past deadline
-        s.env.ledger().with_mut(|l| l.timestamp = 2000);
-
-        let result = s.client.try_contribute(&s.investor, &5_000_000);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_double_contribution() {
-        let s = setup();
-
-        let mut milestones = Vec::new(&s.env);
-        milestones.push_back(Milestone { id: 1, amount: 10_000_000, released: false });
-
-        let config = make_config(&s, 10_000_000, 2_000_000, milestones);
-        s.client.initialize(&config);
-
-        s.client.contribute(&s.investor, &3_000_000);
-        assert_eq!(s.client.get_balance(&s.investor), 3_000_000i128);
-
-        s.client.contribute(&s.investor, &4_000_000);
-        // Balance should be cumulative
-        assert_eq!(s.client.get_balance(&s.investor), 7_000_000i128);
-        assert_eq!(s.client.get_info().raised_amount, 7_000_000i128);
-    }
-
-    #[test]
-    fn test_release_unapproved_milestone() {
-        let s = setup();
-
-        // Register a rejecting approval module by setting flag to false
-        let reject_approval_id = s.env.register(MockApprovalModule, ());
-        s.env.as_contract(&reject_approval_id, || {
-            s.env.storage().instance().set(&"approve", &false);
-        });
-
-        let mut milestones = Vec::new(&s.env);
-        milestones.push_back(Milestone { id: 1, amount: 10_000_000, released: false });
-
-        let mut config = make_config(&s, 10_000_000, 2_000_000, milestones);
-        config.approval_module = reject_approval_id;
-
-        s.client.initialize(&config);
-        s.client.post_bond();
-        s.client.contribute(&s.investor, &10_000_000);
-
-        s.env.ledger().with_mut(|l| l.timestamp = 2000);
-        s.client.finalize_raise();
-
-        // Attempt to release — should fail because approval returns false
-        let result = s.client.try_release_milestone(&1);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_double_release_milestone() {
-        let s = setup();
-
-        let mut milestones = Vec::new(&s.env);
-        milestones.push_back(Milestone { id: 1, amount: 4_000_000, released: false });
-        milestones.push_back(Milestone { id: 2, amount: 6_000_000, released: false });
-
-        let config = make_config(&s, 10_000_000, 2_000_000, milestones);
-        s.client.initialize(&config);
-        s.client.post_bond();
-        s.client.contribute(&s.investor, &10_000_000);
-
-        s.env.ledger().with_mut(|l| l.timestamp = 2000);
-        s.client.finalize_raise();
-
-        s.client.release_milestone(&1);
-
-        // Double release should fail
-        let result = s.client.try_release_milestone(&1);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_claim_refund_no_contribution() {
-        let s = setup();
-
-        let mut milestones = Vec::new(&s.env);
-        milestones.push_back(Milestone { id: 1, amount: 10_000_000, released: false });
-
-        let config = make_config(&s, 10_000_000, 2_000_000, milestones);
-        s.client.initialize(&config);
-
-        s.client.contribute(&s.investor, &5_000_000);
-
-        s.env.ledger().with_mut(|l| l.timestamp = 2000);
-        s.client.finalize_raise();
-
-        // Someone who never contributed tries to claim
-        let stranger = Address::generate(&s.env);
-        let result = s.client.try_claim_refund(&stranger);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_slash_from_active_partial_release() {
-        // BOND-2 regression test: slash after 1 of 2 milestones released.
-        // Vault has already paid out some funds — refund must use remaining pool.
-        let s = setup();
-
-        let mut milestones = Vec::new(&s.env);
-        milestones.push_back(Milestone { id: 1, amount: 4_000_000, released: false });
-        milestones.push_back(Milestone { id: 2, amount: 6_000_000, released: false });
-
-        let config = make_config(&s, 10_000_000, 2_000_000, milestones);
-        s.client.initialize(&config);
-        s.client.post_bond();
-        s.client.contribute(&s.investor, &10_000_000);
-
-        s.env.ledger().with_mut(|l| l.timestamp = 2000);
-        s.client.finalize_raise();
-
-        // Release milestone 1 (4M to creator)
-        s.client.release_milestone(&1);
-        assert_eq!(s.client.get_state() as u32, VaultState::Active as u32);
-
-        // Vault balance after milestone 1:
-        // Started: 2M(bond) + 10M(contrib) + 300K(fees) = 12.3M
-        // Released: 4M to creator + 120K fee to fee wallet = 4.12M
-        // Remaining: 8.18M
-        assert_eq!(s.token_client.balance(&s.client.address), 8_180_000);
-
-        // Now slash bond from Active state
-        s.client.slash_bond();
-        assert_eq!(s.client.get_state() as u32, VaultState::Refunding as u32);
-
-        // Refund calculation:
-        // remaining_contributions = 10M - 4M = 6M
-        // remaining_fees = 6M * 3% = 180K
-        // contrib_share = (10M * 6M) / 10M = 6M
-        // fee_share = (10M * 180K) / 10M = 180K
-        // slash_share = (10M * 2M) / 10M = 2M
-        // total = 6M + 180K + 2M = 8.18M (exactly matches vault balance!)
-        s.client.claim_refund(&s.investor);
-        assert_eq!(s.token_client.balance(&s.client.address), 0);
-
-        // Investor: started 100M, paid 10.3M, gets back 8.18M → 97.88M
-        assert_eq!(s.token_client.balance(&s.investor), 97_880_000);
-    }
-
-    #[test]
-    fn test_finalize_before_deadline() {
-        let s = setup();
-
-        let mut milestones = Vec::new(&s.env);
-        milestones.push_back(Milestone { id: 1, amount: 10_000_000, released: false });
-
-        let config = make_config(&s, 10_000_000, 2_000_000, milestones);
-        s.client.initialize(&config);
-
-        // Don't advance time — deadline is 1000, current is 0
-        let result = s.client.try_finalize_raise();
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_multi_contributor_prorata_refund() {
-        let s = setup();
-
-        let investor2 = Address::generate(&s.env);
-        s.token_admin_client.mint(&investor2, &100_000_000);
-
-        let mut milestones = Vec::new(&s.env);
-        milestones.push_back(Milestone { id: 1, amount: 4_000_000, released: false });
-        milestones.push_back(Milestone { id: 2, amount: 6_000_000, released: false });
-
-        let config = make_config(&s, 10_000_000, 2_000_000, milestones);
-        s.client.initialize(&config);
-
-        s.client.post_bond();
-
-        // Investor 1 contributes 4M, Investor 2 contributes 6M
-        s.client.contribute(&s.investor, &4_000_000);
-        s.client.contribute(&investor2, &6_000_000);
-
-        s.env.ledger().with_mut(|l| l.timestamp = 2000);
-        s.client.finalize_raise();
-
-        // Release milestone 1 (4M to creator)
-        s.client.release_milestone(&1);
-
-        // Slash bond
-        s.client.slash_bond();
-
-        // Investor 1 refund (contributed 4M out of 10M = 40%):
-        // remaining = 10M - 4M = 6M → 40% = 2.4M
-        // remaining fees = 180K → 40% = 72K
-        // bond = 2M → 40% = 800K
-        // total = 2.4M + 72K + 800K = 3.272M
-        s.client.claim_refund(&s.investor);
-        // Investor started 100M, paid 4M + 120K fee = 95.88M, gets 3.272M → 99.152M
-        assert_eq!(s.token_client.balance(&s.investor), 99_152_000);
-
-        // Investor 2 refund (contributed 6M out of 10M = 60%):
-        // remaining = 6M → 60% = 3.6M
-        // remaining fees = 180K → 60% = 108K
-        // bond = 2M → 60% = 1.2M
-        // total = 3.6M + 108K + 1.2M = 4.908M
-        s.client.claim_refund(&investor2);
-        // Investor2 started 100M, paid 6M + 180K = 93.82M, gets 4.908M → 98.728M
-        assert_eq!(s.token_client.balance(&investor2), 98_728_000);
-
-        // Vault should be empty (or near-zero from rounding)
-        assert_eq!(s.token_client.balance(&s.client.address), 0);
-    }
-
-    #[test]
-    fn test_reinitialize_guard() {
-        let s = setup();
-
-        let mut milestones = Vec::new(&s.env);
-        milestones.push_back(Milestone { id: 1, amount: 10_000_000, released: false });
-
-        let config = make_config(&s, 10_000_000, 2_000_000, milestones);
-        s.client.initialize(&config);
-
-        // Second init should fail
-        let mut milestones2 = Vec::new(&s.env);
-        milestones2.push_back(Milestone { id: 1, amount: 10_000_000, released: false });
-        let config2 = make_config(&s, 10_000_000, 2_000_000, milestones2);
-        let result = s.client.try_initialize(&config2);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_bond_returned_on_failed_with_bond_posted() {
-        // Edge case: bond posted but goal not met → bond should be returned
-        let s = setup();
-
-        let mut milestones = Vec::new(&s.env);
-        milestones.push_back(Milestone { id: 1, amount: 10_000_000, released: false });
-
-        let config = make_config(&s, 10_000_000, 2_000_000, milestones);
-        s.client.initialize(&config);
-
-        s.client.post_bond();
-        // Creator: 100M - 2M bond = 98M
-        assert_eq!(s.token_client.balance(&s.creator), 98_000_000);
-
-        // Contribute less than goal
-        s.client.contribute(&s.investor, &5_000_000);
-
-        s.env.ledger().with_mut(|l| l.timestamp = 2000);
-        s.client.finalize_raise();
-        assert_eq!(s.client.get_state() as u32, VaultState::Failed as u32);
-
-        // Bond should have been returned to creator on finalize
-        assert_eq!(s.token_client.balance(&s.creator), 100_000_000);
-
-        // Investor still gets full refund
-        s.client.claim_refund(&s.investor);
-        assert_eq!(s.token_client.balance(&s.investor), 100_000_000);
-    }
-
-    #[test]
-    fn test_milestone_strictly_positive() {
-        let s = setup();
-
-        // 1. Create config with zero milestone amount
-        let mut milestones = Vec::new(&s.env);
-        milestones.push_back(Milestone { id: 1, amount: 0, released: false });
-        milestones.push_back(Milestone { id: 2, amount: 10_000_000, released: false });
-
-        let config = make_config(&s, 10_000_000, 2_000_000, milestones);
-        let result = s.client.try_initialize(&config);
-        assert!(result.is_err()); // Milestone id 1 is 0, should panic/fail
-
-        // 2. Create config with negative milestone amount
-        let mut milestones2 = Vec::new(&s.env);
-        milestones2.push_back(Milestone { id: 1, amount: -1_000_000, released: false });
-        milestones2.push_back(Milestone { id: 2, amount: 11_000_000, released: false });
-
-        let config2 = make_config(&s, 10_000_000, 2_000_000, milestones2);
-        let result2 = s.client.try_initialize(&config2);
-        assert!(result2.is_err()); // Milestone id 1 is negative, should panic/fail
-    }
-
-    #[test]
-    fn test_manual_finalize_by_stranger_succeeds() {
-        let s = setup();
-
-        let mut milestones = Vec::new(&s.env);
-        milestones.push_back(Milestone { id: 1, amount: 10_000_000, released: false });
-
-        let config = make_config(&s, 10_000_000, 2_000_000, milestones);
-        s.client.initialize(&config);
-
-        s.client.post_bond();
-        s.client.contribute(&s.investor, &10_000_000);
-
-        let stranger = Address::generate(&s.env);
-        s.client.finalize_funding(&stranger);
-
-        assert_eq!(s.client.get_state() as u32, VaultState::Funded as u32);
-    }
-
-    #[test]
-    fn test_manual_finalize_unmet_goal_fails() {
-        let s = setup();
-
-        let mut milestones = Vec::new(&s.env);
-        milestones.push_back(Milestone { id: 1, amount: 10_000_000, released: false });
-
-        let config = make_config(&s, 10_000_000, 2_000_000, milestones);
-        s.client.initialize(&config);
-
-        s.client.contribute(&s.investor, &5_000_000);
-
-        let stranger = Address::generate(&s.env);
-        let result = s.client.try_finalize_funding(&stranger);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_lazy_resolve_on_get_info() {
-        let s = setup();
-
-        let mut milestones = Vec::new(&s.env);
-        milestones.push_back(Milestone { id: 1, amount: 10_000_000, released: false });
-
-        let config = make_config(&s, 10_000_000, 2_000_000, milestones);
-        s.client.initialize(&config);
-
-        s.client.post_bond();
-        s.client.contribute(&s.investor, &10_000_000);
-
-        // Advance time past deadline
-        s.env.ledger().with_mut(|l| l.timestamp = 2000);
-
-        // Trigger lazy evaluation by getting info
-        let info = s.client.get_info();
-        assert_eq!(info.raised_amount, 10_000_000);
-
-        // State should now be Funded
-        assert_eq!(s.client.get_state() as u32, VaultState::Funded as u32);
-    }
-
-    #[test]
-    fn test_lazy_resolve_on_claim_refund() {
-        let s = setup();
-
-        let mut milestones = Vec::new(&s.env);
-        milestones.push_back(Milestone { id: 1, amount: 10_000_000, released: false });
-
-        let config = make_config(&s, 10_000_000, 2_000_000, milestones);
-        s.client.initialize(&config);
-
-        s.client.contribute(&s.investor, &5_000_000);
-
-        // Advance time past deadline
-        s.env.ledger().with_mut(|l| l.timestamp = 2000);
-
-        // Claim refund directly without calling finalize_raise
-        s.client.claim_refund(&s.investor);
-
-        // Verify investor got full refund (started 100M, paid 5M + 150K fee = 94.85M, got 5.15M back -> 100M)
-        assert_eq!(s.token_client.balance(&s.investor), 100_000_000);
-        assert_eq!(s.client.get_state() as u32, VaultState::Failed as u32);
+    pub fn is_kyc_approved(env: Env, address: Address) -> bool {
+        env.storage().instance().get(&address).unwrap_or(false)
     }
 }
 
+/// Reports a fixed allow-list, standing in for the real factory's vault registry.
+#[contract]
+pub struct MockFactory;
+
+const VAULTS: soroban_sdk::Symbol = soroban_sdk::symbol_short!("VAULTS");
+
+#[contractimpl]
+impl MockFactory {
+    pub fn set_vaults(env: Env, vaults: Vec<Address>) {
+        env.storage().instance().set(&VAULTS, &vaults);
+    }
+
+    pub fn is_vault(env: Env, address: Address) -> bool {
+        let vaults: Vec<Address> =
+            env.storage().instance().get(&VAULTS).unwrap_or_else(|| Vec::new(&env));
+        for i in 0..vaults.len() {
+            if vaults.get(i).unwrap() == address {
+                return true;
+            }
+        }
+        false
+    }
+}
+
+// ── Fixtures ───────────────────────────────────────────────────────────────
+
+/// 7 decimals, as Stellar assets carry.
+const UNIT: i128 = 10_000_000;
+const MIN_CONTRIBUTION: i128 = 5 * UNIT; // $5, the SOW entry point
+const GOAL: i128 = 300 * UNIT;
+const BOND: i128 = 15 * UNIT; // 5% of goal
+const PLATFORM_FEE: i128 = 10 * UNIT; // flat, charged once to the builder
+const VOTING_WINDOW: u64 = 7 * 24 * 60 * 60; // 7 days
+const DEADLINE: u64 = 30 * 24 * 60 * 60;
+
+struct Setup {
+    env: Env,
+    vault: BlkfndrVaultClient<'static>,
+    registry: AttestationRegistryClient<'static>,
+    token: TokenClient<'static>,
+    minter: StellarAssetClient<'static>,
+    vault_address: Address,
+    builder: Address,
+    fee_wallet: Address,
+    alice: Address,
+    bob: Address,
+    carol: Address,
+}
+
+fn setup() -> Setup {
+    setup_with(GOAL, BOND, PLATFORM_FEE)
+}
+
+fn setup_with(goal: i128, bond: i128, platform_fee: i128) -> Setup {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().set_timestamp(1_000_000);
+
+    let admin = Address::generate(&env);
+    let builder = Address::generate(&env);
+    let fee_wallet = Address::generate(&env);
+    let alice = Address::generate(&env);
+    let bob = Address::generate(&env);
+    let carol = Address::generate(&env);
+
+    let issuer = Address::generate(&env);
+    let asset = env.register_stellar_asset_contract_v2(issuer.clone());
+    let token = TokenClient::new(&env, &asset.address());
+    let minter = StellarAssetClient::new(&env, &asset.address());
+
+    minter.mint(&builder, &(bond + platform_fee));
+    minter.mint(&alice, &(1_000 * UNIT));
+    minter.mint(&bob, &(1_000 * UNIT));
+    minter.mint(&carol, &(1_000 * UNIT));
+
+    let identity_id = env.register(MockIdentity, ());
+    MockIdentityClient::new(&env, &identity_id).set_approved(&builder, &true);
+
+    let vault_address = env.register(BlkfndrVault, ());
+
+    let factory_id = env.register(MockFactory, ());
+    let mut vaults = Vec::new(&env);
+    vaults.push_back(vault_address.clone());
+    MockFactoryClient::new(&env, &factory_id).set_vaults(&vaults);
+
+    let registry_id = env.register(AttestationRegistry, ());
+    let registry = AttestationRegistryClient::new(&env, &registry_id);
+    registry.initialize(&admin, &factory_id);
+
+    let vault = BlkfndrVaultClient::new(&env, &vault_address);
+
+    let mut milestones = Vec::new(&env);
+    milestones.push_back(MilestoneInput { id: 1, amount: goal / 3 });
+    milestones.push_back(MilestoneInput { id: 2, amount: goal / 3 });
+    milestones.push_back(MilestoneInput { id: 3, amount: goal - 2 * (goal / 3) });
+
+    vault.initialize(&VaultInitConfig {
+        project_id: 42,
+        creator: builder.clone(),
+        token: asset.address(),
+        goal,
+        deadline: env.ledger().timestamp() + DEADLINE,
+        bond_amount: bond,
+        identity_registry: identity_id,
+        attestation_registry: registry_id,
+        factory: factory_id,
+        fee_wallet_address: fee_wallet.clone(),
+        platform_fee,
+        voting_window_secs: VOTING_WINDOW,
+        min_contribution: MIN_CONTRIBUTION,
+        milestones,
+        metadata_cid: String::from_str(&env, "bafytestcid"),
+    });
+
+    Setup {
+        env, vault, registry, token, minter, vault_address,
+        builder, fee_wallet, alice, bob, carol,
+    }
+}
+
+/// Fund to goal with three equal backers — the shape the vote is designed for.
+fn fund_evenly(s: &Setup) {
+    s.vault.contribute(&s.alice, &(100 * UNIT));
+    s.vault.contribute(&s.bob, &(100 * UNIT));
+    s.vault.contribute(&s.carol, &(100 * UNIT));
+}
+
+fn advance(env: &Env, seconds: u64) {
+    let now = env.ledger().timestamp();
+    env.ledger().set_timestamp(now + seconds);
+}
+
+// ── Bond is locked at creation ─────────────────────────────────────────────
+
+#[test]
+fn bond_is_locked_at_creation_and_fee_is_flat() {
+    let s = setup();
+
+    // Vault holds exactly the bond; the flat fee went to the platform wallet.
+    assert_eq!(s.token.balance(&s.vault_address), BOND);
+    assert_eq!(s.token.balance(&s.fee_wallet), PLATFORM_FEE);
+    assert_eq!(s.token.balance(&s.builder), 0);
+
+    let info = s.vault.get_info();
+    assert!(info.bond_posted, "bond must be posted as part of construction");
+    assert_eq!(info.bond_amount, BOND);
+    assert_eq!(info.platform_fee, PLATFORM_FEE);
+    assert_eq!(s.vault.get_state(), VaultState::Raising);
+}
+
+#[test]
+fn a_builder_who_cannot_fund_the_bond_gets_no_vault() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().set_timestamp(1_000_000);
+
+    let builder = Address::generate(&env);
+    let issuer = Address::generate(&env);
+    let asset = env.register_stellar_asset_contract_v2(issuer);
+    // Deliberately not minting anything to the builder.
+
+    let identity_id = env.register(MockIdentity, ());
+    MockIdentityClient::new(&env, &identity_id).set_approved(&builder, &true);
+
+    let vault_address = env.register(BlkfndrVault, ());
+    let vault = BlkfndrVaultClient::new(&env, &vault_address);
+
+    let mut milestones = Vec::new(&env);
+    milestones.push_back(MilestoneInput { id: 1, amount: GOAL });
+
+    let result = vault.try_initialize(&VaultInitConfig {
+        project_id: 1,
+        creator: builder.clone(),
+        token: asset.address(),
+        goal: GOAL,
+        deadline: env.ledger().timestamp() + DEADLINE,
+        bond_amount: BOND,
+        identity_registry: identity_id,
+        attestation_registry: Address::generate(&env),
+        factory: Address::generate(&env),
+        fee_wallet_address: Address::generate(&env),
+        platform_fee: PLATFORM_FEE,
+        voting_window_secs: VOTING_WINDOW,
+        min_contribution: MIN_CONTRIBUTION,
+        milestones,
+        metadata_cid: String::from_str(&env, "cid"),
+    });
+
+    assert!(result.is_err(), "no bond, no vault — there is no unbonded path");
+}
+
+#[test]
+fn rejects_a_builder_without_kyc() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().set_timestamp(1_000_000);
+
+    let builder = Address::generate(&env);
+    let issuer = Address::generate(&env);
+    let asset = env.register_stellar_asset_contract_v2(issuer.clone());
+    StellarAssetClient::new(&env, &asset.address()).mint(&builder, &(BOND + PLATFORM_FEE));
+
+    let identity_id = env.register(MockIdentity, ()); // nobody approved
+    let vault = BlkfndrVaultClient::new(&env, &env.register(BlkfndrVault, ()));
+
+    let mut milestones = Vec::new(&env);
+    milestones.push_back(MilestoneInput { id: 1, amount: GOAL });
+
+    let result = vault.try_initialize(&VaultInitConfig {
+        project_id: 1,
+        creator: builder,
+        token: asset.address(),
+        goal: GOAL,
+        deadline: env.ledger().timestamp() + DEADLINE,
+        bond_amount: BOND,
+        identity_registry: identity_id,
+        attestation_registry: Address::generate(&env),
+        factory: Address::generate(&env),
+        fee_wallet_address: Address::generate(&env),
+        platform_fee: PLATFORM_FEE,
+        voting_window_secs: VOTING_WINDOW,
+        min_contribution: MIN_CONTRIBUTION,
+        milestones,
+        metadata_cid: String::from_str(&env, "cid"),
+    });
+
+    assert!(result.is_err());
+}
+
+#[test]
+fn rejects_milestones_that_do_not_sum_to_the_goal() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().set_timestamp(1_000_000);
+
+    let builder = Address::generate(&env);
+    let issuer = Address::generate(&env);
+    let asset = env.register_stellar_asset_contract_v2(issuer);
+    StellarAssetClient::new(&env, &asset.address()).mint(&builder, &(BOND + PLATFORM_FEE));
+
+    let identity_id = env.register(MockIdentity, ());
+    MockIdentityClient::new(&env, &identity_id).set_approved(&builder, &true);
+    let vault = BlkfndrVaultClient::new(&env, &env.register(BlkfndrVault, ()));
+
+    let mut milestones = Vec::new(&env);
+    milestones.push_back(MilestoneInput { id: 1, amount: GOAL / 2 });
+
+    let result = vault.try_initialize(&VaultInitConfig {
+        project_id: 1,
+        creator: builder,
+        token: asset.address(),
+        goal: GOAL,
+        deadline: env.ledger().timestamp() + DEADLINE,
+        bond_amount: BOND,
+        identity_registry: identity_id,
+        attestation_registry: Address::generate(&env),
+        factory: Address::generate(&env),
+        fee_wallet_address: Address::generate(&env),
+        platform_fee: PLATFORM_FEE,
+        voting_window_secs: VOTING_WINDOW,
+        min_contribution: MIN_CONTRIBUTION,
+        milestones,
+        metadata_cid: String::from_str(&env, "cid"),
+    });
+
+    assert!(result.is_err());
+}
+
+// ── Contribution ───────────────────────────────────────────────────────────
+
+#[test]
+fn contributions_are_recorded_whole_with_no_fee_deducted() {
+    let s = setup();
+    s.vault.contribute(&s.alice, &(100 * UNIT));
+
+    // The contributor's whole deposit is credited and held.
+    assert_eq!(s.vault.get_balance(&s.alice), 100 * UNIT);
+    assert_eq!(s.vault.get_info().raised_amount, 100 * UNIT);
+    assert_eq!(s.token.balance(&s.vault_address), BOND + 100 * UNIT);
+    // Platform took nothing beyond the flat creation fee.
+    assert_eq!(s.token.balance(&s.fee_wallet), PLATFORM_FEE);
+}
+
+#[test]
+fn enforces_the_five_dollar_minimum() {
+    let s = setup();
+    let too_small = s.vault.try_contribute(&s.alice, &(4 * UNIT));
+    assert!(too_small.is_err());
+
+    s.vault.contribute(&s.alice, &MIN_CONTRIBUTION);
+    assert_eq!(s.vault.get_balance(&s.alice), MIN_CONTRIBUTION);
+}
+
+#[test]
+fn reaching_the_goal_closes_the_raise() {
+    let s = setup();
+    fund_evenly(&s);
+
+    assert_eq!(s.vault.get_state(), VaultState::Funded);
+    assert_eq!(s.vault.get_info().raised_amount, GOAL);
+
+    let after_close = s.vault.try_contribute(&s.alice, &MIN_CONTRIBUTION);
+    assert!(after_close.is_err(), "raise is closed once the goal is met");
+}
+
+#[test]
+fn rejects_contributions_after_the_deadline() {
+    let s = setup();
+    advance(&s.env, DEADLINE + 1);
+    let result = s.vault.try_contribute(&s.alice, &(100 * UNIT));
+    assert!(result.is_err());
+}
+
+// ── Voting weight and the 20% cap ──────────────────────────────────────────
+
+#[test]
+fn voting_weight_is_one_unit_per_unit_contributed() {
+    let s = setup();
+    s.vault.contribute(&s.alice, &(50 * UNIT));
+    s.vault.contribute(&s.bob, &(50 * UNIT));
+    s.vault.contribute(&s.carol, &(200 * UNIT));
+
+    // raised = 300, cap = 20% = 60.
+    assert_eq!(s.vault.get_voting_weight(&s.alice), 50 * UNIT);
+    assert_eq!(s.vault.get_voting_weight(&s.bob), 50 * UNIT);
+    // Carol put in 200 but counts for 60.
+    assert_eq!(s.vault.get_voting_weight(&s.carol), 60 * UNIT);
+}
+
+/// The SOW's central claim about the vote: a dominant contributor cannot
+/// release on their own.
+#[test]
+fn a_majority_contributor_cannot_release_alone() {
+    let s = setup();
+    s.vault.contribute(&s.carol, &(200 * UNIT)); // two thirds of the raise
+    s.vault.contribute(&s.alice, &(50 * UNIT));
+    s.vault.contribute(&s.bob, &(50 * UNIT));
+
+    s.vault.open_milestone_vote(&1u32);
+    s.vault.approve_milestone(&s.carol, &1u32);
+
+    let (approved, required, open) = s.vault.get_milestone_vote(&1u32);
+    assert!(open);
+    assert_eq!(approved, 60 * UNIT, "capped at 20% of the raise");
+    assert!(approved < required);
+
+    let alone = s.vault.try_release_milestone(&1u32);
+    assert!(alone.is_err(), "60% of the money must not be 60% of the vote");
+
+    // Even with one ally the whale is short: 60 + 50 = 110, needs > 150.
+    s.vault.approve_milestone(&s.alice, &1u32);
+    let pair = s.vault.try_release_milestone(&1u32);
+    assert!(pair.is_err());
+
+    // Only the third wallet carries it: 60 + 50 + 50 = 160 > 150.
+    s.vault.approve_milestone(&s.bob, &1u32);
+    s.vault.release_milestone(&1u32);
+    assert!(s.vault.get_info().milestones.get(0).unwrap().released);
+}
+
+/// With every wallet at the cap, arithmetic forces at least three of them.
+#[test]
+fn release_requires_at_least_three_distinct_wallets() {
+    let s = setup();
+    fund_evenly(&s); // three at 100 each, each capped to 60
+
+    s.vault.open_milestone_vote(&1u32);
+
+    s.vault.approve_milestone(&s.alice, &1u32);
+    assert!(s.vault.try_release_milestone(&1u32).is_err(), "one wallet: 60");
+
+    s.vault.approve_milestone(&s.bob, &1u32);
+    assert!(s.vault.try_release_milestone(&1u32).is_err(), "two wallets: 120");
+
+    s.vault.approve_milestone(&s.carol, &1u32);
+    s.vault.release_milestone(&1u32); // three wallets: 180 > 150
+}
+
+#[test]
+fn a_contributor_votes_once_per_milestone() {
+    let s = setup();
+    fund_evenly(&s);
+    s.vault.open_milestone_vote(&1u32);
+
+    s.vault.approve_milestone(&s.alice, &1u32);
+    assert!(s.vault.has_voted(&1u32, &s.alice));
+
+    let again = s.vault.try_approve_milestone(&s.alice, &1u32);
+    assert!(again.is_err());
+}
+
+#[test]
+fn non_contributors_have_no_vote() {
+    let s = setup();
+    fund_evenly(&s);
+    s.vault.open_milestone_vote(&1u32);
+
+    let stranger = Address::generate(&s.env);
+    let result = s.vault.try_approve_milestone(&stranger, &1u32);
+    assert!(result.is_err());
+}
+
+#[test]
+fn votes_are_rejected_before_the_window_opens_and_after_it_closes() {
+    let s = setup();
+    fund_evenly(&s);
+
+    let early = s.vault.try_approve_milestone(&s.alice, &1u32);
+    assert!(early.is_err(), "no vote before the builder opens the window");
+
+    s.vault.open_milestone_vote(&1u32);
+    s.vault.approve_milestone(&s.alice, &1u32);
+
+    advance(&s.env, VOTING_WINDOW + 1);
+    let late = s.vault.try_approve_milestone(&s.bob, &1u32);
+    assert!(late.is_err(), "no vote after the window closes");
+}
+
+#[test]
+fn only_the_builder_opens_a_window_and_only_once() {
+    let s = setup();
+    fund_evenly(&s);
+
+    s.vault.open_milestone_vote(&1u32);
+    let twice = s.vault.try_open_milestone_vote(&1u32);
+    assert!(twice.is_err());
+}
+
+// ── Release ────────────────────────────────────────────────────────────────
+
+#[test]
+fn releasing_every_milestone_completes_the_project_and_returns_the_bond() {
+    let s = setup();
+    fund_evenly(&s);
+
+    let builder_start = s.token.balance(&s.builder);
+
+    for id in 1u32..=3u32 {
+        s.vault.open_milestone_vote(&id);
+        s.vault.approve_milestone(&s.alice, &id);
+        s.vault.approve_milestone(&s.bob, &id);
+        s.vault.approve_milestone(&s.carol, &id);
+        s.vault.release_milestone(&id);
+    }
+
+    assert_eq!(s.vault.get_state(), VaultState::Completed);
+    // Builder received the whole raise plus their bond back.
+    assert_eq!(s.token.balance(&s.builder), builder_start + GOAL + BOND);
+    assert_eq!(s.token.balance(&s.vault_address), 0, "vault fully drained");
+}
+
+#[test]
+fn release_is_permissionless_once_contributors_have_voted() {
+    let s = setup();
+    fund_evenly(&s);
+    s.vault.open_milestone_vote(&1u32);
+    s.vault.approve_milestone(&s.alice, &1u32);
+    s.vault.approve_milestone(&s.bob, &1u32);
+    s.vault.approve_milestone(&s.carol, &1u32);
+
+    // No signer, no admin, no builder involvement: the call carries itself.
+    s.vault.release_milestone(&1u32);
+    assert_eq!(s.vault.get_state(), VaultState::Active);
+}
+
+#[test]
+fn a_milestone_cannot_be_released_twice() {
+    let s = setup();
+    fund_evenly(&s);
+    s.vault.open_milestone_vote(&1u32);
+    s.vault.approve_milestone(&s.alice, &1u32);
+    s.vault.approve_milestone(&s.bob, &1u32);
+    s.vault.approve_milestone(&s.carol, &1u32);
+    s.vault.release_milestone(&1u32);
+
+    assert!(s.vault.try_release_milestone(&1u32).is_err());
+}
+
+// ── Fail-closed ────────────────────────────────────────────────────────────
+
+#[test]
+fn a_window_that_closes_below_threshold_fails_the_milestone() {
+    let s = setup();
+    fund_evenly(&s);
+
+    s.vault.open_milestone_vote(&1u32);
+    s.vault.approve_milestone(&s.alice, &1u32); // 60 of the 150 needed
+
+    // Nobody else votes.
+    advance(&s.env, VOTING_WINDOW + 1);
+    s.vault.settle_lapsed_milestone(&1u32);
+
+    assert_eq!(s.vault.get_state(), VaultState::Refunding);
+    assert!(s.vault.get_info().milestones.get(0).unwrap().failed);
+}
+
+#[test]
+fn silence_never_releases_funds() {
+    let s = setup();
+    fund_evenly(&s);
+    s.vault.open_milestone_vote(&1u32);
+
+    // Not a single vote cast.
+    advance(&s.env, VOTING_WINDOW + 1);
+    s.vault.settle_lapsed_milestone(&1u32);
+
+    assert_eq!(s.vault.get_state(), VaultState::Refunding);
+    assert_eq!(s.token.balance(&s.builder), 0, "builder received nothing");
+}
+
+#[test]
+fn a_lapsed_window_cannot_be_settled_early() {
+    let s = setup();
+    fund_evenly(&s);
+    s.vault.open_milestone_vote(&1u32);
+
+    let early = s.vault.try_settle_lapsed_milestone(&1u32);
+    assert!(early.is_err(), "the window has not elapsed yet");
+}
+
+#[test]
+fn a_window_that_met_threshold_cannot_be_declared_failed() {
+    let s = setup();
+    fund_evenly(&s);
+    s.vault.open_milestone_vote(&1u32);
+    s.vault.approve_milestone(&s.alice, &1u32);
+    s.vault.approve_milestone(&s.bob, &1u32);
+    s.vault.approve_milestone(&s.carol, &1u32);
+
+    advance(&s.env, VOTING_WINDOW + 1);
+    let sabotage = s.vault.try_settle_lapsed_milestone(&1u32);
+    assert!(sabotage.is_err(), "a passed vote stays passed after the window");
+
+    // And it can still be executed.
+    s.vault.release_milestone(&1u32);
+}
+
+// ── Bond forfeiture ────────────────────────────────────────────────────────
+
+#[test]
+fn forfeited_bond_is_distributed_pro_rata_with_the_remaining_balance() {
+    let s = setup();
+    fund_evenly(&s); // 100 each, raised 300
+
+    // First milestone passes and pays out 100 to the builder.
+    s.vault.open_milestone_vote(&1u32);
+    s.vault.approve_milestone(&s.alice, &1u32);
+    s.vault.approve_milestone(&s.bob, &1u32);
+    s.vault.approve_milestone(&s.carol, &1u32);
+    s.vault.release_milestone(&1u32);
+    assert_eq!(s.token.balance(&s.builder), 100 * UNIT);
+
+    // Second stalls.
+    s.vault.open_milestone_vote(&2u32);
+    advance(&s.env, VOTING_WINDOW + 1);
+    s.vault.settle_lapsed_milestone(&2u32);
+
+    // Vault holds 200 of contributions plus the 15 forfeited bond.
+    assert_eq!(s.token.balance(&s.vault_address), 200 * UNIT + BOND);
+
+    // Each backer holds a third: 200/3 of principal + 15/3 of the bond.
+    let expected = (100 * UNIT * (200 * UNIT) / (300 * UNIT)) + (100 * UNIT * BOND / (300 * UNIT));
+
+    for backer in [&s.alice, &s.bob, &s.carol] {
+        let before = s.token.balance(backer);
+        s.vault.claim_refund(backer);
+        assert_eq!(s.token.balance(backer) - before, expected);
+    }
+
+    // Builder keeps only the released tranche; the bond is gone.
+    assert_eq!(s.token.balance(&s.builder), 100 * UNIT);
+    // Nothing but rounding dust remains.
+    assert!(s.token.balance(&s.vault_address) < 10);
+}
+
+#[test]
+fn a_backer_claims_once() {
+    let s = setup();
+    fund_evenly(&s);
+    s.vault.open_milestone_vote(&1u32);
+    advance(&s.env, VOTING_WINDOW + 1);
+    s.vault.settle_lapsed_milestone(&1u32);
+
+    s.vault.claim_refund(&s.alice);
+    assert!(s.vault.try_claim_refund(&s.alice).is_err());
+}
+
+// ── Failure to fund ────────────────────────────────────────────────────────
+
+#[test]
+fn an_unfunded_project_returns_principal_and_the_builders_bond() {
+    let s = setup();
+    s.vault.contribute(&s.alice, &(100 * UNIT));
+    s.vault.contribute(&s.bob, &(50 * UNIT));
+
+    advance(&s.env, DEADLINE + 1);
+    assert_eq!(s.vault.get_state(), VaultState::Failed);
+
+    s.vault.claim_refund(&s.alice);
+    s.vault.claim_refund(&s.bob);
+    s.vault.return_bond();
+
+    // Everyone whole: no fee was ever taken from contributions, and the builder
+    // is not penalised for a raise that simply did not fill.
+    assert_eq!(s.token.balance(&s.alice), 1_000 * UNIT);
+    assert_eq!(s.token.balance(&s.bob), 1_000 * UNIT);
+    assert_eq!(s.token.balance(&s.builder), BOND);
+    assert_eq!(s.token.balance(&s.vault_address), 0);
+}
+
+#[test]
+fn refunds_are_unavailable_while_a_project_is_still_live() {
+    let s = setup();
+    fund_evenly(&s);
+    let result = s.vault.try_claim_refund(&s.alice);
+    assert!(result.is_err());
+}
+
+// ── Attestation ────────────────────────────────────────────────────────────
+
+#[test]
+fn completion_writes_a_permanent_builder_record() {
+    let s = setup();
+    fund_evenly(&s);
+
+    for id in 1u32..=3u32 {
+        s.vault.open_milestone_vote(&id);
+        s.vault.approve_milestone(&s.alice, &id);
+        s.vault.approve_milestone(&s.bob, &id);
+        s.vault.approve_milestone(&s.carol, &id);
+        s.vault.release_milestone(&id);
+    }
+
+    let record = s.registry.get_record(&42u64);
+    assert_eq!(record.builder, s.builder);
+    assert_eq!(record.outcome, RegistryOutcome::Completed);
+    assert_eq!(record.total_raised, GOAL);
+    assert_eq!(record.bond_posted, BOND);
+    assert_eq!(record.milestones_total, 3);
+    assert_eq!(record.milestones_approved, 3);
+
+    assert_eq!(s.registry.get_builder_summary(&s.builder), (1, 0, 0));
+}
+
+#[test]
+fn forfeiture_writes_a_record_against_the_builder() {
+    let s = setup();
+    fund_evenly(&s);
+
+    s.vault.open_milestone_vote(&1u32);
+    s.vault.approve_milestone(&s.alice, &1u32);
+    s.vault.approve_milestone(&s.bob, &1u32);
+    s.vault.approve_milestone(&s.carol, &1u32);
+    s.vault.release_milestone(&1u32);
+
+    s.vault.open_milestone_vote(&2u32);
+    advance(&s.env, VOTING_WINDOW + 1);
+    s.vault.settle_lapsed_milestone(&2u32);
+
+    let record = s.registry.get_record(&42u64);
+    assert_eq!(record.outcome, RegistryOutcome::FailedWithForfeiture);
+    assert_eq!(record.milestones_approved, 1, "one of three delivered");
+    assert_eq!(s.registry.get_builder_summary(&s.builder), (0, 1, 0));
+}
+
+#[test]
+fn failing_to_fund_is_recorded_without_blaming_the_builder() {
+    let s = setup();
+    s.vault.contribute(&s.alice, &(50 * UNIT));
+
+    advance(&s.env, DEADLINE + 1);
+    s.vault.settle();
+
+    let record = s.registry.get_record(&42u64);
+    assert_eq!(record.outcome, RegistryOutcome::FailedToFund);
+    assert_eq!(record.milestones_approved, 0);
+    // Counted separately from a forfeiture, because it is not a default.
+    assert_eq!(s.registry.get_builder_summary(&s.builder), (0, 0, 1));
+}
+
+#[test]
+fn a_projects_record_is_written_once_and_never_amended() {
+    let s = setup();
+    fund_evenly(&s);
+
+    s.vault.open_milestone_vote(&1u32);
+    advance(&s.env, VOTING_WINDOW + 1);
+    s.vault.settle_lapsed_milestone(&1u32);
+
+    let first = s.registry.get_record(&42u64);
+    assert_eq!(first.outcome, RegistryOutcome::FailedWithForfeiture);
+
+    // Draining the vault afterwards must not rewrite history.
+    s.vault.claim_refund(&s.alice);
+    s.vault.settle();
+
+    let after = s.registry.get_record(&42u64);
+    assert_eq!(after.outcome, RegistryOutcome::FailedWithForfeiture);
+    assert_eq!(after.closed_at, first.closed_at);
+}
+
+// ── Reads are reads ────────────────────────────────────────────────────────
+
+#[test]
+fn queries_do_not_mutate_state_or_move_tokens() {
+    let s = setup();
+    s.vault.contribute(&s.alice, &(100 * UNIT));
+    advance(&s.env, DEADLINE + 1);
+
+    let vault_balance = s.token.balance(&s.vault_address);
+    let builder_balance = s.token.balance(&s.builder);
+
+    // The deadline has passed, so this reports Failed — but reporting it must
+    // not itself return the bond or write anything.
+    assert_eq!(s.vault.get_state(), VaultState::Failed);
+    assert_eq!(s.vault.get_state(), VaultState::Failed);
+    let _ = s.vault.get_info();
+
+    assert_eq!(s.token.balance(&s.vault_address), vault_balance);
+    assert_eq!(s.token.balance(&s.builder), builder_balance);
+    assert!(!s.vault.get_info().bond_returned);
+}
+
+#[test]
+fn cannot_be_initialized_twice() {
+    let s = setup();
+    let mut milestones = Vec::new(&s.env);
+    milestones.push_back(MilestoneInput { id: 1, amount: GOAL });
+
+    let result = s.vault.try_initialize(&VaultInitConfig {
+        project_id: 999,
+        creator: s.alice.clone(),
+        token: s.token.address.clone(),
+        goal: GOAL,
+        deadline: s.env.ledger().timestamp() + DEADLINE,
+        bond_amount: 0,
+        identity_registry: Address::generate(&s.env),
+        attestation_registry: Address::generate(&s.env),
+        factory: Address::generate(&s.env),
+        fee_wallet_address: Address::generate(&s.env),
+        platform_fee: 0,
+        voting_window_secs: VOTING_WINDOW,
+        min_contribution: MIN_CONTRIBUTION,
+        milestones,
+        metadata_cid: String::from_str(&s.env, "cid"),
+    });
+
+    assert!(result.is_err());
+    let _ = s.minter; // fixture completeness
+}

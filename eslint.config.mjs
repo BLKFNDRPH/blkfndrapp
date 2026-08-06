@@ -25,8 +25,12 @@ export default defineConfig([
     ".next/**",
     "out/**",
     "build/**",
+    "target/**",
     "next-env.d.ts",
-    "src/packages/blkfndr/dist/**",
+    // Soroban contract bindings, produced by `stellar contract bindings
+    // typescript`. Regenerated wholesale from the contract ABI, so hand-editing
+    // them to satisfy lint rules would be undone by the next build.
+    "src/packages/**",
     "user-check.js",
   ]),
 ]);
