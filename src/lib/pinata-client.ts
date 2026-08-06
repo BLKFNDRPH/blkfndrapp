@@ -46,7 +46,38 @@ export function getPinataClient(): PinataClient {
 }
 
 /**
- * Get the IPFS gateway URL for a CID
+ * Resolve a CID to a gateway URL that is safe for the *server* to fetch.
+ *
+ * Unlike getIPFSGatewayUrl below, this never honours an absolute URL. The
+ * values passed here come from on-chain event payloads that any project
+ * creator can set, so accepting "http://169.254.169.254/..." would turn the
+ * indexer into a server-side request forgery gadget whose response body gets
+ * written into the public project listing.
+ *
+ * Returns null if the value is not a plausible bare CID.
+ */
+export function getIPFSFetchUrl(cid: string): string | null {
+  if (!cid) return null;
+
+  let value = cid.trim();
+  if (value.startsWith("ipfs://")) {
+    value = value.slice("ipfs://".length);
+  }
+  value = value.replace(/^\/+/, "").split(/[/?#]/)[0];
+
+  // CIDv0 (Qm..., base58) or CIDv1 (base32, starts with b). Restricting the
+  // character set also guarantees no path traversal or host injection.
+  const isCidV0 = /^Qm[1-9A-HJ-NP-Za-km-z]{44}$/.test(value);
+  const isCidV1 = /^b[a-z2-7]{50,}$/.test(value);
+  if (!isCidV0 && !isCidV1) return null;
+
+  return `https://gateway.pinata.cloud/ipfs/${value}`;
+}
+
+/**
+ * Get the IPFS gateway URL for a CID, for rendering in the browser.
+ * Passes absolute URLs through unchanged to support legacy stored records.
+ * Do not use this to build a URL the server will fetch — see getIPFSFetchUrl.
  */
 export function getIPFSGatewayUrl(cid: string): string {
   const value = cid.trim();

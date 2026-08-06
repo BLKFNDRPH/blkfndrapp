@@ -1,59 +1,33 @@
-
 "use server";
 
 import { improveListingQuality, type ImproveListingQualityInput, type ImproveListingQualityOutput } from "@/ai/flows/improve-listing-quality";
 import { revalidatePath } from 'next/cache';
-import * as z from 'zod';
 import { getProjects as getAllProjects, dismissAllNotifications, getUserByCreatorId } from '@/lib/data';
 import { getSession } from "@/lib/auth/session";
-import type { Project } from "@/lib/types";
+import {
+  requireSession,
+  requireAdmin,
+  requireWalletOwnerOrAdmin,
+  authFailure,
+} from "@/lib/auth/guards";
+import { readVaultState, getVaultCreator } from "@/lib/vault-state";
 
-const projectSchema = z.object({
-  title: z.string(),
-  tagline: z.string(),
-  description: z.string(),
-  category: z.string(),
-  fundingGoal: z.number(),
-  creatorAvatar: z.string(),
-});
-
-type CreateListingInput = z.infer<typeof projectSchema> & {
-  creator: string;
-  recipient: string; // Stellar address
-  imageUrl: string;
-  creatorId: string;
-};
-
+// Every export in this file is a public HTTP endpoint. Each one guards itself.
 
 export async function runImproveListingQuality(input: ImproveListingQualityInput): Promise<ImproveListingQualityOutput | null> {
+  // Billable model call — signed-in callers only.
   try {
-    const result = await improveListingQuality(input);
-    return result;
+    await requireSession();
+  } catch {
+    return null;
+  }
+
+  try {
+    return await improveListingQuality(input);
   } catch (error) {
     console.error("AI analysis failed:", error);
     return null;
   }
-}
-
-export async function uploadImage(url: string): Promise<{ url: string } | { error: string }> {
-  // This function is now only a fallback for a case that shouldn't happen
-  try {
-    if (!url.startsWith('data:image') && !url.startsWith('http')) {
-      return { error: 'Invalid image URL. Must be a data URL or a standard web link.' };
-    }
-    return { url: url };
-  } catch (error) {
-    console.error("Mock upload exception:", error);
-    return { error: 'An unexpected error occurred during mock image upload.' };
-  }
-}
-
-export async function createListing(data: CreateListingInput) {
-  // This action now directly adds to the database via the data layer
-  // This will fail as addProject no longer supports non-on-chain creation.
-  // Kept for structural integrity but should not be called.
-  console.error("createListing action was called, but it's only supported for on-chain operations now.");
-  return { success: false, error: "This action is deprecated for non-on-chain operations." };
 }
 
 export async function getProjects() {
@@ -70,20 +44,38 @@ export async function clearNotificationsAction(address: string) {
     const user = await getUserByCreatorId(address, "stellarPublicKey");
     if (user && user.uid === session.user.uid) {
       await dismissAllNotifications(user.uid);
-      
+
       // This tells Next.js to delete the old cache for the layout/page
       // and fetch the fresh "0 notifications" state from the DB
-      revalidatePath("/", "layout"); 
-      
+      revalidatePath("/", "layout");
+
       return { success: true };
     }
     return { success: false };
-  } catch (e) {
+  } catch {
     return { success: false };
   }
 }
 
+/**
+ * Cache off-chain listing metadata for a freshly deployed vault.
+ * Only the vault's on-chain creator (or an admin) may write it.
+ */
 export async function saveProjectMetadataCacheByVault(vaultAddress: string, metadata: any) {
+  if (!vaultAddress) {
+    return { success: false, error: "vaultAddress is required" };
+  }
+
+  try {
+    const creator = await getVaultCreator(vaultAddress);
+    if (!creator) {
+      return { success: false, error: "Vault not found on-chain" };
+    }
+    await requireWalletOwnerOrAdmin(creator);
+  } catch (error) {
+    return authFailure(error) ?? { success: false, error: "Unauthorized" };
+  }
+
   try {
     const { connectToDatabase } = await import("@/lib/mongodb");
     await connectToDatabase();
@@ -134,58 +126,63 @@ export async function saveProjectMetadataCacheByVault(vaultAddress: string, meta
   }
 }
 
-export async function updateProjectStatusFromChain(
-  vaultAddress: string,
-  data: {
-    currentFunding: number;
-    currentFundingRaw: string;
-    bondPosted: boolean;
-    bondAmount: number;
-    releasedTotal: number;
-    milestones: { id: number; amount: number; released: boolean }[];
-    status: string;
+/**
+ * Refresh a project's cached funding figures from the ledger.
+ *
+ * Takes no financial data from the caller — the server reads the vault itself,
+ * so a browser cannot post fabricated funding totals or milestone flags. Safe
+ * to call unauthenticated because every value written is sourced on-chain.
+ */
+export async function updateProjectStatusFromChain(vaultAddress: string) {
+  if (!vaultAddress) {
+    return { success: false, error: "vaultAddress is required" };
   }
-) {
+
   try {
+    const onChain = await readVaultState(vaultAddress);
+    if (!onChain) {
+      return { success: false, error: "Vault not readable on-chain" };
+    }
+
     const { connectToDatabase } = await import("@/lib/mongodb");
     await connectToDatabase();
     const { default: ProjectCache } = await import("@/lib/models/ProjectCache");
 
     const existing = await ProjectCache.findOne({ vaultAddress }).lean() as any;
-    let mergedMilestones = data.milestones;
-    if (existing && existing.milestones) {
-      const existingMap = new Map(existing.milestones.map((m: any) => [m.id, m]));
-      mergedMilestones = data.milestones.map((m: any) => {
-        const ext = existingMap.get(m.id) as any;
-        return {
-          id: m.id,
-          amount: m.amount,
-          released: m.released,
-          title: ext?.title || `Milestone ${m.id}`,
-          description: ext?.description || "",
-          proof: ext?.proof || "",
-        };
-      });
+    if (!existing) {
+      return { success: false, error: "Project not found" };
     }
 
-    let dbStatus = data.status;
-    if (dbStatus === "raising" && !data.bondPosted) {
-      dbStatus = "pending";
-    }
-
-    const updateDoc: any = {
-      currentFunding: data.currentFunding,
-      currentFundingRaw: data.currentFundingRaw,
-      bondPosted: data.bondPosted,
-      bondAmount: data.bondAmount,
-      releasedTotal: data.releasedTotal,
-      milestones: mergedMilestones,
-      status: dbStatus,
-    };
+    // Milestone titles and descriptions are off-chain copy; amounts and the
+    // released flag come from the ledger.
+    const existingMap = new Map<number, any>(
+      (existing.milestones || []).map((m: any) => [m.id, m])
+    );
+    const mergedMilestones = onChain.milestones.map((m) => {
+      const ext = existingMap.get(m.id);
+      return {
+        id: m.id,
+        amount: m.amount,
+        released: m.released,
+        title: ext?.title || `Milestone ${m.id}`,
+        description: ext?.description || "",
+        proof: ext?.proof || "",
+      };
+    });
 
     await ProjectCache.findOneAndUpdate(
       { vaultAddress },
-      { $set: updateDoc },
+      {
+        $set: {
+          currentFunding: onChain.currentFunding,
+          currentFundingRaw: onChain.currentFundingRaw,
+          bondPosted: onChain.bondPosted,
+          bondAmount: onChain.bondAmount,
+          releasedTotal: onChain.releasedTotal,
+          milestones: mergedMilestones,
+          status: onChain.status,
+        },
+      },
       { new: true }
     );
     return { success: true };
@@ -194,6 +191,7 @@ export async function updateProjectStatusFromChain(
     return { success: false, error: error?.message || String(error) };
   }
 }
+
 export async function submitKycRequest(
   address: string,
   data: {
@@ -208,6 +206,13 @@ export async function submitKycRequest(
     consentFlag: boolean;
   }
 ) {
+  // You may only file KYC against a wallet you have proven you control.
+  try {
+    await requireWalletOwnerOrAdmin(address);
+  } catch (error) {
+    return authFailure(error) ?? { success: false, error: "Unauthorized" };
+  }
+
   try {
     const { connectToDatabase } = await import("@/lib/mongodb");
     await connectToDatabase();
@@ -253,7 +258,16 @@ export async function submitKycRequest(
   }
 }
 
+/**
+ * Admin-only. Returns identity documents for every applicant.
+ */
 export async function getKycRequests() {
+  try {
+    await requireAdmin();
+  } catch (error) {
+    return authFailure(error) ?? { success: false, error: "Unauthorized" };
+  }
+
   try {
     const { connectToDatabase } = await import("@/lib/mongodb");
     await connectToDatabase();
@@ -271,16 +285,38 @@ export async function getKycRequests() {
 }
 
 export async function getKycRequestByAddress(address: string) {
+  let isAdmin = false;
+  try {
+    ({ isAdmin } = await requireWalletOwnerOrAdmin(address));
+  } catch (error) {
+    return authFailure(error) ?? { success: false, error: "Unauthorized" };
+  }
+
   try {
     const { connectToDatabase } = await import("@/lib/mongodb");
     await connectToDatabase();
     const { default: KycRequest } = await import("@/lib/models/KycRequest");
 
-    const doc = await KycRequest.findOne({ address }).lean();
-    return {
-      success: true,
-      request: doc ? JSON.parse(JSON.stringify(doc)) : null,
-    };
+    const doc = await KycRequest.findOne({ address }).lean() as any;
+    if (!doc) {
+      return { success: true, request: null };
+    }
+
+    // The applicant gets status only. Re-serving their own ID number, date of
+    // birth, home address, and document scan back to the browser puts that data
+    // one XSS away from exfiltration for no product benefit.
+    const request = isAdmin
+      ? JSON.parse(JSON.stringify(doc))
+      : {
+          address: doc.address,
+          status: doc.status,
+          rejectionReason: doc.rejectionReason ?? "",
+          documentType: doc.documentType,
+          createdAt: doc.createdAt,
+          updatedAt: doc.updatedAt,
+        };
+
+    return { success: true, request };
   } catch (error: any) {
     console.error("Failed to get KYC request status:", error);
     return { success: false, error: error?.message || String(error) };
@@ -293,19 +329,33 @@ export async function updateKycRequestStatus(
   rejectionReason?: string
 ) {
   try {
+    await requireAdmin();
+  } catch (error) {
+    return authFailure(error) ?? { success: false, error: "Unauthorized" };
+  }
+
+  if (status !== "approved" && status !== "rejected") {
+    return { success: false, error: "Invalid status" };
+  }
+
+  try {
     const { connectToDatabase } = await import("@/lib/mongodb");
     await connectToDatabase();
     const { default: KycRequest } = await import("@/lib/models/KycRequest");
 
-    await KycRequest.findOneAndUpdate(
+    const updated = await KycRequest.findOneAndUpdate(
       { address },
       {
         $set: {
           status,
           rejectionReason: status === "rejected" ? (rejectionReason || "") : "",
         },
-      }
+      },
+      { new: true }
     );
+    if (!updated) {
+      return { success: false, error: "KYC request not found" };
+    }
     return { success: true };
   } catch (error: any) {
     console.error("Failed to update KYC request status:", error);
@@ -313,7 +363,17 @@ export async function updateKycRequestStatus(
   }
 }
 
+/**
+ * Admin-only. The scheduled path is POST /api/indexer with INDEXER_SECRET;
+ * this exists for manual reconciliation from the admin UI.
+ */
 export async function triggerIndexerSync() {
+  try {
+    await requireAdmin();
+  } catch (error) {
+    return authFailure(error) ?? { success: false, error: "Unauthorized" };
+  }
+
   try {
     const { runIndexer } = await import("@/lib/event-indexer");
     const result = await runIndexer();
@@ -329,6 +389,21 @@ export async function submitMilestoneProof(
   milestoneId: number,
   proof: string
 ) {
+  if (!vaultAddress) {
+    return { success: false, error: "vaultAddress is required" };
+  }
+
+  // Only the project's builder may submit delivery proof for it.
+  try {
+    const creator = await getVaultCreator(vaultAddress);
+    if (!creator) {
+      return { success: false, error: "Vault not found on-chain" };
+    }
+    await requireWalletOwnerOrAdmin(creator);
+  } catch (error) {
+    return authFailure(error) ?? { success: false, error: "Unauthorized" };
+  }
+
   try {
     const { connectToDatabase } = await import("@/lib/mongodb");
     await connectToDatabase();
@@ -356,7 +431,7 @@ export async function submitMilestoneProof(
         await createNotification(
           admin.uid,
           "New Milestone Proof Submitted",
-          `A delivery proof for Milestone #${milestoneId} of "${projectTitle}" has been submitted and is awaiting multi-sig verification.`,
+          `A delivery proof for Milestone #${milestoneId} of "${projectTitle}" has been submitted and is awaiting contributor approval.`,
           null,
           project.projectId
         );
@@ -370,7 +445,7 @@ export async function submitMilestoneProof(
           await createNotification(
             creator.uid,
             "Proof Submission Confirmed",
-            `Your delivery proof for Milestone #${milestoneId} of "${projectTitle}" has been logged and is awaiting multi-sig verification.`,
+            `Your delivery proof for Milestone #${milestoneId} of "${projectTitle}" has been logged and is awaiting contributor approval.`,
             null,
             project.projectId
           );

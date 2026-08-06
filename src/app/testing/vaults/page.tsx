@@ -455,15 +455,7 @@ export default function VaultPlaygroundPage() {
       }));
 
       addLog(`Updating database cache with status: ${statusStr}, raised: ${raisedHuman} USDC, bondPosted: ${infoObj.bond_posted}`);
-      const syncRes = await updateProjectStatusFromChain(vaultAddress, {
-        currentFunding: raisedHuman,
-        currentFundingRaw: infoObj.raised_amount.toString(),
-        bondPosted: Boolean(infoObj.bond_posted),
-        bondAmount: bondAmountHuman,
-        releasedTotal: releasedTotalHuman,
-        milestones: mappedMilestones,
-        status: statusStr,
-      });
+      const syncRes = await updateProjectStatusFromChain(vaultAddress);
 
       if (syncRes.success) {
         addLog(`Successfully synced project status for vault ${vaultAddress}`);

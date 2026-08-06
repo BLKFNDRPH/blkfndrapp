@@ -271,20 +271,9 @@ export const BlockchainProvider: React.FC<BlockchainProviderProps> = ({
               }
             }
 
-            // Persist to DB asynchronously
-            updateProjectStatusFromChain(p.vaultAddress!, {
-              currentFunding: freshProject.currentFunding,
-              currentFundingRaw: freshProject.currentFundingRaw || "0",
-              bondPosted: freshProject.bondPosted || false,
-              bondAmount: freshProject.bondAmount || 0,
-              releasedTotal: freshProject.releasedTotal || 0,
-              milestones: (freshProject.milestones || []).map((m) => ({
-                id: m.id,
-                amount: m.amount,
-                released: m.released,
-              })),
-              status: freshProject.status,
-            }).catch((err) =>
+            // Persist to DB asynchronously. The server re-reads the vault
+            // itself rather than trusting figures posted from the browser.
+            updateProjectStatusFromChain(p.vaultAddress!).catch((err) =>
               console.warn("Failed to persist reconciled status to DB:", err)
             );
 

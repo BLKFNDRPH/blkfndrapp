@@ -7,18 +7,24 @@ export interface SessionUser {
   name: string;
   image: string;
   sub: string;
-  idToken: string;
   stellarPublicKey?: string;
 }
+
+// The raw Google ID token is deliberately absent. It used to be embedded here
+// and handed back to the browser by GET /api/auth/session, which defeated the
+// point of the httpOnly session cookie: any XSS could lift a live Google
+// credential. Nothing in the app consumes it.
 
 export interface AppSession {
   user: SessionUser;
 }
 
 const getSecret = () => {
-  const secret = process.env.NEXTAUTH_SECRET;
+  // NEXTAUTH_SECRET is accepted as a fallback so existing deployments keep
+  // working; NextAuth itself is gone. Prefer SESSION_SECRET going forward.
+  const secret = process.env.SESSION_SECRET || process.env.NEXTAUTH_SECRET;
   if (!secret) {
-    throw new Error("NEXTAUTH_SECRET is not set. Refusing to sign or verify sessions.");
+    throw new Error("SESSION_SECRET is not set. Refusing to sign or verify sessions.");
   }
   return new TextEncoder().encode(secret);
 };
@@ -27,6 +33,7 @@ export async function createSessionToken(user: SessionUser): Promise<string> {
   return new SignJWT({ ...user })
     .setProtectedHeader({ alg: 'HS256' })
     .setExpirationTime('24h')
+    .setIssuedAt()
     .sign(await getSecret());
 }
 
@@ -40,7 +47,6 @@ export async function verifySessionToken(token: string): Promise<AppSession | nu
         name: payload.name as string,
         image: payload.image as string,
         sub: payload.sub as string,
-        idToken: payload.idToken as string,
       },
     };
   } catch {

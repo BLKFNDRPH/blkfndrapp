@@ -127,19 +127,7 @@ export const ProjectDetailsProvider = ({
 
                 freshProject.status = mappedStatus;
 
-                updateProjectStatusFromChain(freshProject.vaultAddress!, {
-                  currentFunding: freshProject.currentFunding,
-                  currentFundingRaw: freshProject.currentFundingRaw || "0",
-                  bondPosted: freshProject.bondPosted || false,
-                  bondAmount: freshProject.bondAmount || 0,
-                  releasedTotal: freshProject.releasedTotal || 0,
-                  milestones: (freshProject.milestones || []).map(m => ({
-                    id: m.id,
-                    amount: m.amount,
-                    released: m.released,
-                  })),
-                  status: freshProject.status,
-                }).catch((err) =>
+                updateProjectStatusFromChain(freshProject.vaultAddress!).catch((err) =>
                   console.warn("Failed to persist on-chain status to DB:", err)
                 );
               }

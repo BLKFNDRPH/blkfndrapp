@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { connectToDatabase } from "@/lib/mongodb";
 import User from "@/lib/models/User";
-import type { User as UserType } from "@/lib/types";
+import { requireSelfOrAdmin, authFailure } from "@/lib/auth/guards";
 
 export async function updateUserDisplayName(
   uid: string,
@@ -14,12 +14,28 @@ export async function updateUserDisplayName(
   }
 
   try {
+    await requireSelfOrAdmin(uid);
+  } catch (error) {
+    return authFailure(error) ?? { success: false, error: "Unauthorized" };
+  }
+
+  const trimmed = newName.trim();
+  if (!trimmed || trimmed.length > 64) {
+    return { success: false, error: "Name must be between 1 and 64 characters." };
+  }
+
+  try {
     await connectToDatabase();
-    await User.findOneAndUpdate(
+    // No upsert: this only renames an account that already exists. Upserting
+    // here let an unauthenticated caller mint arbitrary User documents.
+    const updated = await User.findOneAndUpdate(
       { uid },
-      { $set: { name: newName } },
-      { upsert: true },
+      { $set: { name: trimmed } },
+      { new: true },
     );
+    if (!updated) {
+      return { success: false, error: "User not found." };
+    }
     revalidatePath("/profile");
     revalidatePath("/settings");
     return { success: true };
@@ -37,17 +53,30 @@ export async function updateUserWalletStatus(
     return { success: false, error: "User ID is required." };
   }
 
+  if (walletStatus !== "connected" && walletStatus !== "disconnected") {
+    return { success: false, error: "Invalid wallet status." };
+  }
+
+  try {
+    await requireSelfOrAdmin(uid);
+  } catch (error) {
+    return authFailure(error) ?? { success: false, error: "Unauthorized" };
+  }
+
   try {
     await connectToDatabase();
-    const update: any = { wallet: walletStatus };
+    const update: Record<string, unknown> = { wallet: walletStatus };
     if (walletStatus === "disconnected") {
       update.stellarPublicKey = "";
     }
-    await User.findOneAndUpdate(
+    const updated = await User.findOneAndUpdate(
       { uid },
       { $set: update },
-      { upsert: true },
+      { new: true },
     );
+    if (!updated) {
+      return { success: false, error: "User not found." };
+    }
     return { success: true };
   } catch (error) {
     console.error("Failed to update wallet status:", error);

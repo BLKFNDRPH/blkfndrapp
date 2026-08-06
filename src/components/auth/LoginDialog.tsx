@@ -51,27 +51,11 @@ export function LoginDialog({
     setIsConnecting(true);
     setError(null);
     try {
-      const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || "";
-      const appUrl = typeof window !== "undefined" ? window.location.origin : "http://localhost:9002";
-      const callbackUrl = typeof window !== "undefined" ? window.location.pathname : "/profile";
-
-      // Generate a secure random nonce for Google OIDC implicit flow
-      const array = new Uint32Array(4);
-      window.crypto.getRandomValues(array);
-      const nonce = Array.from(array, dec => ('0' + dec.toString(16)).slice(-2)).join('');
-
-      const params = new URLSearchParams({
-        client_id: clientId,
-        redirect_uri: `${appUrl}/api/auth/callback/google`,
-        response_type: "id_token",
-        response_mode: "form_post",
-        scope: "openid email profile",
-        prompt: "consent",
-        state: callbackUrl,
-        nonce: nonce,
-      });
-
-      window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+      // The OAuth nonce and state are minted server-side by this endpoint and
+      // stored in an httpOnly cookie, so the callback can actually verify them.
+      // Building the Google URL here meant nothing ever checked either value.
+      const returnTo = typeof window !== "undefined" ? window.location.pathname : "/profile";
+      window.location.href = `/api/auth/google/start?returnTo=${encodeURIComponent(returnTo)}`;
     } catch (err: any) {
       console.error("[LoginDialog] Google login redirect error:", err);
       setError("Failed to redirect to Google Login.");

@@ -472,10 +472,13 @@ export const createNotification = async (
   }
 };
 
-export const dismissNotification = async (notificationId: string) => {
+// `userId` is required on the notification mutators so the ownership filter
+// travels with the query and cannot be dropped at a call site.
+export const dismissNotification = async (notificationId: string, userId: string) => {
+  if (!notificationId || !userId) return;
   try {
     const { NotificationModel } = await getDb();
-    await NotificationModel.findByIdAndDelete(notificationId);
+    await NotificationModel.deleteOne({ _id: notificationId, userId });
   } catch (error) {
     console.error("Error dismissing notification:", error);
   }
@@ -496,12 +499,12 @@ export const dismissAllNotifications = async (userId: string) => {
   }
 };
 
-export const markNotificationsAsRead = async (notificationIds: string[]) => {
-  if (notificationIds.length === 0) return;
+export const markNotificationsAsRead = async (notificationIds: string[], userId: string) => {
+  if (notificationIds.length === 0 || !userId) return;
   try {
     const { NotificationModel } = await getDb();
     await NotificationModel.updateMany(
-      { _id: { $in: notificationIds } },
+      { _id: { $in: notificationIds }, userId },
       { $set: { isRead: true } },
     );
   } catch (error) {

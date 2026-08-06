@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { PinataSDK } from "pinata";
-import { getSession } from "@/lib/auth/get-session";
+import { getSession } from "@/lib/auth/session";
 
 function normalizePinataGateway(raw?: string): string | undefined {
   if (!raw) return undefined;
