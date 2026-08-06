@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { safeInternalPath } from "@/lib/auth/safe-redirect";
+import {
+  LOGIN_STATE_COOKIE,
+  LOGIN_STATE_MAX_AGE_SECONDS,
+  type LoginState,
+} from "@/lib/auth/login-state";
 
 export const dynamic = "force-dynamic";
-
-export const LOGIN_STATE_COOKIE = "google-login-state";
 
 /**
  * Begin Google sign-in.
@@ -49,17 +52,14 @@ export async function GET(req: NextRequest) {
     { status: 303 },
   );
 
-  response.cookies.set(
-    LOGIN_STATE_COOKIE,
-    JSON.stringify({ nonce, state, returnTo }),
-    {
-      httpOnly: true,
-      sameSite: "none",
-      secure: true,
-      path: "/",
-      maxAge: 60 * 10,
-    },
-  );
+  const loginState: LoginState = { nonce, state, returnTo };
+  response.cookies.set(LOGIN_STATE_COOKIE, JSON.stringify(loginState), {
+    httpOnly: true,
+    sameSite: "none",
+    secure: true,
+    path: "/",
+    maxAge: LOGIN_STATE_MAX_AGE_SECONDS,
+  });
 
   return response;
 }

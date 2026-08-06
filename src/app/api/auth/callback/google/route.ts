@@ -5,7 +5,7 @@ import User from '@/lib/models/User';
 import { createSessionToken } from '@/lib/auth/session';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { safeInternalPath } from '@/lib/auth/safe-redirect';
-import { LOGIN_STATE_COOKIE } from '@/app/api/auth/google/start/route';
+import { LOGIN_STATE_COOKIE, type LoginState } from '@/lib/auth/login-state';
 
 /** Constant-time string compare that tolerates unequal lengths. */
 function secureEquals(a: string, b: string): boolean {
@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
     return fail('NoLoginState', baseUrl);
   }
 
-  let loginState: { nonce?: string; state?: string; returnTo?: string };
+  let loginState: Partial<LoginState>;
   try {
     loginState = JSON.parse(rawLoginState);
   } catch {
