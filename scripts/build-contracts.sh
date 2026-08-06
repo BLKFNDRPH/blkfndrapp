@@ -17,7 +17,7 @@ CONTRACTS=(
   blkfndr-factory
   blkfndr-attestation
   blkfndr-identity
-  blkfndr-approval
+  blkfndr-admin
 )
 
 if ! rustup target list --installed | grep -q wasm32-unknown-unknown; then

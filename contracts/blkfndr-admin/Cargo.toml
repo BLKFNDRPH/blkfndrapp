@@ -1,0 +1,18 @@
+[package]
+name    = "blkfndr-admin"
+version = "0.1.0"
+edition = "2021"
+description = "BLKFNDR Crowdfunding Platform — Platform administrator roster"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+soroban-sdk = { workspace = true }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
+
+[features]
+testutils = ["soroban-sdk/testutils"]

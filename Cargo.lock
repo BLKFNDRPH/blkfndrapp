@@ -181,7 +181,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 
 [[package]]
-name = "blkfndr-approval"
+name = "blkfndr-admin"
 version = "0.1.0"
 dependencies = [
  "soroban-sdk",
@@ -204,13 +204,6 @@ dependencies = [
 
 [[package]]
 name = "blkfndr-identity"
-version = "0.1.0"
-dependencies = [
- "soroban-sdk",
-]
-
-[[package]]
-name = "blkfndr-soroban"
 version = "0.1.0"
 dependencies = [
  "soroban-sdk",
