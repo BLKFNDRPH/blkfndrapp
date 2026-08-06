@@ -1,59 +1,84 @@
 #![no_std]
 
+//! Deploys and registers BLKFNDR bonded vaults.
+//!
+//! The factory is the sole source of the platform-level addresses a vault
+//! trusts — the identity registry and the attestation registry. Taking those
+//! from the caller, as an earlier version did, let a builder deploy a vault
+//! wired to contracts they controlled: KYC that always passes, and later an
+//! approval oracle that always says yes. Anything a contributor relies on for
+//! protection is pinned here, alongside the fee wallet and fee that were
+//! already handled this way.
+//!
+//! The factory has no role in moving money. It cannot release a tranche, block
+//! a refund, or touch a vault's balance.
+
 use soroban_sdk::{
-    contract, contractimpl, contracterror, contracttype, contractclient,
-    panic_with_error, symbol_short, Address, Env, BytesN, Vec, String,
+    contract, contractclient, contracterror, contractimpl, contracttype, panic_with_error,
+    symbol_short, Address, BytesN, Env, String, Vec,
 };
 
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
 pub enum Error {
-    NotAuthorized      = 1,
-    AlreadyInitialized = 10,
-    NotInitialized     = 11,
+    NotAuthorized        = 1,
+    AlreadyInitialized   = 10,
+    NotInitialized       = 11,
+    BondBelowMinimum     = 12,
+    InvalidConfiguration = 13,
+    VaultNotFound        = 14,
 }
 
 const LEDGERS_TO_LIVE: u32 = 518_400; // ~30 days
 
+/// Platform-wide ceiling on the flat listing fee, in stroops. Ten thousand
+/// units at 7 decimals. A flat fee cannot scale with the raise by
+/// construction, but a bound keeps a compromised admin from setting an
+/// absurd one.
+const MAX_PLATFORM_FEE: i128 = 10_000 * 10_000_000;
+
 #[contracttype]
 #[derive(Clone, Debug)]
-pub struct Milestone {
-    pub id: u32,
-    pub amount: i128,    
-    pub released: bool,
+pub struct MilestoneInput {
+    pub id:     u32,
+    pub amount: i128,
 }
 
+/// What the vault is constructed with. Every platform address here comes from
+/// factory storage, never from the caller.
 #[contracttype]
 #[derive(Clone, Debug)]
 pub struct VaultInitConfig {
-    pub project_id:         u64,
-    pub creator:            Address,
-    pub token:              Address,
-    pub goal:               i128,    
-    pub deadline:           u64,
-    pub bond_amount:        i128,    
-    pub approval_module:    Address,
-    pub identity_registry:  Address,
-    pub fee_wallet_address: Address,
-    pub fee_percentage:     u64,    
-    pub milestones:         Vec<Milestone>,
-    pub metadata_cid:       String,
-    pub admin:              Address,
+    pub project_id:           u64,
+    pub creator:              Address,
+    pub token:                Address,
+    pub goal:                 i128,
+    pub deadline:             u64,
+    pub bond_amount:          i128,
+    pub identity_registry:    Address,
+    pub attestation_registry: Address,
+    pub factory:              Address,
+    pub fee_wallet_address:   Address,
+    pub platform_fee:         i128,
+    pub voting_window_secs:   u64,
+    pub min_contribution:     i128,
+    pub milestones:           Vec<MilestoneInput>,
+    pub metadata_cid:         String,
 }
 
+/// What a builder supplies. Deliberately has no field for the identity or
+/// attestation registry.
 #[contracttype]
 #[derive(Clone, Debug)]
 pub struct CreateVaultConfig {
-    pub creator:            Address,
-    pub token:              Address,
-    pub goal:               i128,    
-    pub deadline:           u64,
-    pub bond_amount:        i128,    
-    pub approval_module:    Address,
-    pub identity_registry:  Address,
-    pub milestones:         Vec<Milestone>,
-    pub metadata_cid:       String,
+    pub creator:      Address,
+    pub token:        Address,
+    pub goal:         i128,
+    pub deadline:     u64,
+    pub bond_amount:  i128,
+    pub milestones:   Vec<MilestoneInput>,
+    pub metadata_cid: String,
 }
 
 #[contracttype]
@@ -63,19 +88,23 @@ pub enum DataKey {
     ProjectVaultMap(u64),
     ProjectCounter,
     FeeWalletAddress,
-    FeePercentage,
+    /// Flat fee charged once to the builder, in stroops.
+    PlatformFee,
     MinBondPercentage,
+    IdentityRegistry,
+    AttestationRegistry,
+    VotingWindowSecs,
+    MinContribution,
+    /// Marks an address as a vault this factory deployed.
+    IsVault(Address),
 }
 
 #[contractclient(name = "BlkfndrVaultClient")]
 pub trait BlkfndrVaultTrait {
-    fn initialize(
-        env: Env,
-        config: VaultInitConfig,
-    );
+    fn initialize(env: Env, config: VaultInitConfig);
 }
 
-// HELPERS
+// ── HELPERS ────────────────────────────────────────────────────────────────
 
 #[inline]
 fn load_admin(env: &Env) -> Address {
@@ -85,91 +114,120 @@ fn load_admin(env: &Env) -> Address {
         .unwrap_or_else(|| panic_with_error!(env, Error::NotInitialized))
 }
 
-#[inline]
-fn load_wasm_hash(env: &Env) -> BytesN<32> {
-    env.storage()
-        .instance()
-        .get(&DataKey::VaultWasmHash)
-        .unwrap_or_else(|| panic_with_error!(env, Error::NotInitialized))
+fn require_admin(env: &Env) -> Address {
+    let admin = load_admin(env);
+    admin.require_auth();
+    admin
 }
 
 #[inline]
-fn load_fee_wallet(env: &Env) -> Address {
+fn load_or_fail<T: soroban_sdk::TryFromVal<Env, soroban_sdk::Val>>(
+    env: &Env,
+    key: &DataKey,
+) -> T {
     env.storage()
         .instance()
-        .get(&DataKey::FeeWalletAddress)
+        .get(key)
         .unwrap_or_else(|| panic_with_error!(env, Error::NotInitialized))
-}
-
-#[inline]
-fn load_fee_percentage(env: &Env) -> u64 {
-    env.storage()
-        .instance()
-        .get(&DataKey::FeePercentage)
-        .unwrap_or_else(|| panic_with_error!(env, Error::NotInitialized))
-}
-
-#[inline]
-fn load_bond_percentage(env: &Env) -> u64 {
-    env.storage()
-        .instance()
-        .get(&DataKey::MinBondPercentage)
-        .unwrap_or(500) // Default to 5.00% (500 bps)
 }
 
 fn extend_instance_ttl(env: &Env) {
-    env.storage().instance().extend_ttl(LEDGERS_TO_LIVE, LEDGERS_TO_LIVE);
+    env.storage()
+        .instance()
+        .extend_ttl(LEDGERS_TO_LIVE, LEDGERS_TO_LIVE);
 }
 
-// VAULT FACTORY
+// ── FACTORY ────────────────────────────────────────────────────────────────
 
 #[contract]
 pub struct BlkfndrFactory;
 
 #[contractimpl]
 impl BlkfndrFactory {
-
-    // SETUP
-
-    /// Initialize the factory with an admin address, vault contract WASM hash, platform fee wallet, and platform fee percentage.
-    pub fn initialize(env: Env, admin: Address, vault_wasm_hash: BytesN<32>, fee_wallet: Address, fee_percentage: u64) {
+    /// Configure the factory. `admin` must authorise, so a deployed but
+    /// unconfigured factory cannot be claimed by whoever spots it first.
+    #[allow(clippy::too_many_arguments)]
+    pub fn initialize(
+        env:                  Env,
+        admin:                Address,
+        vault_wasm_hash:      BytesN<32>,
+        fee_wallet:           Address,
+        platform_fee:         i128,
+        identity_registry:    Address,
+        attestation_registry: Address,
+        voting_window_secs:   u64,
+        min_contribution:     i128,
+    ) {
         if env.storage().instance().has(&DataKey::Admin) {
             panic_with_error!(&env, Error::AlreadyInitialized);
         }
+        admin.require_auth();
 
-        if fee_percentage > 1000 {
-            panic!("Fee percentage exceeds 10% platform safety cap");
+        if platform_fee < 0
+            || platform_fee > MAX_PLATFORM_FEE
+            || voting_window_secs == 0
+            || min_contribution <= 0
+        {
+            panic_with_error!(&env, Error::InvalidConfiguration);
         }
 
-        env.storage().instance().set(&DataKey::Admin, &admin);
-        env.storage().instance().set(&DataKey::VaultWasmHash, &vault_wasm_hash);
-        env.storage().instance().set(&DataKey::ProjectCounter, &0u64);
-        env.storage().instance().set(&DataKey::FeeWalletAddress, &fee_wallet);
-        env.storage().instance().set(&DataKey::FeePercentage, &fee_percentage);
+        let storage = env.storage().instance();
+        storage.set(&DataKey::Admin, &admin);
+        storage.set(&DataKey::VaultWasmHash, &vault_wasm_hash);
+        storage.set(&DataKey::ProjectCounter, &0u64);
+        storage.set(&DataKey::FeeWalletAddress, &fee_wallet);
+        storage.set(&DataKey::PlatformFee, &platform_fee);
+        storage.set(&DataKey::IdentityRegistry, &identity_registry);
+        storage.set(&DataKey::AttestationRegistry, &attestation_registry);
+        storage.set(&DataKey::VotingWindowSecs, &voting_window_secs);
+        storage.set(&DataKey::MinContribution, &min_contribution);
         extend_instance_ttl(&env);
+
+        env.events().publish(
+            (symbol_short!("FACTORY"), symbol_short!("INIT")),
+            (admin, platform_fee),
+        );
     }
 
-    // VAULT DEPLOYMENT
-
-    /// Deploy and initialize a new project vault contract instance.
-    pub fn create_vault(
-        env:    Env,
-        config: CreateVaultConfig,
-    ) -> Address {
+    /// Deploy a vault for a project and lock the builder's bond in the same
+    /// transaction.
+    pub fn create_vault(env: Env, config: CreateVaultConfig) -> Address {
         extend_instance_ttl(&env);
         config.creator.require_auth();
 
-        let min_bond_pct = load_bond_percentage(&env);
-        let min_bond = (config.goal * min_bond_pct as i128) / 10000;
-        if config.bond_amount < min_bond {
-            panic!("Bond amount is below the minimum required bond percentage");
+        if config.goal <= 0 || config.milestones.len() == 0 {
+            panic_with_error!(&env, Error::InvalidConfiguration);
+        }
+        if config.deadline <= env.ledger().timestamp() {
+            panic_with_error!(&env, Error::InvalidConfiguration);
         }
 
-        let mut counter: u64 = env.storage().instance().get(&DataKey::ProjectCounter).unwrap_or(0);
-        counter = counter.checked_add(1).unwrap();
-        env.storage().instance().set(&DataKey::ProjectCounter, &counter);
+        let min_bond_pct: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::MinBondPercentage)
+            .unwrap_or(500); // 5.00%
+        let min_bond = config
+            .goal
+            .checked_mul(min_bond_pct as i128)
+            .unwrap()
+            .checked_div(10_000)
+            .unwrap();
+        if config.bond_amount < min_bond {
+            panic_with_error!(&env, Error::BondBelowMinimum);
+        }
 
-        let wasm_hash = load_wasm_hash(&env);
+        let mut counter: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::ProjectCounter)
+            .unwrap_or(0);
+        counter = counter.checked_add(1).unwrap();
+        env.storage()
+            .instance()
+            .set(&DataKey::ProjectCounter, &counter);
+
+        let wasm_hash: BytesN<32> = load_or_fail(&env, &DataKey::VaultWasmHash);
 
         let mut salt_bytes = soroban_sdk::Bytes::new(&env);
         for b in counter.to_be_bytes().iter() {
@@ -177,132 +235,232 @@ impl BlkfndrFactory {
         }
         let salt = env.crypto().sha256(&salt_bytes);
 
-        let vault_address = env.deployer().with_current_contract(salt).deploy(wasm_hash);
+        let vault_address = env
+            .deployer()
+            .with_current_contract(salt)
+            .deploy_v2(wasm_hash, ());
 
-        let vault_client = BlkfndrVaultClient::new(&env, &vault_address);
-        let admin = load_admin(&env);
-        let fee_wallet = load_fee_wallet(&env);
-        let fee_percentage = load_fee_percentage(&env);
+        // Registered before initialize so the vault can write its attestation
+        // later: the registry asks us whether the caller is one of ours.
+        env.storage()
+            .persistent()
+            .set(&DataKey::IsVault(vault_address.clone()), &true);
+        env.storage().persistent().extend_ttl(
+            &DataKey::IsVault(vault_address.clone()),
+            LEDGERS_TO_LIVE,
+            LEDGERS_TO_LIVE,
+        );
+
         let vault_config = VaultInitConfig {
-            project_id: counter,
-            creator: config.creator.clone(),
-            token: config.token,
-            goal: config.goal,
-            deadline: config.deadline,
-            bond_amount: config.bond_amount,
-            approval_module: config.approval_module,
-            identity_registry: config.identity_registry,
-            fee_wallet_address: fee_wallet,
-            fee_percentage: fee_percentage,
-            milestones: config.milestones,
-            metadata_cid: config.metadata_cid.clone(),
-            admin,
+            project_id:           counter,
+            creator:              config.creator.clone(),
+            token:                config.token,
+            goal:                 config.goal,
+            deadline:             config.deadline,
+            bond_amount:          config.bond_amount,
+            // Platform-controlled, every one of them.
+            identity_registry:    load_or_fail(&env, &DataKey::IdentityRegistry),
+            attestation_registry: load_or_fail(&env, &DataKey::AttestationRegistry),
+            factory:              env.current_contract_address(),
+            fee_wallet_address:   load_or_fail(&env, &DataKey::FeeWalletAddress),
+            platform_fee:         load_or_fail(&env, &DataKey::PlatformFee),
+            voting_window_secs:   load_or_fail(&env, &DataKey::VotingWindowSecs),
+            min_contribution:     load_or_fail(&env, &DataKey::MinContribution),
+            milestones:           config.milestones,
+            metadata_cid:         config.metadata_cid.clone(),
         };
-        vault_client.initialize(&vault_config);
+
+        BlkfndrVaultClient::new(&env, &vault_address).initialize(&vault_config);
 
         let map_key = DataKey::ProjectVaultMap(counter);
         env.storage().persistent().set(&map_key, &vault_address);
-        env.storage().persistent().extend_ttl(&map_key, LEDGERS_TO_LIVE, LEDGERS_TO_LIVE);
+        env.storage()
+            .persistent()
+            .extend_ttl(&map_key, LEDGERS_TO_LIVE, LEDGERS_TO_LIVE);
 
         env.events().publish(
             (symbol_short!("FACTORY"), symbol_short!("DEPLOY")),
-            (counter, vault_address.clone(), config.creator, config.metadata_cid),
+            (
+                counter,
+                vault_address.clone(),
+                config.creator,
+                config.metadata_cid,
+            ),
         );
 
         vault_address
     }
 
-    /// Retrieve the registered vault address for the given project ID.
-    pub fn get_vault(env: Env, project_id: u64) -> Address {
-        let map_key = DataKey::ProjectVaultMap(project_id);
+    /// Whether this factory deployed the given address. The attestation
+    /// registry calls this to decide whether a record is genuine.
+    pub fn is_vault(env: Env, address: Address) -> bool {
         env.storage()
             .persistent()
-            .get(&map_key)
-            .unwrap_or_else(|| panic_with_error!(&env, Error::NotInitialized))
+            .get(&DataKey::IsVault(address))
+            .unwrap_or(false)
     }
 
-    // ADMIN GOVERNANCE
+    pub fn get_vault(env: Env, project_id: u64) -> Address {
+        env.storage()
+            .persistent()
+            .get(&DataKey::ProjectVaultMap(project_id))
+            .unwrap_or_else(|| panic_with_error!(&env, Error::VaultNotFound))
+    }
 
-    /// Update the registered vault contract WASM hash.
+    // ── ADMIN ──────────────────────────────────────────────────────────────
+    //
+    // These affect vaults deployed from here on. A vault's configuration is
+    // fixed at construction, so no admin action can change the terms a
+    // contributor already backed.
+
     pub fn update_wasm_hash(env: Env, new_hash: BytesN<32>) {
         extend_instance_ttl(&env);
-        let admin = load_admin(&env);
-        admin.require_auth();
-
-        env.storage().instance().set(&DataKey::VaultWasmHash, &new_hash);
-
+        let admin = require_admin(&env);
+        env.storage()
+            .instance()
+            .set(&DataKey::VaultWasmHash, &new_hash);
         env.events().publish(
             (symbol_short!("FACTORY"), symbol_short!("UPGRADE")),
             (admin, new_hash),
         );
     }
 
-    /// Update the platform fee payout destination address.
     pub fn update_fee_wallet(env: Env, new_fee_wallet: Address) {
         extend_instance_ttl(&env);
-        let admin = load_admin(&env);
-        admin.require_auth();
-
-        env.storage().instance().set(&DataKey::FeeWalletAddress, &new_fee_wallet);
-
+        let admin = require_admin(&env);
+        env.storage()
+            .instance()
+            .set(&DataKey::FeeWalletAddress, &new_fee_wallet);
         env.events().publish(
             (symbol_short!("FACTORY"), symbol_short!("WALLET")),
             (admin, new_fee_wallet),
         );
     }
 
-    /// Update the platform fee percentage (safety ceiling of 10.0% / 1000 bps).
-    pub fn update_fee_percentage(env: Env, new_percentage: u64) {
+    /// Set the flat listing fee, in stroops. There is deliberately no
+    /// percentage-of-funds setting to reach for.
+    pub fn update_platform_fee(env: Env, new_fee: i128) {
         extend_instance_ttl(&env);
-        let admin = load_admin(&env);
-        admin.require_auth();
-
-        if new_percentage > 1000 {
-            panic!("Fee percentage exceeds 10% platform safety cap");
+        let admin = require_admin(&env);
+        if new_fee < 0 || new_fee > MAX_PLATFORM_FEE {
+            panic_with_error!(&env, Error::InvalidConfiguration);
         }
-
-        env.storage().instance().set(&DataKey::FeePercentage, &new_percentage);
-
+        env.storage().instance().set(&DataKey::PlatformFee, &new_fee);
         env.events().publish(
-            (symbol_short!("FACTORY"), symbol_short!("PERCENT")),
-            (admin, new_percentage),
+            (symbol_short!("FACTORY"), symbol_short!("FEE")),
+            (admin, new_fee),
         );
     }
 
-    /// Update the minimum performance bond percentage 
     pub fn update_bond_percentage(env: Env, new_percentage: u64) {
         extend_instance_ttl(&env);
-        let admin = load_admin(&env);
-        admin.require_auth();
-
-        if new_percentage > 10000 {
-            panic!("Bond percentage cannot exceed 100%");
+        let admin = require_admin(&env);
+        if new_percentage > 10_000 {
+            panic_with_error!(&env, Error::InvalidConfiguration);
         }
-
-        env.storage().instance().set(&DataKey::MinBondPercentage, &new_percentage);
-
+        env.storage()
+            .instance()
+            .set(&DataKey::MinBondPercentage, &new_percentage);
         env.events().publish(
             (symbol_short!("FACTORY"), symbol_short!("BOND_PCT")),
             (admin, new_percentage),
         );
     }
 
-    // GETTERS
+    pub fn update_identity_registry(env: Env, new_registry: Address) {
+        extend_instance_ttl(&env);
+        let admin = require_admin(&env);
+        env.storage()
+            .instance()
+            .set(&DataKey::IdentityRegistry, &new_registry);
+        env.events().publish(
+            (symbol_short!("FACTORY"), symbol_short!("IDENTITY")),
+            (admin, new_registry),
+        );
+    }
+
+    pub fn update_voting_window(env: Env, new_window_secs: u64) {
+        extend_instance_ttl(&env);
+        let admin = require_admin(&env);
+        if new_window_secs == 0 {
+            panic_with_error!(&env, Error::InvalidConfiguration);
+        }
+        env.storage()
+            .instance()
+            .set(&DataKey::VotingWindowSecs, &new_window_secs);
+        env.events().publish(
+            (symbol_short!("FACTORY"), symbol_short!("VOTEWIN")),
+            (admin, new_window_secs),
+        );
+    }
+
+    pub fn update_min_contribution(env: Env, new_minimum: i128) {
+        extend_instance_ttl(&env);
+        let admin = require_admin(&env);
+        if new_minimum <= 0 {
+            panic_with_error!(&env, Error::InvalidConfiguration);
+        }
+        env.storage()
+            .instance()
+            .set(&DataKey::MinContribution, &new_minimum);
+        env.events().publish(
+            (symbol_short!("FACTORY"), symbol_short!("MINCONTR")),
+            (admin, new_minimum),
+        );
+    }
+
+    pub fn transfer_admin(env: Env, new_admin: Address) {
+        extend_instance_ttl(&env);
+        require_admin(&env);
+        env.storage().instance().set(&DataKey::Admin, &new_admin);
+        env.events().publish(
+            (symbol_short!("FACTORY"), symbol_short!("ADMIN_TX")),
+            new_admin,
+        );
+    }
+
+    // ── GETTERS ────────────────────────────────────────────────────────────
 
     pub fn get_admin(env: Env) -> Address {
         load_admin(&env)
     }
 
     pub fn get_fee_wallet(env: Env) -> Address {
-        load_fee_wallet(&env)
+        load_or_fail(&env, &DataKey::FeeWalletAddress)
     }
 
-    pub fn get_fee_percentage(env: Env) -> u64 {
-        load_fee_percentage(&env)
+    pub fn get_platform_fee(env: Env) -> i128 {
+        load_or_fail(&env, &DataKey::PlatformFee)
     }
 
     pub fn get_bond_percentage(env: Env) -> u64 {
-        load_bond_percentage(&env)
+        env.storage()
+            .instance()
+            .get(&DataKey::MinBondPercentage)
+            .unwrap_or(500)
+    }
+
+    pub fn get_identity_registry(env: Env) -> Address {
+        load_or_fail(&env, &DataKey::IdentityRegistry)
+    }
+
+    pub fn get_attestation_registry(env: Env) -> Address {
+        load_or_fail(&env, &DataKey::AttestationRegistry)
+    }
+
+    pub fn get_voting_window(env: Env) -> u64 {
+        load_or_fail(&env, &DataKey::VotingWindowSecs)
+    }
+
+    pub fn get_min_contribution(env: Env) -> i128 {
+        load_or_fail(&env, &DataKey::MinContribution)
+    }
+
+    pub fn get_project_count(env: Env) -> u64 {
+        env.storage()
+            .instance()
+            .get(&DataKey::ProjectCounter)
+            .unwrap_or(0)
     }
 }
 

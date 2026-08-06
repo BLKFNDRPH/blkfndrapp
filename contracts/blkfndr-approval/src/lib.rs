@@ -1,5 +1,16 @@
 #![no_std]
 
+//! Platform administrator roster.
+//!
+//! IMPORTANT: this module is **not** in the path that releases funds. Milestone
+//! release is decided by contributors, weighted by contribution, inside
+//! blkfndr-vault; no signer listed here can release a tranche, block a refund,
+//! or move a vault's balance. The vault does not call this contract at all.
+//!
+//! What remains is a signer roster the application reads to decide who sees the
+//! admin console, plus the milestone/slash approval bookkeeping kept for the
+//! legacy vaults deployed before contributor voting existed.
+
 use soroban_sdk::{
     contract, contractimpl, contracterror, contracttype,
     panic_with_error, symbol_short, Address, Env, Vec,
@@ -91,10 +102,14 @@ impl MultisigApproval {
     // SETUP
 
     /// Initialize the approval module with an admin, list of signers, and threshold.
+    ///
+    /// `admin` must authorise so the module cannot be claimed by whoever
+    /// notices it deployed-but-unconfigured.
     pub fn initialize(env: Env, admin: Address, signers: Vec<Address>, threshold: u32) {
         if env.storage().instance().has(&DataKey::Admin) {
             panic_with_error!(&env, Error::AlreadyInitialized);
         }
+        admin.require_auth();
 
         if threshold == 0 || threshold > signers.len() {
             panic_with_error!(&env, Error::InvalidThreshold);
