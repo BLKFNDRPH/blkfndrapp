@@ -23,6 +23,22 @@ const nextConfig = {
   images: {
     remotePatterns: [
       {
+        // The configured Pinata gateway (PINATA_GATEWAY_URL). Listing images
+        // resolve through here, and next/image refuses any host absent from
+        // this list — the allowlist previously named the .xyz domain only, so
+        // nothing served from the real gateway would render.
+        protocol: "https",
+        hostname: "nft.blkfndr.com",
+        pathname: "/**",
+      },
+      {
+        // Fallback when no dedicated gateway is configured.
+        protocol: "https",
+        hostname: "gateway.pinata.cloud",
+        pathname: "/**",
+      },
+      {
+        // Legacy records pinned before the gateway moved.
         protocol: "https",
         hostname: "nft.blkfndr.xyz",
         pathname: "/**",
