@@ -4,12 +4,8 @@ members = [
   "contracts/blkfndr-vault",
   "contracts/blkfndr-factory",
   "contracts/blkfndr-attestation",
-  "contracts/blkfndr-approval",
+  "contracts/blkfndr-admin",
   "contracts/blkfndr-identity",
-  # Legacy monolithic crowdfunding contract. Superseded by the bonded vault and
-  # scheduled for removal once the UI is migrated off it; listed here so that a
-  # clean checkout can still build and test every contract in the tree.
-  "contracts/blkfndr-soroban",
 ]
 
 [workspace.dependencies]

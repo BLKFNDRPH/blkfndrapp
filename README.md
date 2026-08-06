@@ -14,12 +14,12 @@ There is no appointed signer, no admin key, and no platform role anywhere in the
 
 **Current phase: Testnet, mid-rebuild.**
 
-The contracts have been rebuilt so that release authority is contribution-weighted rather than held by appointed signers. That work is complete and tested but **not yet deployed** — the contract IDs below are the previous generation, which the live site still runs.
+The contracts have been rebuilt so that release authority is contribution-weighted rather than held by appointed signers, and are **deployed to testnet**. The app has not yet been repointed at them — the live site still runs the previous generation.
 
 | Area | State |
 |---|---|
-| Bonded vault with contributor-weighted release | ✅ Built, 94 tests passing — **not deployed** |
-| Builder attestation registry | ✅ Built and tested — **not deployed** |
+| Bonded vault with contributor-weighted release | ✅ Deployed to testnet, 81 tests passing |
+| Builder attestation registry | ✅ Deployed to testnet |
 | Supabase schema, RLS, and auth | ✅ Applied and verified — app not yet cut over |
 | MongoDB removal | 🔜 Schema exists for all nine collections; call sites not yet repointed |
 | TypeScript contract bindings | ⚠️ Stale against the rebuilt contracts |
@@ -74,14 +74,34 @@ MongoDB is still present in the codebase and is being removed collection by coll
 | `blkfndr-factory` | Deploys vaults and pins the platform addresses each one trusts |
 | `blkfndr-attestation` | Append-only builder completion record. No update or delete entrypoint exists |
 | `blkfndr-identity` | KYC attestation registry |
-| `blkfndr-approval` | Platform administrator roster. **Not in the path that releases funds** |
-| `blkfndr-soroban` | Legacy monolithic crowdfunding contract, superseded by the vault. Scheduled for removal once the UI migrates |
+| `blkfndr-admin` | Platform administrator roster. **Not in the path that releases funds** |
 
 ### Deployed Contracts (Testnet)
 
-These are the **previous generation**, still running the live site. The rebuilt contracts above are not among them.
+The rebuilt set, deployed with `scripts/deploy-contracts.sh` and wiring verified by reading it back off the ledger.
 
-| Contract | Explorer |
+| Contract | Address |
+|---|---|
+| Factory | [`CDIXGE5M...F7BGKR7D5`](https://stellar.expert/explorer/testnet/contract/CDIXGE5MWFAYXA7FKLB4CDRSSQZ6VQSGHT6O6OY3TFTWVF6F7BGKR7D5) |
+| Attestation registry | [`CDLL2A4R...JSNB2SO7`](https://stellar.expert/explorer/testnet/contract/CDLL2A4RBSQPKSPTEE3O4HNSDICSJEGCHAWIGUYVRPGOKVEPJSNB2SO7) |
+| Identity registry | [`CAJGOVZ7...F4QNLSGS7`](https://stellar.expert/explorer/testnet/contract/CAJGOVZ7DZTCVCBY44N24DDVEBEEMYSUIZFE3ZO5CDHWPGPF4QNLSGS7) |
+| Admin roster | [`CAHAOAX5...AU6WAGOG`](https://stellar.expert/explorer/testnet/contract/CAHAOAX52JAQ75C3INJIDVKT7EITWDVPYP2K27NJTD4CPYZUAU6WAGOG) |
+
+The **vault is not deployed as a contract**. Its wasm is uploaded and the factory instantiates one instance per project from that hash:
+
+```
+blkfndr_vault.wasm  sha256:9c20bca3e364d26240f83f03c11bd40ee30092fa2520bb1e767ba2c9a596db41
+```
+
+A reviewer checks any project's vault against that hash. `scripts/build-contracts.sh` reproduces it from source.
+
+Platform parameters as deployed: flat fee 10 units, minimum contribution 5 units, voting window 7 days, minimum bond 5% of goal.
+
+#### Previous generation
+
+Still on-chain and still running the live site until the UI migrates. **Superseded — do not build against these.** The crowdfunding contract in particular carries a refund defect that can pay an early investor money already released to the creator.
+
+| Contract | Address |
 |---|---|
 | blkfndr (legacy crowdfunding) | [`CAWH7WBX...WVZ45FSS`](https://stellar.expert/explorer/testnet/contract/CAWH7WBXWROIDJ5ZGYVRZGUAY2B7537Z6QNTIZRZ2CZKHCNEWVZ45FSS) |
 | Factory | [`CDWTUCD5...XBATIH3I`](https://stellar.expert/explorer/testnet/contract/CDWTUCD5AUO3LR5GSWXGULGWWMHE5IW6TGTKEPYN34OWFD5GXBATIH3I) |
@@ -184,12 +204,12 @@ blkfndrapp/
 │   ├── blkfndr-factory/        # Vault deployment and registry
 │   ├── blkfndr-attestation/    # Append-only builder record
 │   ├── blkfndr-identity/       # KYC attestation registry
-│   ├── blkfndr-approval/       # Platform admin roster
-│   └── blkfndr-soroban/        # Legacy contract, being retired
+│   └── blkfndr-admin/          # Platform admin roster
 ├── supabase/
 │   └── migrations/             # Tracked SQL, schema plus RLS
 ├── scripts/
-│   └── build-contracts.sh      # Builds wasm, prints build hashes
+│   ├── build-contracts.sh      # Builds wasm, prints build hashes
+│   └── deploy-contracts.sh     # Deploys and wires the contract set
 ├── src/
 │   ├── ai/                     # Genkit flows and configuration
 │   ├── app/                    # Next.js App Router pages and API routes
@@ -222,6 +242,7 @@ blkfndrapp/
 | `npm run typecheck` | TypeScript, no emit |
 | `npm run genkit:dev` | Genkit developer UI |
 | `bash scripts/build-contracts.sh` | Compile contracts to wasm, print sha256 hashes |
+| `bash scripts/deploy-contracts.sh --source <key>` | Deploy and wire the contract set, verifying the result |
 | `cargo test --workspace` | Contract test suite |
 | `cargo clippy --workspace --all-targets -- -D warnings` | Contract lints |
 

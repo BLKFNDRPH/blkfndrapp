@@ -591,16 +591,32 @@ fn forfeited_bond_is_distributed_pro_rata_with_the_remaining_balance() {
     // Each backer holds a third: 200/3 of principal + 15/3 of the bond.
     let expected = (100 * UNIT * (200 * UNIT) / (300 * UNIT)) + (100 * UNIT * BOND / (300 * UNIT));
 
-    for backer in [&s.alice, &s.bob, &s.carol] {
+    // The first two get exactly their share.
+    for backer in [&s.alice, &s.bob] {
         let before = s.token.balance(backer);
         s.vault.claim_refund(backer);
         assert_eq!(s.token.balance(backer) - before, expected);
     }
 
+    // The last claimant also sweeps the rounding dust, so nothing is stranded.
+    let before = s.token.balance(&s.carol);
+    s.vault.claim_refund(&s.carol);
+    let last_payout = s.token.balance(&s.carol) - before;
+    assert!(
+        last_payout >= expected,
+        "the final claimant must not be shortchanged"
+    );
+
     // Builder keeps only the released tranche; the bond is gone.
     assert_eq!(s.token.balance(&s.builder), 100 * UNIT);
-    // Nothing but rounding dust remains.
-    assert!(s.token.balance(&s.vault_address) < 10);
+    // Fully drained — not "almost", which is what truncation used to leave.
+    assert_eq!(
+        s.token.balance(&s.vault_address),
+        0,
+        "no dust may be stranded in the vault"
+    );
+    // And the whole pot is accounted for.
+    assert_eq!(2 * expected + last_payout, 200 * UNIT + BOND);
 }
 
 #[test]
@@ -777,4 +793,38 @@ fn cannot_be_initialized_twice() {
 
     assert!(result.is_err());
     let _ = s.minter; // fixture completeness
+}
+
+// ── Paged reads ────────────────────────────────────────────────────────────
+
+#[test]
+fn contributors_are_paged_rather_than_returned_whole() {
+    let s = setup();
+    fund_evenly(&s);
+
+    assert_eq!(s.vault.contributor_count(), 3);
+
+    let first = s.vault.get_contributors(&0u32, &2u32);
+    assert_eq!(first.len(), 2);
+
+    let second = s.vault.get_contributors(&2u32, &2u32);
+    assert_eq!(second.len(), 1, "final page is short, not wrapped");
+
+    let past_end = s.vault.get_contributors(&99u32, &10u32);
+    assert_eq!(past_end.len(), 0, "reading past the end is empty, not an error");
+}
+
+#[test]
+fn an_oversized_page_request_is_clamped() {
+    let s = setup();
+    fund_evenly(&s);
+
+    // A caller asking for a page big enough to blow the resource budget gets a
+    // capped page instead of a failed call.
+    let huge = s.vault.get_contributors(&0u32, &1_000_000u32);
+    assert_eq!(huge.len(), 3);
+
+    // Zero means "use the default", not "return nothing".
+    let zero = s.vault.get_contributors(&0u32, &0u32);
+    assert_eq!(zero.len(), 3);
 }

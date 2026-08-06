@@ -66,6 +66,9 @@ const BPS: i128 = 10_000;
 const WEIGHT_CAP_BPS: i128 = 2_000;
 /// A release needs more than 50% of the total raise behind it.
 const RELEASE_THRESHOLD_BPS: i128 = 5_000;
+/// Ceiling on any paged read, so a caller cannot ask for a page large enough
+/// to exceed the resource budget.
+const MAX_PAGE: u32 = 100;
 
 #[contracttype]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -145,6 +148,10 @@ pub struct ProjectInfo {
     pub min_contribution:     i128,
     pub milestones:           Vec<Milestone>,
     pub released_total:       i128,
+    /// Contributions not yet refunded. Counts down as claims are made, so the
+    /// contract can tell when it is serving the final claimant and sweep the
+    /// rounding dust to them instead of stranding it.
+    pub unclaimed_contributions: i128,
     pub metadata_cid:         String,
     pub attested:             bool,
 }
@@ -179,6 +186,7 @@ pub trait AttestationTrait {
     fn attest(
         env:                 Env,
         vault:               Address,
+        factory:             Address,
         builder:             Address,
         project_id:          u64,
         outcome:             Outcome,
@@ -329,6 +337,9 @@ fn write_attestation(env: &Env, info: &mut ProjectInfo, outcome: Outcome) {
     let client = AttestationClient::new(env, &info.attestation_registry);
     client.attest(
         &env.current_contract_address(),
+        // Name the factory that deployed us. The registry checks both that it
+        // trusts that factory and that the factory claims this vault.
+        &info.factory,
         &info.creator,
         &info.project_id,
         &outcome,
@@ -428,6 +439,7 @@ impl BlkfndrVault {
             min_contribution:     config.min_contribution,
             milestones,
             released_total:       0,
+            unclaimed_contributions: 0,
             metadata_cid:         config.metadata_cid.clone(),
             attested:             false,
         };
@@ -514,6 +526,10 @@ impl BlkfndrVault {
         }
 
         info.raised_amount = info.raised_amount.checked_add(amount).unwrap();
+        info.unclaimed_contributions = info
+            .unclaimed_contributions
+            .checked_add(amount)
+            .unwrap();
         let goal_reached = info.raised_amount >= info.goal;
         save_info(&env, &info);
 
@@ -846,7 +862,13 @@ impl BlkfndrVault {
 
         env.storage().persistent().remove(&bal_key);
 
-        let refund_total = if state == VaultState::Failed {
+        info.unclaimed_contributions = info
+            .unclaimed_contributions
+            .checked_sub(contribution)
+            .unwrap();
+        let is_last_claimant = info.unclaimed_contributions == 0;
+
+        let mut refund_total = if state == VaultState::Failed {
             // Goal never met, nothing was ever released: principal back, whole.
             contribution
         } else {
@@ -872,12 +894,26 @@ impl BlkfndrVault {
             contrib_share.checked_add(bond_share).unwrap()
         };
 
-        if state == VaultState::Refunding && !info.bond_returned {
+        let token_client = token::Client::new(&env, &info.token);
+
+        // Pro-rata division truncates, so each claim leaves a stroop or two
+        // behind. Left alone that dust accumulates in the vault with no
+        // entrypoint able to reclaim it, so the last claimant sweeps whatever
+        // remains.
+        //
+        // Only in Refunding. In Failed the vault is still holding the builder's
+        // bond, which is theirs and is claimed separately through return_bond —
+        // sweeping there would hand a contributor the builder's stake.
+        if is_last_claimant && state == VaultState::Refunding {
+            let vault_balance = token_client.balance(&env.current_contract_address());
+            if vault_balance > refund_total {
+                refund_total = vault_balance;
+            }
             info.bond_returned = true;
-            save_info(&env, &info);
         }
 
-        let token_client = token::Client::new(&env, &info.token);
+        save_info(&env, &info);
+
         token_client.transfer(
             &env.current_contract_address(),
             &contributor,
@@ -908,11 +944,38 @@ impl BlkfndrVault {
             .unwrap_or(0)
     }
 
-    pub fn get_contributors(env: Env) -> Vec<Address> {
-        env.storage()
+    /// A page of contributors.
+    ///
+    /// Paged rather than whole: a popular project accumulates contributors
+    /// without limit, and a call that materialises all of them eventually
+    /// exceeds the resource budget and starts failing — at which point the
+    /// entrypoint is useless exactly when the project is most active.
+    /// `limit` is clamped to MAX_PAGE.
+    pub fn get_contributors(env: Env, offset: u32, limit: u32) -> Vec<Address> {
+        let all: Vec<Address> = env
+            .storage()
             .persistent()
             .get(&DataKey::Contributors)
-            .unwrap_or_else(|| Vec::new(&env))
+            .unwrap_or_else(|| Vec::new(&env));
+
+        let capped = if limit == 0 || limit > MAX_PAGE { MAX_PAGE } else { limit };
+        let mut page = Vec::new(&env);
+        let mut i = offset;
+        while i < all.len() && page.len() < capped {
+            page.push_back(all.get(i).unwrap());
+            i += 1;
+        }
+        page
+    }
+
+    /// Total contributors, so a caller can page without guessing.
+    pub fn contributor_count(env: Env) -> u32 {
+        let all: Vec<Address> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Contributors)
+            .unwrap_or_else(|| Vec::new(&env));
+        all.len()
     }
 
     /// The voting weight this wallet would carry, after the 20% cap.

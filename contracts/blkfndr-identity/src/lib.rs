@@ -111,7 +111,31 @@ impl IdentityRegistry {
         );
     }
 
+    /// Hand the registry to a new admin.
+    ///
+    /// Without this the admin set at initialization would be permanent, and a
+    /// lost or compromised key would mean no further KYC attestation was
+    /// possible for the life of the contract — recoverable only by redeploying
+    /// and re-attesting every user.
+    pub fn transfer_admin(env: Env, new_admin: Address) {
+        extend_instance_ttl(&env);
+        let admin = load_admin(&env);
+        admin.require_auth();
+
+        env.storage().instance().set(&DataKey::Admin, &new_admin);
+
+        env.events().publish(
+            (symbol_short!("IDENTITY"), symbol_short!("ADMIN_TX")),
+            new_admin,
+        );
+    }
+
     // QUERIES
+
+    /// The account that may attest and revoke.
+    pub fn get_admin(env: Env) -> Address {
+        load_admin(&env)
+    }
 
     /// Check if the address has a valid KYC attestation on file.
     pub fn is_kyc_approved(env: Env, address: Address) -> bool {

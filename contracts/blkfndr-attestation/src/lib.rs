@@ -30,9 +30,15 @@ pub enum Error {
     AlreadyAttested    = 4,
     RecordNotFound     = 5,
     InvalidRecord      = 6,
+    UntrustedFactory   = 7,
+    FactoryAlreadyTrusted = 8,
+    TooManyFactories   = 9,
 }
 
 const LEDGERS_TO_LIVE: u32 = 518_400; // ~30 days
+/// Ceiling on any paged read, so a caller cannot ask for a page large enough
+/// to exceed the resource budget.
+const MAX_PAGE: u32 = 100;
 
 /// How a project ended.
 #[contracttype]
@@ -63,10 +69,23 @@ pub struct Attestation {
     pub closed_at:           u64,
 }
 
+/// A registry cannot trust an unbounded number of factories without the
+/// membership check becoming a resource problem.
+const MAX_FACTORIES: u32 = 16;
+
 #[contracttype]
 pub enum DataKey {
-    /// The factory whose vaults are permitted to write.
-    Factory,
+    /// May add trusted factories. Deliberately cannot remove one.
+    Admin,
+    /// Factories whose vaults are permitted to write.
+    ///
+    /// A set rather than a single address so that a factory upgrade does not
+    /// orphan the history: new vaults come from a new factory, and if this
+    /// registry could only ever trust the original one, a second registry would
+    /// be needed and a builder's record would split across the two. A record
+    /// that fragments on every platform upgrade is not portable, which is the
+    /// whole point of it.
+    Factories,
     /// Attestation for a given project id.
     Record(u64),
     /// Every project id a builder has closed.
@@ -81,11 +100,22 @@ pub trait FactoryTrait {
 }
 
 #[inline]
-fn load_factory(env: &Env) -> Address {
+fn load_admin(env: &Env) -> Address {
     env.storage()
         .instance()
-        .get(&DataKey::Factory)
+        .get(&DataKey::Admin)
         .unwrap_or_else(|| panic_with_error!(env, Error::NotInitialized))
+}
+
+fn load_factories(env: &Env) -> Vec<Address> {
+    env.storage()
+        .instance()
+        .get(&DataKey::Factories)
+        .unwrap_or_else(|| panic_with_error!(env, Error::NotInitialized))
+}
+
+fn is_trusted_factory(env: &Env, candidate: &Address) -> bool {
+    load_factories(env).first_index_of(candidate).is_some()
 }
 
 fn extend_instance_ttl(env: &Env) {
@@ -104,17 +134,63 @@ impl AttestationRegistry {
     /// `admin` must authorize, so the binding cannot be front-run by whoever
     /// notices the deployed-but-uninitialized contract first.
     pub fn initialize(env: Env, admin: Address, factory: Address) {
-        if env.storage().instance().has(&DataKey::Factory) {
+        if env.storage().instance().has(&DataKey::Admin) {
             panic_with_error!(&env, Error::AlreadyInitialized);
         }
         admin.require_auth();
 
-        env.storage().instance().set(&DataKey::Factory, &factory);
+        let mut factories = Vec::new(&env);
+        factories.push_back(factory.clone());
+
+        env.storage().instance().set(&DataKey::Admin, &admin);
+        env.storage().instance().set(&DataKey::Factories, &factories);
         extend_instance_ttl(&env);
 
         env.events().publish(
             (symbol_short!("ATTEST"), symbol_short!("INIT")),
             factory,
+        );
+    }
+
+    /// Trust an additional factory, so a platform upgrade keeps writing into
+    /// the same history.
+    ///
+    /// Append-only by design. There is no counterpart that removes a factory,
+    /// because doing so would orphan every record its vaults had already
+    /// written — an admin could quietly erase a builder's history without
+    /// touching a single record.
+    pub fn add_factory(env: Env, factory: Address) {
+        extend_instance_ttl(&env);
+        let admin = load_admin(&env);
+        admin.require_auth();
+
+        let mut factories = load_factories(&env);
+        if factories.first_index_of(&factory).is_some() {
+            panic_with_error!(&env, Error::FactoryAlreadyTrusted);
+        }
+        if factories.len() >= MAX_FACTORIES {
+            panic_with_error!(&env, Error::TooManyFactories);
+        }
+
+        factories.push_back(factory.clone());
+        env.storage().instance().set(&DataKey::Factories, &factories);
+
+        env.events().publish(
+            (symbol_short!("ATTEST"), symbol_short!("FACTORY")),
+            factory,
+        );
+    }
+
+    pub fn transfer_admin(env: Env, new_admin: Address) {
+        extend_instance_ttl(&env);
+        let admin = load_admin(&env);
+        admin.require_auth();
+
+        env.storage().instance().set(&DataKey::Admin, &new_admin);
+
+        env.events().publish(
+            (symbol_short!("ATTEST"), symbol_short!("ADMIN_TX")),
+            new_admin,
         );
     }
 
@@ -125,6 +201,7 @@ impl AttestationRegistry {
     pub fn attest(
         env:                 Env,
         vault:               Address,
+        factory:             Address,
         builder:             Address,
         project_id:          u64,
         outcome:             Outcome,
@@ -141,7 +218,14 @@ impl AttestationRegistry {
         // vault address they do not control.
         vault.require_auth();
 
-        let factory = load_factory(&env);
+        // The vault names the factory that deployed it, and both halves are
+        // checked: that we trust that factory at all, and that the factory
+        // confirms this vault is one of its own. Naming an untrusted factory
+        // fails the first check; naming a trusted one you do not belong to
+        // fails the second.
+        if !is_trusted_factory(&env, &factory) {
+            panic_with_error!(&env, Error::UntrustedFactory);
+        }
         let factory_client = FactoryClient::new(&env, &factory);
         if !factory_client.is_vault(&vault) {
             panic_with_error!(&env, Error::NotAVault);
@@ -220,37 +304,76 @@ impl AttestationRegistry {
             .unwrap_or_else(|| Vec::new(&env))
     }
 
-    /// Full history for a builder. This is what a grant programme, lender, or
-    /// launchpad reads to decide whether to take someone on.
-    pub fn get_builder_history(env: Env, builder: Address) -> Vec<Attestation> {
+    /// A page of a builder's history. This is what a grant programme, lender,
+    /// or launchpad reads to decide whether to take someone on.
+    ///
+    /// Paged rather than whole: a builder's record only ever grows, so a call
+    /// that materialises all of it would eventually exceed the resource budget
+    /// and fail for exactly the builders with the longest track record.
+    /// `limit` is clamped to MAX_PAGE.
+    pub fn get_builder_history(
+        env: Env,
+        builder: Address,
+        offset: u32,
+        limit: u32,
+    ) -> Vec<Attestation> {
         let ids = Self::get_builder_projects(env.clone(), builder);
+        let capped = if limit == 0 || limit > MAX_PAGE { MAX_PAGE } else { limit };
+
         let mut out = Vec::new(&env);
-        for id in ids.iter() {
-            if let Some(record) = env.storage().persistent().get::<DataKey, Attestation>(&DataKey::Record(id)) {
+        let mut i = offset;
+        while i < ids.len() && out.len() < capped {
+            let id = ids.get(i).unwrap();
+            if let Some(record) = env
+                .storage()
+                .persistent()
+                .get::<DataKey, Attestation>(&DataKey::Record(id))
+            {
                 out.push_back(record);
             }
+            i += 1;
         }
         out
     }
 
     /// Compact reputation summary: (completed, failed_with_forfeiture, failed_to_fund).
     pub fn get_builder_summary(env: Env, builder: Address) -> (u32, u32, u32) {
-        let history = Self::get_builder_history(env, builder);
+        // Pages through rather than taking one slice, so the counts stay correct
+        // for a builder with more projects than a single page holds.
+        let ids = Self::get_builder_projects(env.clone(), builder);
         let mut completed = 0u32;
         let mut forfeited = 0u32;
         let mut unfunded = 0u32;
-        for record in history.iter() {
-            match record.outcome {
-                Outcome::Completed => completed += 1,
-                Outcome::FailedWithForfeiture => forfeited += 1,
-                Outcome::FailedToFund => unfunded += 1,
+
+        // Reads records directly rather than going through the paged history,
+        // so the counts stay correct for a builder with more projects than a
+        // single page holds.
+        for id in ids.iter() {
+            if let Some(record) = env
+                .storage()
+                .persistent()
+                .get::<DataKey, Attestation>(&DataKey::Record(id))
+            {
+                match record.outcome {
+                    Outcome::Completed => completed += 1,
+                    Outcome::FailedWithForfeiture => forfeited += 1,
+                    Outcome::FailedToFund => unfunded += 1,
+                }
             }
         }
         (completed, forfeited, unfunded)
     }
 
-    pub fn get_factory(env: Env) -> Address {
-        load_factory(&env)
+    pub fn get_factories(env: Env) -> Vec<Address> {
+        load_factories(&env)
+    }
+
+    pub fn get_admin(env: Env) -> Address {
+        load_admin(&env)
+    }
+
+    pub fn is_factory_trusted(env: Env, factory: Address) -> bool {
+        is_trusted_factory(&env, &factory)
     }
 }
 
