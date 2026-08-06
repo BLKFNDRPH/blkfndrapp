@@ -186,7 +186,9 @@ check "factory knows the attestation registry" \
 check "factory knows the identity registry" \
   "$(read_back "${FACTORY_ID}" get_identity_registry)" "${IDENTITY_ID}" || FAILED=1
 check "attestation registry trusts the factory" \
-  "$(read_back "${ATTESTATION_ID}" get_factory)" "${FACTORY_ID}" || FAILED=1
+  "$(stellar contract invoke --id "${ATTESTATION_ID}" --source "${SOURCE}" \
+      --network "${NETWORK}" -- is_factory_trusted \
+      --factory "${FACTORY_ID}" 2>/dev/null | tr -d '"')" "true" || FAILED=1
 check "factory admin is the deployer" \
   "$(read_back "${FACTORY_ID}" get_admin)" "${ADMIN}" || FAILED=1
 
