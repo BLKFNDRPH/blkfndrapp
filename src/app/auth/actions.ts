@@ -2,11 +2,11 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { headers } from "next/headers";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { safeInternalPath } from "@/lib/auth/safe-redirect";
 import { rememberNextPath } from "@/lib/auth/next-cookie";
+import { publicOrigin } from "@/lib/auth/app-origin";
 
 // Every export here is a public HTTP endpoint. Arguments are treated as
 // hostile and validated before use.
@@ -27,96 +27,6 @@ const Registration = Credentials.extend({
 });
 
 /**
- * Origins this deployment is allowed to send a user back to.
- *
- * NEXT_PUBLIC_APP_URL is the canonical one. APP_URLS adds more, comma
- * separated, for a deployment served from several domains — a staging host, a
- * vanity domain, a rename in progress.
- *
- * APP_URLS deliberately has no NEXT_PUBLIC_ prefix. Nothing here runs in the
- * browser, so it is read at request time and a new domain takes effect on
- * restart rather than needing the image rebuilt.
- */
-function allowedOrigins(): string[] {
-  const raw = [
-    process.env.NEXT_PUBLIC_APP_URL ?? "",
-    ...(process.env.APP_URLS ?? "").split(","),
-  ];
-
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const entry of raw) {
-    const trimmed = entry.trim().replace(/\/+$/, "");
-    if (!trimmed) continue;
-    try {
-      // Parse rather than pattern-match, so a malformed entry is dropped
-      // instead of becoming a redirect target nobody intended.
-      const url = new URL(trimmed);
-      const origin = url.origin;
-      if (!seen.has(origin)) {
-        seen.add(origin);
-        out.push(origin);
-      }
-    } catch {
-      console.warn(`[auth] Ignoring unparseable origin in configuration: ${entry}`);
-    }
-  }
-  return out;
-}
-
-/**
- * Where to send the user back to after Supabase finishes with them.
- *
- * This used to return NEXT_PUBLIC_APP_URL whenever it was set, which pinned
- * every redirect to one domain. A visitor arriving on a second domain would
- * sign in and land on the first, losing the session they had just established
- * because the cookie was set for the host they were sent to.
- *
- * So the request's own Host decides — but only when it is one we recognise.
- * The Host header is attacker-controlled, and echoing it unchecked into a
- * redirect is how an open redirect happens; matching against the configured
- * list first means an unknown host silently gets the canonical origin instead.
- *
- * Supabase's own redirect allow-list is a second gate behind this one, and
- * every origin here has to appear there too or Supabase will refuse the
- * redirect it is handed.
- */
-async function originFromRequest(): Promise<string> {
-  const allowed = allowedOrigins();
-
-  const headerList = await headers();
-  const host = headerList.get("host")?.trim();
-
-  if (host) {
-    const match = allowed.find((origin) => {
-      try {
-        return new URL(origin).host.toLowerCase() === host.toLowerCase();
-      } catch {
-        return false;
-      }
-    });
-    if (match) return match;
-  }
-
-  // Nothing configured: derive from the request. This is the local development
-  // path — with no allow-list there is nothing to check against, and no
-  // deployment should be running without NEXT_PUBLIC_APP_URL set.
-  if (allowed.length === 0) {
-    const fallbackHost = host ?? "localhost:9002";
-    const protocol =
-      fallbackHost.startsWith("localhost") || fallbackHost.startsWith("127.")
-        ? "http"
-        : "https";
-    return `${protocol}://${fallbackHost}`;
-  }
-
-  // Configured, but this request arrived on a host that is not on the list.
-  // Send them to the canonical origin rather than to whatever the Host header
-  // claimed.
-  return allowed[0];
-}
-
-/**
  * Register with name, email and password.
  *
  * `name` is passed as user metadata so the profile trigger can pick it up. It
@@ -134,7 +44,7 @@ export async function signUpWithPassword(formData: FormData): Promise<AuthAction
   }
 
   const supabase = await createClient();
-  const origin = await originFromRequest();
+  const origin = await publicOrigin();
 
   const { error } = await supabase.auth.signUp({
     email: parsed.data.email,
@@ -184,7 +94,7 @@ export async function signInWithPassword(formData: FormData): Promise<AuthAction
 
 export async function signInWithGoogle(formData: FormData): Promise<AuthActionResult> {
   const supabase = await createClient();
-  const origin = await originFromRequest();
+  const origin = await publicOrigin();
   // The destination travels in a short-lived cookie rather than on the URL.
   // Supabase matches its redirect allow-list as a glob against the whole URL,
   // so a query string forces a wildcard entry — and an entry that does not
@@ -220,7 +130,7 @@ export async function requestPasswordReset(formData: FormData): Promise<AuthActi
   }
 
   const supabase = await createClient();
-  const origin = await originFromRequest();
+  const origin = await publicOrigin();
 
   await supabase.auth.resetPasswordForEmail(email.data, {
     redirectTo: `${origin}/auth/confirm`,
