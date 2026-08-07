@@ -4,21 +4,19 @@ import { cn } from '@/lib/utils';
 
 const StaticBLKFNDR: React.FC<{ className?: string, textColor?: string }> = ({ className, textColor }) => {
   const text = 'BLKFNDR';
-  // Was "Compressa VF", loaded from a Cloudinary URL that now 404s — which left
-  // every wordmark in the app rendering as the default serif. Roboto Flex is
-  // already loaded document-wide in layout.tsx with the wght/wdth/slnt axes.
-  const fontFamily = "'Roboto Flex', 'Inter', sans-serif";
+  // @font-face lives in globals.css so the file is fetched once, not per instance.
+  const fontFamily = 'Roboto Flex Variable';
 
-  // Gradual weight + slant per character (centre heaviest). Roboto Flex slants
-  // on `slnt` in degrees, 0 to -10; it has no `ital` axis.
+  // Assign gradual weight + lean per character (center heaviest).
+  // `lean` is 0..1 and maps onto the font's `slnt` axis (0deg..-10deg).
   const styles = [
-    { wght: 200, slnt: 0 }, // B - thinnest
-    { wght: 400, slnt: -2 }, // L
-    { wght: 600, slnt: -5 }, // K
-    { wght: 800, slnt: -10 }, // F - boldest, most slanted
-    { wght: 600, slnt: -5 }, // N
-    { wght: 400, slnt: -2 }, // D
-    { wght: 200, slnt: 0 }, // R - thinnest
+    { wght: 200, lean: 0 }, // B - thinnest
+    { wght: 400, lean: 0.2 }, // L
+    { wght: 600, lean: 0.5 }, // K
+    { wght: 800, lean: 1 }, // F - boldest, most slanted
+    { wght: 600, lean: 0.5 }, // N
+    { wght: 400, lean: 0.2 }, // D
+    { wght: 200, lean: 0 }, // R - thinnest
   ];
 
   return (
@@ -39,7 +37,7 @@ const StaticBLKFNDR: React.FC<{ className?: string, textColor?: string }> = ({ c
           <span
             key={i}
             style={{
-              fontVariationSettings: `'wght' ${styles[i].wght}, 'slnt' ${styles[i].slnt}, 'wdth' 75`,
+              fontVariationSettings: `'wght' ${styles[i].wght}, 'slnt' ${(-10 * styles[i].lean).toFixed(1)}, 'wdth' 100`,
               transition: 'all 0.3s ease',
               margin: '0 0.05em',
             }}

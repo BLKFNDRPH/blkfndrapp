@@ -33,13 +33,11 @@ export default async function RootLayout({
           crossOrigin="anonymous"
         />
         {/*
-          Roboto Flex is requested with its slnt, wdth and wght axes because it
-          now backs the BLKFNDR wordmark, which animates all three. Google Fonts
-          only serves the axes named here — dropping one silently freezes that
-          axis at its default.
+          The wordmark font is self-hosted from public/fonts and declared in
+          globals.css, so Roboto Flex is deliberately absent here.
         */}
         <link
-          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Code+Pro&family=Roboto+Flex:opsz,slnt,wdth,wght@8..144,-10..0,25..151,100..1000&display=swap"
+          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Code+Pro&display=swap"
           rel="stylesheet"
         />
       </head>

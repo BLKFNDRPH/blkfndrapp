@@ -1,10 +1,14 @@
-/*
- * The wordmark used to load "Compressa VF" from a third-party Cloudinary URL.
- * That asset now 404s, so every BLKFNDR wordmark in the app was silently
- * falling back to the browser's default serif. Roboto Flex replaces it: it is
- * already loaded in layout.tsx and carries the wght/wdth/slnt axes the
- * wordmark animates.
- */
+/* Self-hosted variable font for the BLKFNDR wordmark.
+   Roboto Flex (SIL OFL 1.1, see public/fonts/roboto-flex-OFL.txt), latin subset,
+   built with the opsz/slnt/wdth/wght axes the logo components animate. */
+@font-face {
+  font-family: "Roboto Flex Variable";
+  src: url("/fonts/roboto-flex-latin-vf.woff2") format("woff2-variations");
+  font-weight: 100 1000;
+  font-stretch: 25% 151%;
+  font-style: oblique 0deg 10deg;
+  font-display: swap;
+}
 
 @tailwind base;
 @tailwind components;
@@ -136,7 +140,7 @@
   }
 
   .font-logo {
-    font-family: "Roboto Flex", "Inter", sans-serif;
+    font-family: "Roboto Flex Variable", sans-serif;
     font-weight: 700;
     font-variation-settings:
       "wght" 700,
