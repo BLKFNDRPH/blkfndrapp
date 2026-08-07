@@ -147,7 +147,7 @@ export function WalletSettings() {
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between">
           <p className="text-sm text-neutral-400">Connected Stellar Account</p>
-          <Badge className="bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[10px] py-0.5 px-2 font-medium">
+          <Badge className="bg-accent/10 text-accent border border-accent/20 text-[10px] py-0.5 px-2 font-medium">
             Stellar Testnet
           </Badge>
         </div>
@@ -159,7 +159,7 @@ export function WalletSettings() {
               className="flex items-center justify-between p-4 rounded-xl border border-neutral-800 bg-neutral-900/40 hover:bg-neutral-800/40 cursor-pointer transition-all duration-300 relative overflow-hidden group shadow-inner"
             >
               <div className="flex flex-col min-w-0 flex-1 mr-2 text-left">
-                <span className="inline-flex items-center gap-1.5 text-xs text-indigo-400 font-semibold mb-2">
+                <span className="inline-flex items-center gap-1.5 text-xs text-accent font-semibold mb-2">
                   <FreighterIcon className="h-4 w-4" />
                   Freighter Connected & Active
                 </span>
@@ -182,7 +182,7 @@ export function WalletSettings() {
                   size="sm"
                   className="h-10 w-full border-neutral-800 hover:border-neutral-700 bg-neutral-900/20 text-neutral-200 hover:text-white flex items-center gap-2 justify-center transition-all duration-200"
                 >
-                  <ExternalLink className="h-4 w-4 text-indigo-400" />
+                  <ExternalLink className="h-4 w-4 text-accent" />
                   View on Stellar.Expert
                 </Button>
               </a>
@@ -230,7 +230,7 @@ export function WalletSettings() {
             <Button
               onClick={handleConnect}
               disabled={isConnecting}
-              className="bg-indigo-600 hover:bg-indigo-500 text-white font-medium px-6 h-10 rounded-lg flex items-center gap-2 transition-all"
+              className="bg-accent hover:bg-accent/90 text-accent-foreground font-medium px-6 h-10 rounded-lg flex items-center gap-2 transition-all"
             >
               {isConnecting ? (
                 <>

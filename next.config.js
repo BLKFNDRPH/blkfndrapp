@@ -7,17 +7,14 @@ const nextConfig = {
   // This is the only next.config in the tree. Two others existed alongside it
   // (next.config.ts and src/next.config.ts) with conflicting settings that
   // silently never applied, because Next resolves next.config.js first.
-  webpack: (config) => {
-    config.resolve.fallback = {
-      ...config.resolve.fallback,
-      fs: false,
-      net: false,
-      tls: false,
-      // grpc-node resolves dns at build time; see grpc/grpc-node#2126.
-      dns: false,
-    };
-    return config;
-  },
+
+  // No webpack override: the former resolve.fallback stubbed fs/net/tls/dns
+  // for grpc-node (pulled in by genkit), but genkit only ever loads behind a
+  // 'use server' boundary and is listed in serverExternalPackages, so it never
+  // reaches a browser bundle. Verified by building with --webpack after
+  // removing it: webpack hard-errors on unresolved Node builtins in browser
+  // bundles, and the build compiles clean. Keeping it forced every Turbopack
+  // invocation to error out on the webpack/Turbopack config mismatch.
 
   // Image optimization for Docker
   images: {

@@ -1,0 +1,105 @@
+.blueprint-grid {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.blueprint-grid__fine,
+.blueprint-grid__coarse {
+  position: absolute;
+  /* Oversized so the drift never exposes an edge. */
+  inset: -120px;
+  background-repeat: repeat;
+}
+
+.blueprint-grid__fine {
+  background-image:
+    linear-gradient(to right, rgba(212, 175, 55, 0.10) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(212, 175, 55, 0.10) 1px, transparent 1px);
+  background-size: 28px 28px;
+  animation: blueprint-drift 38s linear infinite;
+}
+
+.blueprint-grid__coarse {
+  background-image:
+    linear-gradient(to right, rgba(212, 175, 55, 0.18) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(212, 175, 55, 0.18) 1px, transparent 1px);
+  background-size: 140px 140px;
+  animation: blueprint-drift 38s linear infinite;
+}
+
+.blueprint-grid__vignette {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(
+      ellipse 90% 70% at 50% 45%,
+      transparent 0%,
+      rgba(0, 0, 0, 0.62) 100%
+    );
+}
+
+.blueprint-grid__marks {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.blueprint-mark path,
+.blueprint-mark circle {
+  fill: none;
+  stroke: rgba(212, 175, 55, 0.50);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-dasharray: 300;
+  stroke-dashoffset: 300;
+  animation: blueprint-draw 14s ease-in-out infinite;
+  animation-delay: var(--mark-delay, 0s);
+}
+
+@keyframes blueprint-drift {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    /* One coarse cell, so the tile lines up again at the end. */
+    transform: translate3d(140px, 140px, 0);
+  }
+}
+
+@keyframes blueprint-draw {
+  0% {
+    stroke-dashoffset: 300;
+    opacity: 0;
+  }
+  8% {
+    opacity: 1;
+  }
+  28%,
+  62% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  85%,
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .blueprint-grid__fine,
+  .blueprint-grid__coarse,
+  .blueprint-mark path,
+  .blueprint-mark circle {
+    animation: none;
+  }
+
+  .blueprint-mark path,
+  .blueprint-mark circle {
+    stroke-dashoffset: 0;
+    opacity: 0.7;
+  }
+}

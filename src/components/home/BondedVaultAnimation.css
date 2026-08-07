@@ -1,0 +1,406 @@
+.bv-stage {
+  /* Every element below runs on this one cycle so the loop resets as a whole. */
+  --bv-cycle: 16s;
+  --bv-line: 240, 240, 238;
+  --bv-gold: 212, 175, 55;
+  --bv-coin: 212, 175, 55;
+
+  width: 100%;
+  /* Kept small on phones — the tower is nearly 1.2x as tall as it is wide, so
+     full width here adds most of a screen to the hero. */
+  max-width: 290px;
+  margin: 0 auto;
+  pointer-events: none;
+}
+
+@media (min-width: 640px) {
+  .bv-stage {
+    max-width: 380px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .bv-stage {
+    max-width: 440px;
+  }
+}
+
+.bv-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  overflow: visible;
+}
+
+.bv-caption {
+  margin-top: 0.75rem;
+  text-align: center;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: rgba(var(--bv-line), 0.75);
+  max-width: 34ch;
+  margin-inline: auto;
+}
+
+/* ---------- Static furniture ---------- */
+
+.bv-frame {
+  fill: rgba(255, 255, 255, 0.02);
+  stroke: rgba(var(--bv-line), 0.22);
+  stroke-width: 1.5;
+  stroke-dasharray: 6 6;
+}
+
+.bv-ground {
+  fill: none;
+  stroke: rgba(var(--bv-line), 0.5);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.bv-ground--hatch {
+  stroke-width: 1.5;
+  stroke: rgba(var(--bv-line), 0.28);
+}
+
+.bv-label {
+  fill: rgba(var(--bv-line), 0.7);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  font-family: "Source Code Pro", monospace;
+}
+
+/* ---------- Contributions falling in ---------- */
+
+.bv-coin {
+  animation: bv-coin-drop 2.1s cubic-bezier(0.55, 0, 0.5, 1) infinite;
+}
+
+.bv-coin__body {
+  fill: rgba(var(--bv-coin), 0.9);
+  stroke: rgba(255, 255, 255, 0.55);
+  stroke-width: 1;
+}
+
+.bv-coin__mark {
+  stroke: rgba(10, 10, 10, 0.85);
+  stroke-width: 1.2;
+  stroke-linecap: round;
+  fill: none;
+}
+
+@keyframes bv-coin-drop {
+  0% {
+    transform: translate(var(--bv-sx), var(--bv-sy));
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  78% {
+    opacity: 1;
+  }
+  92%,
+  100% {
+    transform: translate(0, 0);
+    opacity: 0;
+  }
+}
+
+/* ---------- The build ---------- */
+
+.bv-floor {
+  opacity: 0;
+}
+
+.bv-floor__slab {
+  fill: url(#bv-slab);
+  stroke: rgba(var(--bv-line), 0.7);
+  stroke-width: 1.5;
+}
+
+.bv-floor__windows rect {
+  fill: rgba(var(--bv-gold), 0.55);
+}
+
+.bv-tag rect {
+  fill: rgba(var(--bv-gold), 0.16);
+  stroke: rgba(var(--bv-gold), 0.85);
+  stroke-width: 1.2;
+}
+
+.bv-tag__check {
+  fill: none;
+  stroke: rgb(var(--bv-gold));
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.bv-tag text {
+  fill: rgba(255, 255, 255, 0.92);
+  font-size: 10px;
+  font-weight: 700;
+  text-anchor: middle;
+  font-family: "Source Code Pro", monospace;
+}
+
+.bv-beacon {
+  fill: rgb(var(--bv-gold));
+  animation: bv-blink 1.6s ease-in-out infinite;
+}
+
+@keyframes bv-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.2;
+  }
+}
+
+/*
+ * One block per floor. The rise windows are staggered across the cycle and every
+ * floor drops out together at 100%, so the tower rebuilds from the ground each
+ * time instead of unwinding in the order it went up.
+ */
+.bv-floor--1 {
+  animation: bv-floor-1 var(--bv-cycle) ease-out infinite;
+}
+.bv-floor--2 {
+  animation: bv-floor-2 var(--bv-cycle) ease-out infinite;
+}
+.bv-floor--3 {
+  animation: bv-floor-3 var(--bv-cycle) ease-out infinite;
+}
+.bv-floor--4 {
+  animation: bv-floor-4 var(--bv-cycle) ease-out infinite;
+}
+.bv-floor--5 {
+  animation: bv-floor-5 var(--bv-cycle) ease-out infinite;
+}
+
+@keyframes bv-floor-1 {
+  0%,
+  25% {
+    opacity: 0;
+    transform: translate(0, 24px);
+  }
+  32%,
+  95% {
+    opacity: 1;
+    transform: translate(0, 0);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(0, 24px);
+  }
+}
+
+@keyframes bv-floor-2 {
+  0%,
+  39% {
+    opacity: 0;
+    transform: translate(0, 24px);
+  }
+  46%,
+  95% {
+    opacity: 1;
+    transform: translate(0, 0);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(0, 24px);
+  }
+}
+
+@keyframes bv-floor-3 {
+  0%,
+  53% {
+    opacity: 0;
+    transform: translate(0, 24px);
+  }
+  60%,
+  95% {
+    opacity: 1;
+    transform: translate(0, 0);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(0, 24px);
+  }
+}
+
+@keyframes bv-floor-4 {
+  0%,
+  67% {
+    opacity: 0;
+    transform: translate(0, 24px);
+  }
+  74%,
+  95% {
+    opacity: 1;
+    transform: translate(0, 0);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(0, 24px);
+  }
+}
+
+@keyframes bv-floor-5 {
+  0%,
+  79% {
+    opacity: 0;
+    transform: translate(0, 24px);
+  }
+  86%,
+  95% {
+    opacity: 1;
+    transform: translate(0, 0);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(0, 24px);
+  }
+}
+
+/* ---------- Vault and bond ---------- */
+
+.bv-vault {
+  fill: url(#bv-vault);
+  stroke: rgba(var(--bv-line), 0.65);
+  stroke-width: 1.5;
+}
+
+.bv-lock__body {
+  fill: rgba(var(--bv-gold), 0.25);
+  stroke: rgb(var(--bv-gold));
+  stroke-width: 1.5;
+}
+
+.bv-lock__shackle {
+  fill: none;
+  stroke: rgb(var(--bv-gold));
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.bv-lock {
+  animation: bv-lock-pulse 3.2s ease-in-out infinite;
+}
+
+@keyframes bv-lock-pulse {
+  0%,
+  100% {
+    opacity: 0.75;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.bv-vault__line1 {
+  fill: rgba(255, 255, 255, 0.9);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  font-family: "Source Code Pro", monospace;
+}
+
+.bv-vault__line2 {
+  fill: rgba(var(--bv-line), 0.72);
+  font-size: 8.5px;
+  font-family: "Source Code Pro", monospace;
+}
+
+/* ---------- Raise progress ---------- */
+
+.bv-bar__track {
+  fill: rgba(var(--bv-line), 0.14);
+  stroke: rgba(var(--bv-line), 0.35);
+  stroke-width: 1;
+}
+
+.bv-bar__fill {
+  fill: rgba(var(--bv-gold), 0.85);
+  transform-box: fill-box;
+  transform-origin: left center;
+  animation: bv-fill var(--bv-cycle) linear infinite;
+}
+
+@keyframes bv-fill {
+  0% {
+    transform: scaleX(0);
+  }
+  19%,
+  95% {
+    transform: scaleX(1);
+  }
+  100% {
+    transform: scaleX(0);
+  }
+}
+
+.bv-funded {
+  opacity: 0;
+  animation: bv-funded var(--bv-cycle) ease-out infinite;
+}
+
+.bv-funded rect {
+  fill: rgba(var(--bv-gold), 0.18);
+  stroke: rgba(var(--bv-gold), 0.9);
+  stroke-width: 1.2;
+}
+
+.bv-funded text {
+  fill: rgba(255, 255, 255, 0.95);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-anchor: middle;
+  font-family: "Source Code Pro", monospace;
+}
+
+@keyframes bv-funded {
+  0%,
+  18% {
+    opacity: 0;
+  }
+  23%,
+  95% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* ---------- Reduced motion: show the finished state, hold it still ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .bv-coin,
+  .bv-floor,
+  .bv-bar__fill,
+  .bv-funded,
+  .bv-lock,
+  .bv-beacon {
+    animation: none;
+  }
+
+  .bv-floor,
+  .bv-funded {
+    opacity: 1;
+    transform: none;
+  }
+
+  .bv-coin {
+    opacity: 0;
+  }
+
+  .bv-bar__fill {
+    transform: scaleX(1);
+  }
+}

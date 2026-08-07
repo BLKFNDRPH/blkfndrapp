@@ -591,7 +591,7 @@ export function FundDialog({
                       {projectCurrency}
                     </span>
                   </div>
-                  <div className="flex justify-between text-blue-600 dark:text-blue-400 font-bold border-t border-muted-foreground/10 pt-2 text-sm">
+                  <div className="flex justify-between text-accent font-bold border-t border-muted-foreground/10 pt-2 text-sm">
                     <span>Total Deducted from Wallet:</span>
                     <span>
                       {(fundAmount + platformFee).toLocaleString(undefined, {

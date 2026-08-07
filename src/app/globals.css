@@ -1,113 +1,132 @@
+/* Self-hosted variable font for the BLKFNDR wordmark.
+   Roboto Flex (SIL OFL 1.1, see public/fonts/roboto-flex-OFL.txt), latin subset,
+   built with the opsz/slnt/wdth/wght axes the logo components animate. */
 @font-face {
-  font-family: "Compressa VF";
-  src: url("https://res.cloudinary.com/dr6lvwubh/raw/upload/v1529908256/CompressaPRO-GX.woff2") format("woff2-variations");
-  font-weight: 100 900;
-  font-style: normal;
+  font-family: "Roboto Flex Variable";
+  src: url("/fonts/roboto-flex-latin-vf.woff2") format("woff2-variations");
+  font-weight: 100 1000;
+  font-stretch: 25% 151%;
+  font-style: oblique 0deg 10deg;
+  font-display: swap;
 }
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Palette: black, white and gold.
+ *
+ * Gold carries two different lightnesses on purpose. --accent is used both as a
+ * text colour (`text-accent` on headings) and as a fill (`bg-accent` on
+ * buttons), so each theme needs the value that clears contrast in both roles:
+ *   light  40 85% 31%  -> 5.0:1 on white, and takes white text on top
+ *   dark   44 85% 58%  -> 10:1 on near-black, and takes black text on top
+ * A single mid gold fails one role or the other, which is why they differ.
+ *
+ * --destructive stays red. Error states have to read as errors, not as brand.
+ */
 @layer base {
   :root {
-    --background: 206 27% 96%;
-    --foreground: 201 100% 10%;
+    --background: 40 20% 98%;
+    --foreground: 0 0% 9%;
     --card: 0 0% 100%;
-    --card-foreground: 201 100% 10%;
+    --card-foreground: 0 0% 9%;
     --popover: 0 0% 100%;
-    --popover-foreground: 201 100% 10%;
-    --primary: 201 100% 14.3%;
-    --primary-foreground: 206 27% 96%;
-    --secondary: 206 20% 90%;
-    --secondary-foreground: 201 100% 10%;
-    --muted: 206 15% 92%;
-    --muted-foreground: 201 40% 30%;
-    --accent: 0 69% 49.8%;
+    --popover-foreground: 0 0% 9%;
+    --primary: 0 0% 10%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 42 16% 94%;
+    --secondary-foreground: 0 0% 12%;
+    --muted: 42 14% 95%;
+    --muted-foreground: 0 0% 40%;
+    --accent: 40 85% 31%;
     --accent-foreground: 0 0% 100%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 206 20% 85%;
-    --input: 206 20% 85%;
-    --ring: 201 100% 14.3%;
-    --chart-1: 201 100% 14.3%;
-    --chart-2: 0 69% 49.8%;
-    --chart-3: 206 27% 96%;
-    --chart-4: 201 100% 30%;
-    --chart-5: 0 69% 65%;
+    --destructive: 0 72% 45%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 40 12% 87%;
+    --input: 40 12% 87%;
+    --ring: 40 85% 31%;
+    --chart-1: 40 85% 31%;
+    --chart-2: 0 0% 12%;
+    --chart-3: 42 58% 62%;
+    --chart-4: 0 0% 45%;
+    --chart-5: 40 70% 48%;
     --radius: 0.5rem;
-    --sidebar-background: 201 100% 14.3%;
-    --sidebar-foreground: 206 27% 96%;
-    --sidebar-primary: 0 69% 49.8%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 0 69% 49.8%;
-    --sidebar-accent-foreground: 0 0% 100%;
-    --sidebar-border: 201 100% 10%;
-    --sidebar-ring: 0 69% 49.8%;
+    --sidebar-background: 0 0% 9%;
+    --sidebar-foreground: 0 0% 96%;
+    --sidebar-primary: 44 85% 58%;
+    --sidebar-primary-foreground: 0 0% 8%;
+    --sidebar-accent: 44 85% 58%;
+    --sidebar-accent-foreground: 0 0% 8%;
+    --sidebar-border: 0 0% 18%;
+    --sidebar-ring: 44 85% 58%;
     --close-button-bg-color: rgba(0, 0, 0, 0.05);
     --nav-button-bg: hsl(var(--primary));
     --nav-button-hover-bg: hsl(var(--primary) / 0.9);
   }
 
   .dark {
-    --background: 201 100% 8%;
-    --foreground: 206 27% 96%;
-    --card: 201 100% 11%;
-    --card-foreground: 206 27% 96%;
-    --popover: 201 100% 11%;
-    --popover-foreground: 206 27% 96%;
-    --primary: 206 27% 96%;
-    --primary-foreground: 201 100% 8%;
-    --secondary: 201 60% 18%;
-    --secondary-foreground: 206 27% 96%;
-    --muted: 201 40% 16%;
-    --muted-foreground: 206 20% 70%;
-    --accent: 0 69% 49.8%;
-    --accent-foreground: 0 0% 100%;
-    --destructive: 0 74% 41%;
-    --destructive-foreground: 210 20% 98%;
-    --border: 201 60% 18%;
-    --input: 201 60% 18%;
-    --ring: 206 27% 96%;
-    --chart-1: 206 27% 96%;
-    --chart-2: 0 69% 49.8%;
-    --chart-3: 201 100% 11%;
-    --chart-4: 201 60% 30%;
-    --chart-5: 0 69% 65%;
-    --sidebar-background: 201 100% 8%;
-    --sidebar-foreground: 206 27% 96%;
-    --sidebar-primary: 0 69% 49.8%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 0 69% 49.8%;
-    --sidebar-accent-foreground: 0 0% 100%;
-    --sidebar-border: 201 60% 18%;
-    --sidebar-ring: 0 69% 49.8%;
+    --background: 0 0% 6%;
+    --foreground: 0 0% 96%;
+    --card: 0 0% 9%;
+    --card-foreground: 0 0% 96%;
+    --popover: 0 0% 9%;
+    --popover-foreground: 0 0% 96%;
+    --primary: 0 0% 96%;
+    --primary-foreground: 0 0% 8%;
+    --secondary: 0 0% 15%;
+    --secondary-foreground: 0 0% 96%;
+    --muted: 0 0% 14%;
+    --muted-foreground: 0 0% 65%;
+    --accent: 44 85% 58%;
+    --accent-foreground: 0 0% 8%;
+    --destructive: 0 62% 47%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 18%;
+    --input: 0 0% 18%;
+    --ring: 44 85% 58%;
+    --chart-1: 44 85% 58%;
+    --chart-2: 0 0% 96%;
+    --chart-3: 0 0% 9%;
+    --chart-4: 0 0% 55%;
+    --chart-5: 40 70% 45%;
+    --sidebar-background: 0 0% 6%;
+    --sidebar-foreground: 0 0% 96%;
+    --sidebar-primary: 44 85% 58%;
+    --sidebar-primary-foreground: 0 0% 8%;
+    --sidebar-accent: 44 85% 58%;
+    --sidebar-accent-foreground: 0 0% 8%;
+    --sidebar-border: 0 0% 18%;
+    --sidebar-ring: 44 85% 58%;
     --close-button-bg-color: rgba(255, 255, 255, 0.1);
     --nav-button-bg: hsl(var(--primary));
     --nav-button-hover-bg: hsl(var(--primary) / 0.9);
   }
 
-  .dark .hero-light,
-  .dark .hero-light * {
-    --background: 260 80% 98%;
-    --foreground: 224 76% 15%;
-    --card: 260 80% 100%;
-    --card-foreground: 224 76% 15%;
-    --popover: 260 80% 100%;
-    --popover-foreground: 224 76% 15%;
-    --primary: 224 76% 28%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 260 80% 95%;
-    --secondary-foreground: 224 76% 15%;
-    --muted: 260 80% 97%;
-    --muted-foreground: 224 76% 40%;
-    --accent: 239 79% 60%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 66% 50%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 260 80% 90%;
-    --input: 260 80% 90%;
-    --ring: 239 79% 60%;
+  /*
+   * The hero is black in both themes, so pin the dark tokens inside it.
+   * Without this, `text-accent` in the hero would resolve to the light theme's
+   * deep gold and sit at ~3:1 on black. Replaces the old `.hero-light` block,
+   * which pinned a blue-violet palette no component referenced any more.
+   */
+  .hero-dark,
+  .hero-dark * {
+    --background: 0 0% 6%;
+    --foreground: 0 0% 96%;
+    --card: 0 0% 9%;
+    --card-foreground: 0 0% 96%;
+    --primary: 0 0% 96%;
+    --primary-foreground: 0 0% 8%;
+    --secondary: 0 0% 15%;
+    --secondary-foreground: 0 0% 96%;
+    --muted: 0 0% 14%;
+    --muted-foreground: 0 0% 68%;
+    --accent: 44 85% 58%;
+    --accent-foreground: 0 0% 8%;
+    --border: 0 0% 24%;
+    --input: 0 0% 24%;
+    --ring: 44 85% 58%;
   }
 }
 
@@ -121,11 +140,11 @@
   }
 
   .font-logo {
-    font-family: "Compressa VF", sans-serif;
+    font-family: "Roboto Flex Variable", sans-serif;
     font-weight: 700;
     font-variation-settings:
       "wght" 700,
-      "wdth" 50;
+      "wdth" 62;
   }
 }
 

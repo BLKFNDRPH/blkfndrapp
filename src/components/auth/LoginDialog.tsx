@@ -25,7 +25,7 @@ export function LoginDialog({ isOpen, onClose }: LoginDialogProps) {
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent
-        className="sm:max-w-md border border-neutral-800/80 bg-neutral-950/90 backdrop-blur-xl p-6 rounded-2xl shadow-2xl shadow-purple-500/5"
+        className="sm:max-w-md border border-neutral-800/80 bg-neutral-950/90 backdrop-blur-xl p-6 rounded-2xl shadow-2xl shadow-black/40"
         hideCloseButton
       >
         <DialogClose className="absolute right-4 top-4 rounded-full p-1.5 bg-neutral-900/60 hover:bg-neutral-800/80 border border-neutral-800 text-neutral-400 hover:text-neutral-200 transition-all focus:outline-none">
