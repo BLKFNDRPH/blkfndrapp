@@ -134,7 +134,7 @@ pub struct Cycle {
     pub state: CycleState,
 }
 
-/// What a carried proposal does to the factory.
+/// What a carried proposal does.
 ///
 /// An enum rather than a fee-only entrypoint, because this contract can be the
 /// factory's admin and the factory has eight admin-gated functions. Reaching
@@ -144,20 +144,32 @@ pub struct Cycle {
 /// return it is a trap, so `TransferAdmin` is here from the start.
 #[contracttype]
 #[derive(Clone)]
-pub enum FactoryAction {
+pub enum GovernedAction {
     /// Change the flat listing fee, in stroops.
     SetFee(i128),
     /// Hand factory admin to someone else — the escape hatch. A vote can always
     /// return control to a human, so pointing factory admin at this contract is
     /// reversible rather than permanent.
     TransferAdmin(Address),
+    /// Replace the shareholder register.
+    ///
+    /// This is here, behind a vote, because the alternative was catastrophic.
+    /// `set_shareholders` used to need one shareholder's signature and no vote,
+    /// which made the register the drain: the *smallest* holder could rewrite it
+    /// to name themselves at 100%, open a cycle, carry it alone, and claim the
+    /// lot. Three transactions, one key, and the other partners get nothing.
+    ///
+    /// Everything else in this contract was carefully vote-gated, so the register
+    /// being a single-signature write meant the whole design could be bypassed by
+    /// changing who "everyone" is before asking them.
+    SetShareholders(Vec<Shareholder>),
 }
 
 #[contracttype]
 #[derive(Clone)]
-pub struct FactoryProposal {
+pub struct Proposal {
     pub id: u32,
-    pub action: FactoryAction,
+    pub action: GovernedAction,
     pub roster: Vec<Shareholder>,
     pub opened_at: u64,
     pub closes_at: u64,
@@ -170,12 +182,23 @@ pub enum DataKey {
     Shareholders,
     VoteWindow,
     NextCycleId,
-    Cycle,
+    /// cycle_id -> Cycle. Keyed, not a single slot: a payable cycle that some
+    /// shareholder has not got round to claiming must not block the next one.
+    Cycle(u32),
+    /// The cycle currently being voted on, if any. Cleared the moment voting
+    /// ends, whichever way it went.
+    OpenCycleId,
+    /// token -> the sum still owed to shareholders of payable cycles. A new
+    /// cycle may only take the balance *above* this, so nobody's unclaimed
+    /// share can be swept into a later cycle and paid to somebody else.
+    Reserved(Address),
+    /// cycle_id -> how many shareholders have claimed.
+    ClaimCount(u32),
     /// (cycle_id, voter) -> voted
     CycleVote(u32, Address),
     /// (cycle_id, shareholder) -> claimed
     Claimed(u32, Address),
-    FactoryProposal,
+    Proposal,
     NextProposalId,
     /// (proposal_id, voter) -> voted
     ProposalVote(u32, Address),
@@ -243,7 +266,20 @@ impl Treasury {
     /// Configure the treasury. `factory` is the contract whose fee this
     /// treasury may change; it must set this contract as its admin for that to
     /// work, which is a separate deliberate act.
-    pub fn initialize(env: Env, factory: Address, shareholders: Vec<Shareholder>) {
+    ///
+    /// `deployer` must sign. Without that signature this is a land grab: a
+    /// treasury sitting deployed and unconfigured for even one ledger can be
+    /// claimed by whoever calls this first, naming themselves the entire
+    /// register. Deploy and initialize are separate transactions, so that
+    /// window is real rather than theoretical.
+    pub fn initialize(
+        env: Env,
+        deployer: Address,
+        factory: Address,
+        shareholders: Vec<Shareholder>,
+    ) {
+        deployer.require_auth();
+
         if env.storage().instance().has(&DataKey::Shareholders) {
             panic_with_error!(&env, Error::AlreadyInitialized);
         }
@@ -270,11 +306,18 @@ impl Treasury {
 
     // ── Cycles ─────────────────────────────────────────────────────────────
 
-    /// Open a cycle over the treasury's current balance of `token`.
+    /// Open a cycle over the treasury's *unreserved* balance of `token`.
     ///
     /// Any shareholder may open one. There is no privileged proposer, because a
     /// proposer who could refuse to act would be able to withhold everyone
     /// else's earnings indefinitely.
+    ///
+    /// Only a cycle still being voted on blocks a new one. A payable cycle does
+    /// not: its money is reserved, so a later cycle cannot reach it, and there
+    /// is no reason to make everyone wait for the last shareholder to get round
+    /// to claiming. An earlier design blocked on payable and deadlocked the
+    /// contract the moment a cycle was fully claimed — the state stayed payable
+    /// forever and no further cycle could ever open.
     pub fn open_cycle(env: Env, opener: Address, token: Address) {
         bump(&env);
         opener.require_auth();
@@ -284,20 +327,43 @@ impl Treasury {
             panic_with_error!(&env, Error::NotAShareholder);
         }
 
-        if let Some(existing) = env.storage().instance().get::<_, Cycle>(&DataKey::Cycle) {
-            // A lapsed or fully-settled cycle may be replaced; a live one may not.
-            if existing.state == CycleState::Voting
-                && env.ledger().timestamp() < existing.closes_at
+        if let Some(open_id) = env
+            .storage()
+            .instance()
+            .get::<_, u32>(&DataKey::OpenCycleId)
+        {
+            let open_cycle: Cycle = env
+                .storage()
+                .persistent()
+                .get(&DataKey::Cycle(open_id))
+                .unwrap_or_else(|| panic_with_error!(&env, Error::NoCycleOpen));
+
+            // Still live: one vote at a time, so the roster snapshot and the
+            // reserved amount stay unambiguous.
+            if open_cycle.state == CycleState::Voting
+                && env.ledger().timestamp() < open_cycle.closes_at
             {
                 panic_with_error!(&env, Error::CycleAlreadyOpen);
             }
-            if existing.state == CycleState::Payable {
-                panic_with_error!(&env, Error::CycleAlreadyOpen);
+            // Closed short but never settled. Settling is permissionless and
+            // must happen first, so the outcome is recorded rather than skipped.
+            if open_cycle.state == CycleState::Voting {
+                panic_with_error!(&env, Error::VotingClosed);
             }
         }
 
+        // Reserved money belongs to shareholders of earlier cycles who have not
+        // claimed yet. Excluding it is what stops a new cycle from paying their
+        // share to somebody else.
         let balance = token::Client::new(&env, &token).balance(&env.current_contract_address());
-        if balance <= 0 {
+        let reserved: i128 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Reserved(token.clone()))
+            .unwrap_or(0);
+        let available = balance - reserved;
+
+        if available <= 0 {
             panic_with_error!(&env, Error::NothingToRelease);
         }
 
@@ -308,7 +374,7 @@ impl Treasury {
         let cycle = Cycle {
             id,
             token: token.clone(),
-            amount: balance,
+            amount: available,
             roster,
             opened_at: now,
             closes_at: now + window,
@@ -316,12 +382,13 @@ impl Treasury {
             state: CycleState::Voting,
         };
 
-        env.storage().instance().set(&DataKey::Cycle, &cycle);
+        env.storage().persistent().set(&DataKey::Cycle(id), &cycle);
+        env.storage().instance().set(&DataKey::OpenCycleId, &id);
         env.storage().instance().set(&DataKey::NextCycleId, &(id + 1));
 
         env.events().publish(
             (symbol_short!("CYCLE"), symbol_short!("OPEN")),
-            (id, token, balance, cycle.closes_at),
+            (id, token, available, cycle.closes_at),
         );
     }
 
@@ -330,10 +397,16 @@ impl Treasury {
         bump(&env);
         voter.require_auth();
 
-        let mut cycle: Cycle = env
+        let id: u32 = env
             .storage()
             .instance()
-            .get(&DataKey::Cycle)
+            .get(&DataKey::OpenCycleId)
+            .unwrap_or_else(|| panic_with_error!(&env, Error::NoCycleOpen));
+
+        let mut cycle: Cycle = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Cycle(id))
             .unwrap_or_else(|| panic_with_error!(&env, Error::NoCycleOpen));
 
         if cycle.state != CycleState::Voting {
@@ -358,11 +431,25 @@ impl Treasury {
         let reached = carried(cycle.approved_bps);
         if reached {
             cycle.state = CycleState::Payable;
+
+            // Reserve the whole amount now. Until every share is claimed this
+            // money is spoken for, and a later cycle must not be able to see it.
+            let reserved: i128 = env
+                .storage()
+                .persistent()
+                .get(&DataKey::Reserved(cycle.token.clone()))
+                .unwrap_or(0);
+            env.storage().persistent().set(
+                &DataKey::Reserved(cycle.token.clone()),
+                &(reserved + cycle.amount),
+            );
+
+            // The vote is over, so this cycle no longer blocks the next one.
+            env.storage().instance().remove(&DataKey::OpenCycleId);
         }
 
-        let id = cycle.id;
         let approved = cycle.approved_bps;
-        env.storage().instance().set(&DataKey::Cycle, &cycle);
+        env.storage().persistent().set(&DataKey::Cycle(id), &cycle);
 
         env.events().publish(
             (symbol_short!("CYCLE"), symbol_short!("APPROVE")),
@@ -376,16 +463,22 @@ impl Treasury {
 
     /// Mark a cycle that closed below threshold as lapsed.
     ///
-    /// Permissionless, and it pays nobody. The balance simply stays here and is
-    /// picked up by the next cycle, so an unfinished vote delays a payout
-    /// rather than destroying it.
+    /// Permissionless, and it pays nobody. Nothing was reserved, so the balance
+    /// simply stays here and is picked up by the next cycle: an unfinished vote
+    /// delays a payout rather than destroying it.
     pub fn settle_lapsed_cycle(env: Env) {
         bump(&env);
 
-        let mut cycle: Cycle = env
+        let id: u32 = env
             .storage()
             .instance()
-            .get(&DataKey::Cycle)
+            .get(&DataKey::OpenCycleId)
+            .unwrap_or_else(|| panic_with_error!(&env, Error::NoCycleOpen));
+
+        let mut cycle: Cycle = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Cycle(id))
             .unwrap_or_else(|| panic_with_error!(&env, Error::NoCycleOpen));
 
         if cycle.state != CycleState::Voting {
@@ -399,8 +492,8 @@ impl Treasury {
         }
 
         cycle.state = CycleState::Lapsed;
-        let id = cycle.id;
-        env.storage().instance().set(&DataKey::Cycle, &cycle);
+        env.storage().persistent().set(&DataKey::Cycle(id), &cycle);
+        env.storage().instance().remove(&DataKey::OpenCycleId);
 
         env.events()
             .publish((symbol_short!("CYCLE"), symbol_short!("LAPSED")), id);
@@ -408,16 +501,20 @@ impl Treasury {
 
     /// Claim your share of a payable cycle.
     ///
-    /// Pulled rather than pushed, so one recipient that cannot receive the
-    /// token cannot strand everyone else's money behind their problem.
-    pub fn claim(env: Env, shareholder: Address) {
+    /// Named by cycle id, because several may be payable at once: a shareholder
+    /// who is slow to claim never blocks the next cycle, and never loses what
+    /// they are owed from an earlier one.
+    ///
+    /// Pulled rather than pushed, so one recipient that cannot receive the token
+    /// cannot strand everyone else's money behind their problem.
+    pub fn claim(env: Env, shareholder: Address, cycle_id: u32) {
         bump(&env);
         shareholder.require_auth();
 
         let cycle: Cycle = env
             .storage()
-            .instance()
-            .get(&DataKey::Cycle)
+            .persistent()
+            .get(&DataKey::Cycle(cycle_id))
             .unwrap_or_else(|| panic_with_error!(&env, Error::NoCycleOpen));
 
         if cycle.state != CycleState::Payable {
@@ -427,21 +524,63 @@ impl Treasury {
         let share = share_of(&cycle.roster, &shareholder)
             .unwrap_or_else(|| panic_with_error!(&env, Error::NotAShareholder));
 
-        let key = DataKey::Claimed(cycle.id, shareholder.clone());
+        let key = DataKey::Claimed(cycle_id, shareholder.clone());
         if env.storage().persistent().has(&key) {
             panic_with_error!(&env, Error::AlreadyClaimed);
         }
         env.storage().persistent().set(&key, &true);
 
         // Integer division truncates, so the shares can sum to slightly less
-        // than the total. The remainder stays in the contract and is swept into
-        // the next cycle rather than being written off.
+        // than the total. The remainder stays reserved against this cycle and is
+        // released back to the pool by the final claimant below.
         let payout = cycle
             .amount
             .checked_mul(share as i128)
             .unwrap()
             .checked_div(BPS_TOTAL)
             .unwrap();
+
+        // Release exactly this claimant's portion of the reservation.
+        let reserved: i128 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Reserved(cycle.token.clone()))
+            .unwrap_or(0);
+
+        let claims = env
+            .storage()
+            .persistent()
+            .get::<_, u32>(&DataKey::ClaimCount(cycle_id))
+            .unwrap_or(0)
+            + 1;
+        env.storage()
+            .persistent()
+            .set(&DataKey::ClaimCount(cycle_id), &claims);
+
+        // The last claimant also frees the truncation remainder, so it returns
+        // to the unreserved pool instead of being reserved against a cycle that
+        // is finished with.
+        let release = if claims == cycle.roster.len() {
+            let mut distributed: i128 = 0;
+            for i in 0..cycle.roster.len() {
+                let entry = cycle.roster.get(i).unwrap();
+                distributed += cycle
+                    .amount
+                    .checked_mul(entry.share_bps as i128)
+                    .unwrap()
+                    .checked_div(BPS_TOTAL)
+                    .unwrap();
+            }
+            // Everything this cycle reserved, including what truncation left over.
+            cycle.amount - (distributed - payout)
+        } else {
+            payout
+        };
+
+        env.storage().persistent().set(
+            &DataKey::Reserved(cycle.token.clone()),
+            &(reserved - release),
+        );
 
         if payout > 0 {
             token::Client::new(&env, &cycle.token).transfer(
@@ -453,26 +592,34 @@ impl Treasury {
 
         env.events().publish(
             (symbol_short!("CYCLE"), symbol_short!("CLAIM")),
-            (cycle.id, shareholder, payout),
+            (cycle_id, shareholder, payout),
         );
     }
 
+
     // ── Fee governance ─────────────────────────────────────────────────────
 
-    /// Propose an action on the factory.
+    /// Propose a governed action: the listing fee, factory admin, or the
+    /// shareholder register.
     ///
     /// The fee stays a flat amount. SOW v4 states a flat-fee model three times
     /// and frames it as a Philippine SEC/BSP constraint — "BLKFNDR charges flat
     /// fees, never takes a percentage of funds" — so what a vote adjusts is the
     /// amount, not the shape.
-    pub fn propose(env: Env, proposer: Address, action: FactoryAction) {
+    pub fn propose(env: Env, proposer: Address, action: GovernedAction) {
         bump(&env);
         proposer.require_auth();
 
-        if let FactoryAction::SetFee(fee) = &action {
-            if *fee < 0 {
-                panic_with_error!(&env, Error::FeeOutOfRange);
+        // Reject a malformed action now rather than after a week of voting, so
+        // shareholders never spend a window on something that cannot execute.
+        match &action {
+            GovernedAction::SetFee(fee) => {
+                if *fee < 0 {
+                    panic_with_error!(&env, Error::FeeOutOfRange);
+                }
             }
+            GovernedAction::SetShareholders(next) => validate_roster(&env, next),
+            GovernedAction::TransferAdmin(_) => {}
         }
 
         let roster: Vec<Shareholder> = load(&env, &DataKey::Shareholders);
@@ -483,7 +630,7 @@ impl Treasury {
         if let Some(open) = env
             .storage()
             .instance()
-            .get::<_, FactoryProposal>(&DataKey::FactoryProposal)
+            .get::<_, Proposal>(&DataKey::Proposal)
         {
             if env.ledger().timestamp() < open.closes_at && !carried(open.approved_bps) {
                 panic_with_error!(&env, Error::ProposalAlreadyOpen);
@@ -494,7 +641,7 @@ impl Treasury {
         let window: u64 = load(&env, &DataKey::VoteWindow);
         let now = env.ledger().timestamp();
 
-        let proposal = FactoryProposal {
+        let proposal = Proposal {
             id,
             action,
             roster,
@@ -505,7 +652,7 @@ impl Treasury {
 
         env.storage()
             .instance()
-            .set(&DataKey::FactoryProposal, &proposal);
+            .set(&DataKey::Proposal, &proposal);
         env.storage()
             .instance()
             .set(&DataKey::NextProposalId, &(id + 1));
@@ -520,10 +667,10 @@ impl Treasury {
         bump(&env);
         voter.require_auth();
 
-        let mut proposal: FactoryProposal = env
+        let mut proposal: Proposal = env
             .storage()
             .instance()
-            .get(&DataKey::FactoryProposal)
+            .get(&DataKey::Proposal)
             .unwrap_or_else(|| panic_with_error!(&env, Error::NoProposalOpen));
 
         if env.ledger().timestamp() >= proposal.closes_at {
@@ -547,7 +694,7 @@ impl Treasury {
         let approved = proposal.approved_bps;
         env.storage()
             .instance()
-            .set(&DataKey::FactoryProposal, &proposal);
+            .set(&DataKey::Proposal, &proposal);
 
         env.events().publish(
             (symbol_short!("PROPOSAL"), symbol_short!("APPROVE")),
@@ -563,76 +710,53 @@ impl Treasury {
     pub fn execute_proposal(env: Env) {
         bump(&env);
 
-        let proposal: FactoryProposal = env
+        let proposal: Proposal = env
             .storage()
             .instance()
-            .get(&DataKey::FactoryProposal)
+            .get(&DataKey::Proposal)
             .unwrap_or_else(|| panic_with_error!(&env, Error::NoProposalOpen));
 
         if !carried(proposal.approved_bps) {
             panic_with_error!(&env, Error::ThresholdNotMet);
         }
 
-        let factory: Address = load(&env, &DataKey::Factory);
-
         // Symbol::new, not symbol_short!: the latter caps at nine characters and
         // these names are longer.
         match &proposal.action {
-            FactoryAction::SetFee(fee) => {
+            GovernedAction::SetFee(fee) => {
+                let factory: Address = load(&env, &DataKey::Factory);
                 env.invoke_contract::<()>(
                     &factory,
                     &Symbol::new(&env, "update_platform_fee"),
                     soroban_sdk::vec![&env, fee.into_val(&env)],
                 );
             }
-            FactoryAction::TransferAdmin(new_admin) => {
+            GovernedAction::TransferAdmin(new_admin) => {
+                let factory: Address = load(&env, &DataKey::Factory);
                 env.invoke_contract::<()>(
                     &factory,
                     &Symbol::new(&env, "transfer_admin"),
                     soroban_sdk::vec![&env, new_admin.into_val(&env)],
                 );
             }
+            GovernedAction::SetShareholders(next) => {
+                // Revalidated at execution, not just at proposal: cheap, and the
+                // register is the one piece of state that decides who gets paid.
+                validate_roster(&env, next);
+                env.storage().instance().set(&DataKey::Shareholders, next);
+
+                env.events().publish(
+                    (symbol_short!("SHARES"), symbol_short!("SET")),
+                    next.len(),
+                );
+            }
         }
 
-        env.storage().instance().remove(&DataKey::FactoryProposal);
+        env.storage().instance().remove(&DataKey::Proposal);
 
         env.events().publish(
             (symbol_short!("PROPOSAL"), symbol_short!("APPLIED")),
             proposal.id,
-        );
-    }
-
-    // ── Register ───────────────────────────────────────────────────────────
-
-    /// Replace the shareholder register.
-    ///
-    /// Requires a carried cycle vote to have settled first — the register may
-    /// not change while a cycle is being voted on, because a cycle in flight
-    /// has already snapshotted who is owed what and changing the live register
-    /// mid-vote is how someone gets diluted after the earning.
-    pub fn set_shareholders(env: Env, caller: Address, shareholders: Vec<Shareholder>) {
-        bump(&env);
-        caller.require_auth();
-
-        let current: Vec<Shareholder> = load(&env, &DataKey::Shareholders);
-        if share_of(&current, &caller).is_none() {
-            panic_with_error!(&env, Error::NotAShareholder);
-        }
-
-        if let Some(cycle) = env.storage().instance().get::<_, Cycle>(&DataKey::Cycle) {
-            if cycle.state == CycleState::Voting || cycle.state == CycleState::Payable {
-                panic_with_error!(&env, Error::CycleAlreadyOpen);
-            }
-        }
-
-        validate_roster(&env, &shareholders);
-        env.storage()
-            .instance()
-            .set(&DataKey::Shareholders, &shareholders);
-
-        env.events().publish(
-            (symbol_short!("SHARES"), symbol_short!("SET")),
-            (caller, shareholders.len()),
         );
     }
 
@@ -642,12 +766,38 @@ impl Treasury {
         load(&env, &DataKey::Shareholders)
     }
 
-    pub fn get_cycle(env: Env) -> Option<Cycle> {
-        env.storage().instance().get(&DataKey::Cycle)
+    pub fn get_cycle(env: Env, cycle_id: u32) -> Option<Cycle> {
+        env.storage().persistent().get(&DataKey::Cycle(cycle_id))
     }
 
-    pub fn get_proposal(env: Env) -> Option<FactoryProposal> {
-        env.storage().instance().get(&DataKey::FactoryProposal)
+    /// The cycle currently being voted on, if any.
+    pub fn get_open_cycle(env: Env) -> Option<Cycle> {
+        let id: u32 = env.storage().instance().get(&DataKey::OpenCycleId)?;
+        env.storage().persistent().get(&DataKey::Cycle(id))
+    }
+
+    /// What is still owed to shareholders of payable cycles, and so cannot be
+    /// taken by a new one.
+    pub fn get_reserved(env: Env, token: Address) -> i128 {
+        env.storage()
+            .persistent()
+            .get(&DataKey::Reserved(token))
+            .unwrap_or(0)
+    }
+
+    /// What a cycle opened right now would settle.
+    pub fn get_available(env: Env, token: Address) -> i128 {
+        let balance = token::Client::new(&env, &token).balance(&env.current_contract_address());
+        let reserved: i128 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Reserved(token))
+            .unwrap_or(0);
+        balance - reserved
+    }
+
+    pub fn get_proposal(env: Env) -> Option<Proposal> {
+        env.storage().instance().get(&DataKey::Proposal)
     }
 
     pub fn get_factory(env: Env) -> Address {
