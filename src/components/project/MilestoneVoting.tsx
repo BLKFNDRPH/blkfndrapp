@@ -16,7 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useFreighterWallet } from "@/context/FreighterWalletContext";
 import { useStellarContract } from "@/hooks/use-stellar-contract";
-import { fromStroops } from "@/lib/currencies";
+import { currencyForToken, fromStroops } from "@/lib/currencies";
 
 /**
  * Milestone release, from the contributor's side.
@@ -40,6 +40,11 @@ interface VaultMilestone {
 
 interface Props {
   vaultAddress: string;
+  /**
+   * The listing's currency label, used only until the vault reports its own
+   * token. It comes from creator-supplied metadata, so it is a claim about
+   * which asset is escrowed rather than evidence of it.
+   */
   currency: string;
   /** The project's builder, who alone may open a window. */
   creatorAddress: string;
@@ -87,7 +92,7 @@ function timeLeft(endsAt: number): string {
 
 export function MilestoneVoting({
   vaultAddress,
-  currency,
+  currency: listedCurrency,
   creatorAddress,
   onChange,
 }: Props) {
@@ -106,6 +111,7 @@ export function MilestoneVoting({
   const [milestones, setMilestones] = useState<VaultMilestone[]>([]);
   const [raised, setRaised] = useState(0n);
   const [windowSecs, setWindowSecs] = useState(0);
+  const [token, setToken] = useState<string | undefined>(undefined);
   const [myWeight, setMyWeight] = useState(0n);
   const [voted, setVoted] = useState<Record<number, boolean>>({});
   const [loading, setLoading] = useState(true);
@@ -126,6 +132,7 @@ export function MilestoneVoting({
       setMilestones(info.milestones ?? []);
       setRaised(BigInt(info.raised_amount ?? 0));
       setWindowSecs(Number(info.voting_window_secs ?? 0));
+      setToken(info.token ? String(info.token) : undefined);
 
       if (freighterWalletAddress) {
         const weight = await getVotingWeight(vaultAddress, freighterWalletAddress);
@@ -160,6 +167,15 @@ export function MilestoneVoting({
   // contract so the UI never claims a vote will pass when it will not.
   const threshold = useMemo(() => (raised * 5000n) / 10000n, [raised]);
   const cap = useMemo(() => (raised * 2000n) / 10000n, [raised]);
+
+  // Every figure below is money the vault is about to move, so name the asset
+  // the vault actually holds. Fall back to the listing's label only until the
+  // vault has answered, and to the token address if this deployment has no
+  // name for it — showing an address is honest, showing the wrong ticker is not.
+  const currency = useMemo(() => {
+    if (!token) return listedCurrency;
+    return currencyForToken(token) ?? `${token.slice(0, 4)}…${token.slice(-4)}`;
+  }, [token, listedCurrency]);
 
   const run = (id: number, label: string, action: () => Promise<unknown>) => {
     setBusyId(id);

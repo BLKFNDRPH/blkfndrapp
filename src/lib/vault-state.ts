@@ -29,6 +29,12 @@ export interface OnChainMilestone {
 
 export interface VaultState {
   creator: string;
+  /**
+   * The token contract this vault escrows. Fixed at construction and used for
+   * the vault's whole life, so it is the only trustworthy answer to "which
+   * asset is this project denominated in" — the listing metadata merely claims.
+   */
+  token: string;
   status: string;
   currentFunding: number;
   currentFundingRaw: string;
@@ -74,6 +80,7 @@ export async function readVaultState(vaultAddress: string): Promise<VaultState |
 
     return {
       creator: String(info.creator),
+      token: String(info.token),
       status,
       currentFunding: Number(info.raised_amount) / STROOPS,
       currentFundingRaw: info.raised_amount.toString(),

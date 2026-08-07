@@ -623,7 +623,12 @@ export function ProjectDetailsDialog() {
             {project?.title || "Loading..."}
           </DialogTitle>
           <DialogDescription className="text-sm sm:text-lg leading-snug break-words break-all text-left line-clamp-3 sm:line-clamp-4">
-            {project?.tagline || "Fetching details..."}
+            {/* A loaded project with no tagline is not a project still loading.
+                The old copy said "Fetching details..." forever whenever the
+                metadata carried no description. */}
+            {project
+              ? project.tagline || "No description was published for this project."
+              : "Fetching details…"}
           </DialogDescription>
           <Button
             variant="ghost"
