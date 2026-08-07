@@ -1,6 +1,15 @@
-# Multi-stage build for Next.js 16 with React 19
+# Multi-stage build for Next.js 16 with React 19.
+#
+# Node 24, not 20. Node 20 reached end of life in April 2026, and
+# @supabase/supabase-js warns on every boot that 20 and below are deprecated:
+#
+#   Node.js 20 and below are deprecated and will no longer be supported in
+#   future versions of @supabase/supabase-js
+#
+# 24 is the current LTS and matches what the project is developed on, so the
+# runtime that builds the image is the runtime the code was written against.
 # Stage 1: Dependencies
-FROM node:20-alpine AS deps
+FROM node:24-alpine AS deps
 WORKDIR /app
 
 # Install dependencies based on package manager
@@ -8,7 +17,7 @@ COPY package.json package-lock.json* ./
 RUN npm ci --legacy-peer-deps
 
 # Stage 2: Builder
-FROM node:20-alpine AS builder
+FROM node:24-alpine AS builder
 WORKDIR /app
 
 # Copy dependencies from deps stage
@@ -81,7 +90,7 @@ ENV NODE_ENV=production
 RUN npm run build
 
 # Stage 3: Runner
-FROM node:20-alpine AS runner
+FROM node:24-alpine AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
