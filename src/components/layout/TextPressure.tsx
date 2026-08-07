@@ -5,7 +5,6 @@ import { useEffect, useRef, useState } from 'react';
 interface TextPressureProps {
   text?: string;
   fontFamily?: string;
-  fontUrl?: string;
   width?: boolean;
   weight?: boolean;
   italic?: boolean;
@@ -22,9 +21,9 @@ interface TextPressureProps {
 }
 
 const TextPressure: React.FC<TextPressureProps> = ({
-  text = 'Compressa',
-  fontFamily = 'Compressa VF',
-  fontUrl = 'https://res.cloudinary.com/dr6lvwubh/raw/upload/v1529908256/CompressaPRO-GX.woff2',
+  text = 'BLKFNDR',
+  // @font-face lives in globals.css so the file is fetched once, not per instance.
+  fontFamily = 'Roboto Flex Variable',
   width = true,
   weight = true,
   italic = true,
@@ -144,13 +143,15 @@ const TextPressure: React.FC<TextPressureProps> = ({
             return Math.max(minVal, val + minVal);
           };
 
-          const wdth = width ? Math.floor(getAttr(d, 5, 200)) : 100;
+          // Ranges are clamped to the font's own axes (wght 100..1000, wdth 25..151,
+          // slnt 0..-10deg) so cursor travel maps onto the axis instead of saturating.
+          const wdth = width ? Math.floor(getAttr(d, 25, 126)) : 100;
           const wght = weight ? Math.floor(getAttr(d, 100, 900)) : 400;
-          const italVal = italic ? getAttr(d, 0, 1).toFixed(2) : '0';
+          const slntVal = italic ? (-10 * getAttr(d, 0, 1)).toFixed(2) : '0';
           const alphaVal = alpha ? getAttr(d, 0, 1).toFixed(2) : '1';
 
           span.style.opacity = alphaVal;
-          span.style.fontVariationSettings = `'wght' ${wght}, 'wdth' ${wdth}, 'ital' ${italVal}`;
+          span.style.fontVariationSettings = `'wght' ${wght}, 'wdth' ${wdth}, 'slnt' ${slntVal}`;
         });
       }
 
@@ -164,7 +165,7 @@ const TextPressure: React.FC<TextPressureProps> = ({
         spansRef.current.forEach(span => {
           if (!span) return;
           span.style.opacity = '1';
-          span.style.fontVariationSettings = `'wght' 400, 'wdth' 100, 'ital' 0`;
+          span.style.fontVariationSettings = `'wght' 400, 'wdth' 100, 'slnt' 0`;
         });
       }
     }
@@ -177,11 +178,6 @@ const TextPressure: React.FC<TextPressureProps> = ({
   return (
     <div ref={containerRef} className="relative w-full h-full overflow-hidden bg-transparent">
       <style>{`
-        @font-face {
-          font-family: '${fontFamily}';
-          src: url('${fontUrl}');
-          font-style: normal;
-        }
         .stroke span {
           position: relative;
         }
