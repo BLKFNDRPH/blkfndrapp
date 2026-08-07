@@ -1,79 +1,271 @@
-# **Blkfndr: Build, Fund, and Own Real-World Developments on the Blockchain**
+# **blkfndr: Build, Fund, and Own Real-World Developments on the Blockchain**
 
 **Motto:** Build, Fund, and Own Real-World Developments on the Blockchain.
 
 ## **Abstract**
 
-Blkfndr is a global crowdfunding platform that bridges the gap between tangible real estate projects and global Web3 liquidity. By replacing slow, restrictive traditional banks with the power of blockchain technology, Blkfndr empowers local developers in the Philippines and across Asia to fund new real estate projects right from the blueprint stage. Connecting builders directly with everyday people worldwide, we make it fast, secure, and easy for anyone to fund, build, and co-own real-world properties.
+blkfndr is a crowdfunding protocol on Stellar for real-world property development, built so that funding a project never requires trusting the platform that hosts it.
 
-Currently live on the Sui Mainnet, Blkfndr is migrating to the **Stellar Ecosystem** to leverage its unparalleled speed, low transaction costs, and optimized environment for real-world asset (RWA) tokenization.
+Contributions pool into a vault contract deployed for one project alone. The builder's performance bond is locked in that same contract, taken in the transaction that creates the vault, so no project can begin collecting money before its builder has capital of their own at risk. Money leaves the vault in milestone tranches, and a tranche is released only when contributors — weighted by what they actually contributed — vote to release it. A milestone that fails forfeits the bond to those contributors automatically. Closing a project writes a permanent record to an append-only registry.
+
+There is no appointed signer, no admin key and no platform role anywhere in the path that moves money. This document describes the mechanism that makes that claim true, the economics around it, and — in [Section 7](#7-what-this-does-not-protect-against) — the things it deliberately does not solve.
+
+**Status: deployed to Stellar testnet.** Mainnet is planned and not yet deployed. Nothing in this document should be read as an offer, a security, or investment advice.
+
+---
 
 ## **1. The Problem**
 
-The traditional real estate development process is broken. Local developers, particularly in emerging markets like the Philippines and Southeast Asia, face insurmountable red tape, sky-high interest rates, and localized liquidity bottlenecks when trying to secure funding from traditional banks.
+### **1.1 Builders cannot reach capital**
 
-Conversely, everyday individuals are priced out of the lucrative real estate market. The barrier to entry for funding and owning a piece of a high-yield real estate development requires massive capital, excluding the global retail market from participating in wealth-generating assets.
+Local developers, particularly across the Philippines and Southeast Asia, meet red tape, high interest rates and localized liquidity bottlenecks the moment they approach a traditional bank. A viable development with sound economics stalls at the blueprint stage for reasons that have nothing to do with the building.
 
-## **2. The Blkfndr Solution**
+### **1.2 Ordinary people cannot reach the asset class**
 
-Blkfndr bypasses traditional financial institutions entirely. We provide developers with a streamlined, decentralized crowdfunding platform to turn architectural blueprints into funded realities.
+Real estate is the oldest and most reliable asset class in the world and one of the most exclusive. Participating has historically required capital most people will never assemble in one place, so the returns from development accrue to those who already hold the capital.
 
-By utilizing blockchain technology, Blkfndr allows:
+### **1.3 Crowdfunding never solved the trust problem**
 
-1. **Developers** to pitch their blueprints to a global audience and raise capital instantly via smart contracts.  
-2. **Everyday Users** to fund real-world projects with micro-transactions, earning the right to co-own, earn interest, or receive shares in tangible properties.  
-3. **Total Transparency** through immutable ledgers, ensuring funds are locked, tracked, and deployed securely.
+Connecting the two sides is the easy part, and platforms have done it for years. What none of them removed is the question the contributor is really asking: *once I send this money, who can move it, and what happens to me if the project never gets built?*
 
-## **3. Platform Architecture & Ecosystem**
+On a conventional platform the honest answer is that a company holds the funds and its own policy governs their release. On most on-chain crowdfunding the answer is worse — a team wallet with a withdrawal key, which is precisely the structure every rugpull has ever needed. An exit scam is not a sophisticated attack. It is the default outcome of letting the party who benefits from moving the money be the party who is able to move it.
 
-### **3.1. Core Technology**
+blkfndr treats that as a design constraint rather than a policy problem.
 
-Blkfndr is built on a modern, high-performance tech stack:
+---
 
-* **Network:** Stellar Ecosystem (Rust / Soroban Smart Contracts). Stellar is purpose-built for global payments and asset issuance, making it the perfect home for a real-estate crowdfunding protocol.  
-* **Frontend:** Next.js / React, ensuring a seamless, Web2-like user experience.  
-* **Storage:** Pinata (IPFS), guaranteeing that blueprints, legal documents, and project data remain immutable and decentralized.
+## **2. Design Principles**
 
-### **3.2. How It Works (The MVP)**
+1. **Custody belongs to a contract, not to a company.** Funds sit in a per-project vault. blkfndr operates the interface, not the money.
+2. **The party who benefits from a release must not be the party who authorizes it.** The builder can request a tranche. Contributors decide it.
+3. **Authority follows stake, with a ceiling.** Voting weight is what you contributed — capped, so that concentration cannot become control.
+4. **Doing nothing must be safe for contributors.** Every timeout in the protocol resolves toward returning money, never toward releasing it.
+5. **The builder must have something to lose.** A bond, locked in the same contract as the raise, forfeited on failure.
+6. **History must be unforgeable.** Outcomes are appended on-chain and cannot be edited or deleted before the next raise.
+7. **Every claim here must be checkable.** Contract addresses and build hashes are published so a reader can verify the deployment rather than believe this document.
 
-The Blkfndr ecosystem operates through a transparent lifecycle:
+---
 
-1. **Creation:** A project owner uploads their real estate blueprints, funding goals, and timelines to the platform. The files are secured via Pinata.  
-2. **Verification:** Platform Admins review the project for legal and architectural viability. Approval is secured on-chain (with multi-signature requirements being introduced for enhanced security).  
-3. **Funding:** Global users browse the decentralized index of approved projects and fund them using cryptocurrency.  
-4. **Claiming:** Once a project reaches its funding target, the capital is unlocked for the developer. A flat **3% terminal fee** is applied to sustain the Blkfndr ecosystem.
+## **3. Protocol Architecture**
 
-## **4. Tokenomics & User Incentivization**
+### **3.1 Technology**
 
-Blkfndr is designing a robust economic model that rewards all participants while remaining compliant with real-world corporate structures. Future iterations will explore:
+| Layer | Technology |
+|---|---|
+| Network | Stellar — Soroban smart contracts, written in Rust |
+| Frontend | Next.js and React, for a Web2-grade user experience |
+| Database | Supabase (Postgres with Row Level Security) |
+| Auth | Supabase Auth (email/password, Google); Freighter for wallet linking and signing |
+| Storage | Pinata (IPFS) for blueprints and listing media; private Supabase Storage for identity documents |
+| AI | Google Genkit with Gemini 2.5 Flash, for listing-quality analysis |
 
-* **Debt Payment with Interest:** Funders act as decentralized lenders, receiving their principal plus interest as the property is developed and sold.  
-* **Fractionalized Equity:** Transitioning from simple crowdfunding to issuing shares/stock of the built property, allowing users to earn dividends from rental income or property sales.  
-* **Staking Mechanisms:** Users and admins can stake native tokens to secure the network, govern project approvals, and earn platform yields (supported by the 50% backend value retention model).  
-* **Transparent Tip Jar:** A specialized, transparent on-chain donation box allows the community to tip developers or the platform directly, fostering a supportive, grassroots builder community.
+Stellar is purpose-built for global payments and asset issuance, which makes it a natural home for a protocol whose unit of work is a small international contribution.
 
-## **5. Strategic Roadmap**
+*Historical note: blkfndr's first implementation targeted Sui (Move). The protocol has since been rebuilt on Stellar/Soroban, and the release model described here replaces the earlier admin-approved and multi-signature designs entirely.*
 
-**Phase 1: Foundation & Migration (Current)**
+### **3.2 Contract set**
 
-* Migration of smart contracts from Sui (Move) to Stellar (Rust/Soroban).  
-* Launch of the V2 MVP (Create, Approve, Fund, Claim).  
-* Integration of Pinata for decentralized blueprint storage.
+| Contract | Responsibility |
+|---|---|
+| `blkfndr-vault` | Per-project vault: contributions, bond, contributor-weighted milestone voting, refunds, forfeiture |
+| `blkfndr-factory` | Deploys vaults and pins the platform addresses each one trusts |
+| `blkfndr-attestation` | Append-only builder completion record. No update or delete entrypoint exists |
+| `blkfndr-identity` | KYC attestation registry |
+| `blkfndr-admin` | Platform administrator roster. **Not in the path that releases funds** |
 
-**Phase 2: Decentralized Governance & Security**
+The vault is not deployed as a single shared contract. Its wasm is uploaded once and the factory instantiates one instance per project from that hash, so every project's funds are isolated from every other project's, and any vault can be checked against a published hash.
 
-* Implementation of multi-signature approvals for Admins.  
-* Deployment of automated X (Twitter) marketing bots to push live projects to the global Web3 community.  
-* Introduction of the Transparent Tip Jar mechanism.
+### **3.3 Vault lifecycle**
 
-**Phase 3: The Property Investment Module**
+A vault moves through six states:
 
-* Launch of the post-build investment module.  
-* Legal and corporate structuring for distributing real-world property shares and equity on-chain.  
-* Secondary market enabling users to trade their fractional ownership of built properties.
+```
+Raising ──► Funded ──► Active ──► Completed
+   │                      │
+   └──► Failed            └──► Refunding
+```
 
-## **6. Conclusion**
+| State | Meaning |
+|---|---|
+| `Raising` | Accepting contributions, goal not yet met |
+| `Funded` | Goal met; the raise is closed |
+| `Active` | Milestone tranches are being voted on and released |
+| `Failed` | The deadline passed without the goal being met |
+| `Refunding` | A milestone failed; remaining funds and the forfeited bond are claimable |
+| `Completed` | Closed out, with an attestation written |
 
-Real estate is the oldest and most reliable asset class in the world, yet it remains one of the most exclusive. Blkfndr is tearing down the walls built by traditional banking. By uniting local Asian developers with global Web3 liquidity on the Stellar network, we are not just funding buildings—we are democratizing the future of real-world development.
+---
 
-*Build, Fund, and Own with Blkfndr.*
+## **4. Release Authority**
+
+This section is the protocol. Everything else is arrangement around it.
+
+### **4.1 Contribution is voting weight**
+
+A contribution both funds the project and confers the right to decide when its funds move. There is no separate governance token to acquire, no snapshot to be present for, and no fee deducted on the way in — the entire deposit counts, and the entire deposit remains claimable by the contributor in the paths where money comes back.
+
+The minimum contribution is 5 units.
+
+### **4.2 A release needs a majority of the money**
+
+To release a tranche, approving weight must exceed **50% of the total raised** — not a majority of voters, but a majority of the capital actually contributed. In the contract this is `RELEASE_THRESHOLD_BPS = 5_000`, evaluated as a strict inequality, so an exact tie does not release.
+
+### **4.3 No wallet counts for more than 20%**
+
+However much a single wallet contributed, its voting weight is capped at **20% of the raise** (`WEIGHT_CAP_BPS = 2_000`). This is the provision that makes the majority threshold meaningful. Without it, one wallet holding most of a raise would hold unilateral release authority — and the cheapest way to obtain that is for the builder to fund their own project.
+
+Clearing a threshold above 50% in increments of at most 20% requires **at least three distinct wallets**, always.
+
+#### Worked example
+
+Three backers contribute 100 USDC each toward a 300 USDC goal. The cap is 20% of the raise, so each counts for 60 regardless. A release needs more than 150:
+
+| Approvers | Weight | Outcome |
+|---|---|---|
+| one | 60 | short |
+| two | 120 | short |
+| three | 180 | releases |
+
+A backer holding two thirds of the raise still counts for 60 and still cannot release alone. Both properties are pinned down by the contract test suite, in `a_majority_contributor_cannot_release_alone` and `release_requires_at_least_three_distinct_wallets`.
+
+### **4.4 Execution is permissionless**
+
+`release_milestone` takes no authorizing caller. Once a vote has carried, anyone at all can execute it — a contributor, the builder, a bot, a stranger. There is nobody to petition and nobody positioned to withhold funds the contributors have already approved. The same is true of `settle_lapsed_milestone`.
+
+This is the difference between *decentralized in principle* and *decentralized in the path that matters*. A vote that only a privileged account can enact is not a vote; it is a recommendation.
+
+### **4.5 Silence returns money**
+
+The builder opens a milestone vote, which runs for a window fixed at project creation (currently 7 days). If that window lapses without a carrying vote, **the milestone fails**. Remaining vault funds and the forfeited bond become claimable pro-rata by contributors.
+
+Contributor apathy is the normal failure mode of on-chain governance, and most designs quietly convert it into approval by way of a quorum that is easy to satisfy or a timeout that defaults to release. Here the default runs the other way. A builder cannot wait out their contributors; waiting is the one behaviour guaranteed to cost them their bond.
+
+### **4.6 The bond**
+
+The performance bond and a flat platform fee are taken **in the same transaction that creates the vault**. There is no ordering of operations in which a project accepts a contribution before its builder is exposed. The minimum bond is 5% of the funding goal.
+
+The bond resolves in one of three ways:
+
+- **Goal missed by the deadline** — every contribution is returned in full and the bond returns to the builder. Failing to raise is not misconduct.
+- **Milestone failed** — the bond is forfeited to contributors, claimable pro-rata alongside the remaining funds.
+- **Project completed** — the bond returns to the builder.
+
+The bond is what converts a promise into a position. A builder who abandons a funded project does not merely forgo future tranches; they lose capital they have already committed.
+
+### **4.7 Refunds**
+
+`claim_refund` is called by the contributor, for their own balance, in the `Failed` and `Refunding` states. It requires no cooperation from the builder and no action by blkfndr. A refund path that depends on a counterparty choosing to honour it is not a refund path.
+
+### **4.8 The permanent record**
+
+Closing a project appends to the attestation registry: builder, project, outcome, amount raised, bond, milestones approved, and timestamp. The contract exposes no update entrypoint and no delete entrypoint, so a builder's history is cumulative and cannot be laundered between raises. Over time this is the asset an honest builder accrues on the platform — and the one a dishonest builder cannot discard.
+
+---
+
+## **5. Economics**
+
+### **5.1 The fee is flat, and the builder pays it**
+
+blkfndr charges a **flat fee per project**, paid by the builder at vault creation. It is never a percentage of funds raised, and contributor deposits are never touched by it.
+
+This matters beyond pricing. A platform earning a percentage of every raise has an interest in raises completing, which is an interest in releases happening — exactly the incentive that ought not to sit near the release mechanism. A flat creation fee leaves the platform indifferent to whether any individual tranche is released, and that indifference is load-bearing.
+
+It also means a contributor's whole deposit is theirs both to reclaim and to vote with, with no discrepancy between the amount at risk and the weight it carries.
+
+### **5.2 What the platform does not do**
+
+- It does not take custody of contributions.
+- It does not take a percentage of a raise.
+- It does not hold a key that can release, withhold or redirect funds.
+- It does not have an entrypoint to accept donations. The bonded-vault contracts have none; money reaches the platform only as the flat per-project fee.
+
+### **5.3 Future economic modules**
+
+The following are **designed but not implemented**, and are documented here as direction rather than as available features:
+
+- **Debt with interest** — funders as decentralized lenders, receiving principal plus interest as a property is developed and sold.
+- **Fractionalized equity** — issuing shares in a completed property so contributors earn from rental income or sale, which requires real-world corporate structuring to be lawful in each jurisdiction.
+- **Secondary transfer** — allowing a contributor to exit a position before a project closes.
+
+Each of these changes the legal character of a contribution and none will ship ahead of the corresponding structuring work.
+
+---
+
+## **6. Security Model**
+
+### **6.1 On-chain**
+
+The properties in [Section 4](#4-release-authority) are enforced by contract logic, not by application code or platform policy. The admin roster contract exists for platform administration and is deliberately absent from the release path.
+
+The contract suite currently stands at **81 passing tests**, covering the threshold arithmetic, the weight cap, the distinct-wallet requirement, lapse handling, forfeiture and refund accounting.
+
+### **6.2 Off-chain**
+
+Authorization is enforced by the database, not only by the application:
+
+- Every table carries Row Level Security.
+- Identity columns on KYC records are granted to no browser-facing role at all — `select *` on your own row fails with a publishable key. They are reachable only with the service-role key, from `server-only` modules, after an explicit admin check.
+- Identity documents are never stored in the database. They live in a private Storage bucket reached through short-lived signed URLs minted server-side.
+- Roles are read from `app_metadata`, never `user_metadata`, which a user can edit. On-chain state remains the source of truth for who is an admin.
+- Every exported async function in a `"use server"` file is treated as a public HTTP endpoint: it re-authenticates, re-authorizes and validates its arguments, with the argument list treated as hostile.
+
+### **6.3 Verifiability**
+
+A reader should not have to take this document's word for any of it. The vault wasm hash is published, and `scripts/build-contracts.sh` reproduces it from source:
+
+```
+blkfndr_vault.wasm  sha256:9c20bca3e364d26240f83f03c11bd40ee30092fa2520bb1e767ba2c9a596db41
+```
+
+Any project's vault can be checked against that hash. Deployed contract addresses are listed in the [README](../README.md) and are viewable on stellar.expert.
+
+---
+
+## **7. What This Does Not Protect Against**
+
+A protocol that claimed to eliminate risk would be lying, and the omissions are more useful to a reader than the guarantees.
+
+- **The oracle problem.** No contract can see a building. The chain enforces *who decides* a milestone was met; it cannot itself verify that concrete was poured. Contributors are the oracle, and their diligence is the protocol's real quality bound.
+- **Collusion.** The 20% cap forces a release to involve at least three distinct wallets. It cannot establish that those wallets are three distinct *people*. A builder who recruits or controls enough independent-looking backers to clear the threshold defeats the mechanism — the cap raises the cost and coordination burden of that attack rather than making it impossible.
+- **Contributor apathy has a price.** Timeouts resolve safely, toward refunds. But a project where nobody votes fails, which is a poor outcome for an honest builder who did the work.
+- **Off-chain and legal risk.** Nothing here guarantees a permit is genuine, a title is clean, or a jurisdiction will recognize a contributor's interest in a physical asset. On-chain funds are protected; a building is not an on-chain object.
+- **Smart contract risk.** The contracts are tested and the build is reproducible. They have not been through a third-party audit. Treat testnet as a live rehearsal, not a place to commit funds you need back.
+- **Not yet on mainnet.** Everything described here is deployed to Stellar testnet.
+
+---
+
+## **8. Platform Parameters as Deployed**
+
+| Parameter | Value |
+|---|---|
+| Platform fee | Flat, 10 units, builder-paid at creation |
+| Minimum contribution | 5 units |
+| Minimum bond | 5% of the funding goal |
+| Milestone voting window | 7 days |
+| Release threshold | > 50% of total raised (`RELEASE_THRESHOLD_BPS = 5_000`) |
+| Per-wallet weight cap | 20% of total raised (`WEIGHT_CAP_BPS = 2_000`) |
+| Minimum wallets to release | 3 |
+
+---
+
+## **9. Roadmap**
+
+**Phase 1 — Bonded vault protocol (current).** Contributor-weighted release, bond and forfeiture, refunds, and the attestation registry, deployed to Stellar testnet. Pinata/IPFS for blueprint storage. Supabase with full Row Level Security.
+
+**Phase 2 — Mainnet and assurance.** Third-party audit of the contract set, mainnet deployment, and independent verification tooling so a contributor can check a vault against the published hash from the interface itself.
+
+**Phase 3 — Builder reputation.** Surfacing the attestation registry as a first-class builder profile, so completion history visibly affects a builder's ability to raise again.
+
+**Phase 4 — The property investment module.** Post-build investment, legal and corporate structuring for distributing real-world property shares on-chain, and a secondary market for fractional ownership of completed properties.
+
+---
+
+## **10. Conclusion**
+
+Real estate is the oldest and most reliable asset class in the world, and one of the most exclusive. Opening it up is not primarily a liquidity problem — the money exists, and it is willing. It is a trust problem, and trust problems are not solved by asking people to extend more of it.
+
+blkfndr's answer is to remove the discretion. The builder posts a bond before the vault exists. Contributors, weighted by their stake and capped so no one dominates, decide when each tranche is earned. Anyone can execute a decision once it carries, silence returns money rather than releasing it, and every outcome is written somewhere it cannot be edited.
+
+What is left is a platform that cannot rug you, because it was never given the ability to.
+
+*Build, Fund, and Own with blkfndr.*

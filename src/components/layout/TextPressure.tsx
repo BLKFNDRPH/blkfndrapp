@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 interface TextPressureProps {
   text?: string;
   fontFamily?: string;
+  /** Only needed for a self-hosted face. Omit to use a font already loaded by the document. */
   fontUrl?: string;
   width?: boolean;
   weight?: boolean;
@@ -21,10 +22,25 @@ interface TextPressureProps {
   interactive?: boolean;
 }
 
+// Roboto Flex's real axis ranges, as requested in layout.tsx. Feeding a value
+// outside these does not error — the browser just clamps it — but keeping the
+// interpolation inside the range is what stops the effect flattening out at
+// the extremes.
+const WGHT = { min: 100, max: 900 };
+const SLNT = { min: 0, max: 10 };
+// Narrower than the font's full 25..151 on purpose. The ceiling is held down
+// because the letters are laid out with `justify-between`, so their combined
+// advance has to stay inside the container or the wordmark clips; the floor is
+// held up because Roboto Flex at wdth 25 is spindly enough to read as a
+// rendering fault at display size.
+const WDTH = { min: 60, max: 125 };
+
+const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+
 const TextPressure: React.FC<TextPressureProps> = ({
-  text = 'Compressa',
-  fontFamily = 'Compressa VF',
-  fontUrl = 'https://res.cloudinary.com/dr6lvwubh/raw/upload/v1529908256/CompressaPRO-GX.woff2',
+  text = 'BLKFNDR',
+  fontFamily = 'Roboto Flex',
+  fontUrl,
   width = true,
   weight = true,
   italic = true,
@@ -93,7 +109,13 @@ const TextPressure: React.FC<TextPressureProps> = ({
 
     const { width: containerW, height: containerH } = containerRef.current.getBoundingClientRect();
 
-    let newFontSize = containerW / (chars.length / 2);
+    // The old divisor (chars.length / 2) was tuned for an ultra-condensed face.
+    // Roboto Flex's uppercase advances are far wider, so the same divisor
+    // overflowed the container. 0.78em per character fills the width at rest
+    // while still fitting the worst case — every letter at once at WDTH.max
+    // *and* WGHT.max. Weight widens the glyphs too, so sizing off the width
+    // axis alone still overflows.
+    let newFontSize = containerW / (chars.length * 0.78);
     newFontSize = Math.max(newFontSize, minFontSize);
 
     setFontSize(newFontSize);
@@ -144,13 +166,21 @@ const TextPressure: React.FC<TextPressureProps> = ({
             return Math.max(minVal, val + minVal);
           };
 
-          const wdth = width ? Math.floor(getAttr(d, 5, 200)) : 100;
-          const wght = weight ? Math.floor(getAttr(d, 100, 900)) : 400;
-          const italVal = italic ? getAttr(d, 0, 1).toFixed(2) : '0';
+          const wdth = width
+            ? clamp(Math.floor(getAttr(d, WDTH.min, WDTH.max)), WDTH.min, WDTH.max)
+            : 100;
+          const wght = weight
+            ? clamp(Math.floor(getAttr(d, WGHT.min, WGHT.max)), WGHT.min, WGHT.max)
+            : 400;
+          // Roboto Flex slants on `slnt` (0 to -10 degrees); it has no `ital`
+          // axis, so the old 'ital' setting was silently doing nothing.
+          const slnt = italic
+            ? -clamp(getAttr(d, SLNT.min, SLNT.max), SLNT.min, SLNT.max)
+            : 0;
           const alphaVal = alpha ? getAttr(d, 0, 1).toFixed(2) : '1';
 
           span.style.opacity = alphaVal;
-          span.style.fontVariationSettings = `'wght' ${wght}, 'wdth' ${wdth}, 'ital' ${italVal}`;
+          span.style.fontVariationSettings = `'wght' ${wght}, 'wdth' ${wdth}, 'slnt' ${slnt.toFixed(2)}`;
         });
       }
 
@@ -164,7 +194,7 @@ const TextPressure: React.FC<TextPressureProps> = ({
         spansRef.current.forEach(span => {
           if (!span) return;
           span.style.opacity = '1';
-          span.style.fontVariationSettings = `'wght' 400, 'wdth' 100, 'ital' 0`;
+          span.style.fontVariationSettings = `'wght' 400, 'wdth' 100, 'slnt' 0`;
         });
       }
     }
@@ -177,11 +207,13 @@ const TextPressure: React.FC<TextPressureProps> = ({
   return (
     <div ref={containerRef} className="relative w-full h-full overflow-hidden bg-transparent">
       <style>{`
-        @font-face {
+        ${fontUrl ? `@font-face {
           font-family: '${fontFamily}';
-          src: url('${fontUrl}');
+          src: url('${fontUrl}') format('woff2-variations');
+          font-weight: 100 1000;
+          font-display: swap;
           font-style: normal;
-        }
+        }` : ''}
         .stroke span {
           position: relative;
         }
@@ -202,7 +234,9 @@ const TextPressure: React.FC<TextPressureProps> = ({
         className={`text-pressure-title ${className} ${flex ? 'flex justify-between' : ''
           } ${stroke ? 'stroke' : ''} uppercase text-center`}
         style={{
-          fontFamily,
+          // Fallback stack matters: without one, a failed webfont drops the
+          // wordmark to the browser's default serif at display size.
+          fontFamily: `'${fontFamily}', 'Inter', sans-serif`,
           fontSize: fontSize,
           color: textColor,
           lineHeight,

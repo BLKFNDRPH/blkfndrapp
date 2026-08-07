@@ -4,31 +4,25 @@ import { cn } from '@/lib/utils';
 
 const StaticBLKFNDR: React.FC<{ className?: string, textColor?: string }> = ({ className, textColor }) => {
   const text = 'BLKFNDR';
-  const fontFamily = 'Compressa VF';
-  const fontUrl =
-    'https://res.cloudinary.com/dr6lvwubh/raw/upload/v1529908256/CompressaPRO-GX.woff2';
+  // Was "Compressa VF", loaded from a Cloudinary URL that now 404s — which left
+  // every wordmark in the app rendering as the default serif. Roboto Flex is
+  // already loaded document-wide in layout.tsx with the wght/wdth/slnt axes.
+  const fontFamily = "'Roboto Flex', 'Inter', sans-serif";
 
-  // Assign gradual weight + italic per character (center heaviest)
+  // Gradual weight + slant per character (centre heaviest). Roboto Flex slants
+  // on `slnt` in degrees, 0 to -10; it has no `ital` axis.
   const styles = [
-    { wght: 200, ital: 0 }, // B - thinnest
-    { wght: 400, ital: 0.2 }, // L
-    { wght: 600, ital: 0.5 }, // K
-    { wght: 800, ital: 1 }, // F - boldest, most italic
-    { wght: 600, ital: 0.5 }, // N
-    { wght: 400, ital: 0.2 }, // D
-    { wght: 200, ital: 0 }, // R - thinnest
+    { wght: 200, slnt: 0 }, // B - thinnest
+    { wght: 400, slnt: -2 }, // L
+    { wght: 600, slnt: -5 }, // K
+    { wght: 800, slnt: -10 }, // F - boldest, most slanted
+    { wght: 600, slnt: -5 }, // N
+    { wght: 400, slnt: -2 }, // D
+    { wght: 200, slnt: 0 }, // R - thinnest
   ];
 
   return (
     <span className={cn("inline-flex justify-center items-center bg-transparent", className)}>
-      <style>{`
-        @font-face {
-          font-family: '${fontFamily}';
-          src: url('${fontUrl}');
-          font-style: normal;
-        }
-      `}</style>
-
       <span
         className="uppercase tracking-widest text-center"
         style={{
@@ -45,7 +39,7 @@ const StaticBLKFNDR: React.FC<{ className?: string, textColor?: string }> = ({ c
           <span
             key={i}
             style={{
-              fontVariationSettings: `'wght' ${styles[i].wght}, 'ital' ${styles[i].ital}, 'wdth' 100`,
+              fontVariationSettings: `'wght' ${styles[i].wght}, 'slnt' ${styles[i].slnt}, 'wdth' 75`,
               transition: 'all 0.3s ease',
               margin: '0 0.05em',
             }}
