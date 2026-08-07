@@ -1,6 +1,6 @@
 -- Correct the bootstrap administrator.
 --
--- 20260807140000_platform_admins.sql seeded info@makerspaceinnovhub.com, which
+-- 20260807112735_platform_admins.sql seeded info@makerspaceinnovhub.com, which
 -- is not the platform owner's account. The owner signs in as
 -- tzarumang@gmail.com, so the seeded invite was never claimable by them and the
 -- console was unreachable for the only person who had registered.
