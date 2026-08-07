@@ -388,7 +388,7 @@ function ProjectInvestorsCard({
                 investors.map((f) => (
                   <div
                     key={f.address}
-                    className="flex items-center justify-between gap-3 p-3 bg-[#003049]/5 dark:bg-[#003049]/10 border border-[#003049]/10 rounded-xl hover:bg-[#003049]/8 transition-colors group"
+                    className="flex items-center justify-between gap-3 p-3 bg-accent/5 dark:bg-accent/10 border border-accent/10 rounded-xl hover:bg-accent/10 transition-colors group"
                   >
                     <div className="flex items-center gap-2 min-w-0">
                       <Avatar className="h-8 w-8 shrink-0">
@@ -514,7 +514,7 @@ function StellarWalletDetailsCard({ address }: { address: string }) {
         <div className="flex justify-between items-center">
           <div>
             <CardTitle className="text-xl font-bold flex items-center gap-2">
-              <Coins className="h-5 w-5 text-[#003049]" />
+              <Coins className="h-5 w-5 text-accent" />
               Stellar Asset Balances
             </CardTitle>
             <CardDescription>
@@ -527,7 +527,7 @@ function StellarWalletDetailsCard({ address }: { address: string }) {
               size="sm"
               onClick={handleFundFriendbot}
               disabled={isFunding}
-              className="border-[#003049]/30 hover:border-[#003049]/60 hover:bg-[#003049]/10 text-[#003049] font-medium"
+              className="border-accent/30 hover:border-accent/60 hover:bg-accent/10 text-accent font-medium"
             >
               {isFunding ? (
                 <>
@@ -572,8 +572,8 @@ function StellarWalletDetailsCard({ address }: { address: string }) {
                   className="flex justify-between items-center py-4"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="p-2 bg-[#003049]/10 rounded-lg">
-                      <Coins className="h-4 w-4 text-[#003049]" />
+                    <div className="p-2 bg-accent/10 rounded-lg">
+                      <Coins className="h-4 w-4 text-accent" />
                     </div>
                     <div>
                       <p className="font-semibold text-base">{b.asset}</p>
@@ -673,7 +673,7 @@ function StellarRecentActivityCard({ address }: { address: string }) {
       <CardHeader>
         <div>
           <CardTitle className="text-xl font-bold flex items-center gap-2">
-            <RefreshCw className="h-5 w-5 text-[#003049]" />
+            <RefreshCw className="h-5 w-5 text-accent" />
             Recent Payments
           </CardTitle>
           <CardDescription>
@@ -725,7 +725,7 @@ function StellarRecentActivityCard({ address }: { address: string }) {
                       href={`https://stellar.expert/explorer/testnet/tx/${p.txHash}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="font-mono text-sm text-[#003049] hover:text-[#D62828] hover:underline truncate block max-w-[200px]"
+                      className="font-mono text-sm text-accent hover:text-[#D62828] hover:underline truncate block max-w-[200px]"
                     >
                       {p.txHash.slice(0, 8)}...{p.txHash.slice(-8)}
                     </a>
@@ -1019,13 +1019,13 @@ function ReceiptCard({
                   {groupReceipts.map((r) => (
                     <div
                       key={r.fund_id}
-                      className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-[#003049]/5 dark:bg-[#003049]/10 border border-[#003049]/10 rounded-xl hover:bg-[#003049]/8 transition-colors"
+                      className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-accent/5 dark:bg-accent/10 border border-accent/10 rounded-xl hover:bg-accent/10 transition-colors"
                     >
                       <div className="flex items-center gap-2 min-w-0">
                         <div className="h-1.5 w-1.5 rounded-full bg-[#22C55E] animate-pulse shrink-0" />
                         <div className="flex flex-col min-w-0">
                           <p className="font-headline font-bold text-xs text-[#2E86C1] flex items-center gap-1">
-                            Receipt <span className="font-mono text-[10px] text-[#D62828] font-bold bg-[#003049]/10 px-1.5 py-0.5 rounded-md">(SBT-{r.fund_id})</span>
+                            Receipt <span className="font-mono text-[10px] text-[#D62828] font-bold bg-accent/10 px-1.5 py-0.5 rounded-md">(SBT-{r.fund_id})</span>
                           </p>
                         </div>
                       </div>
@@ -1324,7 +1324,7 @@ export default function ProfilePage() {
       title: "Address Copied",
       description: (
         <span className="inline-flex items-baseline gap-1">
-          <Wallet className="h-4 w-4 text-[#003049] mr-1" /> Stellar public key
+          <Wallet className="h-4 w-4 text-accent mr-1" /> Stellar public key
           copied to clipboard.
         </span>
       ),

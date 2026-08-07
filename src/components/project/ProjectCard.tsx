@@ -61,9 +61,9 @@ const StatusBadge = ({ status }: { status: Project["status"] }) => {
       className: "bg-green-100 text-green-600 border-green-200",
     },
     raising: {
-      icon: <TrendingUp className="h-full w-full text-blue-500" />,
+      icon: <TrendingUp className="h-full w-full text-amber-500" />,
       label: "Raising",
-      className: "bg-blue-100 text-blue-600 border-blue-200",
+      className: "bg-amber-100 text-amber-700 border-amber-200",
     },
     active: {
       icon: <TrendingUp className="h-full w-full text-emerald-500" />,
