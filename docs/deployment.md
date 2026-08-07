@@ -120,6 +120,7 @@ docker compose logs -f blkfndr-app
 | `INDEXER_SECRET` | Bearer token for `POST /api/indexer`. Invent a long random value |
 | `GEMINI_API_KEY` | Optional, AI listing review. The Genkit plugin reads `GEMINI_API_KEY`, `GOOGLE_API_KEY` or `GOOGLE_GENAI_API_KEY` — not `GOOGLE_GENERATIVEAI_API_KEY` |
 | `INDEX_INTERVAL_SECONDS` | Optional, defaults to 60 |
+| `APP_PORT` | Optional, defaults to 8788. Host port to publish on |
 
 ### Token contract addresses
 
@@ -137,14 +138,35 @@ Deriving them again after a network change is not optional.
 
 ## Port configuration
 
-The app listens on **3000** inside the container and is published on **8788**.
-Point your reverse proxy at 8788. To change the host port, edit
-`docker-compose.yml`:
+The app always listens on **3000** inside the container. The host port it is
+published on comes from `APP_PORT`, defaulting to **8788**.
+
+Set `APP_PORT` in the Portainer stack environment if 8788 is taken. A host that
+already has the port allocated fails the entire stack at container networking:
+
+```
+Bind for 0.0.0.0:8788 failed: port is already allocated
+```
+
+To see which ports are already taken on the host:
+
+```bash
+ss -ltnp
+```
+
+Point your reverse proxy at whichever port you choose.
+
+If you would rather Docker pick any free port, replace the `ports` block in
+`docker-compose.yml` with the container port alone:
 
 ```yaml
 ports:
-  - "YOUR_PORT:3000"
+  - "3000"
 ```
+
+That can never collide, but the host port changes every time the container is
+recreated, which a reverse proxy configuration cannot follow. Naming a free port
+is usually the better trade.
 
 ## The indexer service
 

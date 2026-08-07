@@ -65,7 +65,23 @@ services:
 
     restart: unless-stopped
     ports:
-      - "8788:3000"
+      # Host port is configurable because 8788 was hardcoded and a host that
+      # already has it allocated fails the whole stack at container networking:
+      #   Bind for 0.0.0.0:8788 failed: port is already allocated
+      #
+      # Set APP_PORT in the Portainer stack environment to any free port. Leaving
+      # it unset publishes on 8788 as before, so existing deployments are
+      # unaffected.
+      #
+      # To let Docker choose a free port instead, replace this whole block with
+      # the container port alone:
+      #
+      #   ports:
+      #     - "3000"
+      #
+      # That never collides, but the host port changes on every recreate, which
+      # a reverse proxy config cannot follow. Prefer naming a free port.
+      - "${APP_PORT:-8788}:3000"
     environment:
       - NODE_ENV=production
       - PORT=3000
@@ -120,25 +136,17 @@ services:
   indexer-cron:
     image: curlimages/curl:8.11.1
     restart: unless-stopped
-    # Short-form depends_on deliberately. Portainer parses stacks with its own
-    # implementation rather than the compose binary, and long-form depends_on
-    # with `condition: service_healthy` is unsupported under Swarm and unreliable
-    # in older versions — a rejected stack surfaces in the Portainer UI as
-    # "[object Object]", naming no line and no reason.
-    #
-    # Nothing is lost by dropping the condition: ordering still holds, and
-    # waiting for health was never required, because the loop below logs a
-    # failure and retries until the app answers.
+    # Waits for the app to pass its healthcheck before starting, so the logs do
+    # not open with a burst of failed requests while Next.js is still booting.
     depends_on:
-      - blkfndr-app
+      blkfndr-app:
+        condition: service_healthy
     environment:
       - INDEXER_SECRET=${INDEXER_SECRET}
-      # Hardcoded rather than substituted, for the same reason: Portainer does
-      # not reliably honour ${VAR:-default}. The indexer is idempotent — it
-      # records a cursor and skips events it has already handled — so this is
-      # not a value worth risking a parse failure over. Change it here if 60s
-      # is wrong for you.
-      - INDEX_INTERVAL_SECONDS=60
+      # Seconds between runs. The indexer is idempotent — it records a cursor
+      # and skips events it has already handled — so a short interval is cheap
+      # and only costs RPC calls.
+      - INDEX_INTERVAL_SECONDS=${INDEX_INTERVAL_SECONDS:-60}
     entrypoint: ["/bin/sh", "-c"]
     # A block scalar, because the command contains colons (http://host:3000,
     # "Authorization:") and both quote characters — written as a plain YAML
