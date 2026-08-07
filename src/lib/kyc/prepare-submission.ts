@@ -1,7 +1,5 @@
 "use client";
 
-import { createClient } from "@/lib/supabase/client";
-
 /**
  * Turns what the KYC form holds into what the submission actually takes.
  *
@@ -10,45 +8,47 @@ import { createClient } from "@/lib/supabase/client";
  * Storage bucket, with Postgres holding only a path — so the identity document
  * is never in a table any query can reach, and is served to reviewers through a
  * short-lived signed URL instead.
+ *
+ * Deliberately not IPFS. Pinata is right for the project metadata and images
+ * this app already pins there, which are meant to be public and permanent. A
+ * passport scan is the opposite on both counts: a content address is a
+ * permanent retrieval handle, and IPFS does not really offer deletion — which
+ * matters the first time someone asks for their document to be erased.
  */
-
-const BUCKET = "kyc-documents";
 
 /**
- * Upload under `<user_id>/…`, which is not a convention but a constraint: the
- * bucket's insert policy checks that the first path segment equals auth.uid(),
- * so an upload aimed at anyone else's prefix is refused by the database.
+ * Hand the document to the server, which stores it and returns only its path.
+ *
+ * This used to upload straight from the browser to Storage, and failed with
+ * "new row violates row-level security policy". The request was reaching
+ * Storage as `anon`: an access token can decode locally — so getClaims()
+ * returns a subject and the code proceeds — while the Storage API rejects it as
+ * expired and falls back to anonymous. The bucket's insert policy is
+ * `to authenticated`, so the row is refused.
+ *
+ * Going through a route removes the dependency on a live browser session, and
+ * the caller's identity is established there by verifying the JWT rather than
+ * trusting a decoded copy of it.
  */
 export async function uploadKycDocument(file: File): Promise<string> {
-  const supabase = createClient();
+  const body = new FormData();
+  body.append("file", file);
 
-  const { data: claims } = await supabase.auth.getClaims();
-  const userId = claims?.claims?.sub;
-  if (!userId) {
-    throw new Error("You need to be signed in to submit identity documents.");
+  const response = await fetch("/api/kyc-document", { method: "POST", body });
+
+  let payload: { path?: string; error?: string } = {};
+  try {
+    payload = await response.json();
+  } catch {
+    // A non-JSON body means something upstream failed before the route ran.
+    throw new Error("Could not upload the document. Try again.");
   }
 
-  // Keep the extension so reviewers get a sensible download, but do not keep
-  // the original filename — people name these things after themselves, and the
-  // path ends up in logs and error messages.
-  const extension = (file.name.split(".").pop() ?? "").toLowerCase().slice(0, 8);
-  const safeExtension = /^[a-z0-9]+$/.test(extension) ? `.${extension}` : "";
-  const path = `${userId}/document-${Date.now()}${safeExtension}`;
-
-  const { error } = await supabase.storage.from(BUCKET).upload(path, file, {
-    contentType: file.type,
-    // A resubmission replaces the previous document rather than accumulating
-    // copies of someone's passport.
-    upsert: true,
-  });
-
-  if (error) {
-    // The bucket caps size and MIME type, so these are the common rejections
-    // and worth naming rather than passing through raw.
-    throw new Error(`Could not upload the document: ${error.message}`);
+  if (!response.ok || !payload.path) {
+    throw new Error(payload.error ?? "Could not upload the document.");
   }
 
-  return path;
+  return payload.path;
 }
 
 /**
