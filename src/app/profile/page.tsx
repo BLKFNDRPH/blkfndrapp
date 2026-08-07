@@ -782,7 +782,10 @@ function ReceiptCard({
             contractId: project.vaultAddress!,
             rpcUrl: SOROBAN_RPC_URL,
             networkPassphrase: NETWORK_PASSPHRASE,
-            publicKey: activeAddress,
+            // Omitted for the same reason as the identity reads: a read-only
+            // simulation needs no real source account, and requiring one only
+            // adds a way for this to throw. The address being asked about is
+            // the argument below, not the source.
           });
           const balanceTx = await client.get_balance({ contributor: activeAddress });
           const balanceVal = await balanceTx.simulate();
@@ -1127,11 +1130,13 @@ export default function ProfilePage() {
               contractId: IDENTITY_ID,
               rpcUrl: SOROBAN_RPC_URL,
               networkPassphrase: NETWORK_PASSPHRASE,
-              // The address being queried doubles as the simulation source. The old
-              // NEXT_PUBLIC_STELLAR_FALLBACK_ADDRESS is unset on the current deployment,
-              // and an empty publicKey throws inside the SDK before the registry is
-              // ever reached.
-              publicKey: activeStellarAddress,
+              // No publicKey: a read-only simulation, and the SDK uses
+              // NULL_ACCOUNT when it is omitted. The old
+              // NEXT_PUBLIC_STELLAR_FALLBACK_ADDRESS is FILL_ME here — truthy
+              // but not a strkey, so it threw "invalid encoded string" and this
+              // catch reported the wallet as unverified. Passing the wallet
+              // instead would throw "Account not found" for one not yet on the
+              // ledger, which is the same false negative from the other side.
             });
             const checkTx = await client.is_kyc_approved({ address: activeStellarAddress });
             const checkSim = await checkTx.simulate();

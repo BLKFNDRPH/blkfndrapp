@@ -98,11 +98,13 @@ export default function KycAttestationPage() {
             contractId: IDENTITY_ID,
             rpcUrl: SOROBAN_RPC_URL,
             networkPassphrase: NETWORK_PASSPHRASE,
-            // The address being queried doubles as the simulation source. The
-              // old NEXT_PUBLIC_STELLAR_FALLBACK_ADDRESS is unset on the current
-              // deployment, and an empty publicKey throws inside the SDK before
-              // the registry is reached.
-              publicKey: activeAddress,
+            // No publicKey: a read-only simulation, and the SDK uses
+            // NULL_ACCOUNT when it is omitted. The old
+            // NEXT_PUBLIC_STELLAR_FALLBACK_ADDRESS is FILL_ME here — truthy but
+            // not a strkey, so it threw "invalid encoded string" and this catch
+            // showed the applicant as unverified. Passing the wallet instead
+            // would throw "Account not found" for one not yet on the ledger,
+            // which is precisely the person about to start verification.
           });
           const checkTx = await client.is_kyc_approved({ address: activeAddress });
           const checkSim = await checkTx.simulate();
