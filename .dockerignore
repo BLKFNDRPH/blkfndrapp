@@ -1,3 +1,19 @@
+# Rust build artifacts. `cargo build` puts these at the repository root, not
+# under contracts/, and on a working checkout it reaches several gigabytes —
+# larger than everything else combined. The Node build has no use for Rust
+# output, and Docker has to transfer the whole context before it can start.
+target/
+**/target/
+.cargo/
+
+# Claude Code session data and worktrees. Comparable in size to the Rust output
+# and equally irrelevant to the image.
+.claude/
+
+# Contract sources. The image runs the Next.js app; the generated TypeScript
+# bindings it actually imports live under src/packages/.
+contracts/
+
 # Dependencies
 node_modules
 npm-debug.log*

@@ -1,3 +1,21 @@
+# blkfndr — Portainer stack definition.
+#
+# Set every value in Portainer under Stack → Environment variables. Portainer
+# substitutes them into the ${...} placeholders below.
+#
+# Two kinds of variable, and the difference matters:
+#
+#   build.args   Inlined into the client JavaScript by `next build`, so they are
+#                PUBLIC — visible in DevTools to any visitor — and changing one
+#                requires a REBUILD, not a restart. Never put a secret here.
+#
+#   environment  Read by server code at request time. Never enters the image.
+#                Secrets belong here. Changing one takes effect on RESTART.
+#
+# Putting a secret in build.args publishes it to every browser. Putting a
+# NEXT_PUBLIC_ value only in environment leaves it empty in the bundle, which
+# fails at runtime rather than at build.
+
 services:
   blkfndr-app:
     image: blkfndr3:latest
@@ -5,56 +23,132 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        # ── Build-time public config ────────────────────────────────────────
-        # Inlined into the client JS bundle by `next build`. Public by design —
-        # visible in DevTools to any visitor. Never put a secret here.
-        # Changing any of these requires a rebuild, not just a restart.
-        - NODE_ENV=production
+        # ── Supabase (required) ──────────────────────────────────────────────
+        # The app cannot reach its database without these. The anon key is
+        # public by design — its safety rests on Row Level Security, not on
+        # secrecy. The build fails outright if either is empty.
+        - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
+        - NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+
+        # ── Contracts (factory required, rest strongly recommended) ──────────
         - NEXT_PUBLIC_BLKFNDR_FACTORY_CONTRACT_ID=${NEXT_PUBLIC_BLKFNDR_FACTORY_CONTRACT_ID}
         - NEXT_PUBLIC_BLKFNDR_IDENTITY_CONTRACT_ID=${NEXT_PUBLIC_BLKFNDR_IDENTITY_CONTRACT_ID}
-        - NEXT_PUBLIC_BLKFNDR_ADMIN_CONTRACT_ID=${NEXT_PUBLIC_BLKFNDR_APPROVAL_CONTRACT_ID}
+        - NEXT_PUBLIC_BLKFNDR_ADMIN_CONTRACT_ID=${NEXT_PUBLIC_BLKFNDR_ADMIN_CONTRACT_ID}
+        - NEXT_PUBLIC_BLKFNDR_ATTESTATION_CONTRACT_ID=${NEXT_PUBLIC_BLKFNDR_ATTESTATION_CONTRACT_ID}
+
+        # ── Token contracts ──────────────────────────────────────────────────
+        # Derived, not looked up, and different per network:
+        #   stellar contract id asset --asset native --network <net>
+        #   stellar contract id asset --asset USDC:<ISSUER> --network <net>
+        # A currency left blank is simply not offered when creating a project.
         - NEXT_PUBLIC_STELLAR_XLM_TOKEN_ID=${NEXT_PUBLIC_STELLAR_XLM_TOKEN_ID}
         - NEXT_PUBLIC_STELLAR_USDC_TOKEN_ID=${NEXT_PUBLIC_STELLAR_USDC_TOKEN_ID}
+
+        # ── Network endpoints ────────────────────────────────────────────────
+        # BOTH DEFAULT TO TESTNET if left empty. A mainnet stack that omits
+        # them builds cleanly and then quietly talks to testnet, which looks
+        # like "no projects appear" rather than like a misconfiguration.
+        - NEXT_PUBLIC_SOROBAN_RPC_URL=${NEXT_PUBLIC_SOROBAN_RPC_URL}
+        - NEXT_PUBLIC_HORIZON_URL=${NEXT_PUBLIC_HORIZON_URL}
+
+        # ── App ──────────────────────────────────────────────────────────────
+        # Origin used to build OAuth redirect URIs. Must match the Site URL and
+        # redirect allow-list configured in the Supabase dashboard, or Google
+        # sign-in returns the user to the wrong host.
+        - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL}
         - NEXT_PUBLIC_STELLAR_ADMIN_ADDRESS=${NEXT_PUBLIC_STELLAR_ADMIN_ADDRESS}
         - NEXT_PUBLIC_STELLAR_FALLBACK_ADDRESS=${NEXT_PUBLIC_STELLAR_FALLBACK_ADDRESS}
-        - NEXT_PUBLIC_GOOGLE_CLIENT_ID=${NEXT_PUBLIC_GOOGLE_CLIENT_ID}
-        - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL}
+
+        # Optional. Unset renders project locations as a Google Maps link
+        # instead of an embedded map — a supported mode, not a broken one.
+        - NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
+
     restart: unless-stopped
     ports:
       - "8788:3000"
     environment:
-      # ── Runtime config ─────────────────────────────────────────────────────
-      # Read by server code at request time. Never enters the image; lives only
-      # in the container's environment. Secrets belong here, not in build args.
-      # Changing any of these takes effect on restart — no rebuild needed.
       - NODE_ENV=production
       - PORT=3000
       - NEXT_TELEMETRY_DISABLED=1
-      # Pinata / IPFS uploads — src/app/api/upload-image/route.ts
+
+      # ── Supabase service role (required, SECRET) ─────────────────────────
+      # Bypasses RLS entirely. Used by the indexer, KYC review and admin-claim
+      # writes. Without it the indexer cannot write and no project ever appears.
+      # Never give this a NEXT_PUBLIC_ prefix — that would ship it to browsers.
+      - SUPABASE_SECRET_KEY=${SUPABASE_SECRET_KEY}
+
+      # ── Pinata / IPFS (required to create projects, SECRET) ──────────────
       - PINATA_JWT=${PINATA_JWT}
       - PINATA_GATEWAY_URL=${PINATA_GATEWAY_URL}
       - PINATA_GROUP_BLKDFNDR=${PINATA_GROUP_BLKDFNDR}
-      # Indexer endpoint auth — src/app/api/indexer/route.ts
+
+      # ── Indexer auth (required, SECRET) ──────────────────────────────────
+      # Bearer token for POST /api/indexer. The endpoint is public without it.
+      # Shared with the indexer-cron service below.
       - INDEXER_SECRET=${INDEXER_SECRET}
-      # Genkit — src/ai
-      - GOOGLE_GENERATIVEAI_API_KEY=${GOOGLE_GENERATIVEAI_API_KEY}
+
+      # ── Genkit / Gemini (optional) ───────────────────────────────────────
+      # The @genkit-ai/googleai plugin reads GEMINI_API_KEY, GOOGLE_API_KEY or
+      # GOOGLE_GENAI_API_KEY. This stack previously set
+      # GOOGLE_GENERATIVEAI_API_KEY, which matches none of them, so the AI
+      # listing review silently did nothing however valid the key was.
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
     volumes:
-      # Persist Next.js cache for faster rebuilds
       - next-cache:/app/.next/cache
     networks:
       - blkfndr-network
     healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)}).on('error', () => process.exit(1))"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
     labels:
-      # Portainer labels for better management
       - "io.portainer.accesscontrol.teams=admins"
       - "app.name=blkfndr3"
       - "app.version=1.0.0"
-      - "app.description=Blockchain crowdfunding platform on Stellar"
+      - "app.description=Bonded crowdfunding for real-world builds, on Stellar"
+
+  # The ledger is the source of truth, but the site reads Postgres. This is what
+  # moves data between the two: without something calling POST /api/indexer on a
+  # schedule, a newly created project never appears and a funded one never
+  # updates. Nothing in the app self-triggers, so it is a service rather than an
+  # operational note somebody has to remember.
+  #
+  # It calls over the internal network, so the endpoint never needs to be
+  # reachable from outside the stack for this to work.
+  indexer-cron:
+    image: curlimages/curl:8.11.1
+    restart: unless-stopped
+    depends_on:
+      blkfndr-app:
+        condition: service_healthy
+    environment:
+      - INDEXER_SECRET=${INDEXER_SECRET}
+      # Seconds between runs. The indexer is idempotent — it records a cursor
+      # and skips events it has already handled — so a short interval is cheap
+      # and only costs RPC calls.
+      - INDEX_INTERVAL_SECONDS=${INDEX_INTERVAL_SECONDS:-60}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "indexer-cron: polling every $${INDEX_INTERVAL_SECONDS}s"
+        while true; do
+          # --fail so an HTTP error is visible in the logs rather than being
+          # swallowed as a successful request that returned an error body.
+          curl --silent --show-error --fail --max-time 120 \
+            -X POST http://blkfndr-app:3000/api/indexer \
+            -H "Authorization: Bearer $${INDEXER_SECRET}" \
+            -H "Content-Type: application/json" \
+            -d '{}' \
+            || echo "indexer-cron: run failed at $$(date -u +%FT%TZ)"
+          sleep "$${INDEX_INTERVAL_SECONDS}"
+        done
+    networks:
+      - blkfndr-network
+    labels:
+      - "app.name=blkfndr3-indexer"
+      - "app.description=Periodically advances the chain event indexer"
 
 volumes:
   next-cache:
