@@ -1,111 +1,71 @@
-// Authorization guards for Server Actions and API routes.
-//
-// Every exported async function in a "use server" file is a public HTTP
-// endpoint — Next.js gives it a callable action id and anyone can POST to it.
-// The same is true of every route handler. Nothing in this app may read or
-// write user-scoped data without passing through one of these.
-
-import { connectToDatabase } from "@/lib/mongodb";
-import User from "@/lib/models/User";
-import { getSession, type SessionUser } from "@/lib/auth/session";
-import { checkIsAdminOnChain } from "@/lib/stellar";
-
-export class AuthError extends Error {
-  readonly status: number;
-
-  constructor(message: string, status: 401 | 403) {
-    super(message);
-    this.name = "AuthError";
-    this.status = status;
-  }
-}
+import "server-only";
 
 /**
- * Require a signed-in caller. Throws 401 otherwise.
- */
-export async function requireSession(): Promise<SessionUser> {
-  const session = await getSession();
-  if (!session?.user?.uid) {
-    throw new AuthError("Unauthorized", 401);
-  }
-  return session.user;
-}
-
-/**
- * Require a signed-in caller and return their database record.
- * Throws 401 if the session is missing or the user no longer exists.
- */
-export async function requireUser() {
-  const sessionUser = await requireSession();
-  await connectToDatabase();
-  const record = await User.findOne({ uid: sessionUser.uid }).lean();
-  if (!record) {
-    throw new AuthError("Unauthorized", 401);
-  }
-  return { sessionUser, record };
-}
-
-/**
- * Require an admin caller.
+ * Authorization guards for Server Actions and API routes.
  *
- * On-chain state is the source of truth, not the cached `role` column — the DB
- * value is a mirror that this function re-syncs on every check, so revoking an
- * admin on-chain takes effect immediately instead of waiting for a stale row to
- * be noticed. Callers with no linked wallet can never be admins.
+ * Every exported async function in a "use server" file is a public HTTP
+ * endpoint, and so is every route handler. Nothing may read or write
+ * user-scoped data without passing through one of these.
+ *
+ * Identity now comes from Supabase Auth rather than a hand-rolled JWT and a
+ * Mongo lookup. Two consequences worth knowing:
+ *
+ *   * `requireAdmin` reads the role from `app_metadata`, which only the
+ *     service-role key can write. The previous version read a `role` column
+ *     from a document the application also wrote, so the check and the thing
+ *     being checked shared a writer.
+ *   * These guards are now the *second* line of defence. RLS confines each
+ *     query to rows the caller may touch, so a forgotten guard no longer
+ *     decides whether someone else's data comes back.
  */
-export async function requireAdmin() {
-  const { sessionUser, record } = await requireUser();
 
-  if (!record.stellarPublicKey) {
-    throw new AuthError("Forbidden", 403);
-  }
+export {
+  AuthError,
+  requireCaller,
+  requireAdmin,
+  getCaller,
+  type AuthedCaller,
+} from "@/lib/supabase/auth";
 
-  const isOnChainAdmin = await checkIsAdminOnChain(record.stellarPublicKey);
-  const expectedRole = isOnChainAdmin ? "admin" : "user";
+import { AuthError, requireCaller, requireAdmin } from "@/lib/supabase/auth";
+import { createClient } from "@/lib/supabase/server";
 
-  if (record.role !== expectedRole) {
-    await User.updateOne({ uid: sessionUser.uid }, { $set: { role: expectedRole } });
-    record.role = expectedRole;
-  }
-
-  if (!isOnChainAdmin) {
-    throw new AuthError("Forbidden", 403);
-  }
-
-  return { sessionUser, record };
+/**
+ * Require that the caller owns `userId`, or is an admin acting on their behalf.
+ */
+export async function requireSelfOrAdmin(userId: string) {
+  const caller = await requireCaller();
+  if (caller.userId === userId) return caller;
+  return requireAdmin();
 }
 
 /**
- * Require that the caller owns `uid`, or is an admin acting on someone else's
- * behalf. Use for any action that takes a target user id as a parameter.
- */
-export async function requireSelfOrAdmin(uid: string) {
-  const { sessionUser, record } = await requireUser();
-  if (sessionUser.uid === uid) {
-    return { sessionUser, record, isAdmin: record.role === "admin" };
-  }
-  const admin = await requireAdmin();
-  return { ...admin, isAdmin: true };
-}
-
-/**
- * Require that the caller owns `stellarPublicKey`, or is an admin.
- * Wallet ownership is established at link time by
- * POST /api/auth/freighter/verify, which checks a signed challenge.
+ * Require that the caller has proven control of `stellarPublicKey`, or is an
+ * admin.
+ *
+ * Ownership is established at link time by the Freighter challenge flow, which
+ * verifies a signature before writing the address to the profile.
  */
 export async function requireWalletOwnerOrAdmin(stellarPublicKey: string) {
-  const { sessionUser, record } = await requireUser();
-  if (record.stellarPublicKey && record.stellarPublicKey === stellarPublicKey) {
-    return { sessionUser, record, isAdmin: record.role === "admin" };
+  const caller = await requireCaller();
+
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("profiles")
+    .select("stellar_public_key")
+    .eq("id", caller.userId)
+    .maybeSingle();
+
+  if (data?.stellar_public_key && data.stellar_public_key === stellarPublicKey) {
+    return caller;
   }
-  const admin = await requireAdmin();
-  return { ...admin, isAdmin: true };
+  return requireAdmin();
 }
 
 /**
  * Map a thrown AuthError onto a `{ success: false }` shape for Server Actions
- * that report failure by return value rather than by throwing. Rethrows
- * anything that is not an AuthError so real bugs stay loud.
+ * that report failure by return value. Rethrows anything else so real bugs
+ * stay loud.
  */
 export function authFailure(error: unknown): { success: false; error: string } | null {
   if (error instanceof AuthError) {

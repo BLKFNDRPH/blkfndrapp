@@ -19,7 +19,6 @@ import { Slider } from '../ui/slider';
 import { Input } from '../ui/input';
 import { CubeSpinner } from '../ui/CubeSpinner';
 import { useAuth } from '@/context/AuthContext';
-import { createNotification } from '@/actions/notifications-client';
 import { usePlatformInfo, useRefreshAfterTx } from '@/context/BlockchainContext';
 import { useStellarContract } from '@/hooks/use-stellar-contract';
 
@@ -68,14 +67,7 @@ export function PerformanceBondForm() {
         const txHash = (result as any)?.sendTransactionResponse?.hash;
         const txUrl = txHash ? `https://stellar.expert/explorer/testnet/tx/${txHash}` : null;
 
-        if (user) {
-          createNotification(
-            user.uid,
-            "Minimum Performance Bond Updated",
-            "Minimum performance bond percentage has been changed successfully.",
-            txUrl
-          );
-        }
+        if (user) {        }
 
         await refreshAfterTx();
 

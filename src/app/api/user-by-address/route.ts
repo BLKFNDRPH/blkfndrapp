@@ -1,45 +1,24 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { connectToDatabase } from '@/lib/mongodb';
-import UserModel from '@/lib/models/User';
-import { getSession } from '@/lib/auth/session';
+import { NextRequest, NextResponse } from "next/server";
+import { getProfileByAddress } from "@/lib/data/profiles";
+import { AuthError } from "@/lib/supabase/auth";
 
 // Maps a Stellar address to a platform identity. Signed-in callers only —
-// anonymous access turned this into a deanonymisation oracle: take any investor
-// address off the public ledger, get back the person's display name.
+// anonymous access made this a deanonymisation oracle, since contributor
+// addresses are public on the ledger.
 export async function GET(req: NextRequest) {
-  const session = await getSession();
-  if (!session?.user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
-  const { searchParams } = new URL(req.url);
-  const address = searchParams.get('address');
-  const field = searchParams.get('field') || 'stellarPublicKey';
-
+  const address = req.nextUrl.searchParams.get("address");
   if (!address) {
-    return NextResponse.json({ error: 'address is required' }, { status: 400 });
+    return NextResponse.json({ error: "address is required" }, { status: 400 });
   }
 
   try {
-    await connectToDatabase();
-
-    const user = field === 'uid'
-      ? await UserModel.findOne({ uid: address }).lean()
-      : await UserModel.findOne({ stellarPublicKey: address }).lean();
-
-    if (!user) return NextResponse.json(null);
-
-    // `role` is deliberately omitted: callers only need an identity to address
-    // notifications to, and publishing who the admins are invites targeting.
-    return NextResponse.json({
-      uid: user.uid,
-      name: user.name,
-      creatorAvatar: user.creatorAvatar,
-      wallet: user.wallet,
-      stellarPublicKey: user.stellarPublicKey,
-    });
+    const profile = await getProfileByAddress(address);
+    return NextResponse.json(profile);
   } catch (error) {
-    console.error('Error fetching user by address:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
+    console.error("user-by-address:", error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

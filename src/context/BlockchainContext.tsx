@@ -14,7 +14,7 @@ import type { Project, FundReceipt } from "../lib/types";
 import { getUsersByAddresses } from "../lib/data.client";
 import { Client as VaultClient } from "@/packages/blkfndr_vault/src";
 import { SOROBAN_RPC_URL, NETWORK_PASSPHRASE } from "@/lib/stellar";
-import { updateProjectStatusFromChain } from "@/app/actions";
+
 
 const mapStatus = (status: number): Project["status"] => {
   switch (status) {
@@ -262,9 +262,8 @@ export const BlockchainProvider: React.FC<BlockchainProviderProps> = ({
 
             // Persist to DB asynchronously. The server re-reads the vault
             // itself rather than trusting figures posted from the browser.
-            updateProjectStatusFromChain(p.vaultAddress!).catch((err) =>
-              console.warn("Failed to persist reconciled status to DB:", err)
-            );
+            // Persisting is the indexer's job; this view only reflects what
+            // the ledger currently says.
 
             updatedMap.set(p.id, freshProject);
           }
@@ -297,7 +296,7 @@ export const BlockchainProvider: React.FC<BlockchainProviderProps> = ({
 
       reconcileStaleProjects(loadedProjects).then((reconciled) => {
         setProjects(reconciled.sort((a, b) => Number(b.id) - Number(a.id)));
-      }).catch((err) => {
+      }).catch((err: unknown) => {
         console.warn("Failed to reconcile stale projects:", err);
       });
     } catch (error) {

@@ -14,15 +14,15 @@ There is no appointed signer, no admin key, and no platform role anywhere in the
 
 **Current phase: Testnet, mid-rebuild.**
 
-The contracts have been rebuilt so that release authority is contribution-weighted rather than held by appointed signers, and are **deployed to testnet**. The app has not yet been repointed at them — the live site still runs the previous generation.
+Release authority is contribution-weighted rather than held by appointed signers, the contracts are **deployed to testnet**, and the app runs against them. MongoDB is gone: every table is Postgres with Row Level Security.
 
 | Area | State |
 |---|---|
 | Bonded vault with contributor-weighted release | ✅ Deployed to testnet, 81 tests passing |
 | Builder attestation registry | ✅ Deployed to testnet |
-| Supabase schema, RLS, and auth | ✅ Applied and verified — app not yet cut over |
-| MongoDB removal | 🔜 Schema exists for all nine collections; call sites not yet repointed |
-| TypeScript contract bindings | ⚠️ Stale against the rebuilt contracts |
+| Supabase schema, RLS, and auth | ✅ Applied, verified, and the app runs on it |
+| MongoDB | ✅ Fully removed |
+| TypeScript contract bindings | ✅ Regenerated from the deployed wasm |
 | Mainnet | 🔜 Planned, not deployed |
 | AI listing quality analysis | ✅ Live (Genkit + Gemini 2.5 Flash) |
 | AI query analysis & sentiment tracking | 📝 Documented, not implemented |
@@ -153,14 +153,13 @@ cargo test --workspace
 | `NEXT_PUBLIC_SUPABASE_URL` | Yes | Supabase project URL. Public |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes | Publishable key. Public — RLS is what protects the data |
 | `SUPABASE_SECRET_KEY` | Yes | Service-role key. Bypasses RLS. **Server-only — never prefix `NEXT_PUBLIC_`** |
-| `SESSION_SECRET` | Yes | Session signing secret. Generate with `openssl rand -base64 32` |
 | `NEXT_PUBLIC_APP_URL` | Yes | Application origin, e.g. `http://localhost:9002` |
 | `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Yes | Google OAuth client ID |
 | `NEXT_PUBLIC_BLKFNDR_CONTRACT_ID` | Yes | Core crowdfunding contract ID |
 | `NEXT_PUBLIC_BLKFNDR_FACTORY_CONTRACT_ID` | Yes | Factory contract ID |
 | `NEXT_PUBLIC_BLKFNDR_IDENTITY_CONTRACT_ID` | Yes | Identity registry contract ID |
-| `NEXT_PUBLIC_BLKFNDR_APPROVAL_CONTRACT_ID` | Yes | Admin roster contract ID |
-| `NEXT_PUBLIC_BLKFNDR_ATTESTATION_CONTRACT_ID` | No | Attestation registry. Set once deployed |
+| `NEXT_PUBLIC_BLKFNDR_ADMIN_CONTRACT_ID` | Yes | Admin roster contract ID |
+| `NEXT_PUBLIC_BLKFNDR_ATTESTATION_CONTRACT_ID` | Yes | Attestation registry contract ID |
 | `NEXT_PUBLIC_STELLAR_XLM_TOKEN_ID` | Yes | XLM token contract ID (also `_USDC_`, `_USDT_`, `_WBTC_`, `_WETH_`) |
 | `NEXT_PUBLIC_STELLAR_ADMIN_ADDRESS` | Yes | Platform admin public key |
 | `NEXT_PUBLIC_STELLAR_FALLBACK_ADDRESS` | Yes | Fallback account public key |
@@ -168,7 +167,6 @@ cargo test --workspace
 | `PINATA_GATEWAY_URL` | Recommended | Dedicated Pinata gateway hostname. The shared public one rate-limits |
 | `GOOGLE_GENERATIVEAI_API_KEY` | Yes | Gemini API key for AI features |
 | `INDEXER_SECRET` | Yes | Bearer token for `POST /api/indexer`. Generate with `openssl rand -hex 32` |
-| `MONGODB_URI` | Transitional | Still required until the last collection moves to Supabase |
 
 Anything prefixed `NEXT_PUBLIC_` is inlined into the client bundle at build time and visible to every visitor. Never put a secret behind that prefix. See [.env.example](.env.example) for how each variable reaches the container.
 

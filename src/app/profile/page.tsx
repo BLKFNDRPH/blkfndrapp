@@ -126,7 +126,7 @@ import {
 
 
 
-import { getKycRequestByAddress, submitMilestoneProof } from "@/app/actions";
+import { getMyKycStatus, submitMilestoneProof } from "@/app/actions";
 import { Client as IdentityClient } from "@/packages/blkfndr_identity/src";
 import { ShieldCheck } from "lucide-react";
 
@@ -1112,7 +1112,7 @@ export default function ProfilePage() {
     async function fetchKyc() {
       setIsLoadingKyc(true);
       try {
-        const dbRes = await getKycRequestByAddress(activeStellarAddress);
+        const dbRes = await getMyKycStatus();
         if (!active) return;
         if (dbRes.success && dbRes.request) {
           setKycStatus(dbRes.request.status || "none");

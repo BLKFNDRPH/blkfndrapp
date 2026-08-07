@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { PinataSDK } from "pinata";
-import { getSession } from "@/lib/auth/session";
+import { requireCaller, AuthError } from "@/lib/supabase/auth";
 
 function normalizePinataGateway(raw?: string): string | undefined {
   if (!raw) return undefined;
@@ -18,9 +18,9 @@ function normalizePinataGateway(raw?: string): string | undefined {
 export async function POST(request: NextRequest) {
   console.log("=== /api/upload-image POST called ===");
 
-  const session = await getSession();
-  if (!session?.user) {
-    console.error("[upload-image] POST rejected: no session found");
+  try {
+    await requireCaller();
+  } catch {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

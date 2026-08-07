@@ -1,32 +1,24 @@
 "use server";
 
 import {
-  createClaimRequest as dbCreateClaimRequest,
-  getClaimRequests as dbGetClaimRequests,
-  deleteClaimRequest as dbDeleteClaimRequest
-} from "@/lib/data";
-import { getSession } from "@/lib/auth/session";
+  createClaimRequest as create,
+  listClaimRequests,
+  deleteClaimRequest as remove,
+} from "@/lib/data/platform";
 
-export async function createClaimRequest(projectId: string, requestedBy: string) {
-  const session = await getSession();
-  if (!session?.user) {
-    throw new Error("Unauthorized");
-  }
-  return dbCreateClaimRequest(projectId, requestedBy);
+export async function createClaimRequest(projectId: string, vaultAddress: string) {
+  return create(projectId, vaultAddress);
 }
 
 export async function getClaimRequests() {
-  const session = await getSession();
-  if (!session?.user) {
+  try {
+    return await listClaimRequests();
+  } catch {
+    // Non-admins get an empty list rather than an error page.
     return [];
   }
-  return dbGetClaimRequests();
 }
 
 export async function deleteClaimRequest(projectId: string) {
-  const session = await getSession();
-  if (!session?.user) {
-    throw new Error("Unauthorized");
-  }
-  return dbDeleteClaimRequest(projectId);
+  return remove(projectId);
 }

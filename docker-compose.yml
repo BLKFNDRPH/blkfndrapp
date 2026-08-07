@@ -10,10 +10,9 @@ services:
         # visible in DevTools to any visitor. Never put a secret here.
         # Changing any of these requires a rebuild, not just a restart.
         - NODE_ENV=production
-        - NEXT_PUBLIC_BLKFNDR_CONTRACT_ID=${NEXT_PUBLIC_BLKFNDR_CONTRACT_ID}
         - NEXT_PUBLIC_BLKFNDR_FACTORY_CONTRACT_ID=${NEXT_PUBLIC_BLKFNDR_FACTORY_CONTRACT_ID}
         - NEXT_PUBLIC_BLKFNDR_IDENTITY_CONTRACT_ID=${NEXT_PUBLIC_BLKFNDR_IDENTITY_CONTRACT_ID}
-        - NEXT_PUBLIC_BLKFNDR_APPROVAL_CONTRACT_ID=${NEXT_PUBLIC_BLKFNDR_APPROVAL_CONTRACT_ID}
+        - NEXT_PUBLIC_BLKFNDR_ADMIN_CONTRACT_ID=${NEXT_PUBLIC_BLKFNDR_APPROVAL_CONTRACT_ID}
         - NEXT_PUBLIC_STELLAR_XLM_TOKEN_ID=${NEXT_PUBLIC_STELLAR_XLM_TOKEN_ID}
         - NEXT_PUBLIC_STELLAR_USDC_TOKEN_ID=${NEXT_PUBLIC_STELLAR_USDC_TOKEN_ID}
         - NEXT_PUBLIC_STELLAR_USDT_TOKEN_ID=${NEXT_PUBLIC_STELLAR_USDT_TOKEN_ID}
@@ -34,13 +33,6 @@ services:
       - NODE_ENV=production
       - PORT=3000
       - NEXT_TELEMETRY_DISABLED=1
-      # Database — src/lib/mongodb.ts
-      - MONGODB_URI=${MONGODB_URI}
-      # Session signing — src/lib/auth/session.ts
-      # Generate with: openssl rand -base64 32
-      # NEXTAUTH_SECRET is read as a fallback during migration.
-      - SESSION_SECRET=${SESSION_SECRET}
-      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
       # Pinata / IPFS uploads — src/app/api/upload-image/route.ts
       - PINATA_JWT=${PINATA_JWT}
       - PINATA_GATEWAY_URL=${PINATA_GATEWAY_URL}

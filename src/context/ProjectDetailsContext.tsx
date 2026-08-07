@@ -13,7 +13,7 @@ import { AnimatePresence } from "framer-motion";
 import { getProjectById } from "@/lib/data.client";
 import { Client as VaultClient } from "@/packages/blkfndr_vault/src";
 import { SOROBAN_RPC_URL, NETWORK_PASSPHRASE } from "@/lib/stellar";
-import { updateProjectStatusFromChain } from "@/app/actions";
+
 
 interface ProjectDetailsContextType {
   project: Project | null;
@@ -127,9 +127,7 @@ export const ProjectDetailsProvider = ({
 
                 freshProject.status = mappedStatus;
 
-                updateProjectStatusFromChain(freshProject.vaultAddress!).catch((err) =>
-                  console.warn("Failed to persist on-chain status to DB:", err)
-                );
+                // Persisting is the indexer's job.
               }
             } catch (chainErr) {
               console.warn("Failed to fetch live on-chain project vault data, falling back to db cache:", chainErr);

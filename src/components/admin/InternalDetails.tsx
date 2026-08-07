@@ -22,7 +22,6 @@ import { useFreighterWallet } from '@/context/FreighterWalletContext';
 import { isStellarPublicKey } from '@/lib/freighter-connect';
 import Link from 'next/link';
 import { CubeSpinner } from '../ui/CubeSpinner';
-import { createNotification } from '@/actions/notifications-client';
 import { useAuth } from '@/context/AuthContext';
 import { usePlatformInfo, useRefreshAfterTx } from '@/context/BlockchainContext';
 
@@ -82,7 +81,8 @@ export function InternalDetails() {
           throw new Error("Transaction failed on-chain.");
         }
 
-        // Persist the email in MongoDB and wait for confirmation
+        // Persist the notification email. The on-chain wallet address and this
+        // address are separate concerns.
         const emailRes = await fetch("/api/admin/platform-settings", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -102,16 +102,9 @@ export function InternalDetails() {
         const txHash = (result as any)?.sendTransactionResponse?.hash;
         const txUrl = txHash ? `https://stellar.expert/explorer/testnet/tx/${txHash}` : null;
 
-        if (user) {
-          createNotification(
-            user.uid,
-            "Fee Wallet Updated",
-            `The platform's fee wallet has been changed to ${values.feeWalletAddress}.`,
-            txUrl
-          );
-        }
+        if (user) {        }
 
-        // Wait for MongoDB write to propagate before refreshing the context
+        // Wait for the write to land before refreshing the context
         await refreshAfterTx();
         toast({
           title: 'Fee Wallet Updated!',

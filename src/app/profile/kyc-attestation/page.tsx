@@ -5,7 +5,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useFreighterWallet } from "@/context/FreighterWalletContext";
 import { useToast } from "@/hooks/use-toast";
 import { useRouter } from "next/navigation";
-import { submitKycRequest, getKycRequestByAddress } from "@/app/actions";
+import { submitKycRequest, getMyKycStatus } from "@/app/actions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -70,21 +70,17 @@ export default function KycAttestationPage() {
     setLoadingStatus(true);
     try {
       // Fetch Database Status
-      const res = await getKycRequestByAddress(activeAddress);
+      const res = await getMyKycStatus();
       if (res.success && res.request) {
+        // Status only. The identity fields are not granted to any
+        // browser-facing role, so a resubmission is re-entered by hand rather
+        // than prefilled — deliberately, since prefilling would mean serving
+        // an ID number back to the page on every visit.
         setCurrentKycRequest(res.request);
-        setFormData({
-          fullName: res.request.fullName || "",
-          email: res.request.email || "",
-          documentType: res.request.documentType || "passport",
-          documentImage: res.request.documentImage || "",
-          documentFile: null,
-          idNumber: res.request.idNumber || "",
-          dob: res.request.dob ? new Date(res.request.dob).toISOString().split("T")[0] : "",
-          expiryDate: res.request.expiryDate ? new Date(res.request.expiryDate).toISOString().split("T")[0] : "",
-          residentialAddress: res.request.residentialAddress || "",
-          consentFlag: res.request.consentFlag || false,
-        });
+        setFormData((prev) => ({
+          ...prev,
+          documentType: res.request?.document_type || 'passport',
+        }));
       } else {
         setCurrentKycRequest(null);
         setFormData((prev) => ({
@@ -233,7 +229,8 @@ export default function KycAttestationPage() {
 
     startSubmitTransition(async () => {
       try {
-        const res = await submitKycRequest(activeAddress, {
+        const res = await submitKycRequest({
+          stellarAddress: activeAddress,
           fullName: formData.fullName,
           email: formData.email,
           documentType: formData.documentType,
