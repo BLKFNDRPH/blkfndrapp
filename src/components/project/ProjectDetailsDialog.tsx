@@ -473,56 +473,9 @@ export function ProjectDetailsDialog() {
   };
 
 
-  const handlePostBond = async () => {
-    if (!user) {
-      toast({
-        title: "Login Required",
-        description: "Please log in with Google first.",
-        variant: "destructive",
-      });
-      login();
-      return;
-    }
-    if (!project || !project.vaultAddress) return;
+  // handlePostBond is gone: the bond is transferred during create_vault, so a
+  // vault either exists with its bond locked or does not exist.
 
-    let activeAddress = freighterWalletAddress;
-    if (!activeAddress) {
-      const connectedAddress = await handleConnectFreighter();
-      if (!connectedAddress) return;
-      activeAddress = connectedAddress;
-    }
-
-    setIsBondPendingState(true);
-    try {
-      const client = new VaultClient({
-        contractId: project.vaultAddress,
-        rpcUrl: SOROBAN_RPC_URL,
-        networkPassphrase: NETWORK_PASSPHRASE,
-        publicKey: activeAddress,
-        ...getSignerOptions(activeAddress),
-      });
-
-      const tx = await client.post_bond();
-      await tx.signAndSend();
-
-      toast({
-        title: "Bond Posted",
-        description: "Creator performance bond has been posted successfully.",
-      });
-
-      refreshProject(project.id);
-      await refreshAfterTx(activeAddress);
-    } catch (err: any) {
-      console.error("Post bond failed:", err);
-      toast({
-        title: "Post Bond Failed",
-        description: err.message || String(err),
-        variant: "destructive",
-      });
-    } finally {
-      setIsBondPendingState(false);
-    }
-  };
 
   const handleFinalizeCampaign = async () => {
     if (!user) {
@@ -553,12 +506,12 @@ export function ProjectDetailsDialog() {
         ...getSignerOptions(activeAddress),
       });
 
-      const tx = await client.finalize_raise();
+      const tx = await client.settle();
       await tx.signAndSend();
 
       toast({
         title: "Campaign Finalized",
-        description: "Project fundraising campaign has been finalized.",
+        description: "The raise has been settled on-chain.",
       });
 
       refreshProject(project.id);
@@ -803,18 +756,6 @@ export function ProjectDetailsDialog() {
             )}
 
             <div className="flex w-full flex-col sm:flex-row gap-2 justify-end items-stretch sm:items-center">
-              {/* Post Bond Button */}
-              {isCreator && (project.status === "pending" || !project.bondPosted) && (
-                <Button
-                  onClick={handlePostBond}
-                  disabled={isBondPendingState || project.bondPosted}
-                  className="w-full sm:w-auto whitespace-nowrap shrink-0"
-                >
-                  {isBondPendingState && <CubeSpinner />}
-                  {project.bondPosted ? "Bond Posted" : "Post Bond"}
-                </Button>
-              )}
-
               {/* Finalize Project Campaign Button */}
               {((project.status === "raising" || project.status === "pending") && Date.now() >= (project.fundingDeadline || 0)) && (
                 <Button

@@ -41,7 +41,7 @@ export function InternalDetails() {
   const refreshAfterTx = useRefreshAfterTx();
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
-  const { setFeeWallet } = useStellarContract();
+  const { updateFeeWallet } = useStellarContract();
   const { freighterWalletAddress } = useFreighterWallet();
 
   const form = useForm<FormSchema>({
@@ -73,11 +73,9 @@ export function InternalDetails() {
           return;
         }
 
-        const result = await setFeeWallet({
-          feeWalletAddress: values.feeWalletAddress,
-          feeWalletEmail: values.feeWalletEmail,
-          admin: freighterWalletAddress,
-        });
+        // The on-chain wallet and the notification email are separate concerns:
+        // the address is factory state, the email is ours.
+        const result = await updateFeeWallet(values.feeWalletAddress);
 
         const txStatus = (result as any)?.getTransactionResponse?.status;
         if (txStatus !== "SUCCESS") {

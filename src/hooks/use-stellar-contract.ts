@@ -1,153 +1,78 @@
 "use client";
 
 import { useCallback } from "react";
-import { signAuthEntry, signTransaction } from "@stellar/freighter-api";
+import {
+  signAuthEntry as signAuthEntryWithFreighter,
+  signTransaction as signWithFreighter,
+} from "@stellar/freighter-api";
 import type { AssembledTransaction } from "@stellar/stellar-sdk/contract";
-import { blkfndrClient } from "@/lib/stellar-blkfndr-contract";
-import { NETWORK_PASSPHRASE } from "@/lib/stellar";
 import { useFreighterWallet } from "@/context/FreighterWalletContext";
-import { Client as FactoryClient } from "@/packages/blkfndr_factory/src";
-import { Client as ApprovalClient } from "@/packages/blkfndr_approval/src";
-import { Client as VaultClient } from "@/packages/blkfndr_vault/src";
-import type { FundReceipt } from "@/lib/types";
-import type {
-  CurrencyType,
-  Platform,
-  Project,
-  ProjectStatus,
-  AdminProposal,
-} from "@/packages/blkfndr_v2";
+import {
+  NETWORK_PASSPHRASE,
+  factoryClient,
+  vaultClient,
+  attestationClient,
+  identityClient,
+  adminClient,
+  simulate,
+  type Signer,
+} from "@/lib/stellar-clients";
+import { tokenAddressFor, type Currency } from "@/lib/currencies";
 
-const FALLBACK_ADDRESS = process.env.NEXT_PUBLIC_STELLAR_FALLBACK_ADDRESS || "";
-const ALLOWED_ADMIN = process.env.NEXT_PUBLIC_STELLAR_ADMIN_ADDRESS || "";
+/**
+ * Contract calls for the bonded vault model.
+ *
+ * The shape of this changed with the contracts. There is no longer a single
+ * crowdfunding contract holding every project, so most calls take a vault
+ * address: the factory deploys one per project and that vault owns its own
+ * money, votes and lifecycle.
+ *
+ * Gone with the old model, and deliberately not reimplemented:
+ *
+ *   approveProject / rejectProject / updateProjectStatus
+ *       A project exists when its vault is deployed. No admin gate.
+ *   proposeWithdrawal / voteWithdrawal / executeWithdrawal
+ *       Replaced by contributor voting. No signer decides when money moves.
+ *   registerToken
+ *       A vault takes its token at construction and keeps it. An admin who
+ *       could repoint it mid-raise could make refunds pay a different asset.
+ */
+
+export interface MilestoneInput {
+  id: number;
+  amount: bigint;
+}
 
 export interface CreateProjectParams {
-  input: CreateProjectInput;
-  creator?: string;
+  creator: string;
+  currency: Currency;
+  /** Total raise, in stroops. */
+  goal: bigint;
+  /** Unix seconds. */
+  deadline: bigint;
+  /** Performance bond, in stroops. Must meet the factory's minimum. */
+  bondAmount: bigint;
+  milestones: MilestoneInput[];
+  metadataCid: string;
 }
 
-export interface InitializeParams {
-  feeWalletAddress: string;
-  feePercentage: string;
-  admin?: string;
-}
-
-export interface FundProjectParams {
+export interface ContributeParams {
   vaultAddress: string;
   amount: bigint;
-  investor?: string;
+  contributor?: string;
 }
 
-export interface DonateToPlatformParams {
-  amount: bigint;
-  currencyType: CurrencyType;
-  message: string;
-  donor?: string;
+export interface MilestoneParams {
+  vaultAddress: string;
+  milestoneId: number;
 }
 
-export interface GetProjectsByStatusParams {
-  status: ProjectStatus;
+export interface ApproveMilestoneParams extends MilestoneParams {
+  contributor?: string;
 }
 
-export interface RegisterTokenParams {
-  currencyType: CurrencyType;
-  tokenAddress: string;
-  admin?: string;
-}
-
-export interface SetFeeWalletParams {
-  feeWalletAddress: string;
-  feeWalletEmail: string;
-  admin?: string;
-}
-
-export interface UpdatePlatformFeeParams {
-  newFeeBps: bigint;
-  admin?: string;
-}
-
-export interface TransferAdminParams {
-  newAdmin: string;
-  admin?: string;
-}
-
-export interface UpdateShareRulesParams {
-  minPercentage: bigint;
-  maxPercentage: bigint;
-  description: string;
-  admin?: string;
-}
-
-export interface AdminDeleteProjectParams {
-  projectId: bigint;
-  reason: string;
-  admin?: string;
-}
-
-export interface CreateProjectInput {
-  blob_id: string;
-  category: string;
-  description: string;
-  funding_deadline: bigint;
-  goal: bigint;
-  is_public: boolean;
-  tagline: string;
-  title: string;
-  currencyType: CurrencyType;
-}
-
-type SimulationResult<T> = {
-  result?: T;
-  returnValue?: T;
-};
-
-const getSimulationResult = <T>(simulation: SimulationResult<T>): T => {
-  if (simulation.result !== undefined) {
-    return simulation.result;
-  }
-  if (simulation.returnValue !== undefined) {
-    return simulation.returnValue;
-  }
-  throw new Error("Simulation did not return a result.");
-};
-
-const signWithFreighter = async (
-  xdr: string,
-  options?: { networkPassphrase?: string; address?: string },
-) => {
-  const { networkPassphrase, address } = options ?? {};
-  return signTransaction(xdr, {
-    networkPassphrase: networkPassphrase ?? NETWORK_PASSPHRASE,
-    address,
-  });
-};
-
-const signAuthEntryWithFreighter = async (
-  xdr: string,
-  options?: { networkPassphrase?: string; address?: string },
-) => {
-  const { networkPassphrase, address } = options ?? {};
-  return signAuthEntry(xdr, {
-    networkPassphrase: networkPassphrase ?? NETWORK_PASSPHRASE,
-    address,
-  });
-};
-
-const createStellarClient = (publicKey: string) =>
-  blkfndrClient(publicKey, {
-    signTransaction: (xdr: string) =>
-      signWithFreighter(xdr, {
-        networkPassphrase: NETWORK_PASSPHRASE,
-        address: publicKey,
-      }),
-    signAuthEntry: (xdr: string) =>
-      signAuthEntryWithFreighter(xdr, {
-        networkPassphrase: NETWORK_PASSPHRASE,
-        address: publicKey,
-      }),
-  });
-
-const getCustomSignerOptions = (publicKey: string) => ({
+const signerFor = (publicKey: string): Signer => ({
+  publicKey,
   signTransaction: (xdr: string) =>
     signWithFreighter(xdr, {
       networkPassphrase: NETWORK_PASSPHRASE,
@@ -159,7 +84,7 @@ const getCustomSignerOptions = (publicKey: string) => ({
       address: publicKey,
     });
     if (!res.signedAuthEntry) {
-      throw new Error("Freighter signedAuthEntry returned null");
+      throw new Error("Freighter returned no signed auth entry.");
     }
     return {
       signedAuthEntry: res.signedAuthEntry,
@@ -168,526 +93,416 @@ const getCustomSignerOptions = (publicKey: string) => ({
   },
 });
 
-const signAndSend = async <T>(assembledTx: AssembledTransaction<T>) => {
-  const txWithSign = assembledTx as AssembledTransaction<T> & {
+async function signAndSend<T>(assembled: AssembledTransaction<T>) {
+  const tx = assembled as AssembledTransaction<T> & {
     signAndSend?: () => Promise<unknown>;
   };
-
-  if (!txWithSign.signAndSend) {
-    throw new Error("Assembled transaction does not support signAndSend().");
+  if (!tx.signAndSend) {
+    throw new Error("This transaction cannot be signed and sent.");
   }
+  return tx.signAndSend();
+}
 
-  return txWithSign.signAndSend();
-};
-
-export const useStellarContract = () => {
+export function useStellarContract() {
   const { freighterWalletAddress } = useFreighterWallet();
 
-  const requirePublicKey = useCallback(
+  const requireWallet = useCallback(
     (override?: string) => {
-      const publicKey = override ?? freighterWalletAddress ?? FALLBACK_ADDRESS;
-      return publicKey;
+      const address = override || freighterWalletAddress;
+      if (!address) {
+        throw new Error("Connect your Freighter wallet first.");
+      }
+      return address;
     },
     [freighterWalletAddress],
   );
 
-  const requireReadOnlyPublicKey = useCallback(() => {
-    return FALLBACK_ADDRESS;
-  }, []);
+  // ── Creating a project ───────────────────────────────────────────────────
 
-  const getPlatform = useCallback(async (): Promise<Platform> => {
-    const publicKey = requireReadOnlyPublicKey();
-    const SOROBAN_RPC_URL = "https://soroban-testnet.stellar.org";
-    const FACTORY_ID = process.env.NEXT_PUBLIC_BLKFNDR_FACTORY_CONTRACT_ID || "";
-    const APPROVAL_ID = process.env.NEXT_PUBLIC_BLKFNDR_APPROVAL_CONTRACT_ID || "";
-
-    const factoryClient = new FactoryClient({
-      contractId: FACTORY_ID,
-      rpcUrl: SOROBAN_RPC_URL,
-      networkPassphrase: NETWORK_PASSPHRASE,
-      publicKey,
-    });
-
-    const approvalClient = new ApprovalClient({
-      contractId: APPROVAL_ID,
-      rpcUrl: SOROBAN_RPC_URL,
-      networkPassphrase: NETWORK_PASSPHRASE,
-      publicKey,
-    });
-
-    try {
-      const [adminTx, feeWalletTx, feePercentageTx, bondPercentageTx, signersTx] = await Promise.all([
-        factoryClient.get_admin(),
-        factoryClient.get_fee_wallet(),
-        factoryClient.get_fee_percentage(),
-        factoryClient.get_bond_percentage(),
-        approvalClient.get_signers(),
-      ]);
-
-      const [adminRes, feeWalletRes, feePercentageRes, bondPercentageRes, signersRes] = await Promise.all([
-        adminTx.simulate(),
-        feeWalletTx.simulate(),
-        feePercentageTx.simulate(),
-        bondPercentageTx.simulate(),
-        signersTx.simulate(),
-      ]);
-
-      return {
-        admin: adminRes.result || "",
-        fee_wallet_address: feeWalletRes.result || "",
-        fee_percentage: feePercentageRes.result ? BigInt(feePercentageRes.result) : BigInt(300),
-        total_fees_collected: BigInt(0),
-        multi_sig_admins: signersRes.result || [],
-        bond_percentage: bondPercentageRes.result ? BigInt(bondPercentageRes.result) : BigInt(500),
-      };
-    } catch (err) {
-      console.error("Failed to query platform info from factory and approval module:", err);
-      return {
-        admin: ALLOWED_ADMIN,
-        fee_wallet_address: ALLOWED_ADMIN,
-        fee_percentage: BigInt(300),
-        total_fees_collected: BigInt(0),
-        multi_sig_admins: [ALLOWED_ADMIN],
-        bond_percentage: BigInt(500),
-      };
-    }
-  }, [requireReadOnlyPublicKey]);
-
-  const getAllProjects = useCallback(async (): Promise<Project[]> => {
-    const publicKey = requireReadOnlyPublicKey();
-    const client = createStellarClient(publicKey);
-    const tx = await client.get_all_projects();
-    const simulation = (await tx.simulate()) as SimulationResult<Project[]>;
-    return getSimulationResult(simulation);
-  }, [requireReadOnlyPublicKey]);
-
-  const getProjectsByStatus = useCallback(
-    async ({ status }: GetProjectsByStatusParams): Promise<Project[]> => {
-      const publicKey = requireReadOnlyPublicKey();
-      const client = createStellarClient(publicKey);
-      const tx = await client.get_projects_by_status({ status });
-      const simulation = (await tx.simulate()) as SimulationResult<Project[]>;
-      return getSimulationResult(simulation);
-    },
-    [requireReadOnlyPublicKey],
-  );
-
+  /**
+   * Deploy a vault. The bond and the flat platform fee leave the builder's
+   * account in this same transaction, so a project never exists unbonded.
+   */
   const createProject = useCallback(
-    async ({ input, creator }: CreateProjectParams) => {
-      const publicKey = requirePublicKey(creator);
-      const client = createStellarClient(publicKey);
-      const tx = await client.create_project({
-        creator: publicKey,
-        title: input.title,
-        tagline: input.tagline,
-        description: input.description,
-        category: input.category,
-        goal: input.goal,
-        blob_id: input.blob_id,
-        currency_type: input.currencyType,
-        funding_deadline: input.funding_deadline,
+    async (params: CreateProjectParams) => {
+      const creator = requireWallet(params.creator);
+      const factory = factoryClient(signerFor(creator));
+
+      const tx = await factory.create_vault({
+        config: {
+          creator,
+          token: tokenAddressFor(params.currency),
+          goal: params.goal,
+          deadline: params.deadline,
+          bond_amount: params.bondAmount,
+          milestones: params.milestones.map((m) => ({
+            id: m.id,
+            amount: m.amount,
+          })),
+          metadata_cid: params.metadataCid,
+        },
+      });
+
+      await signAndSend(tx);
+      // create_vault returns the new vault's address.
+      return tx.result as unknown as string;
+    },
+    [requireWallet],
+  );
+
+  // ── Backing a project ────────────────────────────────────────────────────
+
+  const contribute = useCallback(
+    async ({ vaultAddress, amount, contributor }: ContributeParams) => {
+      const address = requireWallet(contributor);
+      const vault = vaultClient(vaultAddress, signerFor(address));
+      const tx = await vault.contribute({ contributor: address, amount });
+      return signAndSend(tx);
+    },
+    [requireWallet],
+  );
+
+  const claimRefund = useCallback(
+    async ({ vaultAddress, contributor }: { vaultAddress: string; contributor?: string }) => {
+      const address = requireWallet(contributor);
+      const vault = vaultClient(vaultAddress, signerFor(address));
+      const tx = await vault.claim_refund({ contributor: address });
+      return signAndSend(tx);
+    },
+    [requireWallet],
+  );
+
+  // ── Milestone voting ─────────────────────────────────────────────────────
+
+  /** Builder starts the clock on a milestone. */
+  const openMilestoneVote = useCallback(
+    async ({ vaultAddress, milestoneId }: MilestoneParams) => {
+      const address = requireWallet();
+      const vault = vaultClient(vaultAddress, signerFor(address));
+      const tx = await vault.open_milestone_vote({ milestone_id: milestoneId });
+      return signAndSend(tx);
+    },
+    [requireWallet],
+  );
+
+  /** Contributor votes to release. Weight is their contribution, capped at 20%. */
+  const approveMilestone = useCallback(
+    async ({ vaultAddress, milestoneId, contributor }: ApproveMilestoneParams) => {
+      const address = requireWallet(contributor);
+      const vault = vaultClient(vaultAddress, signerFor(address));
+      const tx = await vault.approve_milestone({
+        contributor: address,
+        milestone_id: milestoneId,
       });
       return signAndSend(tx);
     },
-    [requirePublicKey],
+    [requireWallet],
   );
 
-  const initialize = useCallback(
-    async ({ feeWalletAddress, feePercentage, admin }: InitializeParams) => {
-      const publicKey = requirePublicKey(admin);
-      const client = createStellarClient(publicKey);
-      const tx = await client.initialize({
-        admin: publicKey,
-        fee_wallet_address: feeWalletAddress,
-        fee_percentage: BigInt(feePercentage),
-      });
+  /** Permissionless once the vote carries — anyone may execute it. */
+  const releaseMilestone = useCallback(
+    async ({ vaultAddress, milestoneId }: MilestoneParams) => {
+      const address = requireWallet();
+      const vault = vaultClient(vaultAddress, signerFor(address));
+      const tx = await vault.release_milestone({ milestone_id: milestoneId });
       return signAndSend(tx);
     },
-    [requirePublicKey],
+    [requireWallet],
   );
 
-  const fundProject = useCallback(
-    async ({
-      vaultAddress,
-      amount,
-      investor,
-    }: FundProjectParams) => {
-      const publicKey = requirePublicKey(investor);
-      const SOROBAN_RPC_URL = "https://soroban-testnet.stellar.org";
-      const client = new VaultClient({
-        contractId: vaultAddress,
-        rpcUrl: SOROBAN_RPC_URL,
-        networkPassphrase: NETWORK_PASSPHRASE,
-        publicKey,
-        ...getCustomSignerOptions(publicKey),
-      });
-      const tx = await client.contribute({
-        contributor: publicKey,
-        amount,
-      });
+  /** Permissionless. Fails a milestone whose window closed below threshold. */
+  const settleLapsedMilestone = useCallback(
+    async ({ vaultAddress, milestoneId }: MilestoneParams) => {
+      const address = requireWallet();
+      const vault = vaultClient(vaultAddress, signerFor(address));
+      const tx = await vault.settle_lapsed_milestone({ milestone_id: milestoneId });
       return signAndSend(tx);
     },
-    [requirePublicKey],
+    [requireWallet],
   );
 
-  const getUserFunds = useCallback(
-    async (address: string): Promise<FundReceipt[]> => {
-      try {
-        const res = await fetch(`/api/user/funds?address=${address}`);
-        if (!res.ok) {
-          throw new Error("Failed to fetch user contributions");
-        }
-        return await res.json();
-      } catch (err) {
-        console.error("Failed to query user contributions:", err);
-        return [];
-      }
+  /** Permissionless. Persists a lifecycle transition once the deadline passes. */
+  const settleVault = useCallback(
+    async (vaultAddress: string) => {
+      const address = requireWallet();
+      const vault = vaultClient(vaultAddress, signerFor(address));
+      const tx = await vault.settle();
+      return signAndSend(tx);
     },
+    [requireWallet],
+  );
+
+  /** Permissionless. Returns the bond after a raise that never filled. */
+  const returnBond = useCallback(
+    async (vaultAddress: string) => {
+      const address = requireWallet();
+      const vault = vaultClient(vaultAddress, signerFor(address));
+      const tx = await vault.return_bond();
+      return signAndSend(tx);
+    },
+    [requireWallet],
+  );
+
+  // ── Reads ────────────────────────────────────────────────────────────────
+
+  const getVaultInfo = useCallback(
+    (vaultAddress: string) =>
+      simulate(() => vaultClient(vaultAddress).get_info(), `get_info(${vaultAddress})`),
     [],
   );
 
-  const getAllFundReceipts = useCallback(async (): Promise<FundReceipt[]> => {
-    try {
-      const res = await fetch("/api/user/funds");
-      if (!res.ok) {
-        throw new Error("Failed to fetch all fund receipts");
-      }
-      return await res.json();
-    } catch (err) {
-      console.error("Failed to query all fund receipts:", err);
-      return [];
-    }
+  const getVaultState = useCallback(
+    (vaultAddress: string) =>
+      simulate(() => vaultClient(vaultAddress).get_state(), `get_state(${vaultAddress})`),
+    [],
+  );
+
+  const getContribution = useCallback(
+    (vaultAddress: string, contributor: string) =>
+      simulate(
+        () => vaultClient(vaultAddress).get_balance({ contributor }),
+        `get_balance(${vaultAddress})`,
+      ),
+    [],
+  );
+
+  /** What this wallet's vote is worth, after the 20% cap. */
+  const getVotingWeight = useCallback(
+    (vaultAddress: string, contributor: string) =>
+      simulate(
+        () => vaultClient(vaultAddress).get_voting_weight({ contributor }),
+        `get_voting_weight(${vaultAddress})`,
+      ),
+    [],
+  );
+
+  const hasVoted = useCallback(
+    (vaultAddress: string, milestoneId: number, contributor: string) =>
+      simulate(
+        () => vaultClient(vaultAddress).has_voted({ milestone_id: milestoneId, contributor }),
+        `has_voted(${vaultAddress})`,
+      ),
+    [],
+  );
+
+  /** Returns [weight so far, weight required, window still open]. */
+  const getMilestoneVote = useCallback(
+    (vaultAddress: string, milestoneId: number) =>
+      simulate(
+        () => vaultClient(vaultAddress).get_milestone_vote({ milestone_id: milestoneId }),
+        `get_milestone_vote(${vaultAddress})`,
+      ),
+    [],
+  );
+
+  const getContributors = useCallback(
+    (vaultAddress: string, offset = 0, limit = 100) =>
+      simulate(
+        () => vaultClient(vaultAddress).get_contributors({ offset, limit }),
+        `get_contributors(${vaultAddress})`,
+      ),
+    [],
+  );
+
+  const getVaultAddress = useCallback(
+    (projectId: bigint) =>
+      simulate(() => factoryClient().get_vault({ project_id: projectId }), "get_vault"),
+    [],
+  );
+
+  const getPlatformTerms = useCallback(async () => {
+    const factory = factoryClient();
+    const [fee, minContribution, votingWindow, bondBps] = await Promise.all([
+      simulate(() => factory.get_platform_fee(), "get_platform_fee"),
+      simulate(() => factory.get_min_contribution(), "get_min_contribution"),
+      simulate(() => factory.get_voting_window(), "get_voting_window"),
+      simulate(() => factory.get_bond_percentage(), "get_bond_percentage"),
+    ]);
+    return { fee, minContribution, votingWindow, bondBps };
   }, []);
 
-  const refundContributor = useCallback(
-    async ({ vaultAddress, investor }: { vaultAddress: string; investor?: string }) => {
-      const publicKey = requirePublicKey(investor);
-      const SOROBAN_RPC_URL = "https://soroban-testnet.stellar.org";
-      const client = new VaultClient({
-        contractId: vaultAddress,
-        rpcUrl: SOROBAN_RPC_URL,
-        networkPassphrase: NETWORK_PASSPHRASE,
-        publicKey,
-        ...getCustomSignerOptions(publicKey),
-      });
-      const tx = await client.claim_refund({
-        contributor: publicKey,
-      });
-      return signAndSend(tx);
-    },
-    [requirePublicKey],
+  // ── Builder track record ─────────────────────────────────────────────────
+
+  const getBuilderSummary = useCallback(
+    (builder: string) =>
+      simulate(
+        () => attestationClient().get_builder_summary({ builder }),
+        `get_builder_summary(${builder})`,
+      ),
+    [],
   );
 
-  const getProject = useCallback(
-    async (projectId: bigint): Promise<Project> => {
-      const publicKey = requireReadOnlyPublicKey();
-      const client = createStellarClient(publicKey);
-      const tx = await client.get_project({ project_id: projectId });
-      const simulation = (await tx.simulate()) as SimulationResult<Project>;
-      return getSimulationResult(simulation);
-    },
-    [requireReadOnlyPublicKey],
+  const getBuilderHistory = useCallback(
+    (builder: string, offset = 0, limit = 100) =>
+      simulate(
+        () => attestationClient().get_builder_history({ builder, offset, limit }),
+        `get_builder_history(${builder})`,
+      ),
+    [],
   );
 
-  const registerToken = useCallback(
-    async ({ currencyType, tokenAddress, admin }: RegisterTokenParams) => {
-      const publicKey = requirePublicKey(admin);
-      const client = createStellarClient(publicKey);
-      const tx = await client.register_token({
-        currency_type: currencyType,
-        token_address: tokenAddress,
-      });
-      return signAndSend(tx);
-    },
-    [requirePublicKey],
+  // ── Identity ─────────────────────────────────────────────────────────────
+
+  const isKycApproved = useCallback(
+    (address: string) =>
+      simulate(
+        () => identityClient().is_kyc_approved({ address }),
+        `is_kyc_approved(${address})`,
+      ),
+    [],
   );
 
-  const updateProjectStatus = useCallback(
-    async ({
-      projectId,
-      newStatus,
-      admin,
-    }: {
-      projectId: bigint;
-      newStatus: ProjectStatus;
-      admin?: string;
-    }) => {
-      requirePublicKey(admin);
-      const client = createStellarClient(requirePublicKey(admin));
-      const tx = await client.update_project_status({
-        project_id: projectId,
-        new_status: newStatus,
+  const attestKyc = useCallback(
+    async ({ address, kycHash }: { address: string; kycHash: Buffer }) => {
+      const admin = requireWallet();
+      const tx = await identityClient(signerFor(admin)).attest({
+        address,
+        kyc_hash: kycHash,
       });
       return signAndSend(tx);
     },
-    [requirePublicKey],
+    [requireWallet],
   );
 
-  const approveProject = useCallback(
-    async ({ projectId, admin }: { projectId: bigint; admin?: string }) => {
-      requirePublicKey(admin);
-      const client = createStellarClient(requirePublicKey(admin));
-      const tx = await client.approve_project({ project_id: projectId });
+  const revokeKyc = useCallback(
+    async (address: string) => {
+      const admin = requireWallet();
+      const tx = await identityClient(signerFor(admin)).revoke({ address });
       return signAndSend(tx);
     },
-    [requirePublicKey],
+    [requireWallet],
   );
 
-  const rejectProject = useCallback(
-    async ({ projectId, admin }: { projectId: bigint; admin?: string }) => {
-      requirePublicKey(admin);
-      const client = createStellarClient(requirePublicKey(admin));
-      const tx = await client.reject_project({ project_id: projectId });
-      return signAndSend(tx);
-    },
-    [requirePublicKey],
-  );
-
-  const transferAdmin = useCallback(
-    async ({ newAdmin, admin }: TransferAdminParams) => {
-      requirePublicKey(admin);
-      const client = createStellarClient(requirePublicKey(admin));
-      const tx = await client.transfer_admin({ new_admin: newAdmin });
-      return signAndSend(tx);
-    },
-    [requirePublicKey],
-  );
-
-  const addMultisigAdmin = useCallback(
-    async ({ newAdmin, admin }: { newAdmin: string; admin?: string }) => {
-      const publicKey = requirePublicKey(admin);
-      const SOROBAN_RPC_URL = "https://soroban-testnet.stellar.org";
-      const APPROVAL_ID = process.env.NEXT_PUBLIC_BLKFNDR_APPROVAL_CONTRACT_ID || "";
-      const client = new ApprovalClient({
-        contractId: APPROVAL_ID,
-        rpcUrl: SOROBAN_RPC_URL,
-        networkPassphrase: NETWORK_PASSPHRASE,
-        publicKey,
-        ...getCustomSignerOptions(publicKey),
-      });
-      const tx = await client.add_signer({ new_signer: newAdmin });
-      return signAndSend(tx);
-    },
-    [requirePublicKey],
-  );
-
-  const removeMultisigAdmin = useCallback(
-    async ({ target, admin }: { target: string; admin?: string }) => {
-      const publicKey = requirePublicKey(admin);
-      const SOROBAN_RPC_URL = "https://soroban-testnet.stellar.org";
-      const APPROVAL_ID = process.env.NEXT_PUBLIC_BLKFNDR_APPROVAL_CONTRACT_ID || "";
-      const client = new ApprovalClient({
-        contractId: APPROVAL_ID,
-        rpcUrl: SOROBAN_RPC_URL,
-        networkPassphrase: NETWORK_PASSPHRASE,
-        publicKey,
-        ...getCustomSignerOptions(publicKey),
-      });
-      const tx = await client.remove_signer({ signer: target });
-      return signAndSend(tx);
-    },
-    [requirePublicKey],
-  );
-
-  const updateMultisigThreshold = useCallback(
-    async ({ newThreshold, admin }: { newThreshold: number; admin?: string }) => {
-      const publicKey = requirePublicKey(admin);
-      const SOROBAN_RPC_URL = "https://soroban-testnet.stellar.org";
-      const APPROVAL_ID = process.env.NEXT_PUBLIC_BLKFNDR_APPROVAL_CONTRACT_ID || "";
-      const client = new ApprovalClient({
-        contractId: APPROVAL_ID,
-        rpcUrl: SOROBAN_RPC_URL,
-        networkPassphrase: NETWORK_PASSPHRASE,
-        publicKey,
-        ...getCustomSignerOptions(publicKey),
-      });
-      const tx = await client.update_threshold({ new_threshold: newThreshold });
-      return signAndSend(tx);
-    },
-    [requirePublicKey],
-  );
-
-  const setFeeWallet = useCallback(
-    async ({ feeWalletAddress, admin }: SetFeeWalletParams) => {
-      const publicKey = requirePublicKey(admin);
-      const SOROBAN_RPC_URL = "https://soroban-testnet.stellar.org";
-      const FACTORY_ID = process.env.NEXT_PUBLIC_BLKFNDR_FACTORY_CONTRACT_ID || "";
-      const client = new FactoryClient({
-        contractId: FACTORY_ID,
-        rpcUrl: SOROBAN_RPC_URL,
-        networkPassphrase: NETWORK_PASSPHRASE,
-        publicKey,
-        ...getCustomSignerOptions(publicKey),
-      });
-      const tx = await client.update_fee_wallet({ new_fee_wallet: feeWalletAddress });
-      return signAndSend(tx);
-    },
-    [requirePublicKey],
-  );
+  // ── Platform terms ───────────────────────────────────────────────────────
+  //
+  // These change the terms for vaults created from here on. A vault's config is
+  // frozen at construction, so none of them alters a project a contributor has
+  // already backed.
 
   const updatePlatformFee = useCallback(
-    async ({ newFeeBps, admin }: UpdatePlatformFeeParams) => {
-      const publicKey = requirePublicKey(admin);
-      const SOROBAN_RPC_URL = "https://soroban-testnet.stellar.org";
-      const FACTORY_ID = process.env.NEXT_PUBLIC_BLKFNDR_FACTORY_CONTRACT_ID || "";
-      const client = new FactoryClient({
-        contractId: FACTORY_ID,
-        rpcUrl: SOROBAN_RPC_URL,
-        networkPassphrase: NETWORK_PASSPHRASE,
-        publicKey,
-        ...getCustomSignerOptions(publicKey),
-      });
-      const tx = await client.update_fee_percentage({ new_percentage: newFeeBps });
+    async (newFee: bigint) => {
+      const admin = requireWallet();
+      const tx = await factoryClient(signerFor(admin)).update_platform_fee({ new_fee: newFee });
       return signAndSend(tx);
     },
-    [requirePublicKey],
+    [requireWallet],
   );
 
-  const updatePlatformBond = useCallback(
-    async ({ newBondBps, admin }: { newBondBps: bigint; admin?: string }) => {
-      const publicKey = requirePublicKey(admin);
-      const SOROBAN_RPC_URL = "https://soroban-testnet.stellar.org";
-      const FACTORY_ID = process.env.NEXT_PUBLIC_BLKFNDR_FACTORY_CONTRACT_ID || "";
-      const client = new FactoryClient({
-        contractId: FACTORY_ID,
-        rpcUrl: SOROBAN_RPC_URL,
-        networkPassphrase: NETWORK_PASSPHRASE,
-        publicKey,
-        ...getCustomSignerOptions(publicKey),
+  const updateBondPercentage = useCallback(
+    async (bps: bigint) => {
+      const admin = requireWallet();
+      const tx = await factoryClient(signerFor(admin)).update_bond_percentage({
+        new_percentage: bps,
       });
-      const tx = await client.update_bond_percentage({ new_percentage: newBondBps });
       return signAndSend(tx);
     },
-    [requirePublicKey],
+    [requireWallet],
   );
 
-  const updateShareRules = useCallback(
-    async (_params: UpdateShareRulesParams) => {
-      throw new Error("blkfndr_v2 does not expose share rules management.");
+  const updateFeeWallet = useCallback(
+    async (address: string) => {
+      const admin = requireWallet();
+      const tx = await factoryClient(signerFor(admin)).update_fee_wallet({
+        new_fee_wallet: address,
+      });
+      return signAndSend(tx);
     },
+    [requireWallet],
+  );
+
+  const updateVotingWindow = useCallback(
+    async (seconds: bigint) => {
+      const admin = requireWallet();
+      const tx = await factoryClient(signerFor(admin)).update_voting_window({
+        new_window_secs: seconds,
+      });
+      return signAndSend(tx);
+    },
+    [requireWallet],
+  );
+
+  const updateMinContribution = useCallback(
+    async (stroops: bigint) => {
+      const admin = requireWallet();
+      const tx = await factoryClient(signerFor(admin)).update_min_contribution({
+        new_minimum: stroops,
+      });
+      return signAndSend(tx);
+    },
+    [requireWallet],
+  );
+
+  // ── Admin roster ─────────────────────────────────────────────────────────
+
+  const isPlatformAdmin = useCallback(
+    (account: string) =>
+      simulate(() => adminClient().is_admin({ account }), `is_admin(${account})`),
     [],
   );
 
-  const adminDeleteProject = useCallback(
-    async (_params: AdminDeleteProjectParams) => {
-      throw new Error("blkfndr_v2 does not expose admin project deletion.");
-    },
+  const getAdmins = useCallback(
+    () => simulate(() => adminClient().get_admins(), "get_admins"),
     [],
   );
 
-  const claimFunds = useCallback(
-    async ({ projectId }: { projectId: bigint }) => {
-      const publicKey = requirePublicKey();
-      const client = createStellarClient(publicKey);
-      const tx = await client.claim_funds({ project_id: projectId });
+  const addAdmin = useCallback(
+    async (account: string) => {
+      const owner = requireWallet();
+      const tx = await adminClient(signerFor(owner)).add_admin({ account });
       return signAndSend(tx);
     },
-    [requirePublicKey],
+    [requireWallet],
   );
 
-  const proposeWithdrawal = useCallback(
-    async ({
-      projectId,
-      amount,
-    }: {
-      projectId: bigint;
-      amount: bigint;
-    }) => {
-      const publicKey = requirePublicKey();
-      const client = createStellarClient(publicKey);
-      const tx = await client.propose_withdrawal({
-        proposer: publicKey,
-        project_id: projectId,
-        amount,
-      });
+  const removeAdmin = useCallback(
+    async (account: string) => {
+      const owner = requireWallet();
+      const tx = await adminClient(signerFor(owner)).remove_admin({ account });
       return signAndSend(tx);
     },
-    [requirePublicKey],
-  );
-
-  const voteWithdrawal = useCallback(
-    async ({ proposalId }: { proposalId: bigint }) => {
-      const publicKey = requirePublicKey();
-      const client = createStellarClient(publicKey);
-      const tx = await client.vote_withdrawal({
-        voter: publicKey,
-        proposal_id: proposalId,
-      });
-      return signAndSend(tx);
-    },
-    [requirePublicKey],
-  );
-
-  const executeWithdrawal = useCallback(
-    async ({ proposalId }: { proposalId: bigint }) => {
-      const publicKey = requirePublicKey();
-      const client = createStellarClient(publicKey);
-      const tx = await client.execute_withdrawal({
-        executor: publicKey,
-        proposal_id: proposalId,
-      });
-      return signAndSend(tx);
-    },
-    [requirePublicKey],
-  );
-
-  const getPendingProposals = useCallback(async (): Promise<AdminProposal[]> => {
-    try {
-      const publicKey = requireReadOnlyPublicKey();
-      const client = createStellarClient(publicKey);
-      const tx = await client.get_pending_proposals();
-      const simulation = (await tx.simulate()) as SimulationResult<AdminProposal[]>;
-      return getSimulationResult(simulation);
-    } catch (err) {
-      console.warn("Failed to get pending proposals from platform contract, returning empty list:", err);
-      return [];
-    }
-  }, [requireReadOnlyPublicKey]);
-
-  const donateToPlatform = useCallback(
-    async ({ amount, currencyType, message, donor }: DonateToPlatformParams) => {
-      const publicKey = requirePublicKey(donor);
-      const client = createStellarClient(publicKey);
-      const tx = await client.donate_to_platform({
-        donor: publicKey,
-        amount,
-        currency_type: currencyType,
-        message,
-      });
-      return signAndSend(tx);
-    },
-    [requirePublicKey],
+    [requireWallet],
   );
 
   return {
-    initialize,
-    getPlatform,
-    getAllProjects,
-    getProjectsByStatus,
+    // create
     createProject,
-    fundProject,
-    getUserFunds,
-    getAllFundReceipts,
-    refundContributor,
-    getProject,
-    registerToken,
-    updateProjectStatus,
-    approveProject,
-    rejectProject,
-    transferAdmin,
-    addMultisigAdmin,
-    removeMultisigAdmin,
-    updateMultisigThreshold,
-    setFeeWallet,
+    // back
+    contribute,
+    claimRefund,
+    // vote
+    openMilestoneVote,
+    approveMilestone,
+    releaseMilestone,
+    settleLapsedMilestone,
+    settleVault,
+    returnBond,
+    // read
+    getVaultInfo,
+    getVaultState,
+    getContribution,
+    getVotingWeight,
+    hasVoted,
+    getMilestoneVote,
+    getContributors,
+    getVaultAddress,
+    getPlatformTerms,
+    // record
+    getBuilderSummary,
+    getBuilderHistory,
+    // identity
+    isKycApproved,
+    attestKyc,
+    revokeKyc,
+    // platform terms
     updatePlatformFee,
-    updatePlatformBond,
-    updateShareRules,
-    adminDeleteProject,
-    claimFunds,
-    proposeWithdrawal,
-    voteWithdrawal,
-    executeWithdrawal,
-    getPendingProposals,
-    donateToPlatform,
+    updateBondPercentage,
+    updateFeeWallet,
+    updateVotingWindow,
+    updateMinContribution,
+    // admin
+    isPlatformAdmin,
+    getAdmins,
+    addAdmin,
+    removeAdmin,
   };
-};
+}

@@ -109,8 +109,7 @@ interface BlockchainProviderProps {
 export const BlockchainProvider: React.FC<BlockchainProviderProps> = ({
   children,
 }) => {
-  const { getPlatform, getUserFunds } =
-    useStellarContract();
+  const { getPlatformTerms, getAdmins } = useStellarContract();
 
   const [platformInfo, setPlatformInfo] = useState<PlatformInfo | null>(null);
   const [isLoadingPlatform, setIsLoadingPlatform] = useState(true);
@@ -131,55 +130,45 @@ export const BlockchainProvider: React.FC<BlockchainProviderProps> = ({
       setIsLoadingPlatform(true);
       setPlatformError(null);
 
-      const platformData = await getPlatform();
+      // Platform terms live on the factory now, and the admin roster is its own
+      // contract. The retired crowdfunding contract exposed all of it as one
+      // Platform struct, which is why this used to be a single call.
+      const [terms, admins] = await Promise.all([getPlatformTerms(), getAdmins()]);
 
-      let email = "";
+      let email = '';
       try {
-        const settingsRes = await fetch("/api/admin/platform-settings");
+        const settingsRes = await fetch('/api/admin/platform-settings');
         if (settingsRes.ok) {
           const settingsData = await settingsRes.json();
-          email = settingsData.feeWalletEmail || "";
+          email = settingsData.feeWalletEmail || '';
         }
       } catch (err) {
-        console.warn("Failed to fetch platform settings:", err);
+        console.warn('Failed to fetch platform settings:', err);
       }
 
-      // Fetch multisig threshold from approval contract
-      let threshold = 2;
-      try {
-        const { Client: ApprovalClientClass } = await import("@/packages/blkfndr_approval/src");
-        const APPROVAL_ID = process.env.NEXT_PUBLIC_BLKFNDR_APPROVAL_CONTRACT_ID || "";
-        const approvalClient = new ApprovalClientClass({
-          contractId: APPROVAL_ID,
-          rpcUrl: "https://soroban-testnet.stellar.org",
-          networkPassphrase: NETWORK_PASSPHRASE,
-        });
-        const thresholdTx = await approvalClient.get_threshold();
-        const thresholdRes = await thresholdTx.simulate();
-        threshold = thresholdRes.result || 2;
-      } catch (err) {
-        console.warn("Failed to fetch multisig threshold:", err);
-      }
+      const adminList = (admins as string[] | null) ?? [];
 
       setPlatformInfo({
-        admin: platformData.admin,
-        feeWalletAddress: platformData.fee_wallet_address,
+        admin: adminList[0] ?? '',
+        feeWalletAddress: '',
         feeWalletEmail: email,
-        totalFeesCollected:
-          platformData.total_fees_collected?.toString() || "0",
-        totalDonationsReceived: "0",
-        projectCounter: "0",
-        multiSigAdmins: platformData.multi_sig_admins || [],
-        multisigThreshold: threshold,
+        totalFeesCollected: '0',
+        totalDonationsReceived: '0',
+        projectCounter: '0',
+        multiSigAdmins: adminList,
+        // No approval threshold exists any more: milestone release is decided
+        // by contributors inside each vault, weighted by contribution.
+        multisigThreshold: 0,
         shareRules: {
           minPercentage: 500,
           maxPercentage: 1500,
-          description: "Balanced investor incentives",
+          description: 'Balanced investor incentives',
           minPercentageDisplay: 5,
           maxPercentageDisplay: 15,
         },
-        feePercentage: Number(platformData.fee_percentage) || 300,
-        bondPercentage: platformData.bond_percentage !== undefined ? Number(platformData.bond_percentage) : 500,
+        // A flat amount in stroops, not a percentage.
+        feePercentage: Number(terms.fee ?? 0),
+        bondPercentage: Number(terms.bondBps ?? 500),
       });
     } catch (error) {
       console.warn("Error fetching platform info:", error);
@@ -189,7 +178,7 @@ export const BlockchainProvider: React.FC<BlockchainProviderProps> = ({
     } finally {
       setIsLoadingPlatform(false);
     }
-  }, [getPlatform]);
+  }, [getPlatformTerms, getAdmins]);
 
   const reconcileStaleProjects = useCallback(async (loadedProjects: Project[]) => {
     const stale = loadedProjects.filter(
@@ -334,34 +323,33 @@ export const BlockchainProvider: React.FC<BlockchainProviderProps> = ({
       try {
         setIsLoadingFunds(true);
         setFundsError(null);
-        const list = await getUserFunds(address);
-        const mapped = list
-          .filter(
-            (receipt) =>
-              receipt &&
-              receipt.project_id !== undefined &&
-              receipt.project_id !== null &&
-              receipt.fund_id !== undefined &&
-              receipt.fund_id !== null &&
-              receipt.amount !== undefined &&
-              receipt.amount !== null
-          )
-          .map((receipt) => {
-            const proj = projects.find((p) => p.id === receipt.project_id.toString());
-            return {
-              fund_id: receipt.fund_id.toString(),
-              contributor: receipt.contributor,
-              project_id: receipt.project_id.toString(),
-              project_title: proj?.title || `Campaign #${receipt.project_id.toString()}`,
-              image_url: proj?.imageUrl || "",
-              amount: receipt.amount.toString(),
-              usdc_amount: receipt.amount.toString(),
-              share_percentage: (receipt.share_percentage ?? 0).toString(),
-              fee_paid: (receipt.fee_paid ?? 0).toString(),
-              fund_date: Number(receipt.fund_date ?? 0) * 1000,
-              currency_type: proj?.currencyType || "USDC",
-            };
-          });
+        // Contributions are per-vault now, so there is no single contract call
+        // that returns a wallet's whole history. The indexer already
+        // reconstructs it from DEPOSIT/CONTRIB events.
+        const res = await fetch(
+          `/api/user/funds?address=${encodeURIComponent(address)}`,
+        );
+        if (!res.ok) {
+          throw new Error('Could not load your contributions.');
+        }
+        const list: any[] = await res.json();
+        const mapped = (Array.isArray(list) ? list : []).map((receipt: any) => {
+          const proj = projects.find((p) => p.id === String(receipt.project_id));
+          return {
+            fund_id: String(receipt.fund_id ?? ''),
+            contributor: receipt.contributor,
+            project_id: String(receipt.project_id ?? ''),
+            project_title:
+              proj?.title || receipt.project_title || `Campaign #${receipt.project_id}`,
+            image_url: proj?.imageUrl || receipt.image_url || '',
+            amount: String(receipt.amount ?? '0'),
+            usdc_amount: String(receipt.usdc_amount ?? receipt.amount ?? '0'),
+            share_percentage: String(receipt.share_percentage ?? '0'),
+            fee_paid: String(receipt.fee_paid ?? '0'),
+            fund_date: Number(receipt.fund_date ?? 0),
+            currency_type: proj?.currencyType || receipt.currency_type || 'USDC',
+          };
+        });
         setUserFunds(mapped);
       } catch (error) {
         console.warn("Error fetching user contributions:", error);
@@ -372,7 +360,7 @@ export const BlockchainProvider: React.FC<BlockchainProviderProps> = ({
         setIsLoadingFunds(false);
       }
     },
-    [getUserFunds, projects],
+    [projects],
   );
 
   const refreshAfterTx = useCallback(

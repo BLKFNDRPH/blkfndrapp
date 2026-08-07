@@ -35,7 +35,7 @@ export function PerformanceBondForm() {
   const refreshAfterTx = useRefreshAfterTx();
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
-  const { updatePlatformBond } = useStellarContract();
+  const { updateBondPercentage } = useStellarContract();
   const [isEditing, setIsEditing] = useState(false);
 
   const form = useForm<FormSchema>({
@@ -58,7 +58,7 @@ export function PerformanceBondForm() {
       try {
         const bondBps = Math.round(values.bondPercentage * 100);
 
-        const result = await updatePlatformBond({ newBondBps: BigInt(bondBps) });
+        const result = await updateBondPercentage(BigInt(bondBps));
 
         const txStatus = (result as any)?.getTransactionResponse?.status;
         if (txStatus !== "SUCCESS") {

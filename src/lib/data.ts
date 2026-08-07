@@ -81,181 +81,9 @@ async function getDb() {
   return { UserModel, NotificationModel, ClaimRequestModel, ProjectCache, KycRequest };
 }
 
-// ========== ON-CHAIN PROJECT FUNCTIONS ==========
-
-const getOnChainProjects = async (): Promise<Project[]> => {
-  try {
-    const { Client } = await import("@/packages/blkfndr_v2/src");
-    const { Networks } = await import("@stellar/stellar-sdk");
-    const { CONTRACT_ID, SOROBAN_RPC_URL } = await import("./stellar");
-
-    const client = new Client({
-      contractId: CONTRACT_ID!,
-      rpcUrl: SOROBAN_RPC_URL!,
-      networkPassphrase: Networks.TESTNET,
-    });
-
-    const tx = await client.get_all_projects();
-    const simulation = (await tx.simulate()) as any;
-
-    let rawProjects: any[] = [];
-    if (simulation.result !== undefined) {
-      rawProjects = simulation.result;
-    } else if (simulation.returnValue !== undefined) {
-      rawProjects = simulation.returnValue;
-    }
-
-    if (!rawProjects || !rawProjects.length) return [];
-
-    // Collect all creator addresses upfront for a single batched DB query
-    const creatorAddresses = rawProjects
-      .map((p: any) => p.creator)
-      .filter(Boolean);
-    let userMap: Record<string, any> = {};
-    try {
-      const { UserModel } = await getDb();
-      const users = await UserModel.find({
-        stellarPublicKey: {
-          $in: creatorAddresses,
-        },
-      }).lean();
-
-      userMap = Object.fromEntries(
-        users.flatMap((u: any) => {
-          const entries = [];
-          if (u.stellarPublicKey)
-            entries.push([u.stellarPublicKey, u]);
-          return entries;
-        }),
-      );
-    } catch (e) {
-      console.error("MongoDB batch lookup failed:", e);
-    }
-
-    const projects = rawProjects.map((p: any) => {
-      const creatorStr = p.creator;
-      const user = creatorStr ? userMap[creatorStr] : undefined;
-      const creatorName = user?.name ?? p.creator;
-      const creatorAvatar =
-        user?.creatorAvatar ?? `https://i.pravatar.cc/150?u=${p.creator}`;
-      const creatorUid = user?.uid;
-
-      const currency = normalizeCurrency(p.currency_type);
-      const timestampMs = Number(p.created_at) * 1000;
-
-      return {
-        id: p.id.toString(),
-        title: p.title,
-        tagline: p.tagline,
-        description: p.description,
-        category: p.category,
-        fundingGoal: rawToHuman(p.goal, currency),
-        currentFunding: rawToHuman(p.raised_amount, currency),
-        fundingGoalRaw: p.goal.toString(),
-        currentFundingRaw: p.raised_amount.toString(),
-        imageUrl: getIPFSGatewayUrl(p.blob_id),
-        creator: creatorName,
-        creatorAvatar,
-        creatorAddress: p.creator,
-        status: normalizeStatus(p.status),
-        featured: false,
-        createdAt: !isNaN(timestampMs)
-          ? new Date(timestampMs).toISOString()
-          : null,
-        creatorId: creatorUid,
-        fundingDeadline: Number(p.funding_deadline) * 1000,
-        isPublic: p.status !== 0,
-        currencyType: currency,
-      } as Project;
-    });
-
-    return projects.filter((p): p is Project => p !== null);
-  } catch (error) {
-    console.error("Error fetching on-chain projects:", error);
-    return [];
-  }
-};
-
-const getOnChainProjectById = async (
-  projectId: string,
-): Promise<Project | undefined> => {
-  try {
-    let projectIdBigInt: bigint;
-    try {
-      projectIdBigInt = BigInt(projectId);
-    } catch {
-      return undefined;
-    }
-
-    const { Client } = await import("@/packages/blkfndr_v2/src");
-    const { Networks } = await import("@stellar/stellar-sdk");
-    const { CONTRACT_ID, SOROBAN_RPC_URL } = await import("./stellar");
-
-    const client = new Client({
-      contractId: CONTRACT_ID!,
-      rpcUrl: SOROBAN_RPC_URL!,
-      networkPassphrase: Networks.TESTNET,
-    });
-
-    const tx = await client.get_project({ project_id: projectIdBigInt });
-    const simulation = (await tx.simulate()) as any;
-
-    let p: any = null;
-    if (simulation.result !== undefined) {
-      p = simulation.result;
-    } else if (simulation.returnValue !== undefined) {
-      p = simulation.returnValue;
-    }
-
-    if (!p) return undefined;
-
-    let creatorName = p.creator;
-    let creatorAvatar = `https://i.pravatar.cc/150?u=${p.creator}`;
-    let creatorUid: string | undefined;
-
-    try {
-      const user = await getUserByCreatorId(p.creator, "stellarPublicKey");
-      if (user) {
-        creatorName = user.name;
-        creatorAvatar = user.creatorAvatar;
-        creatorUid = user.uid;
-      }
-    } catch (e) {
-      console.error("MongoDB lookup failed for creator:", e);
-    }
-
-    const currency = normalizeCurrency(p.currency_type);
-    const timestampMs = Number(p.created_at) * 1000;
-
-    return {
-      id: p.id.toString(),
-      title: p.title,
-      tagline: p.tagline,
-      description: p.description,
-      category: p.category,
-      fundingGoal: rawToHuman(p.goal, currency),
-      currentFunding: rawToHuman(p.raised_amount, currency),
-      fundingGoalRaw: p.goal.toString(),
-      currentFundingRaw: p.raised_amount.toString(),
-      imageUrl: getIPFSGatewayUrl(p.blob_id),
-      creator: creatorName,
-      creatorAvatar,
-      creatorAddress: p.creator,
-      status: normalizeStatus(p.status),
-      featured: false,
-      createdAt: !isNaN(timestampMs)
-        ? new Date(timestampMs).toISOString()
-        : null,
-      creatorId: creatorUid ?? p.creator,
-      fundingDeadline: Number(p.funding_deadline) * 1000,
-      isPublic: p.status !== 0,
-      currencyType: currency,
-    };
-  } catch (error) {
-    console.error(`Error fetching on-chain project ID ${projectId}:`, error);
-    return undefined;
-  }
-};
+// Project data comes from the indexer cache and per-vault reads, not from a
+// single global contract. The two functions that used to live here read the
+// retired monolithic crowdfunding contract and had no callers.
 
 // ========== UNIFIED DATA LAYER ==========
 
@@ -518,65 +346,40 @@ export const getShareRules = async () => null;
 export const getAdminActivityLog = async () => [];
 
 export const isUserAdmin = async (userAddress: string) => {
-  if (!userAddress)
-    return {
-      isMainAdmin: false,
-      isMultiSigAdmin: false,
-      hasAdminAccess: false,
-    };
-  try {
-    const { Client: FactoryClient } = await import("@/packages/blkfndr_factory/src");
-    const { Client: ApprovalClient } = await import("@/packages/blkfndr_approval/src");
-    const { Networks } = await import("@stellar/stellar-sdk");
-    const { SOROBAN_RPC_URL } = await import("./stellar");
-
-    const factoryContractId = process.env.NEXT_PUBLIC_BLKFNDR_FACTORY_CONTRACT_ID;
-    const approvalContractId = process.env.NEXT_PUBLIC_BLKFNDR_APPROVAL_CONTRACT_ID;
-
-    if (!factoryContractId || !approvalContractId) {
-      console.warn("Factory or Approval contract ID is missing in isUserAdmin");
-      return {
-        isMainAdmin: false,
-        isMultiSigAdmin: false,
-        hasAdminAccess: false,
-      };
-    }
-
-    const factoryClient = new FactoryClient({
-      contractId: factoryContractId,
-      rpcUrl: SOROBAN_RPC_URL!,
-      networkPassphrase: Networks.TESTNET,
-    });
-    const adminTx = await factoryClient.get_admin();
-    const adminSim = await adminTx.simulate();
-    const contractAdmin = adminSim.result;
-
-    const isMainAdmin = contractAdmin === userAddress;
-
-    const approvalClient = new ApprovalClient({
-      contractId: approvalContractId,
-      rpcUrl: SOROBAN_RPC_URL!,
-      networkPassphrase: Networks.TESTNET,
-    });
-    const signersTx = await approvalClient.get_signers();
-    const signersSim = await signersTx.simulate();
-    const multiSigAdmins: string[] = signersSim.result || [];
-
-    const isMultiSigAdmin = multiSigAdmins.includes(userAddress);
-
-    return {
-      isMainAdmin,
-      isMultiSigAdmin,
-      hasAdminAccess: isMainAdmin || isMultiSigAdmin,
-    };
-  } catch (err) {
-    console.error("Failed to query platform settings from contract:", err);
-  }
-  return {
+  const denied = {
     isMainAdmin: false,
     isMultiSigAdmin: false,
     hasAdminAccess: false,
   };
+
+  if (!userAddress) return denied;
+
+  try {
+    const { adminClient, simulate } = await import('./stellar-clients');
+
+    // One source of truth. This used to consult the factory admin *and* the
+    // approval module's signer list — two lists that could disagree, neither of
+    // which was the roster the app actually meant. The admin registry is now
+    // the single on-chain answer.
+    //
+    // Being on it grants access to the admin console. It grants nothing on
+    // chain: no address here can release a milestone, block a refund, or move
+    // a vault's balance.
+    const isAdmin = await simulate(
+      () => adminClient().is_admin({ account: userAddress }),
+      `is_admin(${userAddress})`,
+    );
+
+    if (isAdmin !== true) return denied;
+
+    // isMultiSigAdmin is retained for callers that still branch on it; the
+    // distinction between a 'main' and a 'multisig' admin no longer exists.
+    return { isMainAdmin: true, isMultiSigAdmin: true, hasAdminAccess: true };
+  } catch (err) {
+    console.error('Failed to read the admin roster:', err);
+    // Fail closed: an unreachable RPC is not an admin.
+    return denied;
+  }
 };
 
 // ========== CLAIM REQUEST FUNCTIONS ==========

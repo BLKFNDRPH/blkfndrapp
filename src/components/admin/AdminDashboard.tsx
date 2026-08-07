@@ -273,40 +273,15 @@ export function AdminDashboard({
     }
   };
 
-  const { approveProject, rejectProject, getPendingProposals } = useStellarContract();
+  // approveProject, rejectProject and getPendingProposals are gone with the
+  // old model: a project exists when its vault is deployed, and withdrawals
+  // are decided by contributors inside each vault rather than proposed here.
 
   useEffect(() => {
     setProjects(contextProjects);
   }, [contextProjects]);
 
-  useEffect(() => {
-    let mounted = true;
-    const fetchAndSet = () => {
-      getPendingProposals()
-        .then((proposals) => {
-          if (!mounted) return;
-          const counts: Record<string, number> = {};
-          const approvals: Record<string, string[]> = {};
-          proposals.forEach((p: any) => {
-            const target = p.project_id.toString();
-            counts[target] = (counts[target] || 0) + 1;
-            approvals[target] = approvals[target] || [];
-            if (Array.isArray(p.approvals)) {
-              approvals[target] = approvals[target].concat(p.approvals);
-            }
-          });
-          setWithdrawalCounts(counts);
-          setWithdrawalApprovals(approvals);
-        })
-        .catch(() => { });
-    };
-    fetchAndSet();
-    const interval = setInterval(fetchAndSet, 100000);
-    return () => {
-      mounted = false;
-      clearInterval(interval);
-    };
-  }, [contextProjects, getPendingProposals]);
+  // Withdrawal proposals no longer exist. Contributors vote inside the vault.
 
   const allRecentProjects = useMemo(
     () =>
@@ -321,78 +296,15 @@ export function AdminDashboard({
 
   const recentProjects = allRecentProjects.slice(0, visibleRecentCount);
 
-  const handleUpdateStatus = (id: string, status: Project["status"]) => {
-    startTransition(async () => {
-      try {
-        let result;
-        if (status === "approved") {
-          result = await approveProject({ projectId: BigInt(id) });
-        } else {
-          result = await rejectProject({ projectId: BigInt(id) });
-        }
-
-        const txStatus = (result as any)?.getTransactionResponse?.status;
-        if (txStatus !== "SUCCESS") {
-          throw new Error(`Project status update failed on-chain.`);
-        }
-
-        const txHash = (result as any)?.sendTransactionResponse?.hash;
-        const txUrl = txHash ? `https://stellar.expert/explorer/testnet/tx/${txHash}` : null;
-
-        if (user) {
-          const title = `Project ${status}`;
-          const caption = `Project status has been updated.`;
-          createNotification(user.uid, title, caption, txUrl, id);
-        }
-
-        if (status === "approved") {
-          const projectToNotify = projects.find((p) => p.id === id);
-          if (projectToNotify?.creatorId) {
-            try {
-              const uRes = await fetch(`/api/user-by-address?field=stellarPublicKey&address=${projectToNotify.creatorId}`);
-              const uData = uRes.ok ? await uRes.json() : null;
-              if (uData?.uid) {
-                createNotification(
-                  uData.uid,
-                  "Your Project has been Approved!",
-                  `Congratulations! "${projectToNotify.title}" is now live on the platform.`,
-                  txUrl,
-                  id,
-                );
-              }
-            } catch (e) {
-              console.error("Failed to notify creator:", e);
-            }
-          }
-        }
-
-        toast({
-          title: "Project Status Updated On-Chain",
-          description: (
-            <div>
-              <p>Project status has been successfully updated on Stellar.</p>
-              {txUrl && (
-                <Link
-                  href={txUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="underline"
-                >
-                  View on Stellar Explorer
-                </Link>
-              )}
-            </div>
-          ),
-        });
-
-        refreshAfterTx();
-      } catch (error: any) {
-        toast({
-          title: "On-Chain Update Failed",
-          description: error.message || String(error),
-          variant: "destructive",
-        });
-      }
+  // Admin approval of a project no longer exists on chain. A vault is live
+  // the moment the factory deploys it, with the builder bonded. Hiding a
+  // listing is an off-chain moderation concern and is handled by the
+  // is_public flag on the project row, not by a contract call.
+  const handleUpdateStatus = (_id: string, _status: Project["status"]) => {
+    toast({
+      title: "No longer applicable",
+      description:
+        "Projects are live as soon as their vault is deployed. There is no on-chain approval step.",
     });
   };
 

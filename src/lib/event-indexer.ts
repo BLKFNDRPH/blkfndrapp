@@ -13,7 +13,7 @@ import EventLog from "./models/EventLog";
 import IndexerState from "./models/IndexerState";
 import { getIPFSFetchUrl } from "./pinata-client";
 import { addressMatcher } from "./stellar-address";
-import { SOROBAN_RPC_URL, CONTRACT_ID, NETWORK_PASSPHRASE } from "./stellar";
+import { SOROBAN_RPC_URL, NETWORK_PASSPHRASE } from "./stellar";
 import { Client as VaultClient } from "../packages/blkfndr_vault/src";
 
 // Factory Contract ID resolved dynamically inside runIndexer
@@ -106,7 +106,10 @@ export async function runIndexer() {
   const cachedProjects = await ProjectCache.find({}, "vaultAddress").lean();
   const vaultAddresses = cachedProjects.map((p) => p.vaultAddress);
   
-  const factoryContractId = process.env.NEXT_PUBLIC_BLKFNDR_FACTORY_CONTRACT_ID || process.env.NEXT_PUBLIC_BLKFNDR_CONTRACT_ID;
+  // No fallback to the retired crowdfunding contract: it emits none of the
+  // topics handled below, so falling back to it produced an indexer that ran
+  // successfully and silently indexed nothing.
+  const factoryContractId = process.env.NEXT_PUBLIC_BLKFNDR_FACTORY_CONTRACT_ID;
   if (!factoryContractId) {
     console.error("[Indexer] Factory Contract ID not found in environment variables!");
     return { success: false, error: "Factory Contract ID not set" };
