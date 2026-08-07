@@ -5,6 +5,7 @@ import {
   grantAdmin,
   revokeAdmin,
   setAdminWallet,
+  recognizeWallet,
   listAuditLog,
 } from "@/lib/data/admins";
 import { authFailure } from "@/lib/auth/guards";
@@ -61,6 +62,14 @@ export async function revokeAdminAction(email: string) {
     return { success: true as const, admins: await revokeAdmin(email) };
   } catch (error) {
     return fail(error, "Could not remove administrator.");
+  }
+}
+
+export async function recognizeWalletAction(address: string) {
+  try {
+    return { success: true as const, recognition: await recognizeWallet(address) };
+  } catch (error) {
+    return fail(error, "Could not check the wallet address.");
   }
 }
 

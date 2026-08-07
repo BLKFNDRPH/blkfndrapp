@@ -216,6 +216,49 @@ export async function revokeAdmin(email: string): Promise<PlatformAdmin[]> {
   return listAdmins();
 }
 
+export interface WalletRecognition {
+  /** The address belongs to some administrator. */
+  onRoster: boolean;
+  /** The address is the one recorded against the caller's own account. */
+  isOwn: boolean;
+  /** The caller has recorded an address, and this is not it. */
+  mismatch: boolean;
+}
+
+/**
+ * Whether the connected wallet is one the console knows.
+ *
+ * The distinction that matters is `mismatch`: an admin who has a wallet on file
+ * and connects a different one is in a very different position from an admin who
+ * has never recorded one. The first has probably selected the wrong account in
+ * Freighter — an easy thing to do, and previously indistinguishable from having
+ * no access at all, because the console had nothing to compare against and every
+ * unfamiliar address produced the same warning.
+ */
+export async function recognizeWallet(address: string): Promise<WalletRecognition> {
+  const caller = await requireAdmin();
+  if (!address.trim()) return { onRoster: false, isOwn: false, mismatch: false };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("is_admin_wallet", { addr: address.trim() });
+  if (error) throw new Error(`Could not check the wallet address: ${error.message}`);
+
+  const admin = createAdminClient();
+  const { data: own } = await admin
+    .from("platform_admins")
+    .select("wallet_address")
+    .eq("email", (caller.email ?? "").toLowerCase())
+    .maybeSingle();
+
+  const recorded = own?.wallet_address ?? null;
+
+  return {
+    onRoster: Boolean(data),
+    isOwn: recorded !== null && recorded === address.trim(),
+    mismatch: recorded !== null && recorded !== address.trim(),
+  };
+}
+
 /** Admin-readable, service-role-written. Never writable from a browser session. */
 export async function listAuditLog(limit = 100) {
   await requireAdmin();

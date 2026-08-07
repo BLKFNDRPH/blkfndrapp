@@ -391,6 +391,7 @@ export type Database = {
     Views: Record<never, never>;
     Functions: {
       is_admin: { Args: Record<never, never>; Returns: boolean };
+      is_admin_wallet: { Args: { addr: string }; Returns: boolean };
       purge_expired_auth_challenges: { Args: Record<never, never>; Returns: undefined };
       stroops_to_units: { Args: { raw: number }; Returns: number };
     };
