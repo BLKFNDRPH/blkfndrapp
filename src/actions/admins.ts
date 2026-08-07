@@ -34,15 +34,25 @@ export async function getAdminsAction() {
   }
 }
 
+/**
+ * Record an administrator.
+ *
+ * Deliberately does not touch the chain. The on-chain roster is edited by the
+ * owner's own signature from the browser, and a server action cannot produce
+ * that — so the caller signs first and calls this once the ledger has accepted
+ * it. Doing it the other way round would mean a server that either holds an
+ * admin key or writes rows for transactions that never landed.
+ */
 export async function grantAdminAction(
   email: string,
   walletAddress?: string,
+  name?: string,
   note?: string,
 ) {
   try {
     return {
       success: true as const,
-      admins: await grantAdmin(email, walletAddress ?? "", note ?? ""),
+      admins: await grantAdmin(email, walletAddress ?? "", name ?? "", note ?? ""),
     };
   } catch (error) {
     return fail(error, "Could not add administrator.");

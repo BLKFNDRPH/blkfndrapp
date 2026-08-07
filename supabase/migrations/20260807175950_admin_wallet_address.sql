@@ -68,16 +68,11 @@ as $$
   );
 $$;
 
--- anon is revoked by name as well as through public. Supabase's ALTER DEFAULT
--- PRIVILEGES grants EXECUTE on new public functions to anon directly, so
--- revoking from public alone leaves that grant standing — verified on this
--- database, where the function was callable by anon until this line existed.
--- It matters here: addresses are public on-chain, so an anonymous caller able
--- to ask "is this address an admin's" can work out which keys are worth
--- attacking. is_admin() beside it is deliberately anon-callable, because it
--- answers only about the caller's own session and reveals nothing about anyone.
+-- This leaves anon still able to call it, which the next migration corrects.
+-- Kept as it was applied rather than fixed in place, because the database ran
+-- these as two migrations and a file that no longer matches what was executed is
+-- the drift this naming convention exists to prevent.
 revoke execute on function public.is_admin_wallet(text) from public;
-revoke execute on function public.is_admin_wallet(text) from anon;
 grant execute on function public.is_admin_wallet(text) to authenticated;
 
 comment on function public.is_admin_wallet(text) is

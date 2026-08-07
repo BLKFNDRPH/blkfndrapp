@@ -176,9 +176,9 @@ export type Database = {
         Relationships: [];
       };
       platform_admins: {
-        Row: { email: string; granted_at: string; granted_by: string | null; id: string; note: string; user_id: string | null; wallet_address: string | null };
-        Insert: { email: string; granted_at?: string; granted_by?: string | null; id?: string; note?: string; user_id?: string | null; wallet_address?: string | null };
-        Update: { email?: string; granted_at?: string; granted_by?: string | null; id?: string; note?: string; user_id?: string | null; wallet_address?: string | null };
+        Row: { display_name: string; email: string; granted_at: string; granted_by: string | null; id: string; note: string; user_id: string | null; wallet_address: string | null };
+        Insert: { display_name?: string; email: string; granted_at?: string; granted_by?: string | null; id?: string; note?: string; user_id?: string | null; wallet_address?: string | null };
+        Update: { display_name?: string; email?: string; granted_at?: string; granted_by?: string | null; id?: string; note?: string; user_id?: string | null; wallet_address?: string | null };
         Relationships: [];
       };
       admin_audit_log: {

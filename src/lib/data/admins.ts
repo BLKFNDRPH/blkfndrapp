@@ -53,6 +53,9 @@ const WalletSchema = z
   );
 
 export interface PlatformAdmin {
+  /** Who this is. Recorded at grant time; a profile lookup cannot name someone
+   *  who has not signed in yet, which is when the roster is least legible. */
+  name: string;
   email: string;
   grantedAt: string;
   note: string;
@@ -73,12 +76,13 @@ export async function listAdmins(): Promise<PlatformAdmin[]> {
 
   const { data, error } = await supabase
     .from("platform_admins")
-    .select("email, granted_at, note, user_id, wallet_address")
+    .select("email, display_name, granted_at, note, user_id, wallet_address")
     .order("granted_at", { ascending: true });
 
   if (error) throw new Error(`Could not load administrators: ${error.message}`);
 
   return (data ?? []).map((r) => ({
+    name: r.display_name || r.email.split("@")[0],
     email: r.email,
     grantedAt: r.granted_at,
     note: r.note,
@@ -98,11 +102,13 @@ export async function listAdmins(): Promise<PlatformAdmin[]> {
 export async function grantAdmin(
   email: string,
   walletAddress = "",
+  name = "",
   note = "",
 ): Promise<PlatformAdmin[]> {
   const caller = await requireAdmin();
   const parsed = EmailSchema.parse(email);
   const wallet = walletAddress.trim() ? WalletSchema.parse(walletAddress) : null;
+  const displayName = name.trim().slice(0, 120);
 
   const admin = createAdminClient();
 
@@ -118,6 +124,7 @@ export async function grantAdmin(
 
   const { error } = await admin.from("platform_admins").insert({
     email: parsed,
+    display_name: displayName,
     user_id: match?.id ?? null,
     wallet_address: wallet,
     granted_by: caller.userId,

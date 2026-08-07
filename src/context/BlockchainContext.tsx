@@ -38,7 +38,15 @@ const mapStatus = (status: number): Project["status"] => {
 };
 
 interface PlatformInfo {
+  /**
+   * The on-chain roster owner — the only address that may add or remove an
+   * admin. Falls back to the first admin only when get_owner cannot be read,
+   * so a temporarily unreachable node degrades to the old guess rather than
+   * to nobody.
+   */
   admin: string;
+  /** The owner as read from the contract, or '' if it could not be read. */
+  owner: string;
   feeWalletAddress: string;
   feeWalletEmail: string;
   totalFeesCollected: string;
@@ -90,7 +98,7 @@ interface BlockchainProviderProps {
 export const BlockchainProvider: React.FC<BlockchainProviderProps> = ({
   children,
 }) => {
-  const { getPlatformTerms, getAdmins } = useStellarContract();
+  const { getPlatformTerms, getAdmins, getAdminOwner } = useStellarContract();
 
   const [platformInfo, setPlatformInfo] = useState<PlatformInfo | null>(null);
   const [isLoadingPlatform, setIsLoadingPlatform] = useState(true);
@@ -114,7 +122,16 @@ export const BlockchainProvider: React.FC<BlockchainProviderProps> = ({
       // Platform terms live on the factory now, and the admin roster is its own
       // contract. The retired crowdfunding contract exposed all of it as one
       // Platform struct, which is why this used to be a single call.
-      const [terms, admins] = await Promise.all([getPlatformTerms(), getAdmins()]);
+      const [terms, admins, owner] = await Promise.all([
+        getPlatformTerms(),
+        getAdmins(),
+        // Read rather than inferred. `admin` below used to be adminList[0],
+        // which is insertion order and not a statement about authority: after
+        // an ownership transfer the real owner sits wherever they happen to
+        // appear in the array, so the console credited the deployer and hid
+        // owner-only controls from the person who actually held them.
+        getAdminOwner().catch(() => null),
+      ]);
 
       let email = '';
       try {
@@ -130,7 +147,8 @@ export const BlockchainProvider: React.FC<BlockchainProviderProps> = ({
       const adminList = (admins as string[] | null) ?? [];
 
       setPlatformInfo({
-        admin: adminList[0] ?? '',
+        admin: (owner as string | null) ?? adminList[0] ?? '',
+        owner: (owner as string | null) ?? '',
         feeWalletAddress: '',
         feeWalletEmail: email,
         totalFeesCollected: '0',
@@ -159,7 +177,7 @@ export const BlockchainProvider: React.FC<BlockchainProviderProps> = ({
     } finally {
       setIsLoadingPlatform(false);
     }
-  }, [getPlatformTerms, getAdmins]);
+  }, [getPlatformTerms, getAdmins, getAdminOwner]);
 
   const reconcileStaleProjects = useCallback(async (loadedProjects: Project[]) => {
     const stale = loadedProjects.filter(

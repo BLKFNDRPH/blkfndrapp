@@ -1,0 +1,16 @@
+-- Revoke is_admin_wallet from anon by name.
+--
+-- The previous migration revoked it from public and granted it to authenticated,
+-- which reads as "authenticated only" and is not. Supabase's ALTER DEFAULT
+-- PRIVILEGES grants EXECUTE on new functions in public to anon directly, and a
+-- revoke from the public pseudo-role does not remove a direct grant — verified on
+-- this database, where has_function_privilege('anon', ...) stayed true until this
+-- ran, and false after.
+--
+-- It matters because Stellar addresses are public on-chain. An anonymous caller
+-- able to ask "does this address belong to an administrator" can walk the
+-- addresses it already knows and learn which keys are worth attacking.
+--
+-- is_admin() next to it is deliberately left anon-callable: it answers only about
+-- the caller's own session and discloses nothing about anyone else.
+revoke execute on function public.is_admin_wallet(text) from anon;
