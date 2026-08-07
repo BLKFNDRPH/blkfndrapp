@@ -13,9 +13,9 @@ import { BlockchainProvider } from "@/context/BlockchainContext";
 import { FreighterWalletProvider } from "@/context/FreighterWalletProvider";
 
 export const metadata: Metadata = {
-  title: "BLKFNDR - Crowdfunding on Stellar",
+  title: "BLKFNDR — Bonded crowdfunding for real-world builds, on Stellar",
   description:
-    "The premier launchpad for innovative projects on the Stellar blockchain.",
+    "Contributions pool into a per-project vault, the builder's performance bond is locked in the same contract, and milestone tranches are released only when contributors vote to release them. No admin key in the path that moves money.",
 };
 
 export default async function RootLayout({
@@ -32,6 +32,10 @@ export default async function RootLayout({
           href="https://fonts.gstatic.com"
           crossOrigin="anonymous"
         />
+        {/*
+          The wordmark font is self-hosted from public/fonts and declared in
+          globals.css, so Roboto Flex is deliberately absent here.
+        */}
         <link
           href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Code+Pro&display=swap"
           rel="stylesheet"

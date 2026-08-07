@@ -85,9 +85,9 @@ const StatusBadge = ({ status }: { status: Project["status"] }) => {
       className: "bg-yellow-100 text-yellow-600 border-yellow-200",
     },
     hidden: {
-      icon: <Lock className="h-full w-full text-slate-500" />,
+      icon: <Lock className="h-full w-full text-neutral-500" />,
       label: "Private",
-      className: "bg-slate-100 text-slate-600 border-slate-200",
+      className: "bg-neutral-100 text-neutral-600 border-neutral-200",
     },
     // FIX: Added missing 'expired' status — shown when a project's deadline
     // passed without reaching its funding goal. Investors can now claim refunds.

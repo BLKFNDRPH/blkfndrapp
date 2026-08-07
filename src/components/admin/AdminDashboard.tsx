@@ -107,7 +107,7 @@ function InteractiveStatCard({
     <Card
       onClick={onClick}
       className={cn(
-        "border-slate-800 bg-card/60 backdrop-blur-sm transition-all duration-300",
+        "border-neutral-800 bg-card/60 backdrop-blur-sm transition-all duration-300",
         isInteractive && "cursor-pointer select-none hover:bg-muted/30 hover:translate-y-[-2px] active:translate-y-[0px]",
         glowColor
       )}
@@ -498,9 +498,9 @@ export function AdminDashboard({
                 <InteractiveStatCard
                   title="Pending KYC"
                   value={kycData !== undefined ? kycData.count : null}
-                  icon={<UserCheck className="h-5 w-5 text-blue-500" />}
+                  icon={<UserCheck className="h-5 w-5 text-accent" />}
                   onClick={() => setAdminView("identity")}
-                  glowColor="hover:shadow-blue-500/5 hover:border-blue-500/20"
+                  glowColor="hover:shadow-accent/5 hover:border-accent/20"
                 />
                 <InteractiveStatCard
                   title="Awaiting Signatures"
@@ -516,16 +516,16 @@ export function AdminDashboard({
                       ? `${platformInfo.multisigThreshold} of ${platformInfo.multiSigAdmins?.length ?? 0}`
                       : null
                   }
-                  icon={<Settings className="h-5 w-5 text-purple-500" />}
+                  icon={<Settings className="h-5 w-5 text-accent" />}
                   onClick={() => setAdminView("admins")}
-                  glowColor="hover:shadow-purple-500/5 hover:border-purple-500/20"
+                  glowColor="hover:shadow-accent/5 hover:border-accent/20"
                 />
               </div>
 
               {/* Action Feed & Status Grid */}
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
                 {/* Action Required Feed (col-span-4) */}
-                <Card className="lg:col-span-4 border-slate-800 bg-card/80 backdrop-blur-sm">
+                <Card className="lg:col-span-4 border-neutral-800 bg-card/80 backdrop-blur-sm">
                   <CardHeader>
                     <CardTitle className="text-lg font-bold flex items-center gap-2">
                       <Shield className="h-5 w-5 text-accent animate-pulse" />
@@ -546,7 +546,7 @@ export function AdminDashboard({
                       actionRequiredItems.map((item) => (
                         <div
                           key={item.id}
-                          className="flex items-center justify-between p-3.5 rounded-xl border border-slate-800/80 bg-neutral-950/20 hover:bg-neutral-900/40 transition-colors gap-4"
+                          className="flex items-center justify-between p-3.5 rounded-xl border border-neutral-800/80 bg-neutral-950/20 hover:bg-neutral-900/40 transition-colors gap-4"
                         >
                           <div className="min-w-0 flex-1 space-y-1">
                             <div className="flex items-center gap-2 flex-wrap">
@@ -578,7 +578,7 @@ export function AdminDashboard({
                         </div>
                       ))
                     ) : (
-                      <div className="flex flex-col items-center justify-center py-12 gap-3 text-center border border-dashed border-slate-800 rounded-xl bg-neutral-950/5">
+                      <div className="flex flex-col items-center justify-center py-12 gap-3 text-center border border-dashed border-neutral-800 rounded-xl bg-neutral-950/5">
                         <div className="h-12 w-12 rounded-full bg-emerald-500/10 flex items-center justify-center text-emerald-500">
                           <CheckCircle className="h-6 w-6" />
                         </div>
@@ -594,7 +594,7 @@ export function AdminDashboard({
                 </Card>
 
                 {/* Projects by Status Distribution Chart (col-span-3) */}
-                <Card className="lg:col-span-3 border-slate-800 bg-card/80 backdrop-blur-sm">
+                <Card className="lg:col-span-3 border-neutral-800 bg-card/80 backdrop-blur-sm">
                   <CardHeader>
                     <CardTitle>Projects by Status</CardTitle>
                     <CardDescription>
@@ -608,7 +608,7 @@ export function AdminDashboard({
               </div>
 
               {/* Enhanced Recent Projects Grid */}
-              <Card className="border-slate-800 bg-card/80 backdrop-blur-sm">
+              <Card className="border-neutral-800 bg-card/80 backdrop-blur-sm">
                 <CardHeader>
                   <CardTitle>Recent Projects</CardTitle>
                   <CardDescription>

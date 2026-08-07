@@ -92,7 +92,14 @@ const TextPressure: React.FC<TextPressureProps> = ({
 
     const { width: containerW, height: containerH } = containerRef.current.getBoundingClientRect();
 
-    let newFontSize = containerW / (chars.length / 2);
+    // The original divisor (chars.length / 2) was tuned for the ultra-condensed
+    // face this component was written against. Roboto Flex's uppercase advances
+    // are far wider, so that divisor overflows the container: the letters are
+    // laid out with `justify-between`, so their combined advance has to fit or
+    // the wordmark clips. 0.78em per character fits the worst case — every
+    // letter at once at the top of both the wdth *and* wght ranges, since
+    // weight widens glyphs too and sizing off wdth alone still overflows.
+    let newFontSize = containerW / (chars.length * 0.78);
     newFontSize = Math.max(newFontSize, minFontSize);
 
     setFontSize(newFontSize);
@@ -198,7 +205,9 @@ const TextPressure: React.FC<TextPressureProps> = ({
         className={`text-pressure-title ${className} ${flex ? 'flex justify-between' : ''
           } ${stroke ? 'stroke' : ''} uppercase text-center`}
         style={{
-          fontFamily,
+          // Fallback stack matters: without one, a failed webfont drops the
+          // wordmark to the browser's default serif at display size.
+          fontFamily: `'${fontFamily}', 'Inter', sans-serif`,
           fontSize: fontSize,
           color: textColor,
           lineHeight,
