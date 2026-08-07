@@ -13,7 +13,16 @@ interface ImageWithFallbackProps {
   "data-ai-hint"?: string;
 }
 
-const FALLBACK_IMAGE = 'https://cdn.dribbble.com/userupload/24360672/file/original-185b34e5d1793db979a43af6d6abd426.gif';
+/**
+ * Served from our own origin.
+ *
+ * This was a hotlinked Dribbble GIF, which made every image-less project card a
+ * request to a third party — disclosing each visitor's IP and the fact that they
+ * were browsing this site — and presented someone else's artwork as ours. It was
+ * also the only blue left on a site whose palette is greys and gold, and it could
+ * have changed or 404'd at any time without warning.
+ */
+const FALLBACK_IMAGE = '/images/project-placeholder.svg';
 
 export function ImageWithFallback({ src, alt, className, fill = false, width, height, "data-ai-hint": dataAiHint }: ImageWithFallbackProps) {
   const [imgSrc, setImgSrc] = useState(src || FALLBACK_IMAGE);
