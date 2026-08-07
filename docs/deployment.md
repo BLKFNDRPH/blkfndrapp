@@ -183,23 +183,57 @@ to be reachable from outside.
 
 ## Supabase dashboard settings
 
-Two things live in Supabase rather than in this stack, and Google sign-in fails
-without both:
+Two things live in Supabase rather than in this stack, and sign-in fails without
+both:
 
 - **Site URL** must equal `NEXT_PUBLIC_APP_URL`
-- **Redirect URLs** must include `<NEXT_PUBLIC_APP_URL>/auth/callback`
+- **Redirect URLs** must cover every URL this app asks Supabase to return to
 
-For the current testnet deployment that means:
+For the current testnet deployment:
 
 | Setting | Value |
 |---|---|
 | `NEXT_PUBLIC_APP_URL` | `https://testnetv2.blkfndr.com` |
 | Supabase **Site URL** | `https://testnetv2.blkfndr.com` |
-| Supabase **Redirect URLs** | `https://testnetv2.blkfndr.com/auth/callback` |
+| Supabase **Redirect URLs** | `https://testnetv2.blkfndr.com/**` |
 
-All three must agree. A mismatch does not fail loudly — sign-in completes and
-then returns the user to the wrong origin, or to an error page Supabase
-generates rather than one this app controls.
+### Why the redirect entry needs a wildcard
+
+**If a redirect URL is not on the allow-list, Supabase does not fail — it
+silently sends the user to the Site URL instead.** Supabase ships with a Site
+URL of `http://localhost:3000`, so a deployment that gets either setting wrong
+lands its users on localhost. That is the symptom to recognise: sign-in appears
+to work, and the browser ends up somewhere it cannot possibly reach.
+
+The allow-list is matched as a glob against the **whole URL**, and the separator
+characters are `.` and `/`:
+
+| Pattern | Matches |
+|---|---|
+| `*` | any run of characters that are **not** `.` or `/` |
+| `**` | any run of characters, separators included |
+
+This app sends three different URLs, and two carry an unencoded `/` inside the
+query string:
+
+```
+/auth/callback?next=%2Fprofile
+/auth/confirm?next=/profile
+/auth/confirm?type=recovery&next=/settings
+```
+
+A bare `https://testnetv2.blkfndr.com/auth/callback` is a literal with no
+trailing wildcard, so it matches **none** of them — the query string is extra
+characters. A single `*` still fails on the last two, because of the `/` in
+`next=/profile`. `https://testnetv2.blkfndr.com/**` covers all three, which is
+also what Supabase recommends for preview and multi-path deployments.
+
+If you prefer to be narrower, these two are enough:
+
+```
+https://testnetv2.blkfndr.com/auth/callback**
+https://testnetv2.blkfndr.com/auth/confirm**
+```
 
 ### Serving from more than one domain
 
@@ -221,8 +255,10 @@ Anything else — including a forged `Host` header — falls back to
 
 Three things to know:
 
-- **Every origin must also be in the Supabase redirect allow-list.** Supabase is
-  the second gate and will refuse a redirect it was not told about.
+- **Every origin needs its own allow-list entry, with the wildcard** —
+  `https://app.blkfndr.com/**` and so on. Supabase is the second gate, and an
+  origin it was not told about is not rejected but silently redirected to the
+  Site URL.
 - **`APP_URLS` is runtime, not build time** — no `NEXT_PUBLIC_` prefix, because
   nothing reads it in the browser. Adding a domain takes a restart, not a rebuild.
 - **Hosts are compared including port.** `https://example.com` does not match a
