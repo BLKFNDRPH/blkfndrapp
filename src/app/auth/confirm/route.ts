@@ -16,7 +16,15 @@ export async function GET(request: NextRequest) {
   const { searchParams, origin } = request.nextUrl;
   const tokenHash = searchParams.get("token_hash");
   const type = searchParams.get("type") as EmailOtpType | null;
-  const next = safeInternalPath(searchParams.get("next"));
+
+  // Derived from Supabase's own `type` rather than from a `next` we appended.
+  // Both destinations are fixed by the flow — a recovery link goes to settings
+  // to set a new password, everything else to the profile — so there was no
+  // reason to put them on the URL and force a wildcard into the allow-list.
+  // The query parameter is still honoured for links already in inboxes.
+  const next = safeInternalPath(
+    searchParams.get("next") ?? (type === "recovery" ? "/settings" : "/profile"),
+  );
 
   if (!tokenHash || !type) {
     return NextResponse.redirect(new URL("/login?error=InvalidLink", origin));

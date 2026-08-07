@@ -6,6 +6,7 @@ import { headers } from "next/headers";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { safeInternalPath } from "@/lib/auth/safe-redirect";
+import { rememberNextPath } from "@/lib/auth/next-cookie";
 
 // Every export here is a public HTTP endpoint. Arguments are treated as
 // hostile and validated before use.
@@ -140,7 +141,7 @@ export async function signUpWithPassword(formData: FormData): Promise<AuthAction
     password: parsed.data.password,
     options: {
       data: { full_name: parsed.data.name },
-      emailRedirectTo: `${origin}/auth/confirm?next=/profile`,
+      emailRedirectTo: `${origin}/auth/confirm`,
     },
   });
 
@@ -184,12 +185,16 @@ export async function signInWithPassword(formData: FormData): Promise<AuthAction
 export async function signInWithGoogle(formData: FormData): Promise<AuthActionResult> {
   const supabase = await createClient();
   const origin = await originFromRequest();
-  const next = safeInternalPath(formData.get("next")?.toString());
+  // The destination travels in a short-lived cookie rather than on the URL.
+  // Supabase matches its redirect allow-list as a glob against the whole URL,
+  // so a query string forces a wildcard entry — and an entry that does not
+  // match is not rejected, it silently redirects to the Site URL instead.
+  await rememberNextPath(formData.get("next")?.toString());
 
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: "google",
     options: {
-      redirectTo: `${origin}/auth/callback?next=${encodeURIComponent(next)}`,
+      redirectTo: `${origin}/auth/callback`,
     },
   });
 
@@ -218,7 +223,7 @@ export async function requestPasswordReset(formData: FormData): Promise<AuthActi
   const origin = await originFromRequest();
 
   await supabase.auth.resetPasswordForEmail(email.data, {
-    redirectTo: `${origin}/auth/confirm?type=recovery&next=/settings`,
+    redirectTo: `${origin}/auth/confirm`,
   });
 
   // Always the same answer, whether or not the address is registered.

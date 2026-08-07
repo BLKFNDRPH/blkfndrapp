@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { safeInternalPath } from "@/lib/auth/safe-redirect";
+import { consumeNextPath } from "@/lib/auth/next-cookie";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +16,10 @@ export const dynamic = "force-dynamic";
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = request.nextUrl;
   const code = searchParams.get("code");
-  const next = safeInternalPath(searchParams.get("next"));
+  // From the cookie set before the round trip. The `next` query parameter is
+  // still honoured as a fallback so links issued before this change keep
+  // working, and it is re-validated rather than trusted.
+  const next = await consumeNextPath(searchParams.get("next"));
 
   // The provider reports failures here too; surface them rather than
   // redirecting to a page that silently looks signed-out.
