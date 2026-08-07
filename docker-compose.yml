@@ -108,6 +108,22 @@ services:
       # Never give this a NEXT_PUBLIC_ prefix — that would ship it to browsers.
       - SUPABASE_SECRET_KEY=${SUPABASE_SECRET_KEY}
 
+      # ── Additional app origins (optional) ────────────────────────────────
+      # Comma-separated origins this deployment also answers on, beyond
+      # NEXT_PUBLIC_APP_URL. A visitor arriving on one of these is sent back to
+      # the same domain after signing in, instead of being bounced to the
+      # canonical one and losing the session cookie that was just set.
+      #
+      # Runtime, not a build arg: nothing reads this in the browser, so adding a
+      # domain takes a restart rather than a rebuild. Every origin listed here
+      # must also be in the Supabase redirect allow-list.
+      #
+      #   APP_URLS=https://app.blkfndr.com,https://staging.blkfndr.com
+      #
+      # Include the port if you serve on a non-standard one — hosts are compared
+      # including port, so https://example.com does not match example.com:8443.
+      - APP_URLS=${APP_URLS}
+
       # ── Pinata / IPFS (required to create projects, SECRET) ──────────────
       - PINATA_JWT=${PINATA_JWT}
       - PINATA_GATEWAY_URL=${PINATA_GATEWAY_URL}

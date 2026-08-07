@@ -25,14 +25,94 @@ const Registration = Credentials.extend({
   name: z.string().trim().min(1, "Enter your name").max(80),
 });
 
+/**
+ * Origins this deployment is allowed to send a user back to.
+ *
+ * NEXT_PUBLIC_APP_URL is the canonical one. APP_URLS adds more, comma
+ * separated, for a deployment served from several domains — a staging host, a
+ * vanity domain, a rename in progress.
+ *
+ * APP_URLS deliberately has no NEXT_PUBLIC_ prefix. Nothing here runs in the
+ * browser, so it is read at request time and a new domain takes effect on
+ * restart rather than needing the image rebuilt.
+ */
+function allowedOrigins(): string[] {
+  const raw = [
+    process.env.NEXT_PUBLIC_APP_URL ?? "",
+    ...(process.env.APP_URLS ?? "").split(","),
+  ];
+
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const entry of raw) {
+    const trimmed = entry.trim().replace(/\/+$/, "");
+    if (!trimmed) continue;
+    try {
+      // Parse rather than pattern-match, so a malformed entry is dropped
+      // instead of becoming a redirect target nobody intended.
+      const url = new URL(trimmed);
+      const origin = url.origin;
+      if (!seen.has(origin)) {
+        seen.add(origin);
+        out.push(origin);
+      }
+    } catch {
+      console.warn(`[auth] Ignoring unparseable origin in configuration: ${entry}`);
+    }
+  }
+  return out;
+}
+
+/**
+ * Where to send the user back to after Supabase finishes with them.
+ *
+ * This used to return NEXT_PUBLIC_APP_URL whenever it was set, which pinned
+ * every redirect to one domain. A visitor arriving on a second domain would
+ * sign in and land on the first, losing the session they had just established
+ * because the cookie was set for the host they were sent to.
+ *
+ * So the request's own Host decides — but only when it is one we recognise.
+ * The Host header is attacker-controlled, and echoing it unchecked into a
+ * redirect is how an open redirect happens; matching against the configured
+ * list first means an unknown host silently gets the canonical origin instead.
+ *
+ * Supabase's own redirect allow-list is a second gate behind this one, and
+ * every origin here has to appear there too or Supabase will refuse the
+ * redirect it is handed.
+ */
 async function originFromRequest(): Promise<string> {
-  const configured = process.env.NEXT_PUBLIC_APP_URL?.trim();
-  if (configured) return configured.replace(/\/+$/, "");
+  const allowed = allowedOrigins();
 
   const headerList = await headers();
-  const host = headerList.get("host") ?? "localhost:9002";
-  const protocol = host.startsWith("localhost") || host.startsWith("127.") ? "http" : "https";
-  return `${protocol}://${host}`;
+  const host = headerList.get("host")?.trim();
+
+  if (host) {
+    const match = allowed.find((origin) => {
+      try {
+        return new URL(origin).host.toLowerCase() === host.toLowerCase();
+      } catch {
+        return false;
+      }
+    });
+    if (match) return match;
+  }
+
+  // Nothing configured: derive from the request. This is the local development
+  // path — with no allow-list there is nothing to check against, and no
+  // deployment should be running without NEXT_PUBLIC_APP_URL set.
+  if (allowed.length === 0) {
+    const fallbackHost = host ?? "localhost:9002";
+    const protocol =
+      fallbackHost.startsWith("localhost") || fallbackHost.startsWith("127.")
+        ? "http"
+        : "https";
+    return `${protocol}://${fallbackHost}`;
+  }
+
+  // Configured, but this request arrived on a host that is not on the list.
+  // Send them to the canonical origin rather than to whatever the Host header
+  // claimed.
+  return allowed[0];
 }
 
 /**

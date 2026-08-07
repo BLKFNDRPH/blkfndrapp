@@ -2,6 +2,12 @@
 
 > A bonded crowdfunding platform built on Stellar and Soroban.
 
+**Live on testnet: [testnetv2.blkfndr.com](https://testnetv2.blkfndr.com/)**
+
+Running against the Stellar test network. Balances are testnet assets with no
+value, and the data is not a rehearsal for mainnet so much as a live one — treat
+anything there as disposable.
+
 This repository is the technical source of truth for blkfndr documentation. The same content is structured for GitBook publishing via Git Sync.
 
 ## Overview
@@ -14,7 +20,7 @@ There is no appointed signer, no admin key, and no platform role anywhere in the
 
 **Current phase: Testnet, mid-rebuild.**
 
-Release authority is contribution-weighted rather than held by appointed signers, the contracts are **deployed to testnet**, and the app runs against them. MongoDB is gone: every table is Postgres with Row Level Security.
+Release authority is contribution-weighted rather than held by appointed signers, the contracts are **deployed to testnet**, and the app runs against them at [testnetv2.blkfndr.com](https://testnetv2.blkfndr.com/). MongoDB is gone: every table is Postgres with Row Level Security.
 
 | Area | State |
 |---|---|
@@ -153,7 +159,7 @@ cargo test --workspace
 | `NEXT_PUBLIC_SUPABASE_URL` | Yes | Supabase project URL. Public |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes | Publishable key. Public — RLS is what protects the data |
 | `SUPABASE_SECRET_KEY` | Yes | Service-role key. Bypasses RLS. **Server-only — never prefix `NEXT_PUBLIC_`** |
-| `NEXT_PUBLIC_APP_URL` | Yes | Application origin, e.g. `http://localhost:9002` |
+| `NEXT_PUBLIC_APP_URL` | Yes | Application origin. `http://localhost:9002` locally, `https://testnetv2.blkfndr.com` on testnet. Must match the Supabase Site URL |
 | `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Yes | Google OAuth client ID |
 | `NEXT_PUBLIC_BLKFNDR_CONTRACT_ID` | Yes | Core crowdfunding contract ID |
 | `NEXT_PUBLIC_BLKFNDR_FACTORY_CONTRACT_ID` | Yes | Factory contract ID |
