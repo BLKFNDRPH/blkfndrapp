@@ -97,7 +97,11 @@ export default function KycAttestationPage() {
             contractId: IDENTITY_ID,
             rpcUrl: SOROBAN_RPC_URL,
             networkPassphrase: NETWORK_PASSPHRASE,
-            publicKey: process.env.NEXT_PUBLIC_STELLAR_FALLBACK_ADDRESS || "",
+            // The address being queried doubles as the simulation source. The
+              // old NEXT_PUBLIC_STELLAR_FALLBACK_ADDRESS is unset on the current
+              // deployment, and an empty publicKey throws inside the SDK before
+              // the registry is reached.
+              publicKey: activeAddress,
           });
           const checkTx = await client.is_kyc_approved({ address: activeAddress });
           const checkSim = await checkTx.simulate();

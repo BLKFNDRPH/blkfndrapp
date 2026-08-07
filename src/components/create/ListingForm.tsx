@@ -369,7 +369,14 @@ export function ListingForm() {
           contractId: IDENTITY_ID,
           rpcUrl: SOROBAN_RPC_URL,
           networkPassphrase: NETWORK_PASSPHRASE,
-          publicKey: process.env.NEXT_PUBLIC_STELLAR_FALLBACK_ADDRESS || "",
+          // The connected wallet, not NEXT_PUBLIC_STELLAR_FALLBACK_ADDRESS.
+          // A simulation still needs a real source account to build against,
+          // and when that variable is unset — which it is on the current
+          // deployment — the empty string fails inside the SDK with "invalid
+          // version byte" before the registry is ever contacted. The wallet is
+          // the address being asked about, is guaranteed present here, and
+          // removes the dependency on a variable nothing else needs.
+          publicKey: activeAddress,
         });
         const tx = await identityClient.is_kyc_approved({ address: activeAddress });
         const result = await tx.simulate();
