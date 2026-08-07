@@ -6,6 +6,8 @@ import { useFreighterWallet } from "@/context/FreighterWalletContext";
 import { useToast } from "@/hooks/use-toast";
 import { useRouter } from "next/navigation";
 import { submitKycRequest, getMyKycStatus } from "@/app/actions";
+// Type only, so the server-only module is erased rather than bundled.
+import type { ApplicantSubmission } from "@/lib/data/kyc";
 import { uploadKycDocument, computeDetailsHash } from "@/lib/kyc/prepare-submission";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
@@ -13,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { ArrowLeft, ShieldCheck, Loader2, AlertTriangle, FileText, Send, User, Mail, Shield } from "lucide-react";
+import { ArrowLeft, ShieldCheck, Loader2, AlertTriangle, FileText, Send, Shield } from "lucide-react";
 import Link from "next/link";
 import { Client as IdentityClient } from "@/packages/blkfndr_identity/src";
 import { cn } from "@/lib/utils";
@@ -58,7 +60,7 @@ export default function KycAttestationPage() {
   });
 
   const [step, setStep] = useState(1);
-  const [currentKycRequest, setCurrentKycRequest] = useState<any>(null);
+  const [currentKycRequest, setCurrentKycRequest] = useState<ApplicantSubmission | null>(null);
   const [isOnChainApproved, setIsOnChainApproved] = useState(false);
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [isPendingSubmit, startSubmitTransition] = useTransition();
@@ -343,9 +345,9 @@ export default function KycAttestationPage() {
                 <div
                   className={cn(
                     "h-10 w-10 rounded-full flex items-center justify-center border-2 font-bold text-xs transition-colors",
-                    dbStatus !== "none"
-                      ? "bg-primary border-primary text-primary-foreground"
-                      : "bg-background border-muted text-muted-foreground"
+                    // The whole tracker renders only when a submission exists, so
+                    // step 1 is complete by definition.
+                    "bg-primary border-primary text-primary-foreground"
                   )}
                 >
                   1
@@ -437,7 +439,7 @@ export default function KycAttestationPage() {
                 <AlertDescription className="text-xs mt-0.5">
                   Your document was rejected:{" "}
                   <strong className="text-rose-900 dark:text-rose-200">
-                    {currentKycRequest?.rejectionReason || "No reason specified"}
+                    {currentKycRequest?.rejection_reason || "No reason specified"}
                   </strong>
                   . Please re-upload a clear copy.
                 </AlertDescription>
@@ -456,7 +458,7 @@ export default function KycAttestationPage() {
           </Alert>
         ) : null}
 
-        {showSubmittedDetails ? (
+        {currentKycRequest && showSubmittedDetails ? (
           <Card className="border border-border bg-card shadow-lg rounded-2xl overflow-hidden">
             <CardHeader className="border-b bg-muted/20">
               <CardTitle className="text-xl font-bold flex items-center gap-2">
@@ -464,71 +466,55 @@ export default function KycAttestationPage() {
                 Submitted Identity Info
               </CardTitle>
               <CardDescription>
-                The details you submitted for identification.
+                What we can show you about your submission. Your name, ID number, date of
+                birth and address are not readable by this page — they are withheld from
+                the browser by design and only a reviewer can see them.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6 pt-6">
+              {/* Only the columns granted to the applicant. The identity fields this
+                  card used to list are not readable here at all, and reading one of
+                  them unguarded -- documentType.replace(...) on a value that is always
+                  undefined -- is what crashed this page the moment a submission
+                  existed to render. */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1">
+                <div className="space-y-1 sm:col-span-2">
                   <span className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-1">
-                    <User className="h-3.5 w-3.5" /> Full Name
+                    <Shield className="h-3.5 w-3.5" /> Stellar Address
                   </span>
-                  <p className="text-sm font-semibold text-foreground">{currentKycRequest.fullName}</p>
-                </div>
-                <div className="space-y-1">
-                  <span className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-1">
-                    <Mail className="h-3.5 w-3.5" /> Email Address
-                  </span>
-                  <p className="text-sm font-semibold text-foreground">{currentKycRequest.email}</p>
-                </div>
-                <div className="space-y-1">
-                  <span className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-1">
-                    <Shield className="h-3.5 w-3.5" /> Document Type
-                  </span>
-                  <p className="text-sm font-semibold text-foreground capitalize">
-                    {currentKycRequest.documentType.replace("_", " ")}
+                  <p className="text-sm font-semibold font-mono text-foreground break-all select-all">
+                    {currentKycRequest.stellar_address}
                   </p>
                 </div>
                 <div className="space-y-1">
-                  <span className="text-[10px] uppercase font-bold text-muted-foreground">ID Number</span>
-                  <p className="text-sm font-semibold font-mono text-foreground">{currentKycRequest.idNumber || "N/A"}</p>
-                </div>
-                <div className="space-y-1">
-                  <span className="text-[10px] uppercase font-bold text-muted-foreground">Date of Birth</span>
-                  <p className="text-sm font-semibold text-foreground">
-                    {currentKycRequest.dob ? new Date(currentKycRequest.dob).toLocaleDateString() : "N/A"}
+                  <span className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-1">
+                    <FileText className="h-3.5 w-3.5" /> Document Type
+                  </span>
+                  <p className="text-sm font-semibold text-foreground capitalize">
+                    {currentKycRequest.document_type?.replace("_", " ") || "N/A"}
                   </p>
                 </div>
                 <div className="space-y-1">
                   <span className="text-[10px] uppercase font-bold text-muted-foreground">Expiry Date</span>
                   <p className="text-sm font-semibold text-foreground">
-                    {currentKycRequest.expiryDate ? new Date(currentKycRequest.expiryDate).toLocaleDateString() : "N/A"}
-                  </p>
-                </div>
-                <div className="space-y-1 sm:col-span-2">
-                  <span className="text-[10px] uppercase font-bold text-muted-foreground">Residential Address</span>
-                  <p className="text-sm font-semibold text-foreground leading-relaxed whitespace-pre-wrap">
-                    {currentKycRequest.residentialAddress || "N/A"}
+                    {currentKycRequest.document_expires_on
+                      ? new Date(currentKycRequest.document_expires_on).toLocaleDateString()
+                      : "N/A"}
                   </p>
                 </div>
                 <div className="space-y-1">
                   <span className="text-[10px] uppercase font-bold text-muted-foreground">Submission Status</span>
                   <p className="text-sm font-semibold text-foreground capitalize">{dbStatus}</p>
                 </div>
-              </div>
-
-              {currentKycRequest.documentImage && (
-                <div className="space-y-2">
-                  <span className="text-[10px] uppercase font-bold text-muted-foreground">Document Image Copy</span>
-                  <div className="border rounded-xl overflow-hidden max-h-60 flex justify-center bg-black/5 dark:bg-black/20 p-2">
-                    <img
-                      src={currentKycRequest.documentImage}
-                      alt="Uploaded Document"
-                      className="max-h-full object-contain"
-                    />
-                  </div>
+                <div className="space-y-1">
+                  <span className="text-[10px] uppercase font-bold text-muted-foreground">Submitted</span>
+                  <p className="text-sm font-semibold text-foreground">
+                    {currentKycRequest.created_at
+                      ? new Date(currentKycRequest.created_at).toLocaleString()
+                      : "N/A"}
+                  </p>
                 </div>
-              )}
+              </div>
             </CardContent>
             <CardFooter className="bg-muted/10 p-6 flex justify-end border-t mt-4 gap-3">
               {(dbStatus === "rejected" || (dbStatus === "approved" && !isOnChainApproved)) && (
