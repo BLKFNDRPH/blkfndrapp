@@ -445,6 +445,19 @@ export function useStellarContract() {
     [],
   );
 
+  /**
+   * Who may edit the on-chain roster.
+   *
+   * Worth reading separately from the roster itself: add_admin and remove_admin
+   * are owner-only, so an admin looking at the enrol button needs to know whose
+   * signature it will ask for. Without this the only way to discover that you
+   * are not the owner is to sign a transaction and watch the ledger reject it.
+   */
+  const getAdminOwner = useCallback(
+    () => simulate(() => adminClient().get_owner(), "get_owner"),
+    [],
+  );
+
   const addAdmin = useCallback(
     async (account: string) => {
       const owner = requireWallet();
@@ -502,6 +515,7 @@ export function useStellarContract() {
     // admin
     isPlatformAdmin,
     getAdmins,
+    getAdminOwner,
     addAdmin,
     removeAdmin,
   };
