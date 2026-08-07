@@ -175,6 +175,18 @@ export type Database = {
         };
         Relationships: [];
       };
+      platform_admins: {
+        Row: { email: string; granted_at: string; granted_by: string | null; id: string; note: string; user_id: string | null };
+        Insert: { email: string; granted_at?: string; granted_by?: string | null; id?: string; note?: string; user_id?: string | null };
+        Update: { email?: string; granted_at?: string; granted_by?: string | null; id?: string; note?: string; user_id?: string | null };
+        Relationships: [];
+      };
+      admin_audit_log: {
+        Row: { action: string; actor_id: string | null; created_at: string; detail: string; id: string; target_email: string };
+        Insert: { action: string; actor_id?: string | null; created_at?: string; detail?: string; id?: string; target_email?: string };
+        Update: { action?: string; actor_id?: string | null; created_at?: string; detail?: string; id?: string; target_email?: string };
+        Relationships: [];
+      };
       platform_settings: {
         Row: { fee_wallet_email: string; id: boolean; updated_at: string };
         Insert: { fee_wallet_email?: string; id?: boolean; updated_at?: string };
