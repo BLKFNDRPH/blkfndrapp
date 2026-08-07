@@ -41,7 +41,7 @@ import {
 import type { Project, WebState, FundReceipt } from "@/lib/types";
 import { useToast } from "@/hooks/use-toast";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useTransition, useState, useMemo } from "react";
+import { useEffect, useTransition, useState, useMemo, useCallback } from "react";
 import Loading from "@/app/loading";
 import { formatCurrency } from "@/lib/formatters";
 import {
@@ -89,7 +89,6 @@ import {
   useUserFunds,
 } from "@/context/BlockchainContext";
 import { useStellarContract } from "@/hooks/use-stellar-contract";
-import { CONTRACT_ID } from "@/lib/stellar";
 import { Client as VaultClient } from "@/packages/blkfndr_vault/src";
 
 const NETWORK_PASSPHRASE = "Test SDF Network ; September 2015";
@@ -770,7 +769,7 @@ function ReceiptCard({
   onBurned: (id: string) => void;
 }) {
   const { toast } = useToast();
-  const { refundContributor } = useStellarContract();
+  const { claimRefund } = useStellarContract();
   const [refundingId, setRefundingId] = useState<string | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   const [vaultBalance, setVaultBalance] = useState<number | null>(null);
@@ -824,7 +823,7 @@ function ReceiptCard({
     ...groupReceipts.map((r) => r.fund_date ?? 0),
   );
 
-  const explorerUrl = `https://stellar.expert/explorer/testnet/contract/${CONTRACT_ID}`;
+  const explorerUrl = `https://stellar.expert/explorer/testnet/contract/${project?.vaultAddress ?? ""}`;
 
   const handleRefund = async (receipt: FundReceipt) => {
     if (!project || !project.vaultAddress) {
@@ -837,7 +836,7 @@ function ReceiptCard({
     }
     setRefundingId(receipt.fund_id);
     try {
-      const result = await refundContributor({
+      const result = await claimRefund({
         vaultAddress: project.vaultAddress,
       });
 
@@ -1163,7 +1162,13 @@ export default function ProfilePage() {
     refreshUserFunds: refreshUserInvestments,
   } = useUserFunds(activeStellarAddress || undefined);
 
-  const { getAllFundReceipts: getAllInvestmentReceipts } = useStellarContract();
+  // Reads the indexer: contributions live in per-project vaults now, so no
+  // single contract call returns them all.
+  const getAllInvestmentReceipts = useCallback(async () => {
+    const res = await fetch("/api/user/funds");
+    if (!res.ok) return [];
+    return res.json();
+  }, []);
   const [allReceipts, setAllReceipts] = useState<any[]>([]);
   const [isLoadingAllReceipts, setIsLoadingAllReceipts] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);

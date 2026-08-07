@@ -53,7 +53,6 @@ import { Input } from '../ui/input';
 import { Badge } from '../ui/badge';
 import { usePlatformInfo, useRefreshAfterTx } from '@/context/BlockchainContext';
 import { useStellarContract } from '@/hooks/use-stellar-contract';
-import { ThresholdCard } from './ThresholdCard';
 
 interface AdminManagementProps {
   isMainAdmin: boolean;
@@ -89,7 +88,7 @@ export function AdminManagement({ isMainAdmin }: AdminManagementProps) {
   const [adminToRemove, setAdminToRemove] = useState<AdminInfo | null>(null);
   const [isRemoveAlertOpen, setIsRemoveAlertOpen] = useState(false);
 
-  const { addMultisigAdmin, removeMultisigAdmin } = useStellarContract();
+  const { addAdmin, removeAdmin } = useStellarContract();
 
   const form = useForm<AddAdminFormSchema>({
     resolver: zodResolver(addAdminFormSchema),
@@ -149,7 +148,7 @@ export function AdminManagement({ isMainAdmin }: AdminManagementProps) {
 
     startTransition(async () => {
       try {
-        const result = await removeMultisigAdmin({ target: adminToRemove.address });
+        const result = await removeAdmin(adminToRemove.address);
 
         const txStatus = (result as any)?.getTransactionResponse?.status;
         if (txStatus !== "SUCCESS") {
@@ -178,7 +177,7 @@ export function AdminManagement({ isMainAdmin }: AdminManagementProps) {
 
     startTransition(async () => {
       try {
-        const result = await addMultisigAdmin({ newAdmin: values.address });
+        const result = await addAdmin(values.address);
 
         const txStatus = (result as any)?.getTransactionResponse?.status;
         if (txStatus !== "SUCCESS") {
@@ -210,17 +209,12 @@ export function AdminManagement({ isMainAdmin }: AdminManagementProps) {
 
   return (
     <div className="space-y-6">
-      <ThresholdCard
-        currentThreshold={platformInfo?.multisigThreshold ?? 2}
-        totalAdmins={platformInfo?.multiSigAdmins?.length ?? 0}
-        isMainAdmin={isMainAdmin}
-      />
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
             <CardTitle>Manage Admins</CardTitle>
             <CardDescription>
-              Add, view, or remove administrators with multi-sig capabilities.
+              Administrators can reach the admin console. No address here can release a milestone, block a refund, or move a vault balance.
             </CardDescription>
           </div>
           {isMainAdmin && (

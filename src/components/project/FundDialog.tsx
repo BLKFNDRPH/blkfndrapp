@@ -38,7 +38,6 @@ import { useRouter } from "next/navigation";
 import { useStellarContract } from "@/hooks/use-stellar-contract";
 import { useFreighterWallet } from "@/context/FreighterWalletContext";
 import { getBalance } from "@/lib/stellar";
-import { CurrencyType } from "@/packages/blkfndr_v2";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -82,7 +81,7 @@ export function FundDialog({
   const [isSubmitPending, startSubmitTransition] = useTransition();
   const router = useRouter();
 
-  const { fundProject } = useStellarContract();
+  const { contribute } = useStellarContract();
   const { freighterWalletAddress, login: connectFreighter } = useFreighterWallet();
 
   const [balances, setBalances] = useState<any[]>([]);
@@ -251,17 +250,6 @@ export function FundDialog({
   const formatAmount = (val: number, currency: string) =>
     `${val.toLocaleString(undefined, { maximumFractionDigits: COIN_DECIMALS[currency] > 6 ? 4 : 2 })} ${currency}`;
 
-  const getCurrencyEnum = (currency: string): CurrencyType => {
-    switch (currency.toUpperCase()) {
-      case "XLM": return CurrencyType.XLM;
-      case "USDC": return CurrencyType.USDC;
-      case "USDT": return CurrencyType.USDT;
-      case "WBTC": return CurrencyType.WBTC;
-      case "WETH": return CurrencyType.WETH;
-      default: return CurrencyType.XLM;
-    }
-  };
-
   const canFund = (() => {
     if (!freighterWalletAddress) return true;
     if (!isProjectApproved || isProjectExpired || fundAmount <= 0)
@@ -318,7 +306,7 @@ export function FundDialog({
       }
 
       try {
-        const result = await fundProject({
+        const result = await contribute({
           vaultAddress: project.vaultAddress,
           amount: parsedAmount,
         });
@@ -357,7 +345,7 @@ export function FundDialog({
           await createNotification(
             investorUid,
             "Contribution Successful!",
-            `Successfully contributed ${fundAmount} ${projectCurrency} to campaign "${project.title}". Your Investment Receipt SBT has been minted on-chain.`,
+            `Successfully contributed ${fundAmount} ${projectCurrency} to campaign "${project.title}". Your contribution is recorded on-chain and carries voting weight on this project's milestones.`,
             txUrl,
             project.id
           );

@@ -36,90 +36,126 @@ if (typeof window !== "undefined") {
 export const Errors = {
   1: {message:"NotAuthorized"},
   10: {message:"AlreadyInitialized"},
-  11: {message:"NotInitialized"}
+  11: {message:"NotInitialized"},
+  12: {message:"BondBelowMinimum"},
+  13: {message:"InvalidConfiguration"},
+  14: {message:"VaultNotFound"}
 }
 
 
-export interface Milestone {
+export interface MilestoneInput {
   amount: i128;
   id: u32;
-  released: boolean;
 }
 
 
+/**
+ * What the vault is constructed with. Every platform address here comes from
+ * factory storage, never from the caller.
+ */
 export interface VaultInitConfig {
-  admin: string;
-  approval_module: string;
+  attestation_registry: string;
   bond_amount: i128;
   creator: string;
   deadline: u64;
-  fee_percentage: u64;
+  factory: string;
   fee_wallet_address: string;
   goal: i128;
   identity_registry: string;
   metadata_cid: string;
-  milestones: Array<Milestone>;
+  milestones: Array<MilestoneInput>;
+  min_contribution: i128;
+  platform_fee: i128;
   project_id: u64;
   token: string;
+  voting_window_secs: u64;
 }
 
 
+/**
+ * What a builder supplies. Deliberately has no field for the identity or
+ * attestation registry.
+ */
 export interface CreateVaultConfig {
-  approval_module: string;
   bond_amount: i128;
   creator: string;
   deadline: u64;
   goal: i128;
-  identity_registry: string;
   metadata_cid: string;
-  milestones: Array<Milestone>;
+  milestones: Array<MilestoneInput>;
   token: string;
 }
 
-export type DataKey = {tag: "Admin", values: void} | {tag: "VaultWasmHash", values: void} | {tag: "ProjectVaultMap", values: readonly [u64]} | {tag: "ProjectCounter", values: void} | {tag: "FeeWalletAddress", values: void} | {tag: "FeePercentage", values: void} | {tag: "MinBondPercentage", values: void};
+export type DataKey = {tag: "Admin", values: void} | {tag: "VaultWasmHash", values: void} | {tag: "ProjectVaultMap", values: readonly [u64]} | {tag: "ProjectCounter", values: void} | {tag: "FeeWalletAddress", values: void} | {tag: "PlatformFee", values: void} | {tag: "MinBondPercentage", values: void} | {tag: "IdentityRegistry", values: void} | {tag: "AttestationRegistry", values: void} | {tag: "VotingWindowSecs", values: void} | {tag: "MinContribution", values: void} | {tag: "IsVault", values: readonly [string]};
 
 export interface Client {
   /**
    * Construct and simulate a initialize transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
-   * Initialize the factory with an admin address, vault contract WASM hash, platform fee wallet, and platform fee percentage.
+   * Configure the factory. `admin` must authorise, so a deployed but
+   * unconfigured factory cannot be claimed by whoever spots it first.
    */
-  initialize: ({admin, vault_wasm_hash, fee_wallet, fee_percentage}: {admin: string, vault_wasm_hash: Buffer, fee_wallet: string, fee_percentage: u64}, options?: MethodOptions) => Promise<AssembledTransaction<null>>
+  initialize: ({admin, vault_wasm_hash, fee_wallet, platform_fee, identity_registry, attestation_registry, voting_window_secs, min_contribution}: {admin: string, vault_wasm_hash: Buffer, fee_wallet: string, platform_fee: i128, identity_registry: string, attestation_registry: string, voting_window_secs: u64, min_contribution: i128}, options?: MethodOptions) => Promise<AssembledTransaction<null>>
 
   /**
    * Construct and simulate a create_vault transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
-   * Deploy and initialize a new project vault contract instance.
+   * Deploy a vault for a project and lock the builder's bond in the same
+   * transaction.
    */
   create_vault: ({config}: {config: CreateVaultConfig}, options?: MethodOptions) => Promise<AssembledTransaction<string>>
 
   /**
+   * Construct and simulate a is_vault transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+   * Whether this factory deployed the given address. The attestation
+   * registry calls this to decide whether a record is genuine.
+   */
+  is_vault: ({address}: {address: string}, options?: MethodOptions) => Promise<AssembledTransaction<boolean>>
+
+  /**
    * Construct and simulate a get_vault transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
-   * Retrieve the registered vault address for the given project ID.
    */
   get_vault: ({project_id}: {project_id: u64}, options?: MethodOptions) => Promise<AssembledTransaction<string>>
 
   /**
    * Construct and simulate a update_wasm_hash transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
-   * Update the registered vault contract WASM hash.
    */
   update_wasm_hash: ({new_hash}: {new_hash: Buffer}, options?: MethodOptions) => Promise<AssembledTransaction<null>>
 
   /**
    * Construct and simulate a update_fee_wallet transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
-   * Update the platform fee payout destination address.
    */
   update_fee_wallet: ({new_fee_wallet}: {new_fee_wallet: string}, options?: MethodOptions) => Promise<AssembledTransaction<null>>
 
   /**
-   * Construct and simulate a update_fee_percentage transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
-   * Update the platform fee percentage (safety ceiling of 10.0% / 1000 bps).
+   * Construct and simulate a update_platform_fee transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+   * Set the flat listing fee, in stroops. There is deliberately no
+   * percentage-of-funds setting to reach for.
    */
-  update_fee_percentage: ({new_percentage}: {new_percentage: u64}, options?: MethodOptions) => Promise<AssembledTransaction<null>>
+  update_platform_fee: ({new_fee}: {new_fee: i128}, options?: MethodOptions) => Promise<AssembledTransaction<null>>
 
   /**
    * Construct and simulate a update_bond_percentage transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
-   * Update the minimum performance bond percentage (basis points, e.g. 500 = 5.00%).
    */
   update_bond_percentage: ({new_percentage}: {new_percentage: u64}, options?: MethodOptions) => Promise<AssembledTransaction<null>>
+
+  /**
+   * Construct and simulate a update_identity_registry transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+   */
+  update_identity_registry: ({new_registry}: {new_registry: string}, options?: MethodOptions) => Promise<AssembledTransaction<null>>
+
+  /**
+   * Construct and simulate a update_voting_window transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+   */
+  update_voting_window: ({new_window_secs}: {new_window_secs: u64}, options?: MethodOptions) => Promise<AssembledTransaction<null>>
+
+  /**
+   * Construct and simulate a update_min_contribution transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+   */
+  update_min_contribution: ({new_minimum}: {new_minimum: i128}, options?: MethodOptions) => Promise<AssembledTransaction<null>>
+
+  /**
+   * Construct and simulate a transfer_admin transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+   */
+  transfer_admin: ({new_admin}: {new_admin: string}, options?: MethodOptions) => Promise<AssembledTransaction<null>>
 
   /**
    * Construct and simulate a get_admin transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
@@ -132,14 +168,39 @@ export interface Client {
   get_fee_wallet: (options?: MethodOptions) => Promise<AssembledTransaction<string>>
 
   /**
-   * Construct and simulate a get_fee_percentage transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+   * Construct and simulate a get_platform_fee transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
    */
-  get_fee_percentage: (options?: MethodOptions) => Promise<AssembledTransaction<u64>>
+  get_platform_fee: (options?: MethodOptions) => Promise<AssembledTransaction<i128>>
 
   /**
    * Construct and simulate a get_bond_percentage transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
    */
   get_bond_percentage: (options?: MethodOptions) => Promise<AssembledTransaction<u64>>
+
+  /**
+   * Construct and simulate a get_identity_registry transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+   */
+  get_identity_registry: (options?: MethodOptions) => Promise<AssembledTransaction<string>>
+
+  /**
+   * Construct and simulate a get_attestation_registry transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+   */
+  get_attestation_registry: (options?: MethodOptions) => Promise<AssembledTransaction<string>>
+
+  /**
+   * Construct and simulate a get_voting_window transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+   */
+  get_voting_window: (options?: MethodOptions) => Promise<AssembledTransaction<u64>>
+
+  /**
+   * Construct and simulate a get_min_contribution transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+   */
+  get_min_contribution: (options?: MethodOptions) => Promise<AssembledTransaction<i128>>
+
+  /**
+   * Construct and simulate a get_project_count transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+   */
+  get_project_count: (options?: MethodOptions) => Promise<AssembledTransaction<u64>>
 
 }
 export class Client extends ContractClient {
@@ -159,36 +220,56 @@ export class Client extends ContractClient {
   }
   constructor(public readonly options: ContractClientOptions) {
     super(
-      new ContractSpec([ "AAAABAAAAAAAAAAAAAAABUVycm9yAAAAAAAAAwAAAAAAAAANTm90QXV0aG9yaXplZAAAAAAAAAEAAAAAAAAAEkFscmVhZHlJbml0aWFsaXplZAAAAAAACgAAAAAAAAAOTm90SW5pdGlhbGl6ZWQAAAAAAAs=",
-        "AAAAAQAAAAAAAAAAAAAACU1pbGVzdG9uZQAAAAAAAAMAAAAAAAAABmFtb3VudAAAAAAACwAAAAAAAAACaWQAAAAAAAQAAAAAAAAACHJlbGVhc2VkAAAAAQ==",
-        "AAAAAQAAAAAAAAAAAAAAD1ZhdWx0SW5pdENvbmZpZwAAAAANAAAAAAAAAAVhZG1pbgAAAAAAABMAAAAAAAAAD2FwcHJvdmFsX21vZHVsZQAAAAATAAAAAAAAAAtib25kX2Ftb3VudAAAAAALAAAAAAAAAAdjcmVhdG9yAAAAABMAAAAAAAAACGRlYWRsaW5lAAAABgAAAAAAAAAOZmVlX3BlcmNlbnRhZ2UAAAAAAAYAAAAAAAAAEmZlZV93YWxsZXRfYWRkcmVzcwAAAAAAEwAAAAAAAAAEZ29hbAAAAAsAAAAAAAAAEWlkZW50aXR5X3JlZ2lzdHJ5AAAAAAAAEwAAAAAAAAAMbWV0YWRhdGFfY2lkAAAAEAAAAAAAAAAKbWlsZXN0b25lcwAAAAAD6gAAB9AAAAAJTWlsZXN0b25lAAAAAAAAAAAAAApwcm9qZWN0X2lkAAAAAAAGAAAAAAAAAAV0b2tlbgAAAAAAABM=",
-        "AAAAAQAAAAAAAAAAAAAAEUNyZWF0ZVZhdWx0Q29uZmlnAAAAAAAACQAAAAAAAAAPYXBwcm92YWxfbW9kdWxlAAAAABMAAAAAAAAAC2JvbmRfYW1vdW50AAAAAAsAAAAAAAAAB2NyZWF0b3IAAAAAEwAAAAAAAAAIZGVhZGxpbmUAAAAGAAAAAAAAAARnb2FsAAAACwAAAAAAAAARaWRlbnRpdHlfcmVnaXN0cnkAAAAAAAATAAAAAAAAAAxtZXRhZGF0YV9jaWQAAAAQAAAAAAAAAAptaWxlc3RvbmVzAAAAAAPqAAAH0AAAAAlNaWxlc3RvbmUAAAAAAAAAAAAABXRva2VuAAAAAAAAEw==",
-        "AAAAAgAAAAAAAAAAAAAAB0RhdGFLZXkAAAAABwAAAAAAAAAAAAAABUFkbWluAAAAAAAAAAAAAAAAAAANVmF1bHRXYXNtSGFzaAAAAAAAAAEAAAAAAAAAD1Byb2plY3RWYXVsdE1hcAAAAAABAAAABgAAAAAAAAAAAAAADlByb2plY3RDb3VudGVyAAAAAAAAAAAAAAAAABBGZWVXYWxsZXRBZGRyZXNzAAAAAAAAAAAAAAANRmVlUGVyY2VudGFnZQAAAAAAAAAAAAAAAAAAEU1pbkJvbmRQZXJjZW50YWdlAAAA",
-        "AAAAAAAAAHlJbml0aWFsaXplIHRoZSBmYWN0b3J5IHdpdGggYW4gYWRtaW4gYWRkcmVzcywgdmF1bHQgY29udHJhY3QgV0FTTSBoYXNoLCBwbGF0Zm9ybSBmZWUgd2FsbGV0LCBhbmQgcGxhdGZvcm0gZmVlIHBlcmNlbnRhZ2UuAAAAAAAACmluaXRpYWxpemUAAAAAAAQAAAAAAAAABWFkbWluAAAAAAAAEwAAAAAAAAAPdmF1bHRfd2FzbV9oYXNoAAAAA+4AAAAgAAAAAAAAAApmZWVfd2FsbGV0AAAAAAATAAAAAAAAAA5mZWVfcGVyY2VudGFnZQAAAAAABgAAAAA=",
-        "AAAAAAAAADxEZXBsb3kgYW5kIGluaXRpYWxpemUgYSBuZXcgcHJvamVjdCB2YXVsdCBjb250cmFjdCBpbnN0YW5jZS4AAAAMY3JlYXRlX3ZhdWx0AAAAAQAAAAAAAAAGY29uZmlnAAAAAAfQAAAAEUNyZWF0ZVZhdWx0Q29uZmlnAAAAAAAAAQAAABM=",
-        "AAAAAAAAAD9SZXRyaWV2ZSB0aGUgcmVnaXN0ZXJlZCB2YXVsdCBhZGRyZXNzIGZvciB0aGUgZ2l2ZW4gcHJvamVjdCBJRC4AAAAACWdldF92YXVsdAAAAAAAAAEAAAAAAAAACnByb2plY3RfaWQAAAAAAAYAAAABAAAAEw==",
-        "AAAAAAAAAC9VcGRhdGUgdGhlIHJlZ2lzdGVyZWQgdmF1bHQgY29udHJhY3QgV0FTTSBoYXNoLgAAAAAQdXBkYXRlX3dhc21faGFzaAAAAAEAAAAAAAAACG5ld19oYXNoAAAD7gAAACAAAAAA",
-        "AAAAAAAAADNVcGRhdGUgdGhlIHBsYXRmb3JtIGZlZSBwYXlvdXQgZGVzdGluYXRpb24gYWRkcmVzcy4AAAAAEXVwZGF0ZV9mZWVfd2FsbGV0AAAAAAAAAQAAAAAAAAAObmV3X2ZlZV93YWxsZXQAAAAAABMAAAAA",
-        "AAAAAAAAAEhVcGRhdGUgdGhlIHBsYXRmb3JtIGZlZSBwZXJjZW50YWdlIChzYWZldHkgY2VpbGluZyBvZiAxMC4wJSAvIDEwMDAgYnBzKS4AAAAVdXBkYXRlX2ZlZV9wZXJjZW50YWdlAAAAAAAAAQAAAAAAAAAObmV3X3BlcmNlbnRhZ2UAAAAAAAYAAAAA",
-        "AAAAAAAAAFBVcGRhdGUgdGhlIG1pbmltdW0gcGVyZm9ybWFuY2UgYm9uZCBwZXJjZW50YWdlIChiYXNpcyBwb2ludHMsIGUuZy4gNTAwID0gNS4wMCUpLgAAABZ1cGRhdGVfYm9uZF9wZXJjZW50YWdlAAAAAAABAAAAAAAAAA5uZXdfcGVyY2VudGFnZQAAAAAABgAAAAA=",
+      new ContractSpec([ "AAAABAAAAAAAAAAAAAAABUVycm9yAAAAAAAABgAAAAAAAAANTm90QXV0aG9yaXplZAAAAAAAAAEAAAAAAAAAEkFscmVhZHlJbml0aWFsaXplZAAAAAAACgAAAAAAAAAOTm90SW5pdGlhbGl6ZWQAAAAAAAsAAAAAAAAAEEJvbmRCZWxvd01pbmltdW0AAAAMAAAAAAAAABRJbnZhbGlkQ29uZmlndXJhdGlvbgAAAA0AAAAAAAAADVZhdWx0Tm90Rm91bmQAAAAAAAAO",
+        "AAAAAQAAAAAAAAAAAAAADk1pbGVzdG9uZUlucHV0AAAAAAACAAAAAAAAAAZhbW91bnQAAAAAAAsAAAAAAAAAAmlkAAAAAAAE",
+        "AAAAAQAAAHJXaGF0IHRoZSB2YXVsdCBpcyBjb25zdHJ1Y3RlZCB3aXRoLiBFdmVyeSBwbGF0Zm9ybSBhZGRyZXNzIGhlcmUgY29tZXMgZnJvbQpmYWN0b3J5IHN0b3JhZ2UsIG5ldmVyIGZyb20gdGhlIGNhbGxlci4AAAAAAAAAAAAPVmF1bHRJbml0Q29uZmlnAAAAAA8AAAAAAAAAFGF0dGVzdGF0aW9uX3JlZ2lzdHJ5AAAAEwAAAAAAAAALYm9uZF9hbW91bnQAAAAACwAAAAAAAAAHY3JlYXRvcgAAAAATAAAAAAAAAAhkZWFkbGluZQAAAAYAAAAAAAAAB2ZhY3RvcnkAAAAAEwAAAAAAAAASZmVlX3dhbGxldF9hZGRyZXNzAAAAAAATAAAAAAAAAARnb2FsAAAACwAAAAAAAAARaWRlbnRpdHlfcmVnaXN0cnkAAAAAAAATAAAAAAAAAAxtZXRhZGF0YV9jaWQAAAAQAAAAAAAAAAptaWxlc3RvbmVzAAAAAAPqAAAH0AAAAA5NaWxlc3RvbmVJbnB1dAAAAAAAAAAAABBtaW5fY29udHJpYnV0aW9uAAAACwAAAAAAAAAMcGxhdGZvcm1fZmVlAAAACwAAAAAAAAAKcHJvamVjdF9pZAAAAAAABgAAAAAAAAAFdG9rZW4AAAAAAAATAAAAAAAAABJ2b3Rpbmdfd2luZG93X3NlY3MAAAAAAAY=",
+        "AAAAAQAAAFxXaGF0IGEgYnVpbGRlciBzdXBwbGllcy4gRGVsaWJlcmF0ZWx5IGhhcyBubyBmaWVsZCBmb3IgdGhlIGlkZW50aXR5IG9yCmF0dGVzdGF0aW9uIHJlZ2lzdHJ5LgAAAAAAAAARQ3JlYXRlVmF1bHRDb25maWcAAAAAAAAHAAAAAAAAAAtib25kX2Ftb3VudAAAAAALAAAAAAAAAAdjcmVhdG9yAAAAABMAAAAAAAAACGRlYWRsaW5lAAAABgAAAAAAAAAEZ29hbAAAAAsAAAAAAAAADG1ldGFkYXRhX2NpZAAAABAAAAAAAAAACm1pbGVzdG9uZXMAAAAAA+oAAAfQAAAADk1pbGVzdG9uZUlucHV0AAAAAAAAAAAABXRva2VuAAAAAAAAEw==",
+        "AAAAAgAAAAAAAAAAAAAAB0RhdGFLZXkAAAAADAAAAAAAAAAAAAAABUFkbWluAAAAAAAAAAAAAAAAAAANVmF1bHRXYXNtSGFzaAAAAAAAAAEAAAAAAAAAD1Byb2plY3RWYXVsdE1hcAAAAAABAAAABgAAAAAAAAAAAAAADlByb2plY3RDb3VudGVyAAAAAAAAAAAAAAAAABBGZWVXYWxsZXRBZGRyZXNzAAAAAAAAADFGbGF0IGZlZSBjaGFyZ2VkIG9uY2UgdG8gdGhlIGJ1aWxkZXIsIGluIHN0cm9vcHMuAAAAAAAAC1BsYXRmb3JtRmVlAAAAAAAAAAAAAAAAEU1pbkJvbmRQZXJjZW50YWdlAAAAAAAAAAAAAAAAAAAQSWRlbnRpdHlSZWdpc3RyeQAAAAAAAAAAAAAAE0F0dGVzdGF0aW9uUmVnaXN0cnkAAAAAAAAAAAAAAAAQVm90aW5nV2luZG93U2VjcwAAAAAAAAAAAAAAD01pbkNvbnRyaWJ1dGlvbgAAAAABAAAAMk1hcmtzIGFuIGFkZHJlc3MgYXMgYSB2YXVsdCB0aGlzIGZhY3RvcnkgZGVwbG95ZWQuAAAAAAAHSXNWYXVsdAAAAAABAAAAEw==",
+        "AAAAAAAAAIJDb25maWd1cmUgdGhlIGZhY3RvcnkuIGBhZG1pbmAgbXVzdCBhdXRob3Jpc2UsIHNvIGEgZGVwbG95ZWQgYnV0CnVuY29uZmlndXJlZCBmYWN0b3J5IGNhbm5vdCBiZSBjbGFpbWVkIGJ5IHdob2V2ZXIgc3BvdHMgaXQgZmlyc3QuAAAAAAAKaW5pdGlhbGl6ZQAAAAAACAAAAAAAAAAFYWRtaW4AAAAAAAATAAAAAAAAAA92YXVsdF93YXNtX2hhc2gAAAAD7gAAACAAAAAAAAAACmZlZV93YWxsZXQAAAAAABMAAAAAAAAADHBsYXRmb3JtX2ZlZQAAAAsAAAAAAAAAEWlkZW50aXR5X3JlZ2lzdHJ5AAAAAAAAEwAAAAAAAAAUYXR0ZXN0YXRpb25fcmVnaXN0cnkAAAATAAAAAAAAABJ2b3Rpbmdfd2luZG93X3NlY3MAAAAAAAYAAAAAAAAAEG1pbl9jb250cmlidXRpb24AAAALAAAAAA==",
+        "AAAAAAAAAFFEZXBsb3kgYSB2YXVsdCBmb3IgYSBwcm9qZWN0IGFuZCBsb2NrIHRoZSBidWlsZGVyJ3MgYm9uZCBpbiB0aGUgc2FtZQp0cmFuc2FjdGlvbi4AAAAAAAAMY3JlYXRlX3ZhdWx0AAAAAQAAAAAAAAAGY29uZmlnAAAAAAfQAAAAEUNyZWF0ZVZhdWx0Q29uZmlnAAAAAAAAAQAAABM=",
+        "AAAAAAAAAHtXaGV0aGVyIHRoaXMgZmFjdG9yeSBkZXBsb3llZCB0aGUgZ2l2ZW4gYWRkcmVzcy4gVGhlIGF0dGVzdGF0aW9uCnJlZ2lzdHJ5IGNhbGxzIHRoaXMgdG8gZGVjaWRlIHdoZXRoZXIgYSByZWNvcmQgaXMgZ2VudWluZS4AAAAACGlzX3ZhdWx0AAAAAQAAAAAAAAAHYWRkcmVzcwAAAAATAAAAAQAAAAE=",
+        "AAAAAAAAAAAAAAAJZ2V0X3ZhdWx0AAAAAAAAAQAAAAAAAAAKcHJvamVjdF9pZAAAAAAABgAAAAEAAAAT",
+        "AAAAAAAAAAAAAAAQdXBkYXRlX3dhc21faGFzaAAAAAEAAAAAAAAACG5ld19oYXNoAAAD7gAAACAAAAAA",
+        "AAAAAAAAAAAAAAARdXBkYXRlX2ZlZV93YWxsZXQAAAAAAAABAAAAAAAAAA5uZXdfZmVlX3dhbGxldAAAAAAAEwAAAAA=",
+        "AAAAAAAAAGhTZXQgdGhlIGZsYXQgbGlzdGluZyBmZWUsIGluIHN0cm9vcHMuIFRoZXJlIGlzIGRlbGliZXJhdGVseSBubwpwZXJjZW50YWdlLW9mLWZ1bmRzIHNldHRpbmcgdG8gcmVhY2ggZm9yLgAAABN1cGRhdGVfcGxhdGZvcm1fZmVlAAAAAAEAAAAAAAAAB25ld19mZWUAAAAACwAAAAA=",
+        "AAAAAAAAAAAAAAAWdXBkYXRlX2JvbmRfcGVyY2VudGFnZQAAAAAAAQAAAAAAAAAObmV3X3BlcmNlbnRhZ2UAAAAAAAYAAAAA",
+        "AAAAAAAAAAAAAAAYdXBkYXRlX2lkZW50aXR5X3JlZ2lzdHJ5AAAAAQAAAAAAAAAMbmV3X3JlZ2lzdHJ5AAAAEwAAAAA=",
+        "AAAAAAAAAAAAAAAUdXBkYXRlX3ZvdGluZ193aW5kb3cAAAABAAAAAAAAAA9uZXdfd2luZG93X3NlY3MAAAAABgAAAAA=",
+        "AAAAAAAAAAAAAAAXdXBkYXRlX21pbl9jb250cmlidXRpb24AAAAAAQAAAAAAAAALbmV3X21pbmltdW0AAAAACwAAAAA=",
+        "AAAAAAAAAAAAAAAOdHJhbnNmZXJfYWRtaW4AAAAAAAEAAAAAAAAACW5ld19hZG1pbgAAAAAAABMAAAAA",
         "AAAAAAAAAAAAAAAJZ2V0X2FkbWluAAAAAAAAAAAAAAEAAAAT",
         "AAAAAAAAAAAAAAAOZ2V0X2ZlZV93YWxsZXQAAAAAAAAAAAABAAAAEw==",
-        "AAAAAAAAAAAAAAASZ2V0X2ZlZV9wZXJjZW50YWdlAAAAAAAAAAAAAQAAAAY=",
-        "AAAAAAAAAAAAAAATZ2V0X2JvbmRfcGVyY2VudGFnZQAAAAAAAAAAAQAAAAY=" ]),
+        "AAAAAAAAAAAAAAAQZ2V0X3BsYXRmb3JtX2ZlZQAAAAAAAAABAAAACw==",
+        "AAAAAAAAAAAAAAATZ2V0X2JvbmRfcGVyY2VudGFnZQAAAAAAAAAAAQAAAAY=",
+        "AAAAAAAAAAAAAAAVZ2V0X2lkZW50aXR5X3JlZ2lzdHJ5AAAAAAAAAAAAAAEAAAAT",
+        "AAAAAAAAAAAAAAAYZ2V0X2F0dGVzdGF0aW9uX3JlZ2lzdHJ5AAAAAAAAAAEAAAAT",
+        "AAAAAAAAAAAAAAARZ2V0X3ZvdGluZ193aW5kb3cAAAAAAAAAAAAAAQAAAAY=",
+        "AAAAAAAAAAAAAAAUZ2V0X21pbl9jb250cmlidXRpb24AAAAAAAAAAQAAAAs=",
+        "AAAAAAAAAAAAAAARZ2V0X3Byb2plY3RfY291bnQAAAAAAAAAAAAAAQAAAAY=" ]),
       options
     )
   }
   public readonly fromJSON = {
     initialize: this.txFromJSON<null>,
         create_vault: this.txFromJSON<string>,
+        is_vault: this.txFromJSON<boolean>,
         get_vault: this.txFromJSON<string>,
         update_wasm_hash: this.txFromJSON<null>,
         update_fee_wallet: this.txFromJSON<null>,
-        update_fee_percentage: this.txFromJSON<null>,
+        update_platform_fee: this.txFromJSON<null>,
         update_bond_percentage: this.txFromJSON<null>,
+        update_identity_registry: this.txFromJSON<null>,
+        update_voting_window: this.txFromJSON<null>,
+        update_min_contribution: this.txFromJSON<null>,
+        transfer_admin: this.txFromJSON<null>,
         get_admin: this.txFromJSON<string>,
         get_fee_wallet: this.txFromJSON<string>,
-        get_fee_percentage: this.txFromJSON<u64>,
-        get_bond_percentage: this.txFromJSON<u64>
+        get_platform_fee: this.txFromJSON<i128>,
+        get_bond_percentage: this.txFromJSON<u64>,
+        get_identity_registry: this.txFromJSON<string>,
+        get_attestation_registry: this.txFromJSON<string>,
+        get_voting_window: this.txFromJSON<u64>,
+        get_min_contribution: this.txFromJSON<i128>,
+        get_project_count: this.txFromJSON<u64>
   }
 }

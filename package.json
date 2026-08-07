@@ -3,11 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "predev": "npm --prefix src/packages/blkfndr run build && npm --prefix src/packages/blkfndr_v2 run build",
     "dev": "next dev --turbopack -p 9002",
     "genkit:dev": "genkit start -- tsx src/ai/dev.ts",
     "genkit:watch": "genkit start -- tsx --watch src/ai/dev.ts",
-    "build": "npm --prefix src/packages/blkfndr run build && npm --prefix src/packages/blkfndr_v2 run build && next build --webpack",
+    "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit"

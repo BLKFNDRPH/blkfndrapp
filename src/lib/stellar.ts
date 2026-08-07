@@ -1,13 +1,13 @@
-import { Horizon, Networks } from "@stellar/stellar-sdk";
-import { Client as FactoryClient } from "@/packages/blkfndr_factory/src";
-import { Client as ApprovalClient } from "@/packages/blkfndr_approval/src";
+import { Horizon } from "@stellar/stellar-sdk";
+import {
+  HORIZON_URL,
+  SOROBAN_RPC_URL,
+  NETWORK_PASSPHRASE,
+  adminClient,
+  simulate,
+} from "@/lib/stellar-clients";
 
-
-// Constants for Stellar network and contract mwehehhee
-const HORIZON_URL = "https://horizon-testnet.stellar.org";
-const SOROBAN_RPC_URL = "https://soroban-testnet.stellar.org";
-const NETWORK_PASSPHRASE = Networks.TESTNET;
-const CONTRACT_ID = process.env.NEXT_PUBLIC_BLKFNDR_CONTRACT_ID;
+export { NETWORK_PASSPHRASE, SOROBAN_RPC_URL, HORIZON_URL };
 
 export const horizonClient = new Horizon.Server(HORIZON_URL);
 
@@ -30,7 +30,7 @@ export const getBalance = async (publicKey: string) => {
   try {
     const account = await getAccountInfo(publicKey);
     return account.balances;
-  } catch (error) {
+  } catch {
     return [{ asset_type: "native", balance: "0.0000" }];
   }
 };
@@ -82,45 +82,28 @@ export const getRecentAccountOperations = async (
   }
 };
 
-export { NETWORK_PASSPHRASE, CONTRACT_ID, SOROBAN_RPC_URL, HORIZON_URL };
-
+/**
+ * Whether an address is a platform admin, according to the chain.
+ *
+ * Reads the admin roster, which is the single on-chain answer to that question.
+ * It previously consulted the factory admin and the approval module's signer
+ * list — two sources that could disagree, neither of which was the roster the
+ * app actually meant.
+ *
+ * Note what being an admin does *not* confer: nothing in this roster can
+ * release a milestone, block a refund, or move a vault's balance. It decides
+ * who sees the admin console, and is mirrored into Supabase app_metadata so RLS
+ * policies can act on it.
+ *
+ * Fails closed. An unreachable RPC means "not an admin", never "assume yes".
+ */
 export async function checkIsAdminOnChain(stellarPublicKey: string): Promise<boolean> {
   if (!stellarPublicKey) return false;
-  try {
-    const factoryContractId = process.env.NEXT_PUBLIC_BLKFNDR_FACTORY_CONTRACT_ID;
-    const approvalContractId = process.env.NEXT_PUBLIC_BLKFNDR_APPROVAL_CONTRACT_ID;
-    
-    if (!factoryContractId || !approvalContractId) {
-      console.warn("[checkIsAdminOnChain] Factory or Approval contract ID is missing");
-      return false;
-    }
 
-    const factoryClient = new FactoryClient({
-      contractId: factoryContractId,
-      rpcUrl: SOROBAN_RPC_URL!,
-      networkPassphrase: NETWORK_PASSPHRASE,
-    });
-    const adminTx = await factoryClient.get_admin();
-    const adminSim = await adminTx.simulate();
-    const contractAdmin = adminSim.result;
+  const result = await simulate(
+    () => adminClient().is_admin({ account: stellarPublicKey }),
+    `is_admin(${stellarPublicKey})`,
+  );
 
-    if (contractAdmin === stellarPublicKey) {
-      return true;
-    }
-
-    const approvalClient = new ApprovalClient({
-      contractId: approvalContractId,
-      rpcUrl: SOROBAN_RPC_URL!,
-      networkPassphrase: NETWORK_PASSPHRASE,
-    });
-    const signersTx = await approvalClient.get_signers();
-    const signersSim = await signersTx.simulate();
-    const multiSigAdmins: string[] = signersSim.result || [];
-
-    return multiSigAdmins.includes(stellarPublicKey);
-  } catch (err) {
-    console.warn("[checkIsAdminOnChain] Failed to query admin status from contracts:", err);
-  }
-  return false;
+  return result === true;
 }
-

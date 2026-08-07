@@ -28,7 +28,6 @@ import { Wand2, Globe, Lock, Calendar, Plus, Trash2, Shield } from "lucide-react
 import { getPinataClient, getIPFSGatewayUrl } from "@/lib/pinata-client";
 import { useStellarContract } from "@/hooks/use-stellar-contract";
 import { useFreighterWallet } from "@/context/FreighterWalletContext";
-import { CurrencyType } from "@/packages/blkfndr_v2";
 import { usePlatformInfo, useRefreshAfterTx } from "@/context/BlockchainContext";
 import { Client as FactoryClient } from "@/packages/blkfndr_factory/src";
 import { Client as IdentityClient } from "@/packages/blkfndr_identity/src";
@@ -54,7 +53,7 @@ const SOROBAN_RPC_URL = "https://soroban-testnet.stellar.org";
 
 const FACTORY_ID = process.env.NEXT_PUBLIC_BLKFNDR_FACTORY_CONTRACT_ID || "";
 const IDENTITY_ID = process.env.NEXT_PUBLIC_BLKFNDR_IDENTITY_CONTRACT_ID || "";
-const APPROVAL_ID = process.env.NEXT_PUBLIC_BLKFNDR_APPROVAL_CONTRACT_ID || "";
+
 const USDC_ID = process.env.NEXT_PUBLIC_STELLAR_USDC_TOKEN_ID || "";
 
 const getSignerOptions = (publicKey: string) => ({
@@ -460,8 +459,6 @@ export function ListingForm() {
             goal: goalStroops,
             deadline: deadlineTimestamp,
             bond_amount: bondStroops,
-            approval_module: APPROVAL_ID,
-            identity_registry: IDENTITY_ID,
             milestones: formattedMilestones,
             metadata_cid: metadataCid,
           },

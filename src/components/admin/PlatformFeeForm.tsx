@@ -58,7 +58,7 @@ export function PlatformFeeForm() {
       try {
         const feeBps = Math.round(values.feePercentage * 100);
 
-        const result = await updatePlatformFee({ newFeeBps: BigInt(feeBps) });
+        const result = await updatePlatformFee(BigInt(feeBps));
 
         const txStatus = (result as any)?.getTransactionResponse?.status;
         if (txStatus !== "SUCCESS") {

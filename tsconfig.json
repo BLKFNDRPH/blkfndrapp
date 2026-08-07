@@ -1,6 +1,8 @@
 {
   "compilerOptions": {
-    "target": "ES2017",
+    // ES2020 for BigInt literals. Soroban amounts are i128 and exceed what a
+    // JS number holds exactly, so every on-chain figure is a bigint.
+    "target": "ES2020",
     "lib": [
       "dom",
       "dom.iterable",
@@ -25,12 +27,6 @@
     "paths": {
       "@/*": [
         "./src/*"
-      ],
-      "@/packages/blkfndr_v2": [
-        "./src/packages/blkfndr_v2/src/index.ts"
-      ],
-      "@/packages/blkfndr_v2/src": [
-        "./src/packages/blkfndr_v2/src/index.ts"
       ]
     }
   },
