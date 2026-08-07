@@ -63,5 +63,10 @@ next-env.d.ts
 .claude/settings.local.json
 deployed-contracts.env
 
+# docs/deployment.md tells the reader to keep their Portainer variables here.
+# It holds the service-role key, the Pinata JWT and the indexer secret, so it
+# must never be committed.
+portainer-env.txt
+
 src/packages/*/node_modules
 src/packages/*/dist

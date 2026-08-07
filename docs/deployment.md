@@ -4,186 +4,245 @@
 
 1. **Portainer installed** on your server (Community or Business Edition)
 2. **Docker** and **Docker Compose** installed
-3. **Environment variables** configured
+3. A **Supabase project** with the migrations in `supabase/migrations/` applied
+4. **Deployed contract addresses** (see `scripts/deploy-contracts.sh`)
+5. **Environment variables** configured
+
+## The one thing to get right
+
+Two kinds of variable reach the container by different routes, and confusing
+them is the most common way this deployment goes wrong:
+
+| | Build time (`build.args`) | Runtime (`environment`) |
+|---|---|---|
+| Who can see it | **Every visitor** — compiled into the browser bundle | Server only |
+| Changing it needs | A **rebuild** | A **restart** |
+| Prefix | `NEXT_PUBLIC_` | anything else |
+
+**A secret behind `NEXT_PUBLIC_` is published to every visitor.** The prefix is
+not a naming convention — it is the switch that decides whether Next.js inlines
+the value into JavaScript sent to browsers. `SUPABASE_SECRET_KEY` and
+`PINATA_JWT` must never carry it.
+
+The reverse is also a failure: a `NEXT_PUBLIC_` value supplied only at runtime is
+empty in the bundle, so the app builds cleanly and then breaks in the browser.
 
 ## Quick Start
 
-### 1. Prepare Environment Variables
+### 1. Prepare environment variables
 
-For Portainer deployment, you'll need to copy your environment variables. Your credentials are already prepared in `portainer-env.txt`.
+Keep your Portainer variables in `portainer-env.txt` at the repository root. It
+is gitignored — it holds the service-role key, the Pinata JWT and the indexer
+secret, none of which belong in the repository.
 
-**Option A: Copy all variables at once**
 ```bash
-# View the variables to copy
-cat portainer-env.txt
+cp .env.example portainer-env.txt
 ```
 
-**Option B: Load from .env.local for local Docker deployment**
-When deploying locally (not via Portainer), create a `.env` file:
+Fill it in, then paste the whole file into Portainer.
+
+For a local Docker run instead of Portainer, Compose reads `.env` from the
+working directory:
+
 ```bash
 cp .env.local .env
-# Edit NODE_ENV if needed
 ```
 
 ### 2. Deploy via Portainer UI
 
-**IMPORTANT**: Portainer needs environment variables at BOTH build-time and runtime. When you add variables in Portainer's UI, they will be automatically available for both the Docker build process and the running container.
+Portainer supplies your variables to **both** the build and the container, which
+is what makes the build-time/runtime split above work.
 
-#### Option A: Using Portainer Stacks with Web Editor (Recommended)
+#### Option A: Web editor
 
-1. Log into your Portainer instance
-2. Navigate to **Stacks** → **Add Stack**
-3. **Name** your stack (e.g., `blkfndr`)
-4. Choose **Web editor** build method
-5. Copy and paste the contents of `docker-compose.yml`
-6. **Add environment variables** (CRITICAL STEP):
-   - Scroll down and click **Advanced mode**
-   - Copy the contents of `portainer-env.txt`
-   - Paste into the **Environment variables** text area
-   - These variables will be used during both build and runtime
-7. Click **Deploy the stack**
-8. Wait for the build to complete (first build takes 5-10 minutes)
+1. **Stacks** → **Add stack**, name it `blkfndr`
+2. Choose **Web editor**
+3. Paste the contents of `docker-compose.yml`
+4. **Environment variables** — click **Advanced mode** and paste `portainer-env.txt`
+5. **Deploy the stack** (first build takes 5–10 minutes)
 
-#### Option B: Using Portainer Git Repository
+#### Option B: Git repository
 
-1. Navigate to **Stacks** → **Add Stack**
-2. Choose **Repository** build method
-3. Enter your Git repository URL
-4. Specify `docker-compose.yml` as the Compose path
-5. **Add environment variables**:
-   - Click **Advanced mode**
-   - Copy contents from `portainer-env.txt` and paste into **Environment variables**
-6. Click **Deploy the stack**
+1. **Stacks** → **Add stack** → **Repository**
+2. Repository URL, reference `refs/heads/main`, compose path `docker-compose.yml`
+3. **Environment variables** — **Advanced mode**, paste `portainer-env.txt`
+4. **Deploy the stack**
 
-### 3. Deploy via Command Line
+### 3. Deploy via command line
 
-If you prefer CLI deployment:
-
-**First, create `.env` file from your local environment:**
 ```bash
-cp .env.local .env
+docker compose up -d --build
 ```
 
-**Then deploy:**
 ```bash
-# Build the image
-docker compose build
-
-# Start the stack
-docker compose up -d
-
-# Check logs
 docker compose logs -f blkfndr-app
 ```
 
-**Note**: Docker Compose automatically loads `.env` file from the current directory.
+## Required variables
 
-## Port Configuration
+### Build time — public
 
-The application runs on **port 9002** by default (mapped from container port 3000).
+| Variable | Notes |
+|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | **Build fails if empty** |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | **Build fails if empty.** Public by design; RLS protects the data |
+| `NEXT_PUBLIC_BLKFNDR_FACTORY_CONTRACT_ID` | **Build fails if empty** |
+| `NEXT_PUBLIC_BLKFNDR_IDENTITY_CONTRACT_ID` | KYC gating |
+| `NEXT_PUBLIC_BLKFNDR_ADMIN_CONTRACT_ID` | On-chain admin roster |
+| `NEXT_PUBLIC_BLKFNDR_ATTESTATION_CONTRACT_ID` | Builder completion record |
+| `NEXT_PUBLIC_STELLAR_XLM_TOKEN_ID` | A currency left blank is simply not offered |
+| `NEXT_PUBLIC_STELLAR_USDC_TOKEN_ID` | ditto |
+| `NEXT_PUBLIC_SOROBAN_RPC_URL` | **Defaults to testnet** — see below |
+| `NEXT_PUBLIC_HORIZON_URL` | **Defaults to testnet** — see below |
+| `NEXT_PUBLIC_APP_URL` | Must match the Supabase Site URL |
+| `NEXT_PUBLIC_STELLAR_ADMIN_ADDRESS` | |
+| `NEXT_PUBLIC_STELLAR_FALLBACK_ADDRESS` | |
+| `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | Optional. Unset renders a Maps link instead of an embedded map |
 
-To change the host port, edit `docker-compose.yml`:
+> **Both RPC URLs default to testnet.** A mainnet stack that leaves them blank
+> builds without complaint and then quietly talks to testnet. It presents as
+> "no projects appear", which looks like a data problem rather than a
+> configuration one.
+>
+> | | Soroban RPC | Horizon |
+> |---|---|---|
+> | testnet | `https://soroban-testnet.stellar.org` | `https://horizon-testnet.stellar.org` |
+> | mainnet | `https://mainnet.sorobanrpc.com` | `https://horizon.stellar.org` |
+
+### Runtime — secret
+
+| Variable | Notes |
+|---|---|
+| `SUPABASE_SECRET_KEY` | Bypasses RLS. Without it the indexer writes nothing and **no project ever appears** |
+| `PINATA_JWT` | Project creation fails without it. **Not** `NEXT_PUBLIC_PINATA_JWT` |
+| `PINATA_GATEWAY_URL` | |
+| `PINATA_GROUP_BLKDFNDR` | |
+| `INDEXER_SECRET` | Bearer token for `POST /api/indexer`. Invent a long random value |
+| `GEMINI_API_KEY` | Optional, AI listing review. The Genkit plugin reads `GEMINI_API_KEY`, `GOOGLE_API_KEY` or `GOOGLE_GENAI_API_KEY` — not `GOOGLE_GENERATIVEAI_API_KEY` |
+| `INDEX_INTERVAL_SECONDS` | Optional, defaults to 60 |
+
+### Token contract addresses
+
+Derived, not looked up, and different on each network:
+
+```bash
+stellar contract id asset --asset native --network testnet
+```
+
+```bash
+stellar contract id asset --asset USDC:<ISSUER_G_ADDRESS> --network testnet
+```
+
+Deriving them again after a network change is not optional.
+
+## Port configuration
+
+The app listens on **3000** inside the container and is published on **8788**.
+Point your reverse proxy at 8788. To change the host port, edit
+`docker-compose.yml`:
 
 ```yaml
 ports:
-  - "YOUR_PORT:3000"  # Change YOUR_PORT to desired port
+  - "YOUR_PORT:3000"
 ```
 
-## Understanding the Build Process
+## The indexer service
 
-Next.js requires `NEXT_PUBLIC_*` environment variables at **build time** (not just runtime). This is why:
+The stack runs two services. The second, `indexer-cron`, calls
+`POST /api/indexer` on a loop.
 
-1. **Dockerfile** accepts these variables as `ARG` (build arguments)
-2. **docker-compose.yml** passes them in the `build: args:` section
-3. **Portainer** automatically provides environment variables to both build and runtime
+This is not optional housekeeping. The ledger is the source of truth but the
+site reads Postgres, and nothing in the app self-triggers — without it a newly
+created project never appears and a funded one never updates its total. The
+failure is silent: pages load, nothing errors, there is simply never any data.
 
-The build process:
-- Takes 5-10 minutes on first build (downloads dependencies, compiles TypeScript, bundles JS)
-- Subsequent rebuilds are faster (cached layers)
-- Variables are "baked" into the JavaScript bundle at build time
-- Server-side variables (like `GOOGLE_GENERATIVEAI_API_KEY`) are only available at runtime
+It calls over the stack's internal network, so the indexer endpoint never needs
+to be reachable from outside.
 
-## Health Checks
+## Supabase dashboard settings
 
-The container includes a health check that monitors the application status. View health status in Portainer:
+Two things live in Supabase rather than in this stack, and Google sign-in fails
+without both:
 
-1. Go to **Containers**
-2. Click on `blkfndr-app`
-3. Check the **Health** indicator
+- **Site URL** must equal `NEXT_PUBLIC_APP_URL`
+- **Redirect URLs** must include `<NEXT_PUBLIC_APP_URL>/auth/callback`
 
-## Updating the Application
+Enable the Google provider there, with the callback set to
+`https://<project-ref>.supabase.co/auth/v1/callback`. Google OAuth is routed
+through Supabase — there is no longer a client secret in this application.
 
-### Via Portainer UI
+## First administrator
 
-1. Navigate to **Stacks**
-2. Select `blkfndr`
-3. Click **Update the stack**
-4. Pull and redeploy: Toggle **Re-pull image** and **Re-deploy**
-5. Click **Update**
+The `platform_admins` migration seeds one bootstrap email address. Whoever
+controls that mailbox becomes the first administrator on their first sign-in and
+can add others from the console. **On a fresh deployment, change that address in
+the migration before applying it.**
+
+## Verifying a deployment
+
+In order, because each step depends on the one before:
+
+1. **Containers healthy.** Both running, `blkfndr-app` marked healthy. The
+   healthcheck is liveness only — it reports that the process is serving, not
+   that Supabase is reachable, so a database blip does not restart the app.
+2. **App answers.** `GET /api/health` returns `{"status":"ok"}`.
+3. **Supabase is wired.** The projects list renders, even if empty. A blank page
+   with console errors about a missing URL means the build args were not set —
+   and that needs a rebuild, not a restart.
+4. **Indexer running.** `indexer-cron` logs a POST every interval. Failures are
+   logged rather than swallowed, so a wrong `INDEXER_SECRET` shows as repeated 401.
+5. **Projects appear.** Create one, wait one interval. If 1–4 pass but this does
+   not, the usual cause is an unset `SUPABASE_SECRET_KEY`: the indexer can read
+   the chain but cannot write the row.
+
+## Updating
+
+### Via Portainer
+
+**Stacks** → `blkfndr` → **Update the stack**, with **Re-pull image and redeploy**.
+
+Changing a **build-time** variable requires a rebuild. Restarting is not enough —
+the old value is already compiled into the JavaScript being served.
 
 ### Via CLI
 
 ```bash
-# Pull latest changes
-git pull
-
-# Rebuild and restart
-docker compose up -d --build
+git pull && docker compose up -d --build
 ```
 
 ## Troubleshooting
 
-### Container Won't Start
-
-Check logs in Portainer or via CLI:
+### Container won't start
 
 ```bash
 docker compose logs blkfndr-app
 ```
 
-Common issues:
-- **Missing environment variables**: Verify all required vars in `.env`
-- **Port conflict**: Ensure port 9002 is not already in use
-- **Build failures**: Check Docker build logs in Portainer
+- **Build failed on a missing variable** — the Dockerfile fails deliberately when
+  `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` or
+  `NEXT_PUBLIC_BLKFNDR_FACTORY_CONTRACT_ID` is empty, because an image built
+  without them cannot be fixed at runtime.
+- **Port conflict** — check 8788 is free.
 
-### OAuth Redirect Issues
+### No projects appear
 
-Update OAuth redirect URIs in Google Cloud Console:
-- Development: `http://localhost:9002/login`
-- Production: `https://your-domain.com/login`
+Almost always one of three things, in order of likelihood:
 
-Set `NEXT_PUBLIC_APP_URL` in `.env` to match your deployment URL.
+1. `SUPABASE_SECRET_KEY` unset — the indexer reads the chain but cannot write
+2. `indexer-cron` failing — check its logs for 401 (wrong `INDEXER_SECRET`)
+3. The RPC URLs point at the wrong network
 
-### Pinata Gateway Issues
+### Sign-in redirects to the wrong host
 
-Verify:
-- `NEXT_PUBLIC_PINATA_JWT` is valid
-- `NEXT_PUBLIC_PINATA_GATEWAY_URL` is accessible
-- Pinata group ID is correct
+`NEXT_PUBLIC_APP_URL` and the Supabase **Site URL** disagree. Both must be the
+public origin, and changing the former requires a rebuild.
 
-### Blockchain Connection Issues
+### Blockchain connection issues
 
-Ensure:
-- `NEXT_PUBLIC_CONTRACT_ADDRESS` and `NEXT_PUBLIC_PLATFORM_ADDRESS` are correct
-- Stellar Testnet is accessible from your server
-- No firewall blocking Soroban RPC endpoint (`https://soroban-testnet.stellar.org`)
-- No firewall blocking Horizon API endpoint (`https://horizon-testnet.stellar.org`)
+- Contract IDs correct and deployed to the network you are pointing at
+- No firewall blocking the Soroban RPC or Horizon endpoints
 
-## Production Deployment Checklist
-
-- [ ] Copy `.env.example` to `.env` and configure all variables
-- [ ] Set `NODE_ENV=production` in `.env`
-- [ ] Configure OAuth redirect URIs in Google Cloud Console
-- [ ] Update `NEXT_PUBLIC_APP_URL` to production domain
-- [ ] Set up SSL/TLS (use reverse proxy like Nginx or Traefik)
-- [ ] Configure firewall rules (allow port 9002 or your custom port)
-- [ ] Set up automated backups for volumes
-- [ ] Enable container restart policy (`restart: unless-stopped` is default)
-- [ ] Monitor logs and health checks
-
-## Reverse Proxy Setup (Optional)
-
-For production with SSL, use Nginx as reverse proxy:
+## Reverse proxy setup
 
 ```nginx
 server {
@@ -200,7 +259,7 @@ server {
     ssl_certificate_key /path/to/key.pem;
 
     location / {
-        proxy_pass http://localhost:9002;
+        proxy_pass http://localhost:8788;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
@@ -213,44 +272,33 @@ server {
 }
 ```
 
-## Volume Management
-
-The stack creates a persistent volume for Next.js cache:
+## Volume management
 
 ```bash
-# View volumes
 docker volume ls | grep blkfndr
+```
 
-# Inspect volume
-docker volume inspect blkfndr_next-cache
-
-# Backup volume (optional)
+```bash
 docker run --rm -v blkfndr_next-cache:/data -v $(pwd):/backup alpine tar czf /backup/next-cache-backup.tar.gz -C /data .
 ```
 
-## Environment Variables Reference
+## Production checklist
 
-See `.env.example` for a complete list of required environment variables.
+- [ ] `portainer-env.txt` filled in and **not** committed (it is gitignored)
+- [ ] `SUPABASE_SECRET_KEY` set, and set as a **runtime** variable
+- [ ] No secret carries a `NEXT_PUBLIC_` prefix
+- [ ] RPC and Horizon URLs set explicitly for the target network
+- [ ] `NEXT_PUBLIC_APP_URL` matches the Supabase Site URL and redirect list
+- [ ] Bootstrap administrator address changed in the `platform_admins` migration
+- [ ] SSL terminated at the reverse proxy
+- [ ] `indexer-cron` confirmed running and succeeding
 
-Critical variables:
-- `NEXT_PUBLIC_STELLAR_NETWORK` — Stellar network (`testnet` or `mainnet`)
-- `NEXT_PUBLIC_SOROBAN_RPC_URL` — Soroban RPC endpoint
-- `NEXT_PUBLIC_CONTRACT_ADDRESS` — Soroban crowdfunding contract ID
-- `NEXT_PUBLIC_PINATA_JWT` — IPFS file uploads
-- `GOOGLE_GENERATIVEAI_API_KEY` — AI analysis features
-- `NEXT_PUBLIC_GOOGLE_CLIENT_ID` — Google OAuth
+## Scaling
 
-## Scaling (Advanced)
+Running multiple app replicas is safe; running multiple `indexer-cron` replicas
+is wasteful but not harmful, since the indexer records a cursor and skips events
+it has already processed.
 
-For high-traffic deployments, consider:
-
-1. **Load balancing**: Run multiple container replicas
-   ```bash
-   docker compose up -d --scale blkfndr-app=3
-   ```
-
-2. **CDN**: Use Cloudflare or similar for static assets
-
-3. **Database caching**: Consider Redis for session management (if needed)
-
-4. **Monitoring**: Integrate with Prometheus/Grafana via Portainer
+```bash
+docker compose up -d --scale blkfndr-app=3
+```
