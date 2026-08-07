@@ -94,7 +94,7 @@ docker compose logs -f blkfndr-app
 | `NEXT_PUBLIC_STELLAR_USDC_TOKEN_ID` | ditto |
 | `NEXT_PUBLIC_SOROBAN_RPC_URL` | **Defaults to testnet** — see below |
 | `NEXT_PUBLIC_HORIZON_URL` | **Defaults to testnet** — see below |
-| `NEXT_PUBLIC_APP_URL` | Must match the Supabase Site URL |
+| `NEXT_PUBLIC_APP_URL` | Public origin, e.g. `https://testnetv2.blkfndr.com`. Must match the Supabase Site URL |
 | `NEXT_PUBLIC_STELLAR_ADMIN_ADDRESS` | |
 | `NEXT_PUBLIC_STELLAR_FALLBACK_ADDRESS` | |
 | `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | Optional. Unset renders a Maps link instead of an embedded map |
@@ -189,6 +189,45 @@ without both:
 - **Site URL** must equal `NEXT_PUBLIC_APP_URL`
 - **Redirect URLs** must include `<NEXT_PUBLIC_APP_URL>/auth/callback`
 
+For the current testnet deployment that means:
+
+| Setting | Value |
+|---|---|
+| `NEXT_PUBLIC_APP_URL` | `https://testnetv2.blkfndr.com` |
+| Supabase **Site URL** | `https://testnetv2.blkfndr.com` |
+| Supabase **Redirect URLs** | `https://testnetv2.blkfndr.com/auth/callback` |
+
+All three must agree. A mismatch does not fail loudly — sign-in completes and
+then returns the user to the wrong origin, or to an error page Supabase
+generates rather than one this app controls.
+
+### Serving from more than one domain
+
+`NEXT_PUBLIC_APP_URL` is a single value compiled into the bundle, so on its own
+it pins every redirect to one domain: a visitor arriving on a second domain
+would sign in and land on the first, losing the session cookie that was just set
+for the host they were sent to.
+
+`APP_URLS` adds more, comma separated:
+
+```
+NEXT_PUBLIC_APP_URL=https://testnetv2.blkfndr.com
+APP_URLS=https://app.blkfndr.com,https://staging.blkfndr.com
+```
+
+A request arriving on any of those is sent back to the same origin it came from.
+Anything else — including a forged `Host` header — falls back to
+`NEXT_PUBLIC_APP_URL`, which is what stops this becoming an open redirect.
+
+Three things to know:
+
+- **Every origin must also be in the Supabase redirect allow-list.** Supabase is
+  the second gate and will refuse a redirect it was not told about.
+- **`APP_URLS` is runtime, not build time** — no `NEXT_PUBLIC_` prefix, because
+  nothing reads it in the browser. Adding a domain takes a restart, not a rebuild.
+- **Hosts are compared including port.** `https://example.com` does not match a
+  request to `example.com:8443`; list the port if you serve on one.
+
 Enable the Google provider there, with the callback set to
 `https://<project-ref>.supabase.co/auth/v1/callback`. Google OAuth is routed
 through Supabase — there is no longer a client secret in this application.
@@ -278,13 +317,13 @@ public origin, and changing the former requires a rebuild.
 ```nginx
 server {
     listen 80;
-    server_name your-domain.com;
+    server_name testnetv2.blkfndr.com;
     return 301 https://$server_name$request_uri;
 }
 
 server {
     listen 443 ssl http2;
-    server_name your-domain.com;
+    server_name testnetv2.blkfndr.com;
 
     ssl_certificate /path/to/cert.pem;
     ssl_certificate_key /path/to/key.pem;
