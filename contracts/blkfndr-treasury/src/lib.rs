@@ -134,11 +134,30 @@ pub struct Cycle {
     pub state: CycleState,
 }
 
+/// What a carried proposal does to the factory.
+///
+/// An enum rather than a fee-only entrypoint, because this contract can be the
+/// factory's admin and the factory has eight admin-gated functions. Reaching
+/// only one of them would strand the other seven — including `update_wasm_hash`,
+/// which is how vaults are upgraded, and `transfer_admin`, which is the only
+/// way to hand control back. A treasury that can take factory admin but never
+/// return it is a trap, so `TransferAdmin` is here from the start.
 #[contracttype]
 #[derive(Clone)]
-pub struct FeeProposal {
+pub enum FactoryAction {
+    /// Change the flat listing fee, in stroops.
+    SetFee(i128),
+    /// Hand factory admin to someone else — the escape hatch. A vote can always
+    /// return control to a human, so pointing factory admin at this contract is
+    /// reversible rather than permanent.
+    TransferAdmin(Address),
+}
+
+#[contracttype]
+#[derive(Clone)]
+pub struct FactoryProposal {
     pub id: u32,
-    pub new_fee: i128,
+    pub action: FactoryAction,
     pub roster: Vec<Shareholder>,
     pub opened_at: u64,
     pub closes_at: u64,
@@ -156,7 +175,7 @@ pub enum DataKey {
     CycleVote(u32, Address),
     /// (cycle_id, shareholder) -> claimed
     Claimed(u32, Address),
-    FeeProposal,
+    FactoryProposal,
     NextProposalId,
     /// (proposal_id, voter) -> voted
     ProposalVote(u32, Address),
@@ -440,18 +459,20 @@ impl Treasury {
 
     // ── Fee governance ─────────────────────────────────────────────────────
 
-    /// Propose a new platform listing fee.
+    /// Propose an action on the factory.
     ///
     /// The fee stays a flat amount. SOW v4 states a flat-fee model three times
     /// and frames it as a Philippine SEC/BSP constraint — "BLKFNDR charges flat
-    /// fees, never takes a percentage of funds" — so what is adjustable here is
-    /// the amount, not the shape.
-    pub fn propose_fee(env: Env, proposer: Address, new_fee: i128) {
+    /// fees, never takes a percentage of funds" — so what a vote adjusts is the
+    /// amount, not the shape.
+    pub fn propose(env: Env, proposer: Address, action: FactoryAction) {
         bump(&env);
         proposer.require_auth();
 
-        if new_fee < 0 {
-            panic_with_error!(&env, Error::FeeOutOfRange);
+        if let FactoryAction::SetFee(fee) = &action {
+            if *fee < 0 {
+                panic_with_error!(&env, Error::FeeOutOfRange);
+            }
         }
 
         let roster: Vec<Shareholder> = load(&env, &DataKey::Shareholders);
@@ -462,7 +483,7 @@ impl Treasury {
         if let Some(open) = env
             .storage()
             .instance()
-            .get::<_, FeeProposal>(&DataKey::FeeProposal)
+            .get::<_, FactoryProposal>(&DataKey::FactoryProposal)
         {
             if env.ledger().timestamp() < open.closes_at && !carried(open.approved_bps) {
                 panic_with_error!(&env, Error::ProposalAlreadyOpen);
@@ -473,9 +494,9 @@ impl Treasury {
         let window: u64 = load(&env, &DataKey::VoteWindow);
         let now = env.ledger().timestamp();
 
-        let proposal = FeeProposal {
+        let proposal = FactoryProposal {
             id,
-            new_fee,
+            action,
             roster,
             opened_at: now,
             closes_at: now + window,
@@ -484,25 +505,25 @@ impl Treasury {
 
         env.storage()
             .instance()
-            .set(&DataKey::FeeProposal, &proposal);
+            .set(&DataKey::FactoryProposal, &proposal);
         env.storage()
             .instance()
             .set(&DataKey::NextProposalId, &(id + 1));
 
         env.events().publish(
-            (symbol_short!("FEE"), symbol_short!("PROPOSE")),
-            (id, new_fee, proposal.closes_at),
+            (symbol_short!("PROPOSAL"), symbol_short!("OPEN")),
+            (id, proposal.closes_at),
         );
     }
 
-    pub fn approve_fee(env: Env, voter: Address) {
+    pub fn approve_proposal(env: Env, voter: Address) {
         bump(&env);
         voter.require_auth();
 
-        let mut proposal: FeeProposal = env
+        let mut proposal: FactoryProposal = env
             .storage()
             .instance()
-            .get(&DataKey::FeeProposal)
+            .get(&DataKey::FactoryProposal)
             .unwrap_or_else(|| panic_with_error!(&env, Error::NoProposalOpen));
 
         if env.ledger().timestamp() >= proposal.closes_at {
@@ -526,26 +547,26 @@ impl Treasury {
         let approved = proposal.approved_bps;
         env.storage()
             .instance()
-            .set(&DataKey::FeeProposal, &proposal);
+            .set(&DataKey::FactoryProposal, &proposal);
 
         env.events().publish(
-            (symbol_short!("FEE"), symbol_short!("APPROVE")),
+            (symbol_short!("PROPOSAL"), symbol_short!("APPROVE")),
             (id, voter, share, approved),
         );
     }
 
-    /// Apply a carried fee proposal to the factory.
+    /// Apply a carried proposal to the factory.
     ///
     /// Permissionless once the vote has carried: execution should not depend on
     /// the goodwill of whoever proposed it. This contract must be the factory's
     /// admin for the call to authorise.
-    pub fn execute_fee(env: Env) {
+    pub fn execute_proposal(env: Env) {
         bump(&env);
 
-        let proposal: FeeProposal = env
+        let proposal: FactoryProposal = env
             .storage()
             .instance()
-            .get(&DataKey::FeeProposal)
+            .get(&DataKey::FactoryProposal)
             .unwrap_or_else(|| panic_with_error!(&env, Error::NoProposalOpen));
 
         if !carried(proposal.approved_bps) {
@@ -553,20 +574,31 @@ impl Treasury {
         }
 
         let factory: Address = load(&env, &DataKey::Factory);
-        // Symbol::new, not symbol_short!: the latter caps at nine characters
-        // and "update_platform_fee" is nineteen.
-        let args = soroban_sdk::vec![&env, proposal.new_fee.into_val(&env)];
-        env.invoke_contract::<()>(
-            &factory,
-            &Symbol::new(&env, "update_platform_fee"),
-            args,
-        );
 
-        env.storage().instance().remove(&DataKey::FeeProposal);
+        // Symbol::new, not symbol_short!: the latter caps at nine characters and
+        // these names are longer.
+        match &proposal.action {
+            FactoryAction::SetFee(fee) => {
+                env.invoke_contract::<()>(
+                    &factory,
+                    &Symbol::new(&env, "update_platform_fee"),
+                    soroban_sdk::vec![&env, fee.into_val(&env)],
+                );
+            }
+            FactoryAction::TransferAdmin(new_admin) => {
+                env.invoke_contract::<()>(
+                    &factory,
+                    &Symbol::new(&env, "transfer_admin"),
+                    soroban_sdk::vec![&env, new_admin.into_val(&env)],
+                );
+            }
+        }
+
+        env.storage().instance().remove(&DataKey::FactoryProposal);
 
         env.events().publish(
-            (symbol_short!("FEE"), symbol_short!("APPLIED")),
-            (proposal.id, proposal.new_fee),
+            (symbol_short!("PROPOSAL"), symbol_short!("APPLIED")),
+            proposal.id,
         );
     }
 
@@ -614,8 +646,8 @@ impl Treasury {
         env.storage().instance().get(&DataKey::Cycle)
     }
 
-    pub fn get_fee_proposal(env: Env) -> Option<FeeProposal> {
-        env.storage().instance().get(&DataKey::FeeProposal)
+    pub fn get_proposal(env: Env) -> Option<FactoryProposal> {
+        env.storage().instance().get(&DataKey::FactoryProposal)
     }
 
     pub fn get_factory(env: Env) -> Address {

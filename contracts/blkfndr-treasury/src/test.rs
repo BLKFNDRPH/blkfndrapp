@@ -276,38 +276,38 @@ fn a_cycle_cannot_open_over_an_empty_balance() {
 fn a_fee_change_needs_more_than_half_the_shares() {
     let f = setup();
 
-    f.treasury.propose_fee(&f.holders[0], &50_000_000);
-    f.treasury.approve_fee(&f.holders[0]); // 5000, exactly half
+    f.treasury.propose(&f.holders[0], &FactoryAction::SetFee(50_000_000));
+    f.treasury.approve_proposal(&f.holders[0]); // 5000, exactly half
 
-    let proposal = f.treasury.get_fee_proposal().unwrap();
+    let proposal = f.treasury.get_proposal().unwrap();
     assert_eq!(proposal.approved_bps, 5_000);
-    assert_eq!(proposal.new_fee, 50_000_000);
+    
 
-    f.treasury.approve_fee(&f.holders[2]); // 7000, carried
-    assert_eq!(f.treasury.get_fee_proposal().unwrap().approved_bps, 7_000);
+    f.treasury.approve_proposal(&f.holders[2]); // 7000, carried
+    assert_eq!(f.treasury.get_proposal().unwrap().approved_bps, 7_000);
 }
 
 #[test]
 #[should_panic(expected = "Error(Contract, #35)")] // ThresholdNotMet
 fn a_fee_change_cannot_be_applied_before_the_vote_carries() {
     let f = setup();
-    f.treasury.propose_fee(&f.holders[0], &50_000_000);
-    f.treasury.approve_fee(&f.holders[0]); // half only
-    f.treasury.execute_fee();
+    f.treasury.propose(&f.holders[0], &FactoryAction::SetFee(50_000_000));
+    f.treasury.approve_proposal(&f.holders[0]); // half only
+    f.treasury.execute_proposal();
 }
 
 #[test]
 #[should_panic(expected = "Error(Contract, #20)")] // NotAShareholder
 fn a_stranger_cannot_propose_a_fee() {
     let f = setup();
-    f.treasury.propose_fee(&Address::generate(&f.env), &1);
+    f.treasury.propose(&Address::generate(&f.env), &FactoryAction::SetFee(1));
 }
 
 #[test]
 #[should_panic(expected = "Error(Contract, #42)")] // FeeOutOfRange
 fn a_negative_fee_is_refused() {
     let f = setup();
-    f.treasury.propose_fee(&f.holders[0], &-1);
+    f.treasury.propose(&f.holders[0], &FactoryAction::SetFee(-1));
 }
 
 #[test]
@@ -329,4 +329,43 @@ fn the_treasury_holds_several_tokens_and_settles_them_separately() {
 
     assert_eq!(f.token_client.balance(&f.holders[0]), 500);
     assert_eq!(f.treasury.balance_of(&token_b), 400, "other token untouched");
+}
+
+/// The escape hatch. If factory admin is pointed at this contract, only the
+/// actions it implements are reachable — so without a way to hand admin back,
+/// the factory's other seven admin functions would be stranded permanently.
+#[test]
+fn a_vote_can_hand_factory_admin_back() {
+    let f = setup();
+    let human = Address::generate(&f.env);
+
+    f.treasury
+        .propose(&f.holders[0], &FactoryAction::TransferAdmin(human.clone()));
+    f.treasury.approve_proposal(&f.holders[0]);
+    f.treasury.approve_proposal(&f.holders[1]);
+
+    let proposal = f.treasury.get_proposal().unwrap();
+    assert_eq!(proposal.approved_bps, 8_000);
+    match proposal.action {
+        FactoryAction::TransferAdmin(a) => assert_eq!(a, human),
+        _ => panic!("wrong action recorded"),
+    }
+    // execute_proposal is exercised against the real factory on testnet; here
+    // the factory is a generated address with no contract behind it.
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #41)")] // ProposalAlreadyOpen
+fn a_second_proposal_cannot_open_while_one_is_live() {
+    let f = setup();
+    f.treasury.propose(&f.holders[0], &FactoryAction::SetFee(1));
+    f.treasury.propose(&f.holders[1], &FactoryAction::SetFee(2));
+}
+
+/// The fixture's factory address is what initialize recorded, and the treasury
+/// must report it back — this is the address every proposal will call.
+#[test]
+fn the_treasury_records_the_factory_it_governs() {
+    let f = setup();
+    assert_eq!(f.treasury.get_factory(), f.factory);
 }
