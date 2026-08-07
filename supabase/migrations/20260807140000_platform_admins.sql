@@ -180,6 +180,10 @@ revoke insert, update, delete on public.admin_audit_log from anon, authenticated
 -- matches on email until it does, and claim_admin_invite() binds the id on first
 -- sign-in. Whoever controls this mailbox becomes the first administrator, so on
 -- a fresh deployment change this address before running the migration.
+-- Superseded by 20260808090000_correct_bootstrap_admin.sql, which replaces this
+-- address with the platform owner. Left as-is rather than edited, because this
+-- migration has already been applied and changing it would diverge from what
+-- the database actually ran.
 insert into public.platform_admins (email, note)
 values ('info@makerspaceinnovhub.com', 'Bootstrap administrator')
 on conflict do nothing;

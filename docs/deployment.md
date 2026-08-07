@@ -273,10 +273,22 @@ through Supabase — there is no longer a client secret in this application.
 
 ## First administrator
 
-The `platform_admins` migration seeds one bootstrap email address. Whoever
-controls that mailbox becomes the first administrator on their first sign-in and
-can add others from the console. **On a fresh deployment, change that address in
-the migration before applying it.**
+One bootstrap email address is seeded — currently `tzarumang@gmail.com`, set by
+`20260808090000_correct_bootstrap_admin.sql`. Whoever controls that mailbox
+becomes the first administrator on their first sign-in and can add others from
+the console.
+
+**On any other deployment, change that address before applying the migrations.**
+The roster cannot be bootstrapped from the application: an empty roster means
+`is_admin()` is false for everyone, and the RLS policies then refuse the insert
+that would add the first administrator. That is the correct failure mode — a
+console nobody can grant themselves access to — but it means the first row has
+to come from a migration.
+
+If you get it wrong after the fact, the fix is another migration in the same
+shape as that one: insert the replacement first, then delete the old row.
+`guard_admin_removal` refuses to remove the last administrator, so doing it in
+the other order fails rather than leaving the roster empty.
 
 ## Verifying a deployment
 
