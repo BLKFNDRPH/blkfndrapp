@@ -6,6 +6,7 @@ import { useFreighterWallet } from "@/context/FreighterWalletContext";
 import { useToast } from "@/hooks/use-toast";
 import { useRouter } from "next/navigation";
 import { submitKycRequest, getMyKycStatus } from "@/app/actions";
+import { uploadKycDocument, computeDetailsHash } from "@/lib/kyc/prepare-submission";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -233,17 +234,37 @@ export default function KycAttestationPage() {
 
     startSubmitTransition(async () => {
       try {
+        // The document goes to a private Storage bucket; only its path is
+        // recorded. This form previously sent the image inline as a base64 data
+        // URL, which the current backend does not accept — identity documents
+        // are deliberately kept out of any table a query can reach.
+        if (!formData.documentFile) {
+          throw new Error("Attach a photo of your identity document.");
+        }
+        const documentPath = await uploadKycDocument(formData.documentFile);
+
+        const detailsHash = await computeDetailsHash({
+          fullName: formData.fullName,
+          dateOfBirth: formData.dob,
+          documentType: formData.documentType,
+          idNumber: formData.idNumber,
+          documentExpiresOn: formData.expiryDate,
+          residentialAddress: formData.residentialAddress,
+          stellarAddress: activeAddress,
+        });
+
         const res = await submitKycRequest({
           stellarAddress: activeAddress,
           fullName: formData.fullName,
           email: formData.email,
           documentType: formData.documentType,
-          documentImage: formData.documentImage,
+          documentPath,
           idNumber: formData.idNumber,
-          dob: formData.dob,
-          expiryDate: formData.expiryDate,
+          dateOfBirth: formData.dob,
+          documentExpiresOn: formData.expiryDate,
           residentialAddress: formData.residentialAddress,
-          consentFlag: formData.consentFlag,
+          detailsHash,
+          consentGiven: formData.consentFlag,
         });
 
         if (res.success) {

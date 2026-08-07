@@ -1127,10 +1127,10 @@ export default function ProfilePage() {
               contractId: IDENTITY_ID,
               rpcUrl: SOROBAN_RPC_URL,
               networkPassphrase: NETWORK_PASSPHRASE,
-              // The address being queried doubles as the simulation source. The
-              // old NEXT_PUBLIC_STELLAR_FALLBACK_ADDRESS is unset on the current
-              // deployment, and an empty publicKey throws inside the SDK before
-              // the registry is reached.
+              // The address being queried doubles as the simulation source. The old
+              // NEXT_PUBLIC_STELLAR_FALLBACK_ADDRESS is unset on the current deployment,
+              // and an empty publicKey throws inside the SDK before the registry is
+              // ever reached.
               publicKey: activeStellarAddress,
             });
             const checkTx = await client.is_kyc_approved({ address: activeStellarAddress });

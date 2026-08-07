@@ -70,3 +70,7 @@ portainer-env.txt
 
 src/packages/*/node_modules
 src/packages/*/dist
+
+# Scratch files that audit subagents write into the repo root.
+probe*_tmp.*
+chk-*.mjs
