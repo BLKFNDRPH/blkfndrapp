@@ -2,10 +2,13 @@
 "use client";
 
 import React from "react";
-import type { Currency } from "./types";
 import { CurrencyIcon } from "@/components/layout/CurrencyIcon";
 
-export function formatCurrency(amount: number, currency: Currency = 'XLM', showIcon = true) {
+// `currency` is a plain string rather than `Currency` because callers pass it
+// straight from a database row, and the `currency_type` enum is a superset of
+// the currencies the app still offers. Formatting a legacy value should print
+// it, not fail.
+export function formatCurrency(amount: number, currency: string = 'XLM', showIcon = true) {
   if (isNaN(amount)) {
     return "0.00";
   }

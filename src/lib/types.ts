@@ -57,7 +57,10 @@ export type User = {
   stellarPublicKey?: string;
 };
 
-export type Currency = "USDC" | "USDT" | "XLM" | "WBTC" | "WETH";
+// Re-exported, not restated. This was a second copy of the union and it had
+// already drifted out of sync with the one that decides which token address a
+// vault is built against.
+export type { Currency } from "./currencies";
 
 export type WebState = "static" | "functional" | "on-chain";
 

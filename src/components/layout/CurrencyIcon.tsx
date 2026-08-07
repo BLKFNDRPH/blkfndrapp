@@ -1,11 +1,16 @@
-import type { Currency } from "@/lib/types";
 import { UsdcLogo } from "./UsdcLogo";
-import { UsdtLogo } from "./UsdtLogo";
 import { cn } from "@/lib/utils";
 import { Coins } from "lucide-react";
 
 interface CurrencyIconProps extends React.SVGProps<SVGSVGElement> {
-  currency: Currency;
+  /**
+   * Deliberately wider than `Currency`. The database enum is a superset of the
+   * currencies the app offers — it still accepts USDT, WBTC and WETH, which no
+   * longer have a token address — so a stored row can carry a value this
+   * component has no logo for. Rendering the generic coin is the right answer
+   * there; refusing to compile is not.
+   */
+  currency: string | undefined;
 }
 
 export function CurrencyIcon({
@@ -13,21 +18,13 @@ export function CurrencyIcon({
   className,
   ...props
 }: CurrencyIconProps) {
-  switch (currency) {
-    case "USDC":
-      return <UsdcLogo className={cn("h-4 w-4", className)} {...props} />;
-    case "USDT":
-      return <UsdtLogo className={cn("h-4 w-4", className)} {...props} />;
-    case "XLM":
-    case "WBTC":
-    case "WETH":
-      return (
-        <Coins
-          className={cn("h-4 w-4 text-orange-500", className)}
-          {...(props as any)}
-        />
-      );
-    default:
-      return null;
+  if (currency === "USDC") {
+    return <UsdcLogo className={cn("h-4 w-4", className)} {...props} />;
   }
+  return (
+    <Coins
+      className={cn("h-4 w-4 text-orange-500", className)}
+      {...(props as any)}
+    />
+  );
 }

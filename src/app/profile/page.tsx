@@ -158,9 +158,6 @@ const FreighterIcon = (props: React.SVGProps<SVGSVGElement>) => (
 const COIN_DECIMALS: Record<string, number> = {
   XLM: 10_000_000,
   USDC: 10_000_000,
-  USDT: 10_000_000,
-  WBTC: 10_000_000,
-  WETH: 10_000_000,
 };
 
 // Global cache for investment receipts to prevent redundant network fetches across cards

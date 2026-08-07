@@ -16,6 +16,19 @@ import {
   FormMessage,
   FormDescription,
 } from "@/components/ui/form";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  CURRENCIES,
+  availableCurrencies,
+  tokenAddressFor,
+  type Currency,
+} from "@/lib/currencies";
 import { useToast } from "@/hooks/use-toast";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
@@ -52,8 +65,6 @@ const SOROBAN_RPC_URL = "https://soroban-testnet.stellar.org";
 
 const FACTORY_ID = process.env.NEXT_PUBLIC_BLKFNDR_FACTORY_CONTRACT_ID || "";
 const IDENTITY_ID = process.env.NEXT_PUBLIC_BLKFNDR_IDENTITY_CONTRACT_ID || "";
-
-const USDC_ID = process.env.NEXT_PUBLIC_STELLAR_USDC_TOKEN_ID || "";
 
 const getSignerOptions = (publicKey: string) => ({
   signTransaction: (xdr: string) =>
@@ -93,7 +104,10 @@ const formSchema = z.object({
     .min(50, "Description must be at least 50 characters long."),
   category: z.string().min(1, "Category is required."),
   fundingGoal: z.coerce.number().min(1, "Funding goal must be at least 1."),
-  currencyType: z.enum(["XLM", "USDC", "USDT", "WBTC", "WETH"], {
+  // Derived from CURRENCIES rather than restated. A hand-maintained copy drifts,
+  // and the drift is silent: this list accepted three currencies that had no
+  // token address configured and no code path that would have used one.
+  currencyType: z.enum(CURRENCIES, {
     required_error: "Currency type is required.",
   }),
   fundingDeadline: z.coerce
@@ -111,12 +125,9 @@ const formSchema = z.object({
 
 type FormSchema = z.infer<typeof formSchema>;
 
-const CURRENCY_LABELS: Record<string, string> = {
+const CURRENCY_LABELS: Record<Currency, string> = {
   XLM: "XLM",
   USDC: "USDC",
-  USDT: "USDT",
-  WBTC: "WBTC",
-  WETH: "WETH",
 };
 
 export function ListingForm() {
@@ -298,7 +309,7 @@ export function ListingForm() {
     if (!isBondValid) {
       toast({
         title: "Insufficient Performance Bond",
-        description: `The performance bond must be at least ${(bondPct * 100).toFixed(2)}% of the campaign goal (${minBondRequired.toFixed(2)} USDC).`,
+        description: `The performance bond must be at least ${(bondPct * 100).toFixed(2)}% of the campaign goal (${minBondRequired.toFixed(2)} ${selectedCurrency}).`,
         variant: "destructive",
       });
       return;
@@ -404,7 +415,7 @@ export function ListingForm() {
           fundingDeadline: values.fundingDeadline,
           fundingGoal: values.fundingGoal,
           fundingGoalRaw: goalStroops.toString(),
-          currencyType: "USDC",
+          currencyType: values.currencyType,
           bondAmount: numericBond,
           milestones: milestones.map((m, idx) => {
             let amount: number;
@@ -451,10 +462,18 @@ export function ListingForm() {
           ...getSignerOptions(activeAddress),
         });
 
+        // The vault is fixed to this token for its whole life, so it must be the
+        // currency the builder actually chose. This read `USDC_ID` regardless of
+        // the selection, which made the dropdown decorative: a project listed in
+        // XLM escrowed USDC. tokenAddressFor throws on an unconfigured currency
+        // rather than passing an empty string to create_vault, which is what the
+        // old `|| ""` fallback would have deployed.
+        const tokenAddress = tokenAddressFor(values.currencyType);
+
         const tx = await factoryClient.create_vault({
           config: {
             creator: activeAddress,
-            token: USDC_ID,
+            token: tokenAddress,
             goal: goalStroops,
             deadline: deadlineTimestamp,
             bond_amount: bondStroops,
@@ -594,6 +613,39 @@ export function ListingForm() {
                 )}
               />
 
+              {/* The builder was never asked this. currencyType sat in the
+                  schema with a default of USDC and no control ever rendered it,
+                  so every project was denominated by omission. */}
+              <FormField
+                control={form.control}
+                name="currencyType"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Funding Currency</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select a currency" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {availableCurrencies().map((c) => (
+                          <SelectItem key={c} value={c}>
+                            {CURRENCY_LABELS[c]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormDescription>
+                      Contributions, refunds and every milestone release happen in
+                      this asset. The vault is fixed to it permanently — it cannot
+                      be changed after the project is created.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
               <FormField
                 control={form.control}
                 name="fundingDeadline"
@@ -624,7 +676,7 @@ export function ListingForm() {
                     Creator Performance Bond
                   </label>
                   <span className="text-[10px] text-muted-foreground">
-                    Min required: {minBondRequired.toFixed(2)} USDC ({(bondPct * 100).toFixed(2)}%)
+                    Min required: {minBondRequired.toFixed(2)} {selectedCurrency} ({(bondPct * 100).toFixed(2)}%)
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -641,7 +693,7 @@ export function ListingForm() {
                       className="h-10 bg-background border-border/80 rounded-xl pr-16 focus-visible:ring-1 focus-visible:ring-primary focus-visible:ring-offset-0 text-sm font-semibold"
                     />
                     <div className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-muted-foreground select-none">
-                      USDC
+                      {selectedCurrency}
                     </div>
                   </div>
                 </div>
@@ -659,7 +711,7 @@ export function ListingForm() {
                 )}
                 {!isBondValid && (
                   <p className="text-[10px] text-red-500 font-medium">
-                    Bond must be at least {(bondPct * 100).toFixed(2)}% of the campaign goal ({minBondRequired.toFixed(2)} USDC).
+                    Bond must be at least {(bondPct * 100).toFixed(2)}% of the campaign goal ({minBondRequired.toFixed(2)} {selectedCurrency}).
                   </p>
                 )}
               </div>
@@ -711,7 +763,7 @@ export function ListingForm() {
                         <div className="space-y-1">
                           <Input
                             type="number"
-                            placeholder="Amount (USDC)"
+                            placeholder={`Amount (${selectedCurrency})`}
                             value={milestone.amount || ""}
                             onChange={(e) => handleUpdateMilestone(milestone.id, "amount", parseFloat(e.target.value) || 0)}
                             required
@@ -737,7 +789,7 @@ export function ListingForm() {
                 <div className="flex justify-between items-center p-3 rounded-xl border bg-muted/40 text-xs">
                   <span className="font-medium">Total Milestone Allocation (Funding Goal):</span>
                   <span className="font-bold text-primary">
-                    {milestoneSum.toLocaleString(undefined, { maximumFractionDigits: 2 })} USDC
+                    {milestoneSum.toLocaleString(undefined, { maximumFractionDigits: 2 })} {selectedCurrency}
                   </span>
                 </div>
               </div>

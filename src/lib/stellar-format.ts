@@ -1,15 +1,7 @@
-// Decimal places per currency type.
-// Stellar assets use 7 decimals
-const COIN_DECIMALS: Record<string, number> = {
-  USDC: 7,
-  USDT: 7,
-  XLM: 7,
-  WBTC: 7,
-  WETH: 7,
-};
-
-const getDecimals = (currency?: string): number =>
-  COIN_DECIMALS[(currency ?? "XLM").toUpperCase()] ?? 7;
+// Every Stellar asset carries 7 decimal places, so this is a constant rather
+// than a per-currency table. The old table listed five currencies and returned 7
+// for all of them.
+const getDecimals = (_currency?: string): number => 7;
 
 export const StellarFormatter = {
   /**
