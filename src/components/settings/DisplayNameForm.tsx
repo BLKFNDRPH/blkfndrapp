@@ -48,7 +48,7 @@ export function DisplayNameForm() {
     }
 
     startTransition(async () => {
-      const result = await updateUserDisplayName(user.uid, values.name);
+      const result = await updateUserDisplayName(values.name);
 
       if (result.success) {
         await refreshUser();

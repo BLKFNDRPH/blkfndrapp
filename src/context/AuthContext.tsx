@@ -13,7 +13,7 @@ import React, {
 import { useToast } from "@/hooks/use-toast";
 import { LoginDialog } from "@/components/auth/LoginDialog";
 import Loading from "@/app/loading";
-import type { SessionUser } from "@/lib/auth/session";
+
 import { useFreighterWallet } from "@/context/FreighterWalletContext";
 
 interface AuthContextType {
@@ -37,12 +37,12 @@ const fetchWithTimeout = async (url: string, ms = 8000): Promise<Response> => {
 };
 
 function useAppSession() {
-  const [session, setSession] = useState<{ user: SessionUser } | null>(null);
+  const [session, setSession] = useState<{ user: AppUser } | null>(null);
   const [status, setStatus] = useState<
     "loading" | "authenticated" | "unauthenticated"
   >("loading");
 
-  const refresh = useCallback(async (): Promise<{ user: SessionUser } | null> => {
+  const refresh = useCallback(async (): Promise<{ user: AppUser } | null> => {
     try {
       const res = await fetch("/api/auth/session");
       const data = await res.json();
@@ -100,7 +100,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const buildUserFromSession = useCallback(
     async (
       role: "user" | "admin" = "user",
-      sessionOverride?: { user: SessionUser } | null,
+      sessionOverride?: { user: AppUser } | null,
     ): Promise<AppUser | null> => {
       const activeSession = sessionOverride ?? session;
       if (!activeSession?.user) return null;
@@ -130,11 +130,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         name: dbUser.name || activeSession.user.name || "Anonymous",
         avatarUrl:
           dbUser.creatorAvatar ||
-          activeSession.user.image ||
+          activeSession.user.creatorAvatar ||
           `https://i.pravatar.cc/150?u=${uid}`,
         creatorAvatar:
           dbUser.creatorAvatar ||
-          activeSession.user.image ||
+          activeSession.user.creatorAvatar ||
           `https://i.pravatar.cc/150?u=${uid}`,
         role: dbUser.role || role,
         wallet: dbUser.wallet || "disconnected",

@@ -1,29 +1,16 @@
-import { NextRequest, NextResponse } from "next/server";
-import { connectToDatabase } from "@/lib/mongodb";
-import User from "@/lib/models/User";
-import { getSession } from "@/lib/auth/session";
+import { NextResponse } from "next/server";
+import { unlinkWallet } from "@/lib/data/profiles";
+import { AuthError } from "@/lib/supabase/auth";
 
-export async function POST(req: NextRequest) {
+export async function POST() {
   try {
-    const session = await getSession();
-    if (session?.user) {
-      await connectToDatabase();
-      await User.findOneAndUpdate(
-        { uid: session.user.uid },
-        {
-          $set: {
-            stellarPublicKey: "",
-            wallet: "disconnected",
-          },
-        }
-      );
-    }
+    await unlinkWallet();
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("[Freighter Disconnect] Error:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
+    console.error("[Freighter] disconnect:", error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

@@ -33,7 +33,6 @@ import {
 } from "../ui/tooltip";
 import Link from "next/link";
 import { CubeSpinner } from "../ui/CubeSpinner";
-import { createNotification } from "@/actions/notifications-client";
 import { useRouter } from "next/navigation";
 import { useStellarContract } from "@/hooks/use-stellar-contract";
 import { useFreighterWallet } from "@/context/FreighterWalletContext";
@@ -342,23 +341,9 @@ export function FundDialog({
         }
 
         if (investorUid) {
-          await createNotification(
-            investorUid,
-            "Contribution Successful!",
-            `Successfully contributed ${fundAmount} ${projectCurrency} to campaign "${project.title}". Your contribution is recorded on-chain and carries voting weight on this project's milestones.`,
-            txUrl,
-            project.id
-          );
         }
 
         if (creatorUid) {
-          await createNotification(
-            creatorUid,
-            "Campaign Received Funding!",
-            `An investor contributed ${fundAmount} ${projectCurrency} to your campaign "${project.title}".`,
-            txUrl,
-            project.id
-          );
         }
 
         toast({

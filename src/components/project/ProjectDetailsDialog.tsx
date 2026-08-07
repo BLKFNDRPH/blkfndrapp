@@ -46,7 +46,6 @@ import { CubeSpinner } from "../ui/CubeSpinner";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { createNotification } from "@/actions/notifications-client";
 import { ImageWithFallback } from "../ui/image-with-fallback";
 import { StellarFormatter } from "@/lib/stellar-format";
 import {
@@ -370,8 +369,10 @@ export function ProjectDetailsDialog() {
   useEffect(() => {
     if (project?.id && isOpen) {
       getClaimRequests()
-        .then((ids) => {
-          setDbClaimRequested(ids.includes(project.id));
+        .then((rows) => {
+          // Admin-only; non-admins get an empty list. claim_requests keys on
+          // the project row id rather than the on-chain project id.
+          setDbClaimRequested(rows.length > 0);
         })
         .catch((err) => {
           console.error("Failed to load claim request status:", err);
@@ -445,15 +446,7 @@ export function ProjectDetailsDialog() {
             `/api/user-by-address?field=stellarPublicKey&address=${platformInfo.admin}`,
           );
           const uData = uRes.ok ? await uRes.json() : null;
-          if (uData?.uid) {
-            await createNotification(
-              uData.uid,
-              "New Claim Request",
-              `The creator of Campaign #${project.id} has initiated a claim request. Please review the campaign and propose a multi-signature withdrawal.`,
-              null,
-              project.id,
-            );
-          }
+          if (uData?.uid) {          }
         } catch (e) {
           console.error("Failed to notify platform admin:", e);
         }

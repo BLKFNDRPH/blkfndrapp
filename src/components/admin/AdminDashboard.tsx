@@ -3,7 +3,6 @@
 import { useState, useTransition, useEffect, useMemo, useCallback } from "react";
 import type { Project } from "@/lib/types";
 import { useAuth } from "@/context/AuthContext";
-import { createNotification } from "@/actions/notifications-client";
 import { useToast } from "@/hooks/use-toast";
 import {
   MoreHorizontal,

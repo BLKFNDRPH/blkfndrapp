@@ -20,8 +20,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { Card, CardContent } from "../ui/card";
-import { runImproveListingQuality, getProjects, saveProjectMetadataCacheByVault } from "@/app/actions";
-import { createNotification } from "@/actions/notifications-client";
+import { runImproveListingQuality, getProjects } from "@/app/actions";
 import type { ImproveListingQualityOutput } from "@/ai/flows/improve-listing-quality";
 import { AiAnalysisDialog } from "./AiAnalysisDialog";
 import { Wand2, Globe, Lock, Calendar, Plus, Trash2, Shield } from "lucide-react";
@@ -479,28 +478,10 @@ export function ListingForm() {
         const txHash = response.sendTransactionResponse?.hash;
         const txUrl = txHash ? `https://stellar.expert/explorer/testnet/tx/${txHash}` : null;
 
-        // Cache metadata in MongoDB ProjectCache collection
-        try {
-          const cacheResult = await saveProjectMetadataCacheByVault(vaultAddr, {
-            ...metadata,
-            metadataCid,
-          });
-          if (!cacheResult.success) {
-            console.error("MongoDB caching failed:", cacheResult.error);
-          }
-        } catch (dbErr) {
-          console.error("Database connection caching error:", dbErr);
-        }
-
-        if (user) {
-          await createNotification(
-            user.uid,
-            "Project Created",
-            `Your new project "${values.title}" has been created with a custom vault on-chain.`,
-            txUrl,
-            vaultAddr,
-          );
-        }
+        // Nothing is written to the database here. The indexer picks the
+        // project up from the FACTORY/DEPLOY event and resolves this metadata
+        // from IPFS — letting the browser write it would mean the client
+        // deciding what a listing says about an on-chain project.
 
         refreshAfterTx(activeAddress);
         router.push("/projects");

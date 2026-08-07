@@ -98,7 +98,7 @@ export function IdentityRegistryPanel() {
       } else {
         toast({
           title: "Failed to load KYC requests",
-          description: res.error || "Unknown server error",
+          description: (res as { error?: string }).error || "Unknown server error",
           variant: "destructive",
         });
       }

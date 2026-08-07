@@ -29,7 +29,6 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/context/AuthContext';
 import Link from 'next/link';
 import { getUserByCreatorId } from '@/lib/data.client';
-import { createNotification } from '@/actions/notifications-client';
 import { CubeSpinner } from '../ui/CubeSpinner';
 import {
   Dialog,
@@ -156,10 +155,7 @@ export function AdminManagement({ isMainAdmin }: AdminManagementProps) {
         }
 
         const txHash = (result as any)?.sendTransactionResponse?.hash;
-        const txUrl = txHash ? `https://stellar.expert/explorer/testnet/tx/${txHash}` : null;
-
-        createNotification(user.uid, "Admin Removed", `Multi-sig admin ${adminToRemove.name} has been removed.`, txUrl);
-        await refreshAfterTx();
+        const txUrl = txHash ? `https://stellar.expert/explorer/testnet/tx/${txHash}` : null;        await refreshAfterTx();
         toast({
           title: 'Admin Removed Successfully',
           description: 'The administrator has been successfully removed.',
@@ -185,14 +181,9 @@ export function AdminManagement({ isMainAdmin }: AdminManagementProps) {
         }
 
         const txHash = (result as any)?.sendTransactionResponse?.hash;
-        const txUrl = txHash ? `https://stellar.expert/explorer/testnet/tx/${txHash}` : null;
-
-        createNotification(user.uid, "Admin Added", `A new multi-sig admin has been added.`, txUrl);
-
+        const txUrl = txHash ? `https://stellar.expert/explorer/testnet/tx/${txHash}` : null;
         const newUserInfo = await getUserByAddress(values.address);
-        if (newUserInfo) {
-          createNotification(newUserInfo.uid, "You are now an Admin", `You have been added as a multi-sig admin.`, txUrl);
-        }
+        if (newUserInfo) {        }
 
         await refreshAfterTx();
         toast({
