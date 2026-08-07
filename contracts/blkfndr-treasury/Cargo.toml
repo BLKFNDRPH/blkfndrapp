@@ -1,0 +1,18 @@
+[package]
+name    = "blkfndr-treasury"
+version = "0.1.0"
+edition = "2021"
+description = "BLKFNDR Crowdfunding Platform — Platform treasury and fee governance"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+soroban-sdk = { workspace = true }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
+
+[features]
+testutils = ["soroban-sdk/testutils"]

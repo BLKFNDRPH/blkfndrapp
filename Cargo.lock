@@ -210,6 +210,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "blkfndr-treasury"
+version = "0.1.0"
+dependencies = [
+ "soroban-sdk",
+]
+
+[[package]]
 name = "blkfndr-vault"
 version = "0.1.0"
 dependencies = [

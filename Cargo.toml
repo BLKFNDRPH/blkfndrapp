@@ -6,6 +6,7 @@ members = [
   "contracts/blkfndr-attestation",
   "contracts/blkfndr-admin",
   "contracts/blkfndr-identity",
+  "contracts/blkfndr-treasury",
 ]
 
 [workspace.dependencies]
