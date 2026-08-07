@@ -27,6 +27,7 @@ import { FundDialog } from "./FundDialog";
 import { Progress } from "../ui/progress";
 import { useProjectDetails } from "@/context/ProjectDetailsContext";
 import { MilestoneVoting } from "./MilestoneVoting";
+import { ProjectLocation } from "./ProjectLocation";
 import { ScrollArea } from "../ui/scroll-area";
 import {
   TrendingUp,
@@ -710,6 +711,17 @@ export function ProjectDetailsDialog() {
                     <p>{project.description}</p>
                   </div>
                 </div>
+
+                {(project.location || project.locationLat != null) && (
+                  <div className="border-t pt-4">
+                    <h4 className="font-semibold mb-2">Location</h4>
+                    <ProjectLocation
+                      location={project.location}
+                      lat={project.locationLat}
+                      lng={project.locationLng}
+                    />
+                  </div>
+                )}
 
                 <div className="border-t pt-4">
                   <h4 className="font-semibold mb-2">Creator</h4>

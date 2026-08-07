@@ -11,9 +11,26 @@ import { CategoryFilter } from "@/components/project/CategoryFilter";
 import { ProjectFilters } from "@/components/project/ProjectFilters";
 import { AnimatePresence, motion } from "framer-motion";
 import { projectCategories } from "@/lib/categories";
+import { getCategoriesAction } from "@/actions/categories";
 
 function ProjectsContent() {
   const { projects: allProjects, isLoadingProjects } = useProjects();
+
+  // Mirrors the admin-managed list so a category added in settings shows up as
+  // a filter here too. Falls back to the compiled-in list if the fetch fails.
+  const [knownCategories, setKnownCategories] = useState<string[]>(projectCategories);
+
+  useEffect(() => {
+    let cancelled = false;
+    getCategoriesAction().then((res) => {
+      if (!cancelled && res.success && res.categories?.length) {
+        setKnownCategories(res.categories);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const [isFilterVisible, setIsFilterVisible] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(
@@ -27,7 +44,7 @@ function ProjectsContent() {
   const maxGoal = useMemo(() => {
     if (allProjects.length === 0) return 100000;
     return Math.max(...allProjects.map((p) => p.fundingGoal));
-  }, [allProjects]);
+  }, [allProjects, knownCategories]);
 
   const [sortBy, setSortBy] = useState<string>("popularity");
   const [goalFilter, setGoalFilter] = useState<number>(maxGoal);
@@ -55,7 +72,7 @@ function ProjectsContent() {
       }
     });
 
-    const sorted = [...projectCategories].sort((a, b) => {
+    const sorted = [...knownCategories].sort((a, b) => {
       const countA = categoryCounts[a] || 0;
       const countB = categoryCounts[b] || 0;
       if (countA !== countB) return countB - countA;

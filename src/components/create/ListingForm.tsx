@@ -36,7 +36,7 @@ import { Card, CardContent } from "../ui/card";
 import { runImproveListingQuality, getProjects } from "@/app/actions";
 import type { ImproveListingQualityOutput } from "@/ai/flows/improve-listing-quality";
 import { AiAnalysisDialog } from "./AiAnalysisDialog";
-import { Wand2, Globe, Lock, Calendar, Plus, Trash2, Shield } from "lucide-react";
+import { Wand2, Globe, Lock, Calendar, Plus, Trash2, Shield, MapPin } from "lucide-react";
 import { getPinataClient, getIPFSGatewayUrl } from "@/lib/pinata-client";
 import { useStellarContract } from "@/hooks/use-stellar-contract";
 import { useFreighterWallet } from "@/context/FreighterWalletContext";
@@ -56,6 +56,7 @@ import {
 } from "@/components/ui/tooltip";
 import { Combobox } from "../ui/combobox";
 import { projectCategories } from "@/lib/categories";
+import { getCategoriesAction } from "@/actions/categories";
 
 const MIN_DEADLINE_MS = () => Date.now() + 24 * 60 * 60 * 1000;
 const DEFAULT_DEADLINE_MS = () => Date.now() + 30 * 24 * 60 * 60 * 1000;
@@ -103,6 +104,14 @@ const formSchema = z.object({
     .string()
     .min(50, "Description must be at least 50 characters long."),
   category: z.string().min(1, "Category is required."),
+  // Required. These are real-world assets, and a listing that names no place
+  // gives a backer nothing to verify against — location is frequently the most
+  // material fact about the thing being funded.
+  location: z
+    .string()
+    .trim()
+    .min(3, "Location is required.")
+    .max(160, "Location must be under 160 characters."),
   fundingGoal: z.coerce.number().min(1, "Funding goal must be at least 1."),
   // Derived from CURRENCIES rather than restated. A hand-maintained copy drifts,
   // and the drift is silent: this list accepted three currencies that had no
@@ -146,6 +155,11 @@ export function ListingForm() {
   const [deadlineInputValue, setDeadlineInputValue] = useState<string>(
     msToDatetimeLocal(DEFAULT_DEADLINE_MS()),
   );
+  // The list is admin-editable, so it is fetched rather than compiled in.
+  // projectCategories stays as the fallback: a builder should still be able to
+  // file a listing if this request fails.
+  const [categories, setCategories] = useState<string[]>(projectCategories);
+  const [isLoadingCategories, setIsLoadingCategories] = useState(true);
   const [isCooldown, setIsCooldown] = useState(false);
   const [isConnectingFreighter, setIsConnectingFreighter] = useState(false);
   const isSubmittingRef = useRef(false);
@@ -180,12 +194,32 @@ export function ListingForm() {
       tagline: "",
       description: "",
       category: "Blockchain",
+      location: "",
       fundingGoal: 100,
       currencyType: "USDC",
       fundingDeadline: DEFAULT_DEADLINE_MS(),
       image: undefined,
     },
   });
+
+  useEffect(() => {
+    let cancelled = false;
+    getCategoriesAction()
+      .then((res) => {
+        // Only replace the fallback on a non-empty list. An admin who has not
+        // seeded the table yet should not be shown an empty dropdown.
+        if (!cancelled && res.success && res.categories?.length) {
+          setCategories(res.categories);
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setIsLoadingCategories(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const [milestones, setMilestones] = useState([
     { id: 1, title: "", description: "", amount: 0 },
@@ -410,6 +444,7 @@ export function ListingForm() {
           tagline: values.tagline,
           description: values.description,
           category: values.category,
+          location: values.location ?? "",
           imageUrl: getIPFSGatewayUrl(blobId),
           creator: activeAddress,
           fundingDeadline: values.fundingDeadline,
@@ -596,15 +631,44 @@ export function ListingForm() {
 
               <FormField
                 control={form.control}
+                name="location"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="flex items-center gap-2">
+                      <MapPin className="h-4 w-4" />
+                      Location
+                    </FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="e.g. Cebu City, Philippines"
+                        {...field}
+                        value={field.value ?? ""}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      Where the asset actually is. Required — a real-world asset
+                      that names no place cannot be diligenced by the people being
+                      asked to fund it, and location is often the single most
+                      material fact about one.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
                 name="category"
                 render={({ field }) => (
                   <FormItem className="flex flex-col">
                     <FormLabel>Category</FormLabel>
                     <Combobox
-                      options={projectCategories.map((cat) => ({ value: cat, label: cat }))}
+                      options={categories.map((cat) => ({ value: cat, label: cat }))}
                       value={field.value}
                       onChange={field.onChange}
-                      placeholder="Select category..."
+                      placeholder={
+                        isLoadingCategories ? "Loading categories..." : "Select category..."
+                      }
                       searchPlaceholder="Search category..."
                       notFoundText="No category found."
                     />

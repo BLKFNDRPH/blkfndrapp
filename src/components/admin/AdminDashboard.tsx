@@ -18,6 +18,7 @@ import {
   LayoutGrid,
   Shield,
   UserCheck,
+  Tags,
   Clock,
 } from "lucide-react";
 import { IdentityRegistryPanel } from "./IdentityRegistryPanel";
@@ -56,6 +57,7 @@ import { InternalDetails } from "./InternalDetails";
 import { AnimatePresence, motion } from "framer-motion";
 import { CubeSpinner } from "../ui/CubeSpinner";
 import { AdminManagement } from "./AdminManagement";
+import { CategoryManager } from "./CategoryManager";
 import {
   useProjects,
   usePlatformInfo,
@@ -156,7 +158,7 @@ export function AdminDashboard({
   >({});
   const [isInfoExpanded, setIsInfoExpanded] = useState(false);
   const [visibleRecentCount, setVisibleRecentCount] = useState(5);
-  const [adminView, setAdminView] = useState<"projects" | "admins" | "identity">("projects");
+  const [adminView, setAdminView] = useState<"projects" | "admins" | "identity" | "categories">("projects");
 
   // KYC and withdrawals SWR Polling
   const { data: withdrawalsData } = useSWR("/api/admin/withdrawals", fetcher, {
@@ -459,6 +461,19 @@ export function AdminDashboard({
               >
                 <Users className="h-4 w-4" />
                 Admins
+              </button>
+              <button
+                type="button"
+                onClick={() => setAdminView("categories")}
+                className={cn(
+                  "flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-all",
+                  adminView === "categories"
+                    ? "bg-[#003049] text-white shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <Tags className="h-4 w-4" />
+                Categories
               </button>
             </div>
           </div>
@@ -794,6 +809,18 @@ export function AdminDashboard({
               <AdminManagement
                 isMainAdmin={initialAdminAccessInfo.isMainAdmin}
               />
+            </motion.div>
+          )}
+
+          {adminView === "categories" && (
+            <motion.div
+              key="categories-view"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.3 }}
+            >
+              <CategoryManager />
             </motion.div>
           )}
         </AnimatePresence>

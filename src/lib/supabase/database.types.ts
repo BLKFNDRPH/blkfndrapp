@@ -214,6 +214,27 @@ export type Database = {
         };
         Relationships: [];
       };
+      project_categories: {
+        Row: {
+          created_at: string;
+          id: string;
+          name: string;
+          sort_order: number;
+        };
+        Insert: {
+          created_at?: string;
+          id?: string;
+          name: string;
+          sort_order?: number;
+        };
+        Update: {
+          created_at?: string;
+          id?: string;
+          name?: string;
+          sort_order?: number;
+        };
+        Relationships: [];
+      };
       project_milestones: {
         Row: {
           amount: number | null;
@@ -277,6 +298,9 @@ export type Database = {
           image_url: string;
           is_public: boolean;
           last_updated_ledger: number;
+          location: string;
+          location_lat: number | null;
+          location_lng: number | null;
           metadata_cid: string;
           project_id: string;
           released_total: number | null;
@@ -306,6 +330,9 @@ export type Database = {
           image_url?: string;
           is_public?: boolean;
           last_updated_ledger?: number;
+          location?: string;
+          location_lat?: number | null;
+          location_lng?: number | null;
           metadata_cid?: string;
           project_id: string;
           released_total_raw?: Raw;
@@ -334,6 +361,9 @@ export type Database = {
           image_url?: string;
           is_public?: boolean;
           last_updated_ledger?: number;
+          location?: string;
+          location_lat?: number | null;
+          location_lng?: number | null;
           metadata_cid?: string;
           project_id?: string;
           released_total_raw?: Raw;

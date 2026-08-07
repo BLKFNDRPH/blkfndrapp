@@ -44,6 +44,11 @@ export type Project = {
     proof?: string;
   }[];
   metadataCid?: string;
+  /** Creator-supplied place description. A claim about location, not proof. */
+  location?: string;
+  /** Present only as a pair, enforced by a check constraint on the table. */
+  locationLat?: number | null;
+  locationLng?: number | null;
 };
 
 export type User = {
