@@ -1,6 +1,12 @@
 "use server";
 
-import { listAdmins, grantAdmin, revokeAdmin, listAuditLog } from "@/lib/data/admins";
+import {
+  listAdmins,
+  grantAdmin,
+  revokeAdmin,
+  setAdminWallet,
+  listAuditLog,
+} from "@/lib/data/admins";
 import { authFailure } from "@/lib/auth/guards";
 
 /**
@@ -27,11 +33,26 @@ export async function getAdminsAction() {
   }
 }
 
-export async function grantAdminAction(email: string, note?: string) {
+export async function grantAdminAction(
+  email: string,
+  walletAddress?: string,
+  note?: string,
+) {
   try {
-    return { success: true as const, admins: await grantAdmin(email, note ?? "") };
+    return {
+      success: true as const,
+      admins: await grantAdmin(email, walletAddress ?? "", note ?? ""),
+    };
   } catch (error) {
     return fail(error, "Could not add administrator.");
+  }
+}
+
+export async function setAdminWalletAction(email: string, walletAddress: string) {
+  try {
+    return { success: true as const, admins: await setAdminWallet(email, walletAddress) };
+  } catch (error) {
+    return fail(error, "Could not update the wallet address.");
   }
 }
 
