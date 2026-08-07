@@ -120,16 +120,29 @@ services:
   indexer-cron:
     image: curlimages/curl:8.11.1
     restart: unless-stopped
+    # Short-form depends_on deliberately. Portainer parses stacks with its own
+    # implementation rather than the compose binary, and long-form depends_on
+    # with `condition: service_healthy` is unsupported under Swarm and unreliable
+    # in older versions — a rejected stack surfaces in the Portainer UI as
+    # "[object Object]", naming no line and no reason.
+    #
+    # Nothing is lost by dropping the condition: ordering still holds, and
+    # waiting for health was never required, because the loop below logs a
+    # failure and retries until the app answers.
     depends_on:
-      blkfndr-app:
-        condition: service_healthy
+      - blkfndr-app
     environment:
       - INDEXER_SECRET=${INDEXER_SECRET}
-      # Seconds between runs. The indexer is idempotent — it records a cursor
-      # and skips events it has already handled — so a short interval is cheap
-      # and only costs RPC calls.
-      - INDEX_INTERVAL_SECONDS=${INDEX_INTERVAL_SECONDS:-60}
+      # Hardcoded rather than substituted, for the same reason: Portainer does
+      # not reliably honour ${VAR:-default}. The indexer is idempotent — it
+      # records a cursor and skips events it has already handled — so this is
+      # not a value worth risking a parse failure over. Change it here if 60s
+      # is wrong for you.
+      - INDEX_INTERVAL_SECONDS=60
     entrypoint: ["/bin/sh", "-c"]
+    # A block scalar, because the command contains colons (http://host:3000,
+    # "Authorization:") and both quote characters — written as a plain YAML
+    # scalar it is a parse error.
     command:
       - |
         echo "indexer-cron: polling every $${INDEX_INTERVAL_SECONDS}s"
