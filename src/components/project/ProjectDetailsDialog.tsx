@@ -26,6 +26,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "../ui/avatar";
 import { FundDialog } from "./FundDialog";
 import { Progress } from "../ui/progress";
 import { useProjectDetails } from "@/context/ProjectDetailsContext";
+import { MilestoneVoting } from "./MilestoneVoting";
 import { ScrollArea } from "../ui/scroll-area";
 import {
   TrendingUp,
@@ -622,7 +623,12 @@ export function ProjectDetailsDialog() {
             {project?.title || "Loading..."}
           </DialogTitle>
           <DialogDescription className="text-sm sm:text-lg leading-snug break-words break-all text-left line-clamp-3 sm:line-clamp-4">
-            {project?.tagline || "Fetching details..."}
+            {/* A loaded project with no tagline is not a project still loading.
+                The old copy said "Fetching details..." forever whenever the
+                metadata carried no description. */}
+            {project
+              ? project.tagline || "No description was published for this project."
+              : "Fetching details…"}
           </DialogDescription>
           <Button
             variant="ghost"
@@ -788,6 +794,19 @@ export function ProjectDetailsDialog() {
               )}
 
 
+
+              {project?.vaultAddress &&
+                ["funded", "active", "completed", "refunding"].includes(project.status) && (
+                  <div className="w-full space-y-3 pt-2">
+                    <h3 className="text-sm font-semibold">Milestones</h3>
+                    <MilestoneVoting
+                      vaultAddress={project.vaultAddress}
+                      currency={project.currencyType ?? "USDC"}
+                      creatorAddress={project.creatorAddress ?? project.creator}
+                      onChange={() => refreshProject(project.id)}
+                    />
+                  </div>
+                )}
 
               <FundDialog
                 project={project!}

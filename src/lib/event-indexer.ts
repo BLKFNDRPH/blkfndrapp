@@ -12,6 +12,7 @@ import { rpc, scValToNative } from "@stellar/stellar-sdk";
 import { getIPFSFetchUrl } from "./pinata-client";
 import { SOROBAN_RPC_URL, FACTORY_ID } from "./stellar-clients";
 import { readVaultState } from "./vault-state";
+import { currencyForToken } from "./currencies";
 import { getCursor, setCursor, recordEvent, markProcessed } from "./data/events";
 import {
   upsertProjectFromChain,
@@ -97,7 +98,15 @@ async function watchedContracts(): Promise<string[]> {
 /** Refresh a project's figures from the ledger rather than from event payloads. */
 async function syncVault(vaultAddress: string, ledger?: number) {
   const state = await readVaultState(vaultAddress);
-  if (!state) return;
+  // Throw rather than return quietly. This event exists because a vault we
+  // already know about changed, so being unable to read it is a failure, not an
+  // absence — and treating it as an absence is what let the Contract-object bug
+  // above drop every state change without a single failed count.
+  if (!state) {
+    throw new Error(
+      `Vault ${vaultAddress} changed but could not be read; leaving the event unprocessed for retry`,
+    );
+  }
 
   const existing = await getProjectByVault(vaultAddress);
 
@@ -138,6 +147,20 @@ async function handleEvent(topic1: string, topic2: string, payload: any[], contr
       const state = await readVaultState(String(vaultAddress));
       if (!state) throw new Error(`Vault ${vaultAddress} is not readable`);
 
+      // Denomination comes from the vault's token address, never from
+      // `metadata.currency`. The column defaults to USDC and this handler used
+      // to write nothing, so every vault was recorded as USDC no matter what it
+      // held — the listing then misstated the asset a backer is asked to send.
+      // An unconfigured token is left at the default and logged, not guessed.
+      const currency = currencyForToken(state.token);
+      if (!currency) {
+        console.warn(
+          `[Indexer] Vault ${vaultAddress} holds unconfigured token ${state.token}; ` +
+            `currency left at the column default. Set the matching ` +
+            `NEXT_PUBLIC_STELLAR_*_TOKEN_ID.`,
+        );
+      }
+
       const projectRowId = await upsertProjectFromChain({
         projectId: String(projectId),
         vaultAddress: String(vaultAddress),
@@ -148,6 +171,7 @@ async function handleEvent(topic1: string, topic2: string, payload: any[], contr
         category: metadata.category ?? "General",
         imageUrl: metadata.imageUrl ?? "",
         metadataCid: String(metadataCid ?? ""),
+        ...(currency ? { currency } : {}),
         fundingGoalRaw: state.fundingGoalRaw,
         currentFundingRaw: state.currentFundingRaw,
         bondAmountRaw: String(BigInt(Math.round(state.bondAmount * 10_000_000))),
@@ -264,11 +288,21 @@ export async function runIndexer() {
     const topics = (raw.topic ?? []).map((t: any) => String(scValToNative(t)));
     const payload = scValToNative(raw.value);
 
+    // `contractId` arrives as a Contract instance, not a string. Passing it on
+    // is silently destructive in both directions: it stores as a serialised
+    // Buffer rather than an address, and `new Contract(<Contract>)` throws
+    // "Invalid contract ID" — with the object's own toString in the message, so
+    // the error names a perfectly valid address and reads like an RPC fault.
+    // readVaultState catches that and returns null, and syncVault treats null as
+    // nothing-to-do, so every vault state change was dropped without a trace and
+    // a project's figures never moved past whatever DEPLOY first saw.
+    const contractId = String(raw.contractId);
+
     const isNew = await recordEvent({
       eventId: raw.id,
       ledger: raw.ledger,
       ledgerClosedAt: raw.ledgerClosedAt ?? null,
-      contractId: raw.contractId,
+      contractId,
       topic1: topics[0] ?? "",
       topic2: topics[1] ?? "",
       payload: payload as never,
@@ -284,7 +318,7 @@ export async function runIndexer() {
         topics[0] ?? "",
         topics[1] ?? "",
         Array.isArray(payload) ? payload : [payload],
-        raw.contractId,
+        contractId,
         raw.ledger,
         raw.ledgerClosedAt,
       );

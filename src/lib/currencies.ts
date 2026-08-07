@@ -52,6 +52,22 @@ export function availableCurrencies(): Currency[] {
   return CURRENCIES.filter((c) => Boolean(TOKEN_ADDRESSES[c]));
 }
 
+/**
+ * Symbol for the token a vault actually holds.
+ *
+ * The listing's own currency label comes from creator-supplied metadata, so it
+ * is a claim rather than a fact. Anywhere we state a sum of money that is about
+ * to move — a milestone release, a refund — the label should come from the
+ * vault's `token` address instead, which no one can restate after the fact.
+ *
+ * Returns undefined for a token this deployment has no name for, so the caller
+ * can show the raw address rather than assert a wrong one.
+ */
+export function currencyForToken(address: string | undefined): Currency | undefined {
+  if (!address) return undefined;
+  return CURRENCIES.find((c) => TOKEN_ADDRESSES[c] === address);
+}
+
 export function toStroops(amount: number | string): bigint {
   const [whole, fraction = ""] = String(amount).split(".");
   const padded = (fraction + "0000000").slice(0, 7);
