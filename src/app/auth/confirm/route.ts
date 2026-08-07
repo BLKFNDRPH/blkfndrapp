@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import type { EmailOtpType } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { safeInternalPath } from "@/lib/auth/safe-redirect";
+import { publicOrigin } from "@/lib/auth/app-origin";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +14,10 @@ export const dynamic = "force-dynamic";
  * mail scanner's crawl log — cannot be replayed.
  */
 export async function GET(request: NextRequest) {
-  const { searchParams, origin } = request.nextUrl;
+  const { searchParams } = request.nextUrl;
+  // See the callback route: nextUrl.origin is the container address behind a
+  // proxy that rewrites Host.
+  const origin = await publicOrigin();
   const tokenHash = searchParams.get("token_hash");
   const type = searchParams.get("type") as EmailOtpType | null;
 

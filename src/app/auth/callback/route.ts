@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { consumeNextPath } from "@/lib/auth/next-cookie";
+import { publicOrigin } from "@/lib/auth/app-origin";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +15,11 @@ export const dynamic = "force-dynamic";
  * session.
  */
 export async function GET(request: NextRequest) {
-  const { searchParams, origin } = request.nextUrl;
+  const { searchParams } = request.nextUrl;
+  // Not request.nextUrl.origin: behind a proxy that rewrites Host it resolves
+  // to the container address, and every redirect below would send the browser
+  // somewhere it cannot reach.
+  const origin = await publicOrigin();
   const code = searchParams.get("code");
   // From the cookie set before the round trip. The `next` query parameter is
   // still honoured as a fallback so links issued before this change keep
