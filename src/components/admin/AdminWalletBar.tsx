@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Wallet, CheckCircle2, AlertTriangle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useFreighterWallet } from "@/context/FreighterWalletContext";
+import { recognizeWalletAction } from "@/actions/admins";
 import { shortenAddress, cn } from "@/lib/utils";
 
 /**
@@ -32,6 +33,29 @@ export function AdminWalletBar({
   const { freighterWalletAddress, login, error } = useFreighterWallet();
   const { toast } = useToast();
   const [isConnecting, setIsConnecting] = useState(false);
+  const [recognition, setRecognition] = useState<{
+    onRoster: boolean;
+    isOwn: boolean;
+    mismatch: boolean;
+  } | null>(null);
+
+  // Whether the console recognises this address, which is a different question
+  // from whether the ledger will accept it. Both are worth showing: an admin
+  // with the wrong Freighter account selected and an admin with no wallet on
+  // file used to see the identical warning, with no way to tell which they were.
+  useEffect(() => {
+    let cancelled = false;
+    if (!freighterWalletAddress) {
+      setRecognition(null);
+      return;
+    }
+    recognizeWalletAction(freighterWalletAddress).then((res) => {
+      if (!cancelled) setRecognition(res.success ? res.recognition : null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [freighterWalletAddress]);
 
   const connect = async () => {
     setIsConnecting(true);
@@ -102,16 +126,38 @@ export function AdminWalletBar({
           ) : (
             <>
               <p className="text-sm font-semibold">
-                Wallet is not an on-chain admin
+                {recognition?.mismatch
+                  ? "This is not the wallet recorded for your account"
+                  : recognition?.isOwn || recognition?.onRoster
+                    ? "Wallet recognised, but not an on-chain admin"
+                    : "Wallet is not an on-chain admin"}
                 <span className="ml-2 font-mono text-xs font-normal text-muted-foreground">
                   {shortenAddress(freighterWalletAddress)}
                 </span>
               </p>
               <p className="text-xs text-muted-foreground">
-                Your account has dashboard access, but the contracts do not
-                recognise this address. Contract actions will be rejected by the
-                ledger regardless of what this interface allows. Connect a wallet
-                on the roster, or have an existing admin add this one.
+                {recognition?.mismatch ? (
+                  <>
+                    Your administrator record names a different address. This is
+                    usually the wrong account selected in Freighter — switch
+                    accounts, or update the wallet on your entry under Console
+                    Administrators if you have changed keys.
+                  </>
+                ) : recognition && !recognition.onRoster ? (
+                  <>
+                    No wallet is recorded against your administrator record yet,
+                    so the console has nothing to match this address to. Add it
+                    under Console Administrators. That is separate from contract
+                    powers, which the ledger grants and this list does not.
+                  </>
+                ) : (
+                  <>
+                    Your account has dashboard access and this wallet is on the
+                    console roster, but the contracts do not recognise it.
+                    Contract actions will be rejected by the ledger regardless of
+                    what this interface allows.
+                  </>
+                )}
               </p>
             </>
           )}

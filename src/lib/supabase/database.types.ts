@@ -176,9 +176,9 @@ export type Database = {
         Relationships: [];
       };
       platform_admins: {
-        Row: { email: string; granted_at: string; granted_by: string | null; id: string; note: string; user_id: string | null };
-        Insert: { email: string; granted_at?: string; granted_by?: string | null; id?: string; note?: string; user_id?: string | null };
-        Update: { email?: string; granted_at?: string; granted_by?: string | null; id?: string; note?: string; user_id?: string | null };
+        Row: { email: string; granted_at: string; granted_by: string | null; id: string; note: string; user_id: string | null; wallet_address: string | null };
+        Insert: { email: string; granted_at?: string; granted_by?: string | null; id?: string; note?: string; user_id?: string | null; wallet_address?: string | null };
+        Update: { email?: string; granted_at?: string; granted_by?: string | null; id?: string; note?: string; user_id?: string | null; wallet_address?: string | null };
         Relationships: [];
       };
       admin_audit_log: {
@@ -391,6 +391,7 @@ export type Database = {
     Views: Record<never, never>;
     Functions: {
       is_admin: { Args: Record<never, never>; Returns: boolean };
+      is_admin_wallet: { Args: { addr: string }; Returns: boolean };
       purge_expired_auth_challenges: { Args: Record<never, never>; Returns: undefined };
       stroops_to_units: { Args: { raw: number }; Returns: number };
     };
