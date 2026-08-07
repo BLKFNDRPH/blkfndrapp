@@ -797,7 +797,7 @@ export function ProjectDetailsDialog() {
                 <Button
                   onClick={handleOpenSubmitProofModal}
                   disabled={isUpdatingProof || isUploadingImage}
-                  className="w-full sm:w-auto whitespace-nowrap shrink-0 bg-[#003049] text-white hover:bg-[#003049]/90 font-semibold"
+                  className="w-full sm:w-auto whitespace-nowrap shrink-0 bg-accent text-accent-foreground hover:bg-accent/90 font-semibold"
                 >
                   {(isUpdatingProof || isUploadingImage) && <CubeSpinner size="small" className="mr-2" />}
                   <ArrowDownCircle className="mr-2 h-4 w-4 shrink-0" />
@@ -847,7 +847,7 @@ export function ProjectDetailsDialog() {
                           <span className="font-bold text-foreground">
                             Milestone #{activeMilestoneIndex + 1}: {activeMilestone.title || `Milestone ${activeMilestone.id}`}
                           </span>
-                          <Badge variant="secondary" className="bg-[#003049]/10 text-[#003049] border-none text-[10px] rounded-full px-2.5">
+                          <Badge variant="secondary" className="bg-accent/10 text-accent border-none text-[10px] rounded-full px-2.5">
                             {activeMilestone.amount.toLocaleString()} USDC
                           </Badge>
                         </div>
@@ -882,7 +882,7 @@ export function ProjectDetailsDialog() {
                             const file = e.target.files?.[0] || null;
                             setAttachedFile(file);
                           }}
-                          className="text-xs file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-[11px] file:font-semibold file:bg-[#003049]/10 file:text-[#003049] hover:file:bg-[#003049]/20"
+                          className="text-xs file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-[11px] file:font-semibold file:bg-accent/10 file:text-accent hover:file:bg-accent/20"
                         />
                         <p className="text-[10px] text-muted-foreground">
                           Supported formats: PNG, JPG, JPEG. Max size 5MB.
@@ -905,7 +905,7 @@ export function ProjectDetailsDialog() {
                       size="sm"
                       onClick={handleConfirmSubmitProof}
                       disabled={isUpdatingProof || isUploadingImage || !detailedProof.trim()}
-                      className="bg-[#003049] text-white hover:bg-[#003049]/90 text-xs font-semibold"
+                      className="bg-accent text-accent-foreground hover:bg-accent/90 text-xs font-semibold"
                     >
                       {(isUpdatingProof || isUploadingImage) && <CubeSpinner size="small" className="mr-1.5" />}
                       {isUploadingImage ? "Uploading Image..." : isUpdatingProof ? "Submitting..." : "Submit Proof"}

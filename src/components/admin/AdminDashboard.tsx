@@ -450,7 +450,7 @@ export function AdminDashboard() {
                 className={cn(
                   "flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-all",
                   adminView === "projects"
-                    ? "bg-[#003049] text-white shadow-sm"
+                    ? "bg-accent text-accent-foreground shadow-sm"
                     : "text-muted-foreground hover:text-foreground"
                 )}
               >
@@ -463,7 +463,7 @@ export function AdminDashboard() {
                 className={cn(
                   "flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-all",
                   adminView === "identity"
-                    ? "bg-[#003049] text-white shadow-sm"
+                    ? "bg-accent text-accent-foreground shadow-sm"
                     : "text-muted-foreground hover:text-foreground"
                 )}
               >
@@ -476,7 +476,7 @@ export function AdminDashboard() {
                 className={cn(
                   "flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-all",
                   adminView === "admins"
-                    ? "bg-[#003049] text-white shadow-sm"
+                    ? "bg-accent text-accent-foreground shadow-sm"
                     : "text-muted-foreground hover:text-foreground"
                 )}
               >
@@ -489,7 +489,7 @@ export function AdminDashboard() {
                 className={cn(
                   "flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-all",
                   adminView === "categories"
-                    ? "bg-[#003049] text-white shadow-sm"
+                    ? "bg-accent text-accent-foreground shadow-sm"
                     : "text-muted-foreground hover:text-foreground"
                 )}
               >
@@ -607,7 +607,7 @@ export function AdminDashboard() {
                           <Button
                             size="sm"
                             onClick={item.onAction}
-                            className="bg-[#003049] hover:bg-[#003049]/90 text-white shrink-0 font-semibold"
+                            className="bg-accent hover:bg-accent/90 text-white shrink-0 font-semibold"
                           >
                             {item.actionLabel}
                           </Button>

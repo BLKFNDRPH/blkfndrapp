@@ -507,7 +507,7 @@ export function IdentityRegistryPanel() {
                     <Button
                       onClick={() => handleApproveRequest(req.address)}
                       disabled={loading || !isPrimaryAdmin}
-                      className="h-11 px-8 bg-[#003049] hover:bg-[#003049]/90 text-white text-sm font-semibold shadow-sm"
+                      className="h-11 px-8 bg-accent hover:bg-accent/90 text-white text-sm font-semibold shadow-sm"
                     >
                       {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                       <CheckCircle className="mr-2 h-4 w-4" />

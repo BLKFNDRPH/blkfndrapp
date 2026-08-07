@@ -2,6 +2,54 @@ import { NextRequest, NextResponse } from "next/server";
 import { PinataSDK } from "pinata";
 import { requireCaller, AuthError } from "@/lib/supabase/auth";
 
+const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
+
+/**
+ * This route is named for images but the listing form also pins the project
+ * metadata JSON through it, so JSON has to be allowed or creating a project
+ * fails outright at the last step.
+ */
+const ALLOWED_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif",
+  "image/svg+xml",
+  "application/json",
+]);
+
+/**
+ * Identify an image from its leading bytes.
+ *
+ * The Content-Type on an upload is supplied by the client and means nothing on
+ * its own, so the declared type is treated as a hint and the actual bytes decide.
+ *
+ * SVG is deliberately the awkward case: it is markup, not a bitmap, so it has no
+ * magic number and can carry script. It is accepted because logos are commonly
+ * SVG, but only when it parses as XML/SVG, and it is served from the IPFS gateway
+ * on a different origin rather than from this app's — an inline SVG served
+ * same-origin would be an XSS vector.
+ */
+function sniffImageType(bytes: Uint8Array): string | null {
+  const startsWith = (...sig: number[]) =>
+    sig.every((b, i) => bytes[i] === b);
+
+  if (startsWith(0x89, 0x50, 0x4e, 0x47)) return "image/png";
+  if (startsWith(0xff, 0xd8, 0xff)) return "image/jpeg";
+  if (startsWith(0x47, 0x49, 0x46, 0x38)) return "image/gif";
+  // RIFF....WEBP
+  if (startsWith(0x52, 0x49, 0x46, 0x46) && [8, 9, 10, 11].every((i, k) => bytes[i] === [0x57, 0x45, 0x42, 0x50][k]))
+    return "image/webp";
+
+  const head = new TextDecoder()
+    .decode(bytes.subarray(0, 512))
+    .trimStart()
+    .toLowerCase();
+  if (head.startsWith("<?xml") || head.startsWith("<svg")) return "image/svg+xml";
+
+  return null;
+}
+
 function normalizePinataGateway(raw?: string): string | undefined {
   if (!raw) return undefined;
   const trimmed = raw.trim();
@@ -68,6 +116,57 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Empty file provided" }, { status: 400 });
   }
 
+  // This endpoint pins to a paid Pinata account, and anything pinned is public
+  // and effectively permanent. Requiring a session bounds who can call it, but
+  // not what they can store: without the checks below any signed-in user could
+  // park arbitrary files of any size and type on the platform's account.
+  if (file.size > MAX_UPLOAD_BYTES) {
+    return NextResponse.json(
+      { error: `Image must be ${MAX_UPLOAD_BYTES / (1024 * 1024)}MB or smaller.` },
+      { status: 413 },
+    );
+  }
+
+  // `file.type` is whatever the browser claimed, so it is checked first as a
+  // cheap reject and then confirmed against the actual bytes below.
+  if (!ALLOWED_TYPES.has(file.type)) {
+    return NextResponse.json(
+      { error: "File must be a PNG, JPEG, WebP, GIF, SVG or JSON document." },
+      { status: 415 },
+    );
+  }
+
+  const bytes = new Uint8Array(await file.arrayBuffer());
+
+  let sniffed: string | null;
+  if (file.type === "application/json") {
+    // Must actually parse, so this cannot be used to pin arbitrary bytes under
+    // a JSON label.
+    try {
+      JSON.parse(new TextDecoder().decode(bytes));
+      sniffed = "application/json";
+    } catch {
+      return NextResponse.json(
+        { error: "That file is not valid JSON." },
+        { status: 415 },
+      );
+    }
+  } else {
+    sniffed = sniffImageType(bytes);
+    if (!sniffed) {
+      return NextResponse.json(
+        { error: "That file is not a recognisable image." },
+        { status: 415 },
+      );
+    }
+  }
+
+  // Rebuilt from the bytes actually inspected, rather than handing the original
+  // object on to be read a second time. Two reasons: nothing downstream can
+  // receive content this route did not check, and the type sent to Pinata is the
+  // one sniffed from the bytes instead of the one the browser claimed.
+  const verified = new File([bytes], file.name || "upload", { type: sniffed });
+
   // ── 3. Init Pinata SDK ────────────────────────────────────────────────────
   const pinataGateway = normalizePinataGateway(pinataGatewayRaw);
   console.log("[pinata] normalized gateway:", pinataGateway ?? "none (will use default)");
@@ -98,7 +197,7 @@ export async function POST(request: NextRequest) {
 
     if (hasPublicNamespace) {
       console.log("[pinata] using upload.public.file()");
-      let req = (pinata.upload as any).public.file(file);
+      let req = (pinata.upload as any).public.file(verified);
       if (pinataGroupId) {
         console.log("[pinata] attaching group:", pinataGroupId);
         req = req.group(pinataGroupId);
@@ -106,7 +205,7 @@ export async function POST(request: NextRequest) {
       uploaded = await req;
     } else if (hasDirectFile) {
       console.log("[pinata] using legacy upload.file()");
-      let req = (pinata.upload as any).file(file);
+      let req = (pinata.upload as any).file(verified);
       if (pinataGroupId) {
         console.log("[pinata] attaching group:", pinataGroupId);
         req = req.group(pinataGroupId);

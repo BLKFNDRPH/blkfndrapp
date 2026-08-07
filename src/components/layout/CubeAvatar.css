@@ -31,7 +31,8 @@
   position: absolute;
   width: 32px;
   height: 32px;
-  background: hsl(207 100% 15%);
+  /* Was hsl(207 100% 15%), a deep blue that matched nothing else. */
+  background: hsl(0 0% 12%);
   border: 1px solid white;
   color: white;
   text-align: center;

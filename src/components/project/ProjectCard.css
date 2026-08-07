@@ -20,12 +20,18 @@
   pointer-events: none;
 }
 
+/*
+ * The two offset shapes that drift out from behind a card on hover. They were
+ * hardcoded purple-300 and blue-800, which belonged to no palette this site
+ * uses — they are the accent and a neutral now, so the effect follows the theme
+ * instead of fighting it.
+ */
 .project-card-wrapper::before {
-  background: #d8b4fe; /* purple-300 */
+  background: hsl(var(--accent) / 0.55);
 }
 
 .project-card-wrapper::after {
-  background: #1e40af; /* dark blue */
+  background: hsl(var(--muted-foreground) / 0.35);
 }
 
 .project-card-wrapper:hover > .project-card {

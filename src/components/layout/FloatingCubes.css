@@ -26,7 +26,8 @@
   position: absolute;
   width: 100%;
   height: 100%;
-  background-color: hsl(222 47% 11%);
+  /* Was hsl(222 47% 11%) — slate, which reads blue against a neutral page. */
+  background-color: hsl(0 0% 11%);
   border: 1px solid rgba(255, 255, 255, 0.2);
   opacity: 0.8;
 }

@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 450" width="800" height="450" role="img" aria-label="No project image supplied">
+  <!--
+    Placeholder for a project with no pinned image.
+
+    Replaces a hotlinked Dribbble GIF, which was a third-party request on every
+    such card, someone else's artwork presented as ours, and the only blue on
+    the site. Local, so it cannot change or disappear underneath us.
+
+    Palette is the site's own: near-black card, gold accent (hsl(44 85% 58%)),
+    drawn in the blueprint idiom the landing page uses.
+  -->
+  <defs>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0v40" fill="none" stroke="hsl(0 0% 100% / 0.05)" stroke-width="1"/>
+    </pattern>
+    <linearGradient id="fade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="hsl(0 0% 12%)"/>
+      <stop offset="100%" stop-color="hsl(0 0% 7%)"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="800" height="450" fill="url(#fade)"/>
+  <rect width="800" height="450" fill="url(#grid)"/>
+
+  <g transform="translate(400 215)" fill="none" stroke="hsl(44 85% 58%)" stroke-linejoin="round">
+    <!-- A building under construction: three stacked tranches, the topmost
+         still an outline, which is the thing this platform actually funds. -->
+    <rect x="-90" y="30" width="180" height="46" stroke-width="2" opacity="0.9"/>
+    <rect x="-90" y="-16" width="180" height="46" stroke-width="2" opacity="0.6"/>
+    <rect x="-90" y="-62" width="180" height="46" stroke-width="2" opacity="0.3" stroke-dasharray="6 5"/>
+
+    <g stroke-width="1.6" opacity="0.5">
+      <line x1="-45" y1="30" x2="-45" y2="76"/>
+      <line x1="0"   y1="30" x2="0"   y2="76"/>
+      <line x1="45"  y1="30" x2="45"  y2="76"/>
+      <line x1="-45" y1="-16" x2="-45" y2="30"/>
+      <line x1="0"   y1="-16" x2="0"   y2="30"/>
+      <line x1="45"  y1="-16" x2="45"  y2="30"/>
+    </g>
+
+    <!-- Ground line -->
+    <line x1="-130" y1="76" x2="130" y2="76" stroke-width="2" opacity="0.8"/>
+    <g stroke-width="1.4" opacity="0.35">
+      <line x1="-124" y1="76" x2="-134" y2="88"/>
+      <line x1="-94"  y1="76" x2="-104" y2="88"/>
+      <line x1="-64"  y1="76" x2="-74"  y2="88"/>
+      <line x1="-34"  y1="76" x2="-44"  y2="88"/>
+      <line x1="-4"   y1="76" x2="-14"  y2="88"/>
+      <line x1="26"   y1="76" x2="16"   y2="88"/>
+      <line x1="56"   y1="76" x2="46"   y2="88"/>
+      <line x1="86"   y1="76" x2="76"   y2="88"/>
+      <line x1="116"  y1="76" x2="106"  y2="88"/>
+    </g>
+  </g>
+
+  <text x="400" y="366" text-anchor="middle"
+        font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+        font-size="13" letter-spacing="3"
+        fill="hsl(0 0% 100% / 0.35)">NO IMAGE SUPPLIED</text>
+</svg>
