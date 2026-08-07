@@ -6,6 +6,7 @@ import { useFreighterWallet } from "@/context/FreighterWalletContext";
 import { useToast } from "@/hooks/use-toast";
 import { useRouter } from "next/navigation";
 import { submitKycRequest, getMyKycStatus } from "@/app/actions";
+import { uploadKycDocument, computeDetailsHash } from "@/lib/kyc/prepare-submission";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -97,11 +98,13 @@ export default function KycAttestationPage() {
             contractId: IDENTITY_ID,
             rpcUrl: SOROBAN_RPC_URL,
             networkPassphrase: NETWORK_PASSPHRASE,
-            // The address being queried doubles as the simulation source. The
-              // old NEXT_PUBLIC_STELLAR_FALLBACK_ADDRESS is unset on the current
-              // deployment, and an empty publicKey throws inside the SDK before
-              // the registry is reached.
-              publicKey: activeAddress,
+            // No publicKey: a read-only simulation, and the SDK uses
+            // NULL_ACCOUNT when it is omitted. The old
+            // NEXT_PUBLIC_STELLAR_FALLBACK_ADDRESS is FILL_ME here — truthy but
+            // not a strkey, so it threw "invalid encoded string" and this catch
+            // showed the applicant as unverified. Passing the wallet instead
+            // would throw "Account not found" for one not yet on the ledger,
+            // which is precisely the person about to start verification.
           });
           const checkTx = await client.is_kyc_approved({ address: activeAddress });
           const checkSim = await checkTx.simulate();
@@ -233,17 +236,37 @@ export default function KycAttestationPage() {
 
     startSubmitTransition(async () => {
       try {
+        // The document goes to a private Storage bucket; only its path is
+        // recorded. This form previously sent the image inline as a base64 data
+        // URL, which the current backend does not accept — identity documents
+        // are deliberately kept out of any table a query can reach.
+        if (!formData.documentFile) {
+          throw new Error("Attach a photo of your identity document.");
+        }
+        const documentPath = await uploadKycDocument(formData.documentFile);
+
+        const detailsHash = await computeDetailsHash({
+          fullName: formData.fullName,
+          dateOfBirth: formData.dob,
+          documentType: formData.documentType,
+          idNumber: formData.idNumber,
+          documentExpiresOn: formData.expiryDate,
+          residentialAddress: formData.residentialAddress,
+          stellarAddress: activeAddress,
+        });
+
         const res = await submitKycRequest({
           stellarAddress: activeAddress,
           fullName: formData.fullName,
           email: formData.email,
           documentType: formData.documentType,
-          documentImage: formData.documentImage,
+          documentPath,
           idNumber: formData.idNumber,
-          dob: formData.dob,
-          expiryDate: formData.expiryDate,
+          dateOfBirth: formData.dob,
+          documentExpiresOn: formData.expiryDate,
           residentialAddress: formData.residentialAddress,
-          consentFlag: formData.consentFlag,
+          detailsHash,
+          consentGiven: formData.consentFlag,
         });
 
         if (res.success) {

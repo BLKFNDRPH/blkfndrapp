@@ -369,14 +369,21 @@ export function ListingForm() {
           contractId: IDENTITY_ID,
           rpcUrl: SOROBAN_RPC_URL,
           networkPassphrase: NETWORK_PASSPHRASE,
-          // The connected wallet, not NEXT_PUBLIC_STELLAR_FALLBACK_ADDRESS.
-          // A simulation still needs a real source account to build against,
-          // and when that variable is unset — which it is on the current
-          // deployment — the empty string fails inside the SDK with "invalid
-          // version byte" before the registry is ever contacted. The wallet is
-          // the address being asked about, is guaranteed present here, and
-          // removes the dependency on a variable nothing else needs.
-          publicKey: activeAddress,
+          // No publicKey. This is a read-only simulation, and the SDK resolves
+          // the source as `options.publicKey ? getAccount(publicKey) :
+          // NULL_ACCOUNT` — so omitting it uses the null account and never
+          // touches the network for an account lookup. src/lib/vault-state.ts
+          // already does this.
+          //
+          // It used to pass NEXT_PUBLIC_STELLAR_FALLBACK_ADDRESS, which is
+          // FILL_ME on this deployment. That is truthy but not a strkey, so it
+          // reached getAccount and threw "invalid encoded string", and the
+          // catch below reported a registry failure that never happened.
+          //
+          // Passing the connected wallet instead would fix that case and break
+          // another: getAccount throws "Account not found" for a wallet that
+          // has never been created on the ledger, which is exactly the person
+          // about to start verification with a fresh Freighter account.
         });
         const tx = await identityClient.is_kyc_approved({ address: activeAddress });
         const result = await tx.simulate();
