@@ -100,7 +100,7 @@ export function AdminManagement({ isMainAdmin }: AdminManagementProps) {
   const [adminToRemove, setAdminToRemove] = useState<AdminInfo | null>(null);
   const [isRemoveAlertOpen, setIsRemoveAlertOpen] = useState(false);
 
-  const { addAdmin, removeAdmin } = useStellarContract();
+  const { addAdmin, removeAdmin, transferAdminOwnership } = useStellarContract();
 
   const form = useForm<AddAdminFormSchema>({
     resolver: zodResolver(addAdminFormSchema),
@@ -175,6 +175,37 @@ export function AdminManagement({ isMainAdmin }: AdminManagementProps) {
     toast({
       title: 'Address Copied',
       description: 'The wallet address has been copied to your clipboard.',
+    });
+  };
+
+  /**
+   * Hand the roster to another admin.
+   *
+   * Has to happen here rather than from the CLI: once ownership moves off the
+   * deployer, the owner's key lives in a wallet extension and `stellar contract
+   * invoke` has nothing to sign with. The alternative would be exporting a
+   * secret key, which is worse than any convenience it buys.
+   */
+  const handleTransferOwnership = (admin: AdminInfo) => {
+    startTransition(async () => {
+      try {
+        const result = await transferAdminOwnership(admin.address);
+        const txStatus = (result as any)?.getTransactionResponse?.status;
+        if (txStatus !== "SUCCESS") {
+          throw new Error("Transfer ownership transaction failed on-chain.");
+        }
+        await refreshAfterTx();
+        toast({
+          title: "Ownership transferred",
+          description: `${admin.name ?? admin.address.slice(0, 8)} can now add and remove administrators. You no longer can.`,
+        });
+      } catch (error: any) {
+        toast({
+          title: "Transfer failed",
+          description: error.message || String(error),
+          variant: "destructive",
+        });
+      }
     });
   };
 
@@ -421,6 +452,15 @@ export function AdminManagement({ isMainAdmin }: AdminManagementProps) {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
+                          {platformInfo?.owner &&
+                            admin.address !== platformInfo.owner && (
+                              <DropdownMenuItem
+                                onClick={() => handleTransferOwnership(admin)}
+                              >
+                                <Crown className="mr-2 h-4 w-4" />
+                                Make roster owner
+                              </DropdownMenuItem>
+                            )}
                           {/* The owner cannot be removed: only the owner may
                               edit the roster, so removing them would leave a
                               list nobody can ever change again. The contract

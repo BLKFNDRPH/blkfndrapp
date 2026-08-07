@@ -476,6 +476,29 @@ export function useStellarContract() {
     [requireWallet],
   );
 
+  /**
+   * Hand the roster to a new owner, signed by the current one.
+   *
+   * Only reachable from the browser, and deliberately so: the owner's key lives
+   * in their wallet extension, not in a CLI keystore, so `stellar contract
+   * invoke` cannot sign this once ownership has moved off the deployer. Without
+   * a button here, transferring ownership a second time would need the owner to
+   * export a secret key — which is worse than any convenience it buys.
+   *
+   * The contract adds the new owner as an admin if they are not already one, so
+   * this cannot strand the roster with an owner who cannot use it.
+   */
+  const transferAdminOwnership = useCallback(
+    async (newOwner: string) => {
+      const owner = requireWallet();
+      const tx = await adminClient(signerFor(owner)).transfer_ownership({
+        new_owner: newOwner,
+      });
+      return signAndSend(tx);
+    },
+    [requireWallet],
+  );
+
   return {
     // create
     createProject,
@@ -518,5 +541,6 @@ export function useStellarContract() {
     getAdminOwner,
     addAdmin,
     removeAdmin,
+    transferAdminOwnership,
   };
 }
