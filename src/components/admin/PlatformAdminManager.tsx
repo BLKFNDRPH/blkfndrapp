@@ -43,15 +43,17 @@ interface Row {
 }
 
 /**
- * Who may use the console.
+ * Sign-in access, and the place to repair an entry.
  *
- * Distinct from the on-chain admin roster shown elsewhere in this dashboard.
- * That one decides whose signature a contract will accept; this one decides who
- * can sign in here. Someone reviewing KYC applications needs the second and has
- * no business holding the first, which is exactly why they are separate lists.
+ * Administrators are created under Manage Admins, which takes name, email and
+ * wallet together and signs the wallet onto the on-chain roster in one step.
+ * Adding was removed from here because doing it in two places produced admins
+ * that existed on one side and not the other — the state that made a correctly
+ * connected wallet read as unrecognised.
  *
- * An address can be added before the account exists — the row is claimed on
- * first sign-in — so onboarding does not depend on the person registering first.
+ * What is left is the repair path: an admin whose wallet was never recorded, or
+ * whose key has changed. That case survives the merge, because a row can still
+ * be claimed by email before its holder has a wallet to name.
  */
 export function PlatformAdminManager() {
   const { toast } = useToast();
@@ -163,74 +165,14 @@ export function PlatformAdminManager() {
       <CardHeader>
         <CardTitle>Console Administrators</CardTitle>
         <CardDescription>
-          Who can sign in to this dashboard — password or Google, either works.
-          An admin is identified by email and, once recorded, by wallet address,
-          which is what lets the console recognise them when they connect
-          Freighter. This is separate from the on-chain admin roster: adding
-          someone here does not let them sign a contract change, and the ledger
-          does not consult this list.
+          Sign-in access, matched on email. Administrators are added under Manage
+          Admins, which records the name, email and wallet together and signs the
+          wallet onto the on-chain roster in the same step. This view is for
+          repairing an entry — filling in a wallet that was never recorded, or
+          correcting one that changed.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="space-y-2">
-          <div className="flex gap-2">
-            <Input
-              type="email"
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && draft.trim()) {
-                  e.preventDefault();
-                  run("Administrator added", "__add__", () =>
-                    grantAdminAction(draft, walletDraft),
-                  );
-                }
-              }}
-              placeholder="name@example.com"
-              aria-label="Email address to grant administrator access"
-            />
-            <Button
-              onClick={() =>
-                run("Administrator added", "__add__", () =>
-                  grantAdminAction(draft, walletDraft),
-                )
-              }
-              disabled={!draft.trim() || busy === "__add__"}
-            >
-              {busy === "__add__" ? (
-                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-              ) : (
-                <UserPlus className="h-4 w-4" aria-hidden="true" />
-              )}
-              <span className="ml-1.5">Add</span>
-            </Button>
-          </div>
-
-          {/* Optional, because an invite is usually sent before its holder has a
-              wallet to name. It can be filled in per row afterwards. */}
-          <div className="flex gap-2">
-            <Input
-              value={walletDraft}
-              onChange={(e) => setWalletDraft(e.target.value)}
-              placeholder="Stellar address (optional) — G…"
-              aria-label="Stellar wallet address for the new administrator"
-              className="font-mono text-xs"
-              spellCheck={false}
-            />
-            {freighterWalletAddress && (
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setWalletDraft(freighterWalletAddress)}
-                title="Fill in the address Freighter is currently connected with"
-              >
-                <Wallet className="h-4 w-4" aria-hidden="true" />
-                <span className="ml-1.5 hidden sm:inline">Use connected</span>
-              </Button>
-            )}
-          </div>
-        </div>
-
         {loading ? (
           <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />

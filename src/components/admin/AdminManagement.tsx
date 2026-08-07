@@ -26,6 +26,11 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useToast } from '@/hooks/use-toast';
+import {
+  getAdminsAction,
+  grantAdminAction,
+  revokeAdminAction,
+} from '@/actions/admins';
 import { useAuth } from '@/context/AuthContext';
 import Link from 'next/link';
 import { getUserByCreatorId } from '@/lib/data.client';
@@ -43,6 +48,7 @@ import {
 import {
   Form,
   FormControl,
+  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -58,8 +64,14 @@ interface AdminManagementProps {
 }
 
 const addAdminFormSchema = z.object({
-  address: z.string().refine(val => val.startsWith('G') && val.length === 56, {
-    message: 'Please enter a valid Stellar public key address.',
+  name: z.string().trim().min(1, 'Enter a name for this administrator.').max(120),
+  // The email is what decides whether someone is an admin when they sign in;
+  // the wallet is what the ledger will accept a signature from. Both are taken
+  // here so an administrator exists once, rather than half-existing in two
+  // places and needing a second visit to a different card to finish.
+  email: z.string().trim().toLowerCase().email('Enter a valid email address.').max(320),
+  address: z.string().trim().regex(/^G[A-Z2-7]{55}$/, {
+    message: 'Enter a valid Stellar address — 56 characters beginning with G.',
   }),
 });
 type AddAdminFormSchema = z.infer<typeof addAdminFormSchema>;
@@ -67,8 +79,9 @@ type AddAdminFormSchema = z.infer<typeof addAdminFormSchema>;
 type AdminInfo = {
   address: string;
   name?: string;
+  email?: string;
   avatarUrl?: string;
-  role: 'multi-sig' | 'fee-wallet';
+  role: 'multi-sig' | 'fee-wallet' | 'unlinked';
 };
 
 async function getUserByAddress(address: string) {
@@ -91,7 +104,7 @@ export function AdminManagement({ isMainAdmin }: AdminManagementProps) {
 
   const form = useForm<AddAdminFormSchema>({
     resolver: zodResolver(addAdminFormSchema),
-    defaultValues: { address: '' },
+    defaultValues: { name: '', email: '', address: '' },
   });
 
   useEffect(() => {
@@ -113,17 +126,40 @@ export function AdminManagement({ isMainAdmin }: AdminManagementProps) {
         });
       }
 
-      const multiSigAdminDetails = await Promise.all(
-        adminAddresses.map(async (address: string) => {
+      // Names come from the admin roster, not from a profile lookup keyed on
+      // wallet address. That lookup returned 'Unknown User' for every row,
+      // because an admin who has never signed in has no profile to find — and
+      // right after granting someone access is exactly when the roster most
+      // needs to be able to say who they are.
+      const rosterRes = await getAdminsAction();
+      const roster = rosterRes.success ? rosterRes.admins : [];
+      const byWallet = new Map(
+        roster
+          .filter((a) => a.walletAddress)
+          .map((a) => [a.walletAddress as string, a] as const),
+      );
+
+      const multiSigAdminDetails: (AdminInfo | null)[] = adminAddresses.map(
+        (address: string) => {
           if (address === feeWalletAddress) return null;
-          const userInfo = await getUserByAddress(address);
+          const known = byWallet.get(address);
+          if (known) {
+            return {
+              address,
+              name: known.name,
+              email: known.email,
+              role: 'multi-sig' as const,
+            };
+          }
+          // On the ledger but not in the roster. Shown as exactly that rather
+          // than as a nameless admin, because it means a wallet can sign while
+          // nobody knows whose it is — which is the thing to go and fix.
           return {
             address,
-            name: userInfo?.name || 'Unknown User',
-            avatarUrl: userInfo?.creatorAvatar,
-            role: 'multi-sig' as const,
+            name: 'Not in the console roster',
+            role: 'unlinked' as const,
           };
-        })
+        },
       );
 
       const multiSigAdmins = multiSigAdminDetails.flatMap((admin) => (admin ? [admin] : []));
@@ -154,11 +190,32 @@ export function AdminManagement({ isMainAdmin }: AdminManagementProps) {
           throw new Error("Remove admin transaction failed on-chain.");
         }
 
-        const txHash = (result as any)?.sendTransactionResponse?.hash;
-        const txUrl = txHash ? `https://stellar.expert/explorer/testnet/tx/${txHash}` : null;        await refreshAfterTx();
+        // Revoking the wallet is only half of it. Leaving the console row
+        // behind would let them keep signing in and reading identity documents
+        // long after the ledger stopped accepting their signature — the
+        // dangerous direction for stale access to fail in.
+        const revoked = adminToRemove.email
+          ? await revokeAdminAction(adminToRemove.email)
+          : { success: true as const, error: undefined };
+
+        await refreshAfterTx();
+
+        if (!revoked.success) {
+          toast({
+            title: 'Wallet revoked, console access remains',
+            description: `${adminToRemove.email} can no longer sign, but can still sign in. ${revoked.error ?? ''}`,
+            variant: 'destructive',
+          });
+          setIsRemoveAlertOpen(false);
+          setAdminToRemove(null);
+          return;
+        }
+
         toast({
-          title: 'Admin Removed Successfully',
-          description: 'The administrator has been successfully removed.',
+          title: 'Administrator removed',
+          description: adminToRemove.email
+            ? `${adminToRemove.email} can no longer sign in or sign transactions.`
+            : 'The wallet was removed from the on-chain roster.',
         });
         setIsRemoveAlertOpen(false);
         setAdminToRemove(null);
@@ -180,15 +237,36 @@ export function AdminManagement({ isMainAdmin }: AdminManagementProps) {
           throw new Error("Add admin transaction failed on-chain.");
         }
 
-        const txHash = (result as any)?.sendTransactionResponse?.hash;
-        const txUrl = txHash ? `https://stellar.expert/explorer/testnet/tx/${txHash}` : null;
-        const newUserInfo = await getUserByAddress(values.address);
-        if (newUserInfo) {        }
+        // The ledger accepted the wallet; now record who it belongs to. This
+        // order matters: only the chain half needs a signature, and a console
+        // row written for a transaction that never landed would grant sign-in
+        // access to someone the ledger does not recognise.
+        const recorded = await grantAdminAction(
+          values.email,
+          values.address,
+          values.name,
+        );
 
         await refreshAfterTx();
+
+        if (!recorded.success) {
+          // Half-applied, and saying so plainly is the only honest option: the
+          // wallet can sign but the person cannot sign in. Left for the operator
+          // to retry rather than silently rolled back, because undoing the chain
+          // half needs another signature they may not want to give right now.
+          toast({
+            title: "Added on-chain, but not to the console",
+            description: `This wallet can sign, but ${values.email} cannot sign in yet. ${recorded.error ?? ""} Add them again to finish.`,
+            variant: "destructive",
+          });
+          setIsDialogOpen(false);
+          form.reset();
+          return;
+        }
+
         toast({
-          title: "New Admin Added Successfully",
-          description: "A new administrator was added to the multi-sig group.",
+          title: "Administrator added",
+          description: `${values.name} can sign in with ${values.email}, and sign transactions with this wallet.`,
         });
         setIsDialogOpen(false);
         form.reset();
@@ -227,13 +305,52 @@ export function AdminManagement({ isMainAdmin }: AdminManagementProps) {
                   <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 py-4">
                     <FormField
                       control={form.control}
+                      name="name"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Name</FormLabel>
+                          <FormControl>
+                            <Input placeholder="Jane Dela Cruz" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="email"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Email</FormLabel>
+                          <FormControl>
+                            <Input type="email" placeholder="name@example.com" {...field} />
+                          </FormControl>
+                          <FormDescription>
+                            How they sign in, and what identifies them as an
+                            administrator.
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
                       name="address"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Admin Wallet Address</FormLabel>
+                          <FormLabel>Wallet Address</FormLabel>
                           <FormControl>
-                            <Input placeholder="G..." {...field} />
+                            <Input
+                              placeholder="G..."
+                              className="font-mono text-xs"
+                              spellCheck={false}
+                              {...field}
+                            />
                           </FormControl>
+                          <FormDescription>
+                            Added to the on-chain roster in the same step, which
+                            needs your signature.
+                          </FormDescription>
                           <FormMessage />
                         </FormItem>
                       )}
