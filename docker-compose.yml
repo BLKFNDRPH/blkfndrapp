@@ -18,7 +18,22 @@
 
 services:
   blkfndr-app:
-    image: blkfndr3:latest
+    # Deliberately no `image:`. It used to pin blkfndr3:latest, which is
+    # host-global — Docker does not prefix an explicit tag with the stack name
+    # the way it prefixes containers, volumes and networks.
+    #
+    # Two stacks on one host therefore shared a single image. Since every
+    # NEXT_PUBLIC_* value is baked in at build time, whichever stack built last
+    # silently overwrote the other's Supabase URL and contract addresses, and the
+    # first stack carried on serving them with no error anywhere. A testnet and a
+    # mainnet stack side by side is exactly the case that breaks.
+    #
+    # It also broke Portainer's "re-pull image and redeploy": an unqualified tag
+    # resolves to docker.io/library/blkfndr3, which does not exist, so the pull
+    # fails the deploy.
+    #
+    # Without it, Compose names the image after the project — tzarumang-blkfndr-app
+    # — which is per-stack and cannot collide.
     build:
       context: .
       dockerfile: Dockerfile

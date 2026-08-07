@@ -221,7 +221,12 @@ In order, because each step depends on the one before:
 
 ### Via Portainer
 
-**Stacks** → `blkfndr` → **Update the stack**, with **Re-pull image and redeploy**.
+**Stacks** → `blkfndr` → **Update the stack**.
+
+Leave **Re-pull image** off. This stack builds its image rather than pulling one,
+so there is nothing in a registry to re-pull — the option makes Docker look for
+`blkfndr-app` on Docker Hub and fail the deploy. Portainer rebuilds from the
+repository on update, which is what you want.
 
 Changing a **build-time** variable requires a rebuild. Restarting is not enough —
 the old value is already compiled into the JavaScript being served.
@@ -244,7 +249,11 @@ docker compose logs blkfndr-app
   `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` or
   `NEXT_PUBLIC_BLKFNDR_FACTORY_CONTRACT_ID` is empty, because an image built
   without them cannot be fixed at runtime.
-- **Port conflict** — check 8788 is free.
+- **Port conflict** — `Bind for 0.0.0.0:<port> failed: port is already allocated`.
+  Check whichever port `APP_PORT` resolves to is free, defaulting to 8788.
+  Note this leaves the stack half-running: `indexer-cron` starts anyway and
+  loops against an app that never came up, so its logs fill with failures that
+  are a symptom rather than the cause.
 
 ### No projects appear
 
@@ -281,6 +290,8 @@ server {
     ssl_certificate_key /path/to/key.pem;
 
     location / {
+        # Must match APP_PORT. 8788 is only the default — if you set APP_PORT
+        # because that port was taken, change it here too.
         proxy_pass http://localhost:8788;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
