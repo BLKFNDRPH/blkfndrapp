@@ -195,9 +195,18 @@ For the current testnet deployment:
 |---|---|
 | `NEXT_PUBLIC_APP_URL` | `https://testnetv2.blkfndr.com` |
 | Supabase **Site URL** | `https://testnetv2.blkfndr.com` |
-| Supabase **Redirect URLs** | `https://testnetv2.blkfndr.com/**` |
+| Supabase **Redirect URLs** | `https://testnetv2.blkfndr.com/auth/callback`<br>`https://testnetv2.blkfndr.com/auth/confirm` |
 
-### Why the redirect entry needs a wildcard
+Exact paths, no wildcards. The app no longer puts a query string on the URL it
+hands to Supabase — the post-sign-in destination travels in a short-lived cookie
+instead — so there is nothing left for a wildcard to cover.
+
+If you have password-reset or confirmation emails already sitting in inboxes
+from before that change, they still carry `?next=` and will not match an exact
+entry. Add `https://testnetv2.blkfndr.com/**` alongside these until those expire,
+then remove it.
+
+### Why an unmatched entry sends users to localhost
 
 **If a redirect URL is not on the allow-list, Supabase does not fail — it
 silently sends the user to the Site URL instead.** Supabase ships with a Site
@@ -213,8 +222,8 @@ characters are `.` and `/`:
 | `*` | any run of characters that are **not** `.` or `/` |
 | `**` | any run of characters, separators included |
 
-This app sends three different URLs, and two carry an unencoded `/` inside the
-query string:
+This is what made the old form fail. The app used to append the destination as
+a query parameter:
 
 ```
 /auth/callback?next=%2Fprofile
@@ -222,18 +231,12 @@ query string:
 /auth/confirm?type=recovery&next=/settings
 ```
 
-A bare `https://testnetv2.blkfndr.com/auth/callback` is a literal with no
-trailing wildcard, so it matches **none** of them — the query string is extra
-characters. A single `*` still fails on the last two, because of the `/` in
-`next=/profile`. `https://testnetv2.blkfndr.com/**` covers all three, which is
-also what Supabase recommends for preview and multi-path deployments.
+A literal entry has no trailing wildcard, so the query string is extra
+characters and it matches **none** of those. Even a single `*` fails the last
+two, because of the `/` in `next=/profile` — and a mismatch is silent.
 
-If you prefer to be narrower, these two are enough:
-
-```
-https://testnetv2.blkfndr.com/auth/callback**
-https://testnetv2.blkfndr.com/auth/confirm**
-```
+The destination now travels in a cookie, so the URLs handed to Supabase are bare
+paths and the exact entries above match them.
 
 ### Serving from more than one domain
 
