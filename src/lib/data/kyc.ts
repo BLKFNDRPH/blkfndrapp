@@ -58,31 +58,79 @@ export type SubmissionInput = z.infer<typeof SubmissionInput>;
  * The row is written through the caller's own client, so RLS applies: the
  * insert policy pins user_id to the caller and forces status to pending. An
  * argument claiming to be someone else cannot get past the database.
+ *
+ * Deliberately not an upsert. PostgREST compiles `.upsert()` into
+ * INSERT ... ON CONFLICT DO UPDATE, and Postgres requires SELECT privilege on
+ * every column that statement assigns. This role holds UPDATE but not SELECT on
+ * the identity columns — the withholding that makes this table safe — so the
+ * statement was refused outright, before RLS was consulted, and no submission
+ * ever landed. A plain UPDATE carries no such requirement, so the two cases are
+ * separated here.
  */
 export async function submitOwnKyc(input: unknown) {
   const caller = await requireCaller();
   const parsed = SubmissionInput.parse(input);
 
   const supabase = await createClient();
-  const { error } = await supabase.from("kyc_requests").upsert(
-    {
-      user_id: caller.userId,
-      stellar_address: parsed.stellarAddress,
-      full_name: parsed.fullName,
-      email: parsed.email,
-      document_type: parsed.documentType,
-      document_path: parsed.documentPath,
-      id_number: parsed.idNumber,
-      date_of_birth: parsed.dateOfBirth,
-      document_expires_on: parsed.documentExpiresOn,
-      residential_address: parsed.residentialAddress,
-      details_hash: parsed.detailsHash,
-      consent_given: parsed.consentGiven,
-      status: "pending",
-      rejection_reason: "",
-    },
-    { onConflict: "stellar_address" },
-  );
+
+  // rejection_reason is absent on purpose: the applicant has no grant on it.
+  // A new row gets '' by default, and a resubmission is cleared by the
+  // kyc_requests_clear_rejection_reason trigger.
+  const details = {
+    full_name: parsed.fullName,
+    email: parsed.email,
+    document_type: parsed.documentType,
+    document_path: parsed.documentPath,
+    id_number: parsed.idNumber,
+    date_of_birth: parsed.dateOfBirth,
+    document_expires_on: parsed.documentExpiresOn,
+    residential_address: parsed.residentialAddress,
+    details_hash: parsed.detailsHash,
+    consent_given: parsed.consentGiven,
+    status: "pending" as const,
+  };
+
+  const { data: existing, error: readError } = await supabase
+    .from("kyc_requests")
+    .select("stellar_address, status")
+    .eq("user_id", caller.userId)
+    .maybeSingle();
+
+  if (readError) throw new Error(`Could not save KYC submission: ${readError.message}`);
+
+  if (!existing) {
+    const { error } = await supabase
+      .from("kyc_requests")
+      .insert({ user_id: caller.userId, stellar_address: parsed.stellarAddress, ...details });
+
+    if (error) {
+      // The only unique key an applicant can collide with is another account's
+      // stellar_address; their own row would have been found above.
+      if (error.code === "23505") {
+        throw new Error("That Stellar address is already registered to another account.");
+      }
+      throw new Error(`Could not save KYC submission: ${error.message}`);
+    }
+    return;
+  }
+
+  if (existing.status === "approved") {
+    throw new Error("Your identity check is already approved — there is nothing to resubmit.");
+  }
+
+  // stellar_address carries no UPDATE grant, so a resubmission cannot move an
+  // existing record onto a different account. Say so rather than accept the
+  // form and silently keep the old address.
+  if (existing.stellar_address !== parsed.stellarAddress) {
+    throw new Error(
+      `This identity check is filed against ${existing.stellar_address}. Reconnect that wallet to resubmit, or contact support to change it.`,
+    );
+  }
+
+  const { error } = await supabase
+    .from("kyc_requests")
+    .update(details)
+    .eq("user_id", caller.userId);
 
   if (error) throw new Error(`Could not save KYC submission: ${error.message}`);
 }
