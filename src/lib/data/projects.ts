@@ -67,6 +67,9 @@ function toProject(row: Row): Project {
     bondPosted: row.bond_posted,
     releasedTotal: Number(row.released_total),
     milestones,
+    location: row.location,
+    locationLat: row.location_lat,
+    locationLng: row.location_lng,
     metadataCid: row.metadata_cid,
   } as unknown as Project;
 }
@@ -133,6 +136,7 @@ export async function upsertProjectFromChain(row: {
   description?: string;
   category?: string;
   imageUrl?: string;
+  location?: string;
   metadataCid?: string;
   fundingGoalRaw: string;
   currentFundingRaw?: string;
@@ -165,6 +169,7 @@ export async function upsertProjectFromChain(row: {
   if (row.description !== undefined) patch.description = row.description;
   if (row.category !== undefined) patch.category = row.category;
   if (row.imageUrl !== undefined) patch.image_url = row.imageUrl;
+  if (row.location !== undefined) patch.location = row.location;
   if (row.metadataCid !== undefined) patch.metadata_cid = row.metadataCid;
   if (row.currentFundingRaw !== undefined) patch.current_funding_raw = row.currentFundingRaw;
   if (row.bondAmountRaw !== undefined) patch.bond_amount_raw = row.bondAmountRaw;

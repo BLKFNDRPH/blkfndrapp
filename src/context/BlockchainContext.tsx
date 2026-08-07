@@ -37,25 +37,6 @@ const mapStatus = (status: number): Project["status"] => {
   }
 };
 
-const mapCurrency = (
-  currency: number,
-): "USDC" | "USDT" | "XLM" | "WBTC" | "WETH" => {
-  switch (currency) {
-    case 0:
-      return "XLM";
-    case 1:
-      return "USDC";
-    case 2:
-      return "USDT";
-    case 3:
-      return "WBTC";
-    case 4:
-      return "WETH";
-    default:
-      return "XLM";
-  }
-};
-
 interface PlatformInfo {
   admin: string;
   feeWalletAddress: string;

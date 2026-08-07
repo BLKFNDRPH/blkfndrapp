@@ -18,6 +18,7 @@ import {
   LayoutGrid,
   Shield,
   UserCheck,
+  Tags,
   Clock,
 } from "lucide-react";
 import { IdentityRegistryPanel } from "./IdentityRegistryPanel";
@@ -56,6 +57,10 @@ import { InternalDetails } from "./InternalDetails";
 import { AnimatePresence, motion } from "framer-motion";
 import { CubeSpinner } from "../ui/CubeSpinner";
 import { AdminManagement } from "./AdminManagement";
+import { CategoryManager } from "./CategoryManager";
+import { useFreighterWallet } from "@/context/FreighterWalletContext";
+import { AdminWalletBar } from "./AdminWalletBar";
+import { PlatformAdminManager } from "./PlatformAdminManager";
 import {
   useProjects,
   usePlatformInfo,
@@ -75,9 +80,12 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 
-interface AdminDashboardProps {
-  initialAdminAccessInfo: { hasAdminAccess: boolean; isMainAdmin: boolean };
-}
+/**
+ * No props. Access to this component is decided server-side by the Supabase
+ * session; on-chain authority is derived below from whichever wallet is
+ * connected right now, so it updates when the admin switches wallets instead
+ * of being frozen at page load.
+ */
 
 const fetcher = (url: string) => fetch(url).then(res => {
   if (!res.ok) throw new Error('Failed to fetch');
@@ -131,9 +139,7 @@ function InteractiveStatCard({
   );
 }
 
-export function AdminDashboard({
-  initialAdminAccessInfo,
-}: AdminDashboardProps) {
+export function AdminDashboard() {
   const router = useRouter();
   const { user } = useAuth();
   const { toast } = useToast();
@@ -144,7 +150,23 @@ export function AdminDashboard({
     isLoadingProjects,
   } = useProjects();
   const { platformInfo } = usePlatformInfo();
+  const { freighterWalletAddress } = useFreighterWallet();
   const refreshAfterTx = useRefreshAfterTx();
+
+  // Signed-in admin != on-chain admin. The ledger checks a signature against
+  // its own roster and does not care what this application believes, so these
+  // are read from the connected wallet rather than the session.
+  const isMainAdmin = Boolean(
+    freighterWalletAddress && platformInfo?.admin === freighterWalletAddress,
+  );
+  const isChainAdmin = Boolean(
+    freighterWalletAddress &&
+      platformInfo &&
+      (platformInfo.admin === freighterWalletAddress ||
+        platformInfo.multiSigAdmins?.some(
+          (a: string) => a === freighterWalletAddress,
+        )),
+  );
   const { openProjectDetails } = useProjectDetails();
 
   const [projects, setProjects] = useState(contextProjects);
@@ -156,7 +178,7 @@ export function AdminDashboard({
   >({});
   const [isInfoExpanded, setIsInfoExpanded] = useState(false);
   const [visibleRecentCount, setVisibleRecentCount] = useState(5);
-  const [adminView, setAdminView] = useState<"projects" | "admins" | "identity">("projects");
+  const [adminView, setAdminView] = useState<"projects" | "admins" | "identity" | "categories">("projects");
 
   // KYC and withdrawals SWR Polling
   const { data: withdrawalsData } = useSWR("/api/admin/withdrawals", fetcher, {
@@ -401,6 +423,7 @@ export function AdminDashboard({
   return (
     <>
       <div className="space-y-8">
+        <AdminWalletBar isChainAdmin={isChainAdmin} isMainAdmin={isMainAdmin} />
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h1 className="text-3xl md:text-4xl font-bold tracking-tight font-headline text-accent">
@@ -459,6 +482,19 @@ export function AdminDashboard({
               >
                 <Users className="h-4 w-4" />
                 Admins
+              </button>
+              <button
+                type="button"
+                onClick={() => setAdminView("categories")}
+                className={cn(
+                  "flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-all",
+                  adminView === "categories"
+                    ? "bg-[#003049] text-white shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <Tags className="h-4 w-4" />
+                Categories
               </button>
             </div>
           </div>
@@ -791,9 +827,22 @@ export function AdminDashboard({
               exit={{ opacity: 0 }}
               transition={{ duration: 0.3 }}
             >
-              <AdminManagement
-                isMainAdmin={initialAdminAccessInfo.isMainAdmin}
-              />
+              <div className="space-y-8">
+                <PlatformAdminManager />
+                <AdminManagement isMainAdmin={isMainAdmin} />
+              </div>
+            </motion.div>
+          )}
+
+          {adminView === "categories" && (
+            <motion.div
+              key="categories-view"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.3 }}
+            >
+              <CategoryManager />
             </motion.div>
           )}
         </AnimatePresence>

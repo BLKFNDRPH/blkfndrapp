@@ -170,6 +170,10 @@ async function handleEvent(topic1: string, topic2: string, payload: any[], contr
         description: metadata.description ?? "",
         category: metadata.category ?? "General",
         imageUrl: metadata.imageUrl ?? "",
+        // Creator-supplied and never verified, so it is bounded here rather than
+        // trusted: the column takes whatever IPFS returns, and IPFS returns
+        // whatever the creator pinned.
+        location: String(metadata.location ?? "").slice(0, 160),
         metadataCid: String(metadataCid ?? ""),
         ...(currency ? { currency } : {}),
         fundingGoalRaw: state.fundingGoalRaw,

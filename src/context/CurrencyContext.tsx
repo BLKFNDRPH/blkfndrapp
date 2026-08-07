@@ -7,7 +7,7 @@ import React, {
   ReactNode,
   useMemo,
 } from "react";
-import type { Currency } from "@/lib/types";
+import { CURRENCIES, type Currency } from "@/lib/currencies";
 
 interface CurrencyContextType {
   currency: Currency;
@@ -22,7 +22,7 @@ const CurrencyContext = createContext<CurrencyContextType | undefined>(
 export const CurrencyProvider = ({ children }: { children: ReactNode }) => {
   const [currency, setCurrency] = useState<Currency>("XLM");
 
-  const currencies: Currency[] = useMemo(() => ["XLM", "USDC", "USDT", "WBTC", "WETH"], []);
+  const currencies: Currency[] = useMemo(() => [...CURRENCIES], []);
 
   return (
     <CurrencyContext.Provider value={{ currency, setCurrency, currencies }}>

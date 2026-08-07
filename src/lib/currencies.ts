@@ -11,7 +11,18 @@
  * address a new project is created with.
  */
 
-export const CURRENCIES = ["USDC", "USDT", "XLM", "WBTC", "WETH"] as const;
+/**
+ * USDT, WBTC and WETH were listed here but have no canonical issuer on Stellar,
+ * which carries USDC, EURC, YLDS and MGUSD as native issued assets. There was
+ * no address to configure them with, so they could never have worked — and a
+ * guessed or unvetted issuer address is worse than an absent one, because it
+ * escrows real contributions into an asset nobody chose.
+ *
+ * The database enum still accepts them. It is a superset of this list, which is
+ * assignable and harmless, and it means restoring one is a config change rather
+ * than a migration if an issuer ever exists.
+ */
+export const CURRENCIES = ["USDC", "XLM"] as const;
 
 export type Currency = (typeof CURRENCIES)[number];
 
@@ -21,9 +32,6 @@ export const STROOPS_PER_UNIT = 10_000_000n;
 const TOKEN_ADDRESSES: Record<Currency, string | undefined> = {
   XLM: process.env.NEXT_PUBLIC_STELLAR_XLM_TOKEN_ID,
   USDC: process.env.NEXT_PUBLIC_STELLAR_USDC_TOKEN_ID,
-  USDT: process.env.NEXT_PUBLIC_STELLAR_USDT_TOKEN_ID,
-  WBTC: process.env.NEXT_PUBLIC_STELLAR_WBTC_TOKEN_ID,
-  WETH: process.env.NEXT_PUBLIC_STELLAR_WETH_TOKEN_ID,
 };
 
 export function isCurrency(value: unknown): value is Currency {

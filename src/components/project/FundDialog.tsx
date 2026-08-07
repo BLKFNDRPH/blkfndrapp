@@ -46,18 +46,12 @@ const AUTO_FUND_THRESHOLD = 0.2;
 
 const COIN_DECIMALS: Record<string, number> = {
   USDC: 7,
-  USDT: 7,
   XLM: 7,
-  WBTC: 7,
-  WETH: 7,
 };
 
 const MOCK_USD_RATES: Record<string, number> = {
   XLM: 0.15,
   USDC: 1.0,
-  USDT: 1.0,
-  WBTC: 65000.0,
-  WETH: 3500.0,
 };
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -123,16 +117,13 @@ export function FundDialog({
     const fetchLiveRates = async () => {
       try {
         const response = await fetch(
-          "https://api.coingecko.com/api/v3/simple/price?ids=stellar,usd-coin,tether,wrapped-bitcoin,weth&vs_currencies=usd",
+          "https://api.coingecko.com/api/v3/simple/price?ids=stellar,usd-coin&vs_currencies=usd",
         );
         if (response.ok) {
           const data = await response.json();
           setUsdRates({
             XLM: data["stellar"]?.usd ?? MOCK_USD_RATES.XLM,
             USDC: data["usd-coin"]?.usd ?? MOCK_USD_RATES.USDC,
-            USDT: data["tether"]?.usd ?? MOCK_USD_RATES.USDT,
-            WBTC: data["wrapped-bitcoin"]?.usd ?? MOCK_USD_RATES.WBTC,
-            WETH: data["weth"]?.usd ?? MOCK_USD_RATES.WETH,
           });
         }
       } catch (error) {

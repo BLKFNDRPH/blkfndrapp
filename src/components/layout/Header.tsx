@@ -123,9 +123,14 @@ export default function Header() {
     <header
       className={cn(
         "sticky top-0 z-50 w-full transition-colors duration-300",
+        // These were the wrong way round: opaque at rest, transparent once
+        // scrolled. A sticky header with no background is a header the page
+        // scrolls straight through, so headings collided with the wordmark on
+        // every page. Transparent at the top lets the hero read as one piece;
+        // the backdrop arrives when there is content passing underneath.
         isScrolled
-          ? "border-b border-transparent bg-transparent"
-          : "border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60",
+          ? "border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60"
+          : "border-b border-transparent bg-transparent",
       )}
     >
       <div className="container flex h-14 max-w-screen-2xl items-center justify-between gap-2">
@@ -371,33 +376,23 @@ export default function Header() {
               )}
             </div>
 
+            {/* The wordmark used to be hidden below 490px and collapsed to zero
+                width on scroll, which meant the site never showed its own name
+                on a phone, and stopped showing it on desktop the moment you
+                scrolled — leaving a bare icon carrying the whole brand. It
+                stays put now and scales instead; the group is a flex row, so it
+                stays centred at any size. Opening search on mobile still hides
+                it, which is the one case where the space is genuinely needed. */}
             <div
               className={cn(
-                "absolute left-1/2 top-1/2 -translate-y-1/2 flex items-center justify-center transition-all duration-500 ease-in-out",
-                isScrolled
-                  ? "-translate-x-1/2"
-                  : "-translate-x-1/2 min-[490px]:-translate-x-[60%]",
+                "absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center justify-center transition-opacity duration-300 ease-in-out",
                 !isDesktop && isSearchOpen && "opacity-0 pointer-events-none",
               )}
             >
-              <Link href="/" className="flex items-center space-x-2">
-                <div
-                  className={cn(
-                    "transition-transform duration-500 ease-in-out",
-                    isScrolled ? "translate-x-0" : "translate-x-0",
-                  )}
-                >
-                  <CubeAvatar />
-                </div>
-                <div
-                  className={cn(
-                    "transition-opacity duration-500 ease-in-out overflow-hidden hidden min-[490px]:block",
-                    isScrolled ? "opacity-0 w-0" : "opacity-100 w-auto ml-3",
-                  )}
-                >
-                  <div className="text-xl">
-                    <StaticBLKFNDR className="-mt-2" />
-                  </div>
+              <Link href="/" className="flex items-center gap-2 sm:gap-3">
+                <CubeAvatar />
+                <div className="text-base sm:text-xl">
+                  <StaticBLKFNDR className="-mt-2" />
                 </div>
               </Link>
             </div>

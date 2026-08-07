@@ -175,6 +175,18 @@ export type Database = {
         };
         Relationships: [];
       };
+      platform_admins: {
+        Row: { email: string; granted_at: string; granted_by: string | null; id: string; note: string; user_id: string | null };
+        Insert: { email: string; granted_at?: string; granted_by?: string | null; id?: string; note?: string; user_id?: string | null };
+        Update: { email?: string; granted_at?: string; granted_by?: string | null; id?: string; note?: string; user_id?: string | null };
+        Relationships: [];
+      };
+      admin_audit_log: {
+        Row: { action: string; actor_id: string | null; created_at: string; detail: string; id: string; target_email: string };
+        Insert: { action: string; actor_id?: string | null; created_at?: string; detail?: string; id?: string; target_email?: string };
+        Update: { action?: string; actor_id?: string | null; created_at?: string; detail?: string; id?: string; target_email?: string };
+        Relationships: [];
+      };
       platform_settings: {
         Row: { fee_wallet_email: string; id: boolean; updated_at: string };
         Insert: { fee_wallet_email?: string; id?: boolean; updated_at?: string };
@@ -211,6 +223,27 @@ export type Database = {
           stellar_public_key?: string | null;
           updated_at?: string;
           wallet_status?: string;
+        };
+        Relationships: [];
+      };
+      project_categories: {
+        Row: {
+          created_at: string;
+          id: string;
+          name: string;
+          sort_order: number;
+        };
+        Insert: {
+          created_at?: string;
+          id?: string;
+          name: string;
+          sort_order?: number;
+        };
+        Update: {
+          created_at?: string;
+          id?: string;
+          name?: string;
+          sort_order?: number;
         };
         Relationships: [];
       };
@@ -277,6 +310,9 @@ export type Database = {
           image_url: string;
           is_public: boolean;
           last_updated_ledger: number;
+          location: string;
+          location_lat: number | null;
+          location_lng: number | null;
           metadata_cid: string;
           project_id: string;
           released_total: number | null;
@@ -306,6 +342,9 @@ export type Database = {
           image_url?: string;
           is_public?: boolean;
           last_updated_ledger?: number;
+          location?: string;
+          location_lat?: number | null;
+          location_lng?: number | null;
           metadata_cid?: string;
           project_id: string;
           released_total_raw?: Raw;
@@ -334,6 +373,9 @@ export type Database = {
           image_url?: string;
           is_public?: boolean;
           last_updated_ledger?: number;
+          location?: string;
+          location_lat?: number | null;
+          location_lng?: number | null;
           metadata_cid?: string;
           project_id?: string;
           released_total_raw?: Raw;
