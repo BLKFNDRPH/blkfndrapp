@@ -1,8 +1,13 @@
+/* Self-hosted variable font for the BLKFNDR wordmark.
+   Roboto Flex (SIL OFL 1.1, see public/fonts/roboto-flex-OFL.txt), latin subset,
+   built with the opsz/slnt/wdth/wght axes the logo components animate. */
 @font-face {
-  font-family: "Compressa VF";
-  src: url("https://res.cloudinary.com/dr6lvwubh/raw/upload/v1529908256/CompressaPRO-GX.woff2") format("woff2-variations");
-  font-weight: 100 900;
-  font-style: normal;
+  font-family: "Roboto Flex Variable";
+  src: url("/fonts/roboto-flex-latin-vf.woff2") format("woff2-variations");
+  font-weight: 100 1000;
+  font-stretch: 25% 151%;
+  font-style: oblique 0deg 10deg;
+  font-display: swap;
 }
 
 @tailwind base;
@@ -121,7 +126,7 @@
   }
 
   .font-logo {
-    font-family: "Compressa VF", sans-serif;
+    font-family: "Roboto Flex Variable", sans-serif;
     font-weight: 700;
     font-variation-settings:
       "wght" 700,
