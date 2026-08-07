@@ -4,8 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useFreighterWallet } from "@/context/FreighterWalletContext";
 import { useToast } from "@/hooks/use-toast";
 import { Client as IdentityClient } from "@/packages/blkfndr_identity/src";
-import { getKycRequests, updateKycRequestStatus } from "@/app/actions";
-import { getIPFSGatewayUrl } from "@/lib/pinata-client";
+import { getKycRequests, getKycSubmission, updateKycRequestStatus } from "@/app/actions";
 import {
   Shield,
   RefreshCw,
@@ -40,6 +39,36 @@ const SOROBAN_RPC_URL = "https://soroban-testnet.stellar.org";
 const IDENTITY_ID = process.env.NEXT_PUBLIC_BLKFNDR_IDENTITY_CONTRACT_ID || "";
 const ALLOWED_ADMIN = process.env.NEXT_PUBLIC_STELLAR_ADMIN_ADDRESS || "";
 
+/**
+ * A row in the review queue.
+ *
+ * Carries no identity data: listSubmissionsForReview selects around those
+ * columns deliberately, so the queue can be listed without exposing anyone's
+ * documents. Reviewing a case fetches them separately, one record at a time.
+ */
+interface QueueRow {
+  id: string;
+  user_id: string;
+  stellar_address: string;
+  document_type: string;
+  status: "pending" | "approved" | "rejected";
+  rejection_reason: string;
+  created_at: string;
+}
+
+/** What opening a case adds. The only read of the identity columns anywhere. */
+interface CaseDetail {
+  full_name: string;
+  email: string;
+  id_number: string | null;
+  date_of_birth: string | null;
+  residential_address: string | null;
+  document_expires_on: string | null;
+  details_hash: string;
+  /** Short-lived signed URL into the private bucket, minted server-side. */
+  documentUrl: string | null;
+}
+
 const getSignerOptions = (publicKey: string) => ({
   signTransaction: (xdrStr: string) =>
     signTransaction(xdrStr, {
@@ -67,7 +96,13 @@ export function IdentityRegistryPanel() {
   const { platformInfo } = usePlatformInfo();
 
   const [loading, setLoading] = useState(false);
-  const [kycRequests, setKycRequests] = useState<any[]>([]);
+  const [kycRequests, setKycRequests] = useState<QueueRow[]>([]);
+
+  // Case Review State. Details are fetched per case and cached by submission id,
+  // so reopening a case does not re-read the identity columns.
+  const [openCase, setOpenCase] = useState<string | null>(null);
+  const [details, setDetails] = useState<Record<string, CaseDetail>>({});
+  const [loadingCase, setLoadingCase] = useState<string | null>(null);
 
   // Lightbox State
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
@@ -87,14 +122,27 @@ export function IdentityRegistryPanel() {
     });
   };
 
-  const isPrimaryAdmin =
-    freighterWalletAddress === (platformInfo?.admin || ALLOWED_ADMIN);
+  // Attesting signs a transaction the identity contract accepts only from an
+  // admin on its own roster, so eligibility is that whole roster. It used to be
+  // `platformInfo.admin`, which is only adminList[0] -- every other on-chain
+  // admin was locked out -- falling back to NEXT_PUBLIC_STELLAR_ADMIN_ADDRESS,
+  // which ships as the literal string "FILL_ME" and so matched nobody at all.
+  const onChainAdmins = platformInfo?.multiSigAdmins ?? [];
+  const canAttest =
+    !!freighterWalletAddress &&
+    (onChainAdmins.includes(freighterWalletAddress) ||
+      (!!ALLOWED_ADMIN && ALLOWED_ADMIN !== "FILL_ME" && freighterWalletAddress === ALLOWED_ADMIN));
+
+  // Rejecting and opening a case only touch the database, which requireAdmin()
+  // already gates server-side, so neither is held to the on-chain roster. That
+  // gate meant a console reviewer holding no contract key could not open a case
+  // to look at it, let alone turn away an obviously bad submission.
 
   const fetchKycRequests = useCallback(async () => {
     try {
       const res = await getKycRequests();
       if (res.success && res.requests) {
-        setKycRequests(res.requests);
+        setKycRequests(res.requests as QueueRow[]);
       } else {
         toast({
           title: "Failed to load KYC requests",
@@ -116,8 +164,55 @@ export function IdentityRegistryPanel() {
     fetchKycRequests();
   }, [fetchKycRequests]);
 
-  const handleApproveRequest = async (address: string) => {
+  /**
+   * Open one case, pulling its identity data and a signed document URL.
+   *
+   * Deliberately per case rather than folded into the queue fetch: this is the
+   * only call that reads the identity columns, and it should happen when a
+   * reviewer opens a submission, not every time the list renders.
+   */
+  const openReview = useCallback(
+    async (submissionId: string) => {
+      if (openCase === submissionId) {
+        setOpenCase(null);
+        return;
+      }
+      setOpenCase(submissionId);
+      if (details[submissionId]) return;
+
+      setLoadingCase(submissionId);
+      try {
+        const res = await getKycSubmission(submissionId);
+        if (res.success && res.request) {
+          setDetails((prev) => ({ ...prev, [submissionId]: res.request as CaseDetail }));
+        } else {
+          toast({
+            title: "Could not open submission",
+            description: (res as { error?: string }).error || "Unknown server error",
+            variant: "destructive",
+          });
+          setOpenCase(null);
+        }
+      } catch (err) {
+        toast({
+          title: "Could not open submission",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "destructive",
+        });
+        setOpenCase(null);
+      } finally {
+        setLoadingCase(null);
+      }
+    },
+    [openCase, details, toast],
+  );
+
+  // The database is keyed by submission id; the contract is keyed by Stellar
+  // address. Passing the address to updateKycRequestStatus used to fail its uuid
+  // check before any decision was recorded, so both are threaded through here.
+  const handleApproveRequest = async (req: QueueRow) => {
     if (!freighterWalletAddress) return;
+    const address = req.stellar_address;
     setLoading(true);
     try {
       const client = new IdentityClient({
@@ -133,7 +228,7 @@ export function IdentityRegistryPanel() {
       const isApprovedOnChain = checkSim.result;
 
       if (isApprovedOnChain) {
-        await updateKycRequestStatus(address, "approved");
+        await updateKycRequestStatus(req.id, "approved");
         toast({
           title: "Approved and Synced",
           description: `KYC for ${address.slice(0, 6)}... has been synced as approved.`,
@@ -142,18 +237,25 @@ export function IdentityRegistryPanel() {
         return;
       }
 
-      const req = kycRequests.find((r) => r.address === address);
-      const hashBuffer = req?.detailsHash
-        ? Buffer.from(req.detailsHash, "hex")
-        : Buffer.alloc(32);
+      // The hash comes from the opened case. Attesting a zero hash would record
+      // a commitment matching no submission, so refuse rather than send one.
+      const detailsHash = details[req.id]?.details_hash;
+      if (!detailsHash) {
+        toast({
+          title: "Open the case first",
+          description: "The attestation commits to this submission's details hash, which loads with the case.",
+          variant: "destructive",
+        });
+        return;
+      }
 
       const tx = await client.attest({
         address,
-        kyc_hash: hashBuffer,
+        kyc_hash: Buffer.from(detailsHash, "hex"),
       });
 
       await tx.signAndSend();
-      await updateKycRequestStatus(address, "approved");
+      await updateKycRequestStatus(req.id, "approved");
 
       toast({
         title: "Attested and Approved",
@@ -163,7 +265,7 @@ export function IdentityRegistryPanel() {
     } catch (err: any) {
       const errStr = String(err);
       if (errStr.includes("AlreadyAttested") || errStr.includes("Contract, #12")) {
-        await updateKycRequestStatus(address, "approved");
+        await updateKycRequestStatus(req.id, "approved");
         toast({
           title: "Approved and Synced",
           description: `KYC for ${address.slice(0, 6)}... has been synced as approved.`,
@@ -181,13 +283,14 @@ export function IdentityRegistryPanel() {
     }
   };
 
-  const handleRejectRequest = async (address: string, reason: string) => {
+  const handleRejectRequest = async (submissionId: string, reason: string) => {
     setLoading(true);
     try {
-      await updateKycRequestStatus(address, "rejected", reason);
+      const res = await updateKycRequestStatus(submissionId, "rejected", reason);
+      if (!res.success) throw new Error(res.error);
       toast({
         title: "Request Rejected",
-        description: `KYC request for ${address.slice(0, 6)}... has been rejected. Reason: ${reason}`,
+        description: `The submission has been rejected. Reason: ${reason}`,
       });
       setRejectionTarget(null);
       setSelectedRejectionReason("Blurry/Low Quality");
@@ -204,8 +307,9 @@ export function IdentityRegistryPanel() {
     }
   };
 
-  const handleRevokeRequest = async (address: string) => {
+  const handleRevokeRequest = async (req: QueueRow) => {
     if (!freighterWalletAddress) return;
+    const address = req.stellar_address;
     setLoading(true);
     try {
       const client = new IdentityClient({
@@ -221,7 +325,7 @@ export function IdentityRegistryPanel() {
       });
 
       await tx.signAndSend();
-      await updateKycRequestStatus(address, "rejected");
+      await updateKycRequestStatus(req.id, "rejected");
 
       toast({
         title: "Attestation Revoked",
@@ -259,9 +363,13 @@ export function IdentityRegistryPanel() {
               </CardDescription>
             </div>
             <div className="flex items-center gap-3">
-              {!isPrimaryAdmin && (
-                <Badge variant="secondary" className="text-[10px] uppercase tracking-wider font-semibold">
-                  Read-Only
+              {!canAttest && (
+                <Badge
+                  variant="secondary"
+                  className="text-[10px] uppercase tracking-wider font-semibold"
+                  title="Cases can be reviewed and rejected. Attesting on-chain needs a wallet on the identity contract's admin roster."
+                >
+                  No Attest Key
                 </Badge>
               )}
               <Button
@@ -287,9 +395,15 @@ export function IdentityRegistryPanel() {
               </p>
             </div>
           ) : (
-            pendingList.map((req) => (
+            pendingList.map((req) => {
+              const detail = details[req.id];
+              const isOpen = openCase === req.id;
+              const isLoadingCase = loadingCase === req.id;
+              const expiresOn = detail?.document_expires_on;
+              const isExpired = !!expiresOn && new Date(expiresOn) < new Date();
+              return (
               <div
-                key={req._id}
+                key={req.id}
                 className="border border-border/80 bg-background/50 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow"
               >
                 {/* Split-Pane: Data + Image (stack image above data on mobile) */}
@@ -300,12 +414,12 @@ export function IdentityRegistryPanel() {
                     <div className="space-y-1.5">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-mono text-sm font-bold text-foreground break-all select-all">
-                          {req.address}
+                          {req.stellar_address}
                         </span>
                         <Button
                           variant="ghost"
                           size="icon"
-                          onClick={() => handleCopy(req.address, "Wallet address")}
+                          onClick={() => handleCopy(req.stellar_address, "Wallet address")}
                           className="h-6 w-6 hover:bg-muted text-muted-foreground rounded-md shrink-0"
                           title="Copy Wallet Address"
                         >
@@ -322,7 +436,7 @@ export function IdentityRegistryPanel() {
                           Full Name
                         </span>
                         <p className="text-lg font-bold text-foreground leading-snug">
-                          {req.fullName || "N/A"}
+                          {detail?.full_name || (isOpen ? "—" : "Open the case to view")}
                         </p>
                       </div>
                       <div className="space-y-1">
@@ -330,7 +444,7 @@ export function IdentityRegistryPanel() {
                           Email Address
                         </span>
                         <p className="text-base font-semibold text-foreground">
-                          {req.email || "N/A"}
+                          {detail?.email || (isOpen ? "—" : "Open the case to view")}
                         </p>
                       </div>
 
@@ -340,7 +454,7 @@ export function IdentityRegistryPanel() {
                           ID Document Type
                         </span>
                         <p className="text-base font-semibold text-foreground capitalize">
-                          {req.documentType?.replace("_", " ") || "N/A"}
+                          {req.document_type?.replace("_", " ") || "N/A"}
                         </p>
                       </div>
                       <div className="space-y-1">
@@ -351,7 +465,7 @@ export function IdentityRegistryPanel() {
                           <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() => handleCopy(req._id, "Submission ID")}
+                            onClick={() => handleCopy(req.id, "Submission ID")}
                             className="h-4 w-4 hover:bg-muted text-muted-foreground rounded-md shrink-0"
                             title="Copy Submission ID"
                           >
@@ -359,35 +473,35 @@ export function IdentityRegistryPanel() {
                           </Button>
                         </div>
                         <p className="text-sm font-mono font-semibold text-foreground select-all break-all">
-                          {req._id}
+                          {req.id}
                         </p>
                       </div>
                     </div>
 
                     {/* Compliance Details Section */}
-                    {(req.idNumber || req.dob || req.expiryDate || req.residentialAddress) && (
+                    {detail && (detail.id_number || detail.date_of_birth || expiresOn || detail.residential_address) && (
                       <div className="border-t border-border/40 pt-5 space-y-4">
                         <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Compliance Data</h4>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-4">
-                          {req.idNumber && (
+                          {detail.id_number && (
                             <div className="space-y-1">
                               <span className="text-[11px] uppercase font-semibold text-muted-foreground tracking-wider block">
                                 ID Number
                               </span>
-                              <p className="text-sm font-semibold font-mono text-foreground select-all">{req.idNumber}</p>
+                              <p className="text-sm font-semibold font-mono text-foreground select-all">{detail.id_number}</p>
                             </div>
                           )}
-                          {req.dob && (
+                          {detail.date_of_birth && (
                             <div className="space-y-1">
                               <span className="text-[11px] uppercase font-semibold text-muted-foreground tracking-wider block">
                                 Date of Birth
                               </span>
                               <p className="text-sm font-semibold text-foreground">
-                                {new Date(req.dob).toLocaleDateString()}
+                                {new Date(detail.date_of_birth).toLocaleDateString()}
                               </p>
                             </div>
                           )}
-                          {req.expiryDate && (
+                          {expiresOn && (
                             <div className="space-y-1">
                               <span className="text-[11px] uppercase font-semibold text-muted-foreground tracking-wider block">
                                 ID Expiry Date
@@ -395,11 +509,11 @@ export function IdentityRegistryPanel() {
                               <div className="flex items-center gap-2">
                                 <p className={cn(
                                   "text-sm font-semibold",
-                                  new Date(req.expiryDate) < new Date() ? "text-rose-500 font-bold" : "text-foreground"
+                                  isExpired ? "text-rose-500 font-bold" : "text-foreground"
                                 )}>
-                                  {new Date(req.expiryDate).toLocaleDateString()}
+                                  {new Date(expiresOn).toLocaleDateString()}
                                 </p>
-                                {new Date(req.expiryDate) < new Date() && (
+                                {isExpired && (
                                   <Badge variant="destructive" className="text-[9px] font-bold uppercase tracking-wider py-0.5 px-1.5 shrink-0 bg-rose-500/10 text-rose-500 border border-rose-500/20">
                                     Expired
                                   </Badge>
@@ -407,13 +521,13 @@ export function IdentityRegistryPanel() {
                               </div>
                             </div>
                           )}
-                          {req.residentialAddress && (
+                          {detail.residential_address && (
                             <div className="space-y-1 sm:col-span-2">
                               <span className="text-[11px] uppercase font-semibold text-muted-foreground tracking-wider block">
                                 Residential Address
                               </span>
                               <p className="text-sm font-semibold text-foreground leading-relaxed whitespace-pre-wrap select-all">
-                                {req.residentialAddress}
+                                {detail.residential_address}
                               </p>
                             </div>
                           )}
@@ -422,7 +536,7 @@ export function IdentityRegistryPanel() {
                     )}
 
                     {/* Details Hash */}
-                    {req.detailsHash && (
+                    {detail?.details_hash && (
                       <div className="space-y-1.5 border-t border-border/40 pt-4">
                         <div className="flex items-center gap-2">
                           <span className="text-[11px] uppercase font-semibold text-muted-foreground tracking-wider">
@@ -431,7 +545,7 @@ export function IdentityRegistryPanel() {
                           <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() => handleCopy(req.detailsHash, "Details hash")}
+                            onClick={() => handleCopy(detail.details_hash, "Details hash")}
                             className="h-5 w-5 hover:bg-muted text-muted-foreground rounded-md"
                             title="Copy Details Hash"
                           >
@@ -439,7 +553,7 @@ export function IdentityRegistryPanel() {
                           </Button>
                         </div>
                         <span className="font-mono text-[11px] text-foreground/80 select-all break-all block py-2 px-3 bg-muted/40 rounded-lg border border-border/40">
-                          {req.detailsHash}
+                          {detail.details_hash}
                         </span>
                       </div>
                     )}
@@ -447,18 +561,21 @@ export function IdentityRegistryPanel() {
 
                   {/* Right Visual Column — Document Image */}
                   <div className="md:w-[260px] lg:w-[300px] shrink-0 flex items-center justify-center p-6 md:p-8 bg-muted/10 md:border-l border-b md:border-b-0 border-border/60">
-                    {req.documentImage ? (
+                    {/* The document lives in a private bucket, not IPFS. The URL
+                        below is signed server-side and expires in five minutes,
+                        so it arrives only with an opened case. */}
+                    {detail?.documentUrl ? (
                       <button
                         type="button"
                         onClick={() => {
                           setLightboxRotation(0);
                           setLightboxZoom(1);
-                          setLightboxImage(getIPFSGatewayUrl(req.documentImage));
+                          setLightboxImage(detail.documentUrl);
                         }}
                         className="group relative cursor-pointer block border-2 border-border/60 rounded-xl overflow-hidden w-full aspect-[4/3] bg-zinc-900/30 shadow-lg hover:shadow-xl transition-all"
                       >
                         <img
-                          src={getIPFSGatewayUrl(req.documentImage)}
+                          src={detail.documentUrl}
                           alt="Verification Document"
                           className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-300"
                         />
@@ -467,8 +584,14 @@ export function IdentityRegistryPanel() {
                         </span>
                       </button>
                     ) : (
-                      <div className="w-full aspect-[4/3] flex items-center justify-center bg-muted/30 border-2 border-dashed border-border/50 rounded-xl">
-                        <span className="text-xs text-muted-foreground italic">No document uploaded</span>
+                      <div className="w-full aspect-[4/3] flex flex-col items-center justify-center gap-2 bg-muted/30 border-2 border-dashed border-border/50 rounded-xl">
+                        {isLoadingCase ? (
+                          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                        ) : (
+                          <span className="text-xs text-muted-foreground italic px-4 text-center">
+                            {isOpen ? "No document uploaded" : "Open the case to load the document"}
+                          </span>
+                        )}
                       </div>
                     )}
                   </div>
@@ -481,11 +604,11 @@ export function IdentityRegistryPanel() {
                       Awaiting Review
                     </Badge>
                     <span className="text-xs text-muted-foreground font-medium">
-                      Submitted: {req.createdAt ? new Date(req.createdAt).toLocaleString() : "Unknown"}
+                      Submitted: {req.created_at ? new Date(req.created_at).toLocaleString() : "Unknown"}
                     </span>
                   </div>
                   <div className="flex items-center gap-3">
-                    {req.expiryDate && new Date(req.expiryDate) < new Date() && (
+                    {isExpired && (
                       <Badge variant="destructive" className="animate-pulse bg-rose-600 hover:bg-rose-600 border border-rose-500 text-white font-bold tracking-wider text-[10px] uppercase h-11 px-4 flex items-center gap-1.5">
                         <AlertTriangle className="h-4 w-4 shrink-0" />
                         Expired Document
@@ -493,20 +616,36 @@ export function IdentityRegistryPanel() {
                     )}
                     <Button
                       variant="outline"
+                      onClick={() => openReview(req.id)}
+                      disabled={loading || isLoadingCase}
+                      className="h-11 px-6 text-sm font-semibold"
+                    >
+                      {isLoadingCase && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                      {isOpen ? "Close case" : "Open case"}
+                    </Button>
+                    <Button
+                      variant="outline"
                       onClick={() => {
                         setSelectedRejectionReason("Blurry/Low Quality");
                         setCustomReason("");
-                        setRejectionTarget(req.address);
+                        setRejectionTarget(req.id);
                       }}
-                      disabled={loading || !isPrimaryAdmin}
+                      disabled={loading}
                       className="h-11 px-6 text-sm font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 border-rose-200/50 dark:border-rose-500/20 dark:hover:bg-rose-500/10"
                     >
                       <XCircle className="mr-2 h-4 w-4" />
                       Reject
                     </Button>
                     <Button
-                      onClick={() => handleApproveRequest(req.address)}
-                      disabled={loading || !isPrimaryAdmin}
+                      onClick={() => handleApproveRequest(req)}
+                      disabled={loading || !canAttest || !detail}
+                      title={
+                        !canAttest
+                          ? "Attesting signs a transaction the identity contract only accepts from an admin on its roster. Connect that wallet in Freighter."
+                          : !detail
+                            ? "Open the case first — the attestation commits to its details hash."
+                            : undefined
+                      }
                       className="h-11 px-8 bg-accent hover:bg-accent/90 text-white text-sm font-semibold shadow-sm"
                     >
                       {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -516,7 +655,8 @@ export function IdentityRegistryPanel() {
                   </div>
                 </div>
               </div>
-            ))
+              );
+            })
           )}
         </div>
       </Card>
@@ -574,22 +714,26 @@ export function IdentityRegistryPanel() {
               <div className="divide-y">
                 {approvedList.map((req) => (
                   <div
-                    key={req._id}
+                    key={req.id}
                     className="px-6 py-4 flex items-center justify-between gap-4 hover:bg-muted/5 transition-colors"
                   >
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-semibold text-foreground truncate" title={req.address}>
-                        {req.fullName || "Unnamed"}
+                      {/* Names are not in the queue payload, and an approved
+                          creator is identified on-chain by address anyway. */}
+                      <p className="text-sm font-semibold text-foreground font-mono truncate" title={req.stellar_address}>
+                        {req.stellar_address}
                       </p>
-                      <p className="text-xs text-muted-foreground font-mono truncate mt-0.5">
-                        {req.address}
+                      <p className="text-xs text-muted-foreground truncate mt-0.5 capitalize">
+                        {req.document_type?.replace("_", " ")}
+                        {req.created_at ? ` · ${new Date(req.created_at).toLocaleDateString()}` : ""}
                       </p>
                     </div>
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => handleRevokeRequest(req.address)}
-                      disabled={loading || !isPrimaryAdmin}
+                      onClick={() => handleRevokeRequest(req)}
+                      disabled={loading || !canAttest}
+                      title={!canAttest ? "Revoking signs an on-chain transaction as a contract admin." : undefined}
                       className="h-9 px-4 text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/10 border border-rose-200/30 text-xs font-semibold shrink-0"
                     >
                       Revoke
