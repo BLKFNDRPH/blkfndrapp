@@ -26,6 +26,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "../ui/avatar";
 import { FundDialog } from "./FundDialog";
 import { Progress } from "../ui/progress";
 import { useProjectDetails } from "@/context/ProjectDetailsContext";
+import { MilestoneVoting } from "./MilestoneVoting";
 import { ScrollArea } from "../ui/scroll-area";
 import {
   TrendingUp,
@@ -788,6 +789,19 @@ export function ProjectDetailsDialog() {
               )}
 
 
+
+              {project?.vaultAddress &&
+                ["funded", "active", "completed", "refunding"].includes(project.status) && (
+                  <div className="w-full space-y-3 pt-2">
+                    <h3 className="text-sm font-semibold">Milestones</h3>
+                    <MilestoneVoting
+                      vaultAddress={project.vaultAddress}
+                      currency={project.currencyType ?? "USDC"}
+                      creatorAddress={project.creatorAddress ?? project.creator}
+                      onChange={() => refreshProject(project.id)}
+                    />
+                  </div>
+                )}
 
               <FundDialog
                 project={project!}
