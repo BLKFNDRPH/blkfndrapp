@@ -120,6 +120,7 @@ docker compose logs -f blkfndr-app
 | `INDEXER_SECRET` | Bearer token for `POST /api/indexer`. Invent a long random value |
 | `GEMINI_API_KEY` | Optional, AI listing review. The Genkit plugin reads `GEMINI_API_KEY`, `GOOGLE_API_KEY` or `GOOGLE_GENAI_API_KEY` — not `GOOGLE_GENERATIVEAI_API_KEY` |
 | `INDEX_INTERVAL_SECONDS` | Optional, defaults to 60 |
+| `APP_PORT` | Optional, defaults to 8788. Host port to publish on |
 
 ### Token contract addresses
 
@@ -137,14 +138,35 @@ Deriving them again after a network change is not optional.
 
 ## Port configuration
 
-The app listens on **3000** inside the container and is published on **8788**.
-Point your reverse proxy at 8788. To change the host port, edit
-`docker-compose.yml`:
+The app always listens on **3000** inside the container. The host port it is
+published on comes from `APP_PORT`, defaulting to **8788**.
+
+Set `APP_PORT` in the Portainer stack environment if 8788 is taken. A host that
+already has the port allocated fails the entire stack at container networking:
+
+```
+Bind for 0.0.0.0:8788 failed: port is already allocated
+```
+
+To see which ports are already taken on the host:
+
+```bash
+ss -ltnp
+```
+
+Point your reverse proxy at whichever port you choose.
+
+If you would rather Docker pick any free port, replace the `ports` block in
+`docker-compose.yml` with the container port alone:
 
 ```yaml
 ports:
-  - "YOUR_PORT:3000"
+  - "3000"
 ```
+
+That can never collide, but the host port changes every time the container is
+recreated, which a reverse proxy configuration cannot follow. Naming a free port
+is usually the better trade.
 
 ## The indexer service
 
@@ -199,7 +221,12 @@ In order, because each step depends on the one before:
 
 ### Via Portainer
 
-**Stacks** → `blkfndr` → **Update the stack**, with **Re-pull image and redeploy**.
+**Stacks** → `blkfndr` → **Update the stack**.
+
+Leave **Re-pull image** off. This stack builds its image rather than pulling one,
+so there is nothing in a registry to re-pull — the option makes Docker look for
+`blkfndr-app` on Docker Hub and fail the deploy. Portainer rebuilds from the
+repository on update, which is what you want.
 
 Changing a **build-time** variable requires a rebuild. Restarting is not enough —
 the old value is already compiled into the JavaScript being served.
@@ -222,7 +249,11 @@ docker compose logs blkfndr-app
   `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` or
   `NEXT_PUBLIC_BLKFNDR_FACTORY_CONTRACT_ID` is empty, because an image built
   without them cannot be fixed at runtime.
-- **Port conflict** — check 8788 is free.
+- **Port conflict** — `Bind for 0.0.0.0:<port> failed: port is already allocated`.
+  Check whichever port `APP_PORT` resolves to is free, defaulting to 8788.
+  Note this leaves the stack half-running: `indexer-cron` starts anyway and
+  loops against an app that never came up, so its logs fill with failures that
+  are a symptom rather than the cause.
 
 ### No projects appear
 
@@ -259,6 +290,8 @@ server {
     ssl_certificate_key /path/to/key.pem;
 
     location / {
+        # Must match APP_PORT. 8788 is only the default — if you set APP_PORT
+        # because that port was taken, change it here too.
         proxy_pass http://localhost:8788;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
