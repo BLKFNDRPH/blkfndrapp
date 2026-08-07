@@ -421,7 +421,14 @@ export function AdminManagement({ isMainAdmin }: AdminManagementProps) {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
+                          {/* The owner cannot be removed: only the owner may
+                              edit the roster, so removing them would leave a
+                              list nobody can ever change again. The contract
+                              refuses with WouldOrphanRoster — offering it here
+                              just produced a failed signature and an error
+                              nobody could act on. Transfer ownership first. */}
                           <DropdownMenuItem
+                            disabled={admin.address === platformInfo?.owner}
                             className="text-destructive focus:text-destructive"
                             onClick={() => {
                               setAdminToRemove(admin);
@@ -429,7 +436,9 @@ export function AdminManagement({ isMainAdmin }: AdminManagementProps) {
                             }}
                           >
                             <Trash2 className="mr-2 h-4 w-4" />
-                            Remove Admin
+                            {admin.address === platformInfo?.owner
+                              ? "Owner — transfer ownership first"
+                              : "Remove Admin"}
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
