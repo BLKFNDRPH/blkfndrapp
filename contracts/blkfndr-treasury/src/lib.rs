@@ -51,15 +51,32 @@ use soroban_sdk::{
 
 const BPS_TOTAL: i128 = 10_000;
 
-/// More than half the shares, mirroring the release threshold in the project
-/// vault. Deliberately not a headcount: this is the shareholders' own money,
-/// and someone holding two thirds of it should not be outvoted on its timing by
-/// two holders of five per cent.
-const APPROVAL_THRESHOLD_BPS: i128 = 5_000;
+/// Two thirds of the owners, by headcount, rounded up: two of three, three of
+/// four, four of five.
+///
+/// Headcount rather than share weight, which is the reverse of how this started.
+/// Weighting by share made a majority holder's agreement necessary for anything
+/// to move — and once owners hold equal shares, a share-weighted threshold and a
+/// headcount threshold say the same thing right up until someone's share is
+/// adjusted, at which point the weighted rule quietly hands one person a veto.
+/// The owners asked for two-to-one, which is a rule about people.
+const APPROVAL_NUMERATOR: u32 = 2;
+const APPROVAL_DENOMINATOR: u32 = 3;
 
 /// Seconds a vote stays open. A cycle that nobody finishes voting on expires
 /// and can be reopened, rather than pinning the balance forever.
 const DEFAULT_VOTE_WINDOW: u64 = 7 * 24 * 60 * 60;
+
+/// Shortest gap between two successful releases.
+///
+/// Thirty days rather than a calendar month, because a calendar month is not a
+/// fixed quantity and the ledger has no calendar: "monthly" would otherwise mean
+/// 28 days in February and 31 in March, and the difference would have to be
+/// reimplemented identically everywhere it was checked.
+///
+/// Measured from the last release that actually carried, not from the last
+/// attempt. A vote that lapses costs nobody a month.
+const MIN_RELEASE_INTERVAL: u64 = 30 * 24 * 60 * 60;
 
 /// Bounds the register so iteration stays cheap and predictable.
 const MAX_SHAREHOLDERS: u32 = 20;
@@ -90,6 +107,7 @@ pub enum Error {
     ThresholdAlreadyMet = 36,
     NotPayable          = 37,
     AlreadyClaimed      = 38,
+    ReleaseTooSoon      = 39,
 
     NoProposalOpen      = 40,
     ProposalAlreadyOpen = 41,
@@ -130,7 +148,9 @@ pub struct Cycle {
     pub roster: Vec<Shareholder>,
     pub opened_at: u64,
     pub closes_at: u64,
-    pub approved_bps: i128,
+    /// How many owners have approved. The rule is two-to-one by headcount, so
+    /// this is the number that decides, not the share weight beside it.
+    pub approvals: u32,
     pub state: CycleState,
 }
 
@@ -163,6 +183,18 @@ pub enum GovernedAction {
     /// being a single-signature write meant the whole design could be bypassed by
     /// changing who "everyone" is before asking them.
     SetShareholders(Vec<Shareholder>),
+    /// Replace the owners, splitting the treasury equally between them.
+    ///
+    /// The ordinary way to add or remove an owner. Owners hold equal shares by
+    /// default, so naming the people is enough and nobody has to compute basis
+    /// points that must land on exactly 10 000. SetShareholders above remains
+    /// for the deliberate exception — an unequal split the owners have voted for.
+    ///
+    /// Adding an owner dilutes the existing ones, which is the intended meaning:
+    /// owners own the platform, so admitting one is a financial decision. Staff
+    /// who need console access without a share are a separate role entirely and
+    /// never appear here.
+    SetOwners(Vec<Address>),
 }
 
 #[contracttype]
@@ -173,7 +205,7 @@ pub struct Proposal {
     pub roster: Vec<Shareholder>,
     pub opened_at: u64,
     pub closes_at: u64,
-    pub approved_bps: i128,
+    pub approvals: u32,
 }
 
 #[contracttype]
@@ -194,6 +226,8 @@ pub enum DataKey {
     Reserved(Address),
     /// cycle_id -> how many shareholders have claimed.
     ClaimCount(u32),
+    /// When a cycle last carried. Releases are monthly, and this is the clock.
+    LastReleaseAt,
     /// (cycle_id, voter) -> voted
     CycleVote(u32, Address),
     /// (cycle_id, shareholder) -> claimed
@@ -254,8 +288,40 @@ fn share_of(roster: &Vec<Shareholder>, who: &Address) -> Option<u32> {
     None
 }
 
-fn carried(approved_bps: i128) -> bool {
-    approved_bps * BPS_TOTAL > BPS_TOTAL * APPROVAL_THRESHOLD_BPS
+/// Whether `approvals` owners out of `total` meets the two-thirds rule.
+///
+/// Multiplied rather than divided, so the rounding is exact and upward without a
+/// ceiling function: 2 of 3 gives 6 >= 6 and carries, 2 of 4 gives 6 >= 8 and
+/// does not. Integer division would round 2/3 of 4 down to 2 and let half the
+/// owners release the money.
+fn carried(approvals: u32, total: u32) -> bool {
+    (approvals as u64) * (APPROVAL_DENOMINATOR as u64)
+        >= (total as u64) * (APPROVAL_NUMERATOR as u64)
+}
+
+/// An equal register over `owners`, totalling exactly 10 000.
+///
+/// Ten thousand does not divide by three, so equality cannot be exact. The
+/// remainder goes one basis point at a time to the earliest owners rather than
+/// being dropped, because validate_roster requires the total to be the whole and
+/// a register summing to 9 999 would leave a basis point nobody could ever claim.
+fn equal_shares(env: &Env, owners: &Vec<Address>) -> Vec<Shareholder> {
+    let n = owners.len();
+    if n == 0 || n > MAX_SHAREHOLDERS {
+        panic_with_error!(env, Error::TooManyShareholders);
+    }
+
+    let base = BPS_TOTAL as u32 / n;
+    let remainder = BPS_TOTAL as u32 % n;
+
+    let mut register = Vec::new(env);
+    for i in 0..n {
+        register.push_back(Shareholder {
+            address: owners.get(i).unwrap(),
+            share_bps: base + if i < remainder { 1 } else { 0 },
+        });
+    }
+    register
 }
 
 #[contract]
@@ -352,6 +418,20 @@ impl Treasury {
             }
         }
 
+        // Monthly, measured from the last release that carried. Checked at open
+        // rather than at approval so the owners find out before spending a
+        // voting window, and so a cycle cannot be opened early and held until
+        // the clock catches up.
+        if let Some(last) = env
+            .storage()
+            .instance()
+            .get::<_, u64>(&DataKey::LastReleaseAt)
+        {
+            if env.ledger().timestamp() < last + MIN_RELEASE_INTERVAL {
+                panic_with_error!(&env, Error::ReleaseTooSoon);
+            }
+        }
+
         // Reserved money belongs to shareholders of earlier cycles who have not
         // claimed yet. Excluding it is what stops a new cycle from paying their
         // share to somebody else.
@@ -378,7 +458,7 @@ impl Treasury {
             roster,
             opened_at: now,
             closes_at: now + window,
-            approved_bps: 0,
+            approvals: 0,
             state: CycleState::Voting,
         };
 
@@ -427,8 +507,11 @@ impl Treasury {
         }
         env.storage().persistent().set(&key, &true);
 
-        cycle.approved_bps += share as i128;
-        let reached = carried(cycle.approved_bps);
+        // Membership is what the vote needs; the share is read only to confirm
+        // the voter is on the register the cycle snapshotted.
+        let _ = share;
+        cycle.approvals += 1;
+        let reached = carried(cycle.approvals, cycle.roster.len());
         if reached {
             cycle.state = CycleState::Payable;
 
@@ -444,11 +527,17 @@ impl Treasury {
                 &(reserved + cycle.amount),
             );
 
+            // The clock starts here, not at open: a cycle that lapses costs
+            // nobody a month, and the next attempt can begin immediately.
+            env.storage()
+                .instance()
+                .set(&DataKey::LastReleaseAt, &env.ledger().timestamp());
+
             // The vote is over, so this cycle no longer blocks the next one.
             env.storage().instance().remove(&DataKey::OpenCycleId);
         }
 
-        let approved = cycle.approved_bps;
+        let approved = cycle.approvals;
         env.storage().persistent().set(&DataKey::Cycle(id), &cycle);
 
         env.events().publish(
@@ -487,7 +576,7 @@ impl Treasury {
         if env.ledger().timestamp() < cycle.closes_at {
             panic_with_error!(&env, Error::VotingClosed);
         }
-        if carried(cycle.approved_bps) {
+        if carried(cycle.approvals, cycle.roster.len()) {
             panic_with_error!(&env, Error::ThresholdAlreadyMet);
         }
 
@@ -619,6 +708,9 @@ impl Treasury {
                 }
             }
             GovernedAction::SetShareholders(next) => validate_roster(&env, next),
+            GovernedAction::SetOwners(owners) => {
+                validate_roster(&env, &equal_shares(&env, owners));
+            }
             GovernedAction::TransferAdmin(_) => {}
         }
 
@@ -632,7 +724,9 @@ impl Treasury {
             .instance()
             .get::<_, Proposal>(&DataKey::Proposal)
         {
-            if env.ledger().timestamp() < open.closes_at && !carried(open.approved_bps) {
+            if env.ledger().timestamp() < open.closes_at
+                && !carried(open.approvals, open.roster.len())
+            {
                 panic_with_error!(&env, Error::ProposalAlreadyOpen);
             }
         }
@@ -647,7 +741,7 @@ impl Treasury {
             roster,
             opened_at: now,
             closes_at: now + window,
-            approved_bps: 0,
+            approvals: 0,
         };
 
         env.storage()
@@ -676,7 +770,7 @@ impl Treasury {
         if env.ledger().timestamp() >= proposal.closes_at {
             panic_with_error!(&env, Error::VotingClosed);
         }
-        if carried(proposal.approved_bps) {
+        if carried(proposal.approvals, proposal.roster.len()) {
             panic_with_error!(&env, Error::ThresholdAlreadyMet);
         }
 
@@ -689,9 +783,10 @@ impl Treasury {
         }
         env.storage().persistent().set(&key, &true);
 
-        proposal.approved_bps += share as i128;
+        let _ = share;
+        proposal.approvals += 1;
         let id = proposal.id;
-        let approved = proposal.approved_bps;
+        let approved = proposal.approvals;
         env.storage()
             .instance()
             .set(&DataKey::Proposal, &proposal);
@@ -716,7 +811,7 @@ impl Treasury {
             .get(&DataKey::Proposal)
             .unwrap_or_else(|| panic_with_error!(&env, Error::NoProposalOpen));
 
-        if !carried(proposal.approved_bps) {
+        if !carried(proposal.approvals, proposal.roster.len()) {
             panic_with_error!(&env, Error::ThresholdNotMet);
         }
 
@@ -737,6 +832,18 @@ impl Treasury {
                     &factory,
                     &Symbol::new(&env, "transfer_admin"),
                     soroban_sdk::vec![&env, new_admin.into_val(&env)],
+                );
+            }
+            GovernedAction::SetOwners(owners) => {
+                let register = equal_shares(&env, owners);
+                validate_roster(&env, &register);
+                env.storage()
+                    .instance()
+                    .set(&DataKey::Shareholders, &register);
+
+                env.events().publish(
+                    (symbol_short!("OWNERS"), symbol_short!("SET")),
+                    register.len(),
                 );
             }
             GovernedAction::SetShareholders(next) => {
@@ -761,6 +868,15 @@ impl Treasury {
     }
 
     // ── Reads ──────────────────────────────────────────────────────────────
+
+    /// When the next cycle may open. Zero if none has ever carried.
+    pub fn next_release_at(env: Env) -> u64 {
+        env.storage()
+            .instance()
+            .get::<_, u64>(&DataKey::LastReleaseAt)
+            .map(|last| last + MIN_RELEASE_INTERVAL)
+            .unwrap_or(0)
+    }
 
     pub fn get_shareholders(env: Env) -> Vec<Shareholder> {
         load(&env, &DataKey::Shareholders)
