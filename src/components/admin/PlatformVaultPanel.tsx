@@ -125,15 +125,27 @@ export function PlatformVaultPanel() {
           simulate(() => c.get_open_cycle(), "get_open_cycle"),
         ]);
 
-      // Walk back from the open cycle, or from a small bound when none is open.
+      // Reserved is the sum still owed to owners of payable cycles, so a
+      // reserve of zero means there is nothing anywhere left to claim. Checking
+      // it first turns the common case — an empty or fully settled vault — from
+      // eight sequential round trips into none, which is what was making the
+      // panel sit on "Reading the vault" for several seconds on every visit.
+      //
+      // When there is something owed, the cycles are probed together rather
+      // than in a descending loop. The loop stopped early on a hit, which reads
+      // as the cheaper option and is not: its best case is one request and its
+      // worst is eight *in series*, while eight in parallel cost one round trip
+      // either way.
       let lastCycleId: number | null = null;
-      const from = openCycle ? (openCycle as any).id : 8;
-      for (let id = from; id >= 1; id--) {
-        const cyc = await simulate(() => c.get_cycle({ cycle_id: id }), "get_cycle");
-        if (cyc && (cyc as any).state?.tag === "Payable") {
-          lastCycleId = id;
-          break;
-        }
+      const owed = (reserved as bigint | null) ?? 0n;
+      if (owed > 0n) {
+        const highest = openCycle ? (openCycle as any).id : 8;
+        const ids = Array.from({ length: highest }, (_, i) => highest - i);
+        const cycles = await Promise.all(
+          ids.map((id) => simulate(() => c.get_cycle({ cycle_id: id }), "get_cycle")),
+        );
+        const hit = cycles.findIndex((cyc) => cyc && (cyc as any).state?.tag === "Payable");
+        if (hit >= 0) lastCycleId = ids[hit];
       }
 
       if (cancelled) return;
