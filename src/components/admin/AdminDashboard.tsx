@@ -19,6 +19,7 @@ import {
   Shield,
   UserCheck,
   Tags,
+  Vault,
   Clock,
 } from "lucide-react";
 import { IdentityRegistryPanel } from "./IdentityRegistryPanel";
@@ -62,6 +63,7 @@ import { useFreighterWallet } from "@/context/FreighterWalletContext";
 import { AdminWalletBar } from "./AdminWalletBar";
 import { PlatformAdminManager } from "./PlatformAdminManager";
 import { ConsensusReviewPanel } from "./ConsensusReviewPanel";
+import { PlatformVaultPanel } from "./PlatformVaultPanel";
 import {
   useProjects,
   usePlatformInfo,
@@ -179,7 +181,7 @@ export function AdminDashboard() {
   >({});
   const [isInfoExpanded, setIsInfoExpanded] = useState(false);
   const [visibleRecentCount, setVisibleRecentCount] = useState(5);
-  const [adminView, setAdminView] = useState<"projects" | "admins" | "identity" | "categories">("projects");
+  const [adminView, setAdminView] = useState<"projects" | "admins" | "vault" | "identity" | "categories">("projects");
 
   // KYC and withdrawals SWR Polling
   const { data: withdrawalsData } = useSWR("/api/admin/withdrawals", fetcher, {
@@ -483,6 +485,19 @@ export function AdminDashboard() {
               >
                 <Users className="h-4 w-4" />
                 Admins
+              </button>
+              <button
+                type="button"
+                onClick={() => setAdminView("vault")}
+                className={cn(
+                  "flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-all",
+                  adminView === "vault"
+                    ? "bg-accent text-accent-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <Vault className="h-4 w-4" />
+                Vault
               </button>
               <button
                 type="button"
@@ -833,6 +848,18 @@ export function AdminDashboard() {
                 <ConsensusReviewPanel />
                 <AdminManagement isMainAdmin={isMainAdmin} />
               </div>
+            </motion.div>
+          )}
+
+          {adminView === "vault" && (
+            <motion.div
+              key="vault-view"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.3 }}
+            >
+              <PlatformVaultPanel />
             </motion.div>
           )}
 

@@ -116,15 +116,12 @@ export function AdminManagement({ isMainAdmin }: AdminManagementProps) {
 
       const allAdmins: AdminInfo[] = [];
 
-      if (feeWalletAddress) {
-        const feeAdminInfo = await getUserByAddress(feeWalletAddress);
-        allAdmins.push({
-          address: feeWalletAddress,
-          name: feeAdminInfo?.name || 'Fee Wallet Admin',
-          avatarUrl: feeAdminInfo?.creatorAvatar,
-          role: 'fee-wallet',
-        });
-      }
+      // The fee destination is deliberately not listed here. It is a contract,
+      // not a person, and it holds no admin powers — showing it under "Manage
+      // Admins" with a badge implied both. It appeared only once the console
+      // started reading the factory's real fee wallet instead of an empty
+      // string, which is to say it was always wrong and previously invisible.
+      // The platform vault has its own panel, where a balance means something.
 
       // Names come from the admin roster, not from a profile lookup keyed on
       // wallet address. That lookup returned 'Unknown User' for every row,

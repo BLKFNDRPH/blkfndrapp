@@ -4,6 +4,7 @@ import { Client as FactoryClient } from "@/packages/blkfndr_factory/src";
 import { Client as AttestationClient } from "@/packages/blkfndr_attestation/src";
 import { Client as IdentityClient } from "@/packages/blkfndr_identity/src";
 import { Client as AdminClient } from "@/packages/blkfndr_admin/src";
+import { Client as TreasuryClient } from "@/packages/blkfndr_treasury/src";
 
 /**
  * One place to construct contract clients.
@@ -80,6 +81,18 @@ export function adminClient(signer?: Signer) {
   return new AdminClient(
     base(required(ADMIN_ID, "NEXT_PUBLIC_BLKFNDR_ADMIN_CONTRACT_ID"), signer),
   );
+}
+
+/**
+ * The platform vault, at whatever address the factory currently sends fees to.
+ *
+ * Taken from the factory rather than from its own env var, deliberately. There
+ * is exactly one correct answer to "where do the fees go", the factory holds it,
+ * and a second copy in configuration is a second thing to get wrong — the kind
+ * that shows a healthy balance for a vault the fees stopped arriving at.
+ */
+export function treasuryClient(contractId: string, signer?: Signer) {
+  return new TreasuryClient(base(contractId, signer));
 }
 
 /** Read a contract without signing. Returns null rather than throwing. */
