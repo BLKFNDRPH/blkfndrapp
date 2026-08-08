@@ -10,9 +10,22 @@ import {
   PlayCircle,
   ThumbsUp,
   HandCoins,
+  ArrowRightLeft,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { useStellarContract } from "@/hooks/use-stellar-contract";
 import { useToast } from "@/hooks/use-toast";
 import { useFreighterWallet } from "@/context/FreighterWalletContext";
 import {
@@ -115,6 +128,9 @@ export function PlatformVaultPanel() {
   const [busy, setBusy] = useState<string | null>(null);
   const [, startTransition] = useTransition();
   const [reload, setReload] = useState(0);
+  const [destination, setDestination] = useState("");
+  const [confirming, setConfirming] = useState(false);
+  const { updateFeeWallet } = useStellarContract();
 
   const address = platformInfo?.feeWalletAddress ?? "";
 
@@ -208,6 +224,47 @@ export function PlatformVaultPanel() {
       } catch (err: any) {
         toast({
           title: `${label} failed`,
+          description: err?.message ?? String(err),
+          variant: "destructive",
+        });
+      } finally {
+        setBusy(null);
+      }
+    });
+  };
+
+  /**
+   * Repoint the factory at a different vault.
+   *
+   * The single most consequential setting on the platform: every future listing
+   * fee follows it, and a wrong address sends them somewhere nobody controls
+   * with nothing to undo it. It used to be a bare text field with a Save button
+   * next to a contact email. It is now beside the balance it redirects, and
+   * behind a confirmation that names both the current vault and the proposed
+   * one, because "is this the address I meant" is a question best asked before
+   * the transaction rather than after the fees stop arriving.
+   */
+  const changeDestination = () => {
+    setConfirming(false);
+    setBusy("destination");
+    startTransition(async () => {
+      try {
+        const result = await updateFeeWallet(destination.trim());
+        const status = (result as any)?.getTransactionResponse?.status;
+        if (status !== "SUCCESS") {
+          throw new Error("The factory rejected the change.");
+        }
+        setDestination("");
+        toast({
+          title: "Fee destination changed",
+          description: "New listing fees will arrive at the new vault.",
+        });
+        // The address lives on the factory, so the whole platform read has to
+        // refresh rather than just this panel.
+        window.location.reload();
+      } catch (err: any) {
+        toast({
+          title: "Could not change the destination",
           description: err?.message ?? String(err),
           variant: "destructive",
         });
@@ -404,6 +461,81 @@ export function PlatformVaultPanel() {
             )}
           </>
         )}
+
+        {/* Shown whether or not the vault reads, because a vault that does not
+            answer is precisely when you need to point the factory somewhere
+            else — which was the state this platform was in until today. */}
+        <div className="space-y-2 border-t pt-4">
+          <p className="text-sm font-medium">Fee destination</p>
+          <p className="text-xs text-muted-foreground">
+            Every future listing fee goes here. Changing it is a factory-admin
+            action and needs the factory admin&rsquo;s signature.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Input
+              value={destination}
+              onChange={(e) => setDestination(e.target.value)}
+              placeholder="C… vault address"
+              className="max-w-md font-mono text-xs"
+              spellCheck={false}
+              aria-label="New fee destination"
+            />
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={
+                busy !== null ||
+                !/^C[A-Z2-7]{55}$/.test(destination.trim()) ||
+                destination.trim() === address
+              }
+              title={
+                destination.trim() === address
+                  ? "That is already the destination"
+                  : "Point the factory at a different vault"
+              }
+              onClick={() => setConfirming(true)}
+            >
+              {busy === "destination" ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+              ) : (
+                <ArrowRightLeft className="h-3.5 w-3.5" aria-hidden="true" />
+              )}
+              <span className="ml-1.5">Change</span>
+            </Button>
+          </div>
+        </div>
+
+        <AlertDialog open={confirming} onOpenChange={setConfirming}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Redirect every future listing fee?</AlertDialogTitle>
+              <AlertDialogDescription asChild>
+                <div className="space-y-2 text-sm">
+                  <p>
+                    Fees currently arrive at{" "}
+                    <span className="font-mono">{shortenAddress(address)}</span>.
+                    They will instead arrive at{" "}
+                    <span className="font-mono">
+                      {shortenAddress(destination.trim())}
+                    </span>
+                    .
+                  </p>
+                  <p>
+                    Fees already held by the current vault stay there and are
+                    unaffected. If the new address is not a platform vault, fees
+                    sent to it may not be recoverable.
+                  </p>
+                </div>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={changeDestination}>
+                Change destination
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </CardContent>
     </Card>
   );
