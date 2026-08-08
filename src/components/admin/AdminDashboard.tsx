@@ -538,15 +538,24 @@ export function AdminDashboard() {
               transition={{ duration: 0.3 }}
               className="space-y-8"
             >
-              {/* Interactive KPI Row */}
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                <InteractiveStatCard
-                  title="Pending Withdrawals"
-                  value={withdrawalsData !== undefined ? withdrawalsData.count : null}
-                  icon={<PiggyBank className="h-5 w-5 text-amber-500" />}
-                  onClick={() => router.push("/admin/withdrawals")}
-                  glowColor="hover:shadow-amber-500/5 hover:border-amber-500/20"
-                />
+              {/* Three of the four cards that used to sit here measured
+                  mechanisms this platform no longer has, and each was stuck on a
+                  value that could never change:
+
+                    Pending Withdrawals — admin-approved withdrawals were replaced
+                      by contributor milestone voting. Nothing fed it, so it
+                      rendered a loading skeleton forever.
+                    Awaiting Signatures — multisig proposals are gone for the same
+                      reason. Permanently zero.
+                    System Threshold — read multisigThreshold, which is hardcoded
+                      to 0. "0 of 3" reads as "no approvals needed", which is the
+                      opposite of true.
+
+                  A dashboard is a claim about the state of the system. Three
+                  false claims beside one true one makes the true one hard to
+                  trust, so they are gone rather than fixed — there is nothing
+                  behind them to fix. */}
+              <div className="grid gap-4 md:grid-cols-2">
                 <InteractiveStatCard
                   title="Pending KYC"
                   value={kycData !== undefined ? kycData.count : null}
@@ -555,22 +564,11 @@ export function AdminDashboard() {
                   glowColor="hover:shadow-accent/5 hover:border-accent/20"
                 />
                 <InteractiveStatCard
-                  title="Awaiting Signatures"
-                  value={isLoadingProjects ? null : awaitingSignaturesCount}
-                  icon={<Shield className="h-5 w-5 text-emerald-500" />}
-                  onClick={() => router.push("/admin/withdrawals")}
+                  title="Platform Vault"
+                  value={platformInfo?.feeWalletAddress ? "View" : null}
+                  icon={<Vault className="h-5 w-5 text-emerald-500" />}
+                  onClick={() => setAdminView("vault")}
                   glowColor="hover:shadow-emerald-500/5 hover:border-emerald-500/20"
-                />
-                <InteractiveStatCard
-                  title="System Threshold"
-                  value={
-                    platformInfo
-                      ? `${platformInfo.multisigThreshold} of ${platformInfo.multiSigAdmins?.length ?? 0}`
-                      : null
-                  }
-                  icon={<Settings className="h-5 w-5 text-accent" />}
-                  onClick={() => setAdminView("admins")}
-                  glowColor="hover:shadow-accent/5 hover:border-accent/20"
                 />
               </div>
 
@@ -675,7 +673,6 @@ export function AdminDashboard() {
                         <TableHead>Status</TableHead>
                         <TableHead>Milestone Progress</TableHead>
                         <TableHead>Goal</TableHead>
-                        <TableHead>Active Proposals</TableHead>
                         <TableHead className="text-right">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -747,26 +744,6 @@ export function AdminDashboard() {
                                 project.currencyType ?? "XLM",
                               )}
                             </TableCell>
-                            <TableCell>
-                              {withdrawalCounts[project.id] ? (
-                                <span className="inline-flex items-center gap-1.5 font-semibold text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/20 px-2 py-0.5 rounded border border-amber-200 dark:border-amber-800">
-                                  <span>
-                                    {withdrawalCounts[project.id]} Pending
-                                  </span>
-                                  <div className="text-[10px] text-muted-foreground font-normal">
-                                    Approved by: (
-                                    {withdrawalApprovals[project.id]
-                                      ? withdrawalApprovals[
-                                        project.id
-                                      ].length
-                                      : 0}
-                                    )
-                                  </div>
-                                </span>
-                              ) : (
-                                <span className="text-muted-foreground">—</span>
-                              )}
-                            </TableCell>
                             <TableCell className="text-right">
                               <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
@@ -800,7 +777,7 @@ export function AdminDashboard() {
                         ))
                       ) : (
                         <TableRow>
-                          <TableCell colSpan={6} className="h-24 text-center">
+                          <TableCell colSpan={5} className="h-24 text-center">
                             No recent projects to display.
                           </TableCell>
                         </TableRow>

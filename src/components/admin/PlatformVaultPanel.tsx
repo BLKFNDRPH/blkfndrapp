@@ -1,8 +1,20 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Vault, Loader2, AlertTriangle, Clock, Users } from "lucide-react";
+import { useEffect, useState, useTransition } from "react";
+import {
+  Vault,
+  Loader2,
+  AlertTriangle,
+  Clock,
+  Users,
+  PlayCircle,
+  ThumbsUp,
+  HandCoins,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
+import { useFreighterWallet } from "@/context/FreighterWalletContext";
 import {
   Card,
   CardContent,
@@ -10,7 +22,16 @@ import {
   CardTitle,
   CardDescription,
 } from "../ui/card";
-import { treasuryClient, simulate } from "@/lib/stellar-clients";
+import {
+  treasuryClient,
+  simulate,
+  NETWORK_PASSPHRASE,
+  type Signer,
+} from "@/lib/stellar-clients";
+import {
+  signAuthEntry as signAuthEntryWithFreighter,
+  signTransaction as signWithFreighter,
+} from "@stellar/freighter-api";
 import { usePlatformInfo } from "@/context/BlockchainContext";
 import { shortenAddress } from "@/lib/utils";
 
@@ -47,16 +68,53 @@ interface VaultState {
   nextReleaseAt: bigint | null;
   owners: { address: string; shareBps: number }[] | null;
   openCycle: { id: number; approvals: number; amount: bigint } | null;
+  /**
+   * The most recent cycle that carried and can still be claimed against.
+   *
+   * Found by probing, because the contract exposes no "latest cycle" read — and
+   * adding one would mean redeploying a treasury that now holds real fees. The
+   * scan is bounded: claims are per cycle by design, so an owner who has missed
+   * several needs to claim each, and offering only the newest is the honest
+   * limit of what this panel does.
+   */
+  lastCycleId: number | null;
   /** The vault could not be read at all — usually a superseded deployment. */
   unreadable: boolean;
 }
 
 const NATIVE = "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC";
 
+const signerFor = (publicKey: string): Signer => ({
+  publicKey,
+  signTransaction: (xdr: string) =>
+    signWithFreighter(xdr, {
+      networkPassphrase: NETWORK_PASSPHRASE,
+      address: publicKey,
+    }),
+  signAuthEntry: async (xdr: string) => {
+    const res = await signAuthEntryWithFreighter(xdr, {
+      networkPassphrase: NETWORK_PASSPHRASE,
+      address: publicKey,
+    });
+    if (!res.signedAuthEntry) throw new Error("Freighter returned no signed auth entry.");
+    return { signedAuthEntry: res.signedAuthEntry, signerAddress: res.signerAddress };
+  },
+});
+
+async function send(assembled: { signAndSend?: () => Promise<unknown> }) {
+  if (!assembled.signAndSend) throw new Error("This transaction cannot be signed.");
+  return assembled.signAndSend();
+}
+
 export function PlatformVaultPanel() {
   const { platformInfo } = usePlatformInfo();
+  const { freighterWalletAddress } = useFreighterWallet();
+  const { toast } = useToast();
   const [state, setState] = useState<VaultState | null>(null);
   const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [, startTransition] = useTransition();
+  const [reload, setReload] = useState(0);
 
   const address = platformInfo?.feeWalletAddress ?? "";
 
@@ -79,6 +137,17 @@ export function PlatformVaultPanel() {
           simulate(() => c.get_shareholders(), "get_shareholders"),
           simulate(() => c.get_open_cycle(), "get_open_cycle"),
         ]);
+
+      // Walk back from the open cycle, or from a small bound when none is open.
+      let lastCycleId: number | null = null;
+      const from = openCycle ? (openCycle as any).id : 8;
+      for (let id = from; id >= 1; id--) {
+        const cyc = await simulate(() => c.get_cycle({ cycle_id: id }), "get_cycle");
+        if (cyc && (cyc as any).state?.tag === "Payable") {
+          lastCycleId = id;
+          break;
+        }
+      }
 
       if (cancelled) return;
 
@@ -103,6 +172,7 @@ export function PlatformVaultPanel() {
         // A vault whose balance cannot be read is not an empty vault. Saying so
         // matters most when the address points at a superseded deployment, which
         // is exactly when a confident "0.00" would be the wrong thing to show.
+        lastCycleId,
         unreadable: balance === null && owners === null,
       });
       setLoading(false);
@@ -111,7 +181,41 @@ export function PlatformVaultPanel() {
     return () => {
       cancelled = true;
     };
-  }, [address]);
+  }, [address, reload]);
+
+  /**
+   * Only an owner can do any of this, and the contract is the one enforcing it.
+   * These buttons are shown to owners and hidden from everyone else purely so
+   * nobody signs a transaction the ledger is certain to reject — the check that
+   * matters happens on chain.
+   */
+  const isOwner = Boolean(
+    freighterWalletAddress &&
+      state?.owners?.some((o) => o.address === freighterWalletAddress),
+  );
+
+  const act = (key: string, label: string, run: (c: ReturnType<typeof treasuryClient>) => Promise<unknown>) => {
+    if (!freighterWalletAddress) {
+      toast({ title: "Connect your wallet first", variant: "destructive" });
+      return;
+    }
+    setBusy(key);
+    startTransition(async () => {
+      try {
+        await run(treasuryClient(address, signerFor(freighterWalletAddress)));
+        setReload((n) => n + 1);
+        toast({ title: label });
+      } catch (err: any) {
+        toast({
+          title: `${label} failed`,
+          description: err?.message ?? String(err),
+          variant: "destructive",
+        });
+      } finally {
+        setBusy(null);
+      }
+    });
+  };
 
   if (!address) {
     return (
@@ -202,6 +306,101 @@ export function PlatformVaultPanel() {
                 Cycle {state.openCycle.id} open — {state.openCycle.approvals} approval
                 {state.openCycle.approvals === 1 ? "" : "s"} so far
               </Badge>
+            )}
+
+            {isOwner && (
+              <div className="flex flex-wrap items-center gap-2 border-t pt-3">
+                {/* Opening is only offered when there is something to settle and
+                    the monthly gap has passed. The contract refuses both cases
+                    anyway; disabling here means the reason is legible before a
+                    signature rather than as a raw HostError after one. */}
+                <Button
+                  size="sm"
+                  disabled={
+                    busy !== null ||
+                    Boolean(state?.openCycle) ||
+                    !releasable ||
+                    !state?.available ||
+                    state.available <= 0n
+                  }
+                  title={
+                    state?.openCycle
+                      ? "A cycle is already open"
+                      : !releasable
+                        ? "The next release is not due yet"
+                        : !state?.available || state.available <= 0n
+                          ? "There is nothing to release"
+                          : "Open a release cycle over the available balance"
+                  }
+                  onClick={() =>
+                    act("open", "Cycle opened", async (c) =>
+                      send(
+                        await (c as any).open_cycle({
+                          opener: freighterWalletAddress,
+                          token: NATIVE,
+                        }),
+                      ),
+                    )
+                  }
+                >
+                  {busy === "open" ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <PlayCircle className="h-3.5 w-3.5" aria-hidden="true" />
+                  )}
+                  <span className="ml-1.5">Open cycle</span>
+                </Button>
+
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={busy !== null || !state?.openCycle}
+                  title={
+                    state?.openCycle
+                      ? "Approve this release. Two thirds of owners carries it."
+                      : "No cycle is open to approve"
+                  }
+                  onClick={() =>
+                    act("approve", "Approval recorded", async (c) =>
+                      send(await (c as any).approve_cycle({ voter: freighterWalletAddress })),
+                    )
+                  }
+                >
+                  {busy === "approve" ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <ThumbsUp className="h-3.5 w-3.5" aria-hidden="true" />
+                  )}
+                  <span className="ml-1.5">Approve release</span>
+                </Button>
+
+                {/* Claiming is pull-based, so it is per owner and always
+                    available for a carried cycle — including long after the
+                    fact, which is the point of not pushing payments. */}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={busy !== null || !state?.lastCycleId}
+                  title="Claim your share of the most recent carried cycle"
+                  onClick={() =>
+                    act("claim", "Claim submitted", async (c) =>
+                      send(
+                        await (c as any).claim({
+                          shareholder: freighterWalletAddress,
+                          cycle_id: state?.lastCycleId ?? 1,
+                        }),
+                      ),
+                    )
+                  }
+                >
+                  {busy === "claim" ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <HandCoins className="h-3.5 w-3.5" aria-hidden="true" />
+                  )}
+                  <span className="ml-1.5">Claim my share</span>
+                </Button>
+              </div>
             )}
           </>
         )}
