@@ -14,6 +14,7 @@ import {
   CardDescription,
 } from "@/components/ui/card";
 import { ProjectCard } from "@/components/project/ProjectCard";
+import { ConsensusBadge } from "@/components/project/ConsensusBadge";
 import {
   Copy,
   Wallet,
@@ -1487,7 +1488,14 @@ export default function ProfilePage() {
           {ownedProjects.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
               {ownedProjects.map((p) => (
-                <ProjectCard key={p.id} project={p} />
+                <div key={p.id} className="space-y-2">
+                  <ProjectCard project={p} />
+                  {/* Only renders when the listing has been flagged, which is
+                      rare. A builder whose project is hidden pending the owners
+                      agreement would otherwise just see it missing from the
+                      public site. */}
+                  <ConsensusBadge projectId={p.id} />
+                </div>
               ))}
             </div>
           ) : (
