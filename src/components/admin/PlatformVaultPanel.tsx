@@ -35,16 +35,8 @@ import {
   CardTitle,
   CardDescription,
 } from "../ui/card";
-import {
-  treasuryClient,
-  simulate,
-  NETWORK_PASSPHRASE,
-  type Signer,
-} from "@/lib/stellar-clients";
-import {
-  signAuthEntry as signAuthEntryWithFreighter,
-  signTransaction as signWithFreighter,
-} from "@stellar/freighter-api";
+import { treasuryClient, simulate } from "@/lib/stellar-clients";
+import { signerFor, send } from "@/lib/treasury-signing";
 import { usePlatformInfo } from "@/context/BlockchainContext";
 import { shortenAddress } from "@/lib/utils";
 
@@ -97,27 +89,6 @@ interface VaultState {
 
 const NATIVE = "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC";
 
-const signerFor = (publicKey: string): Signer => ({
-  publicKey,
-  signTransaction: (xdr: string) =>
-    signWithFreighter(xdr, {
-      networkPassphrase: NETWORK_PASSPHRASE,
-      address: publicKey,
-    }),
-  signAuthEntry: async (xdr: string) => {
-    const res = await signAuthEntryWithFreighter(xdr, {
-      networkPassphrase: NETWORK_PASSPHRASE,
-      address: publicKey,
-    });
-    if (!res.signedAuthEntry) throw new Error("Freighter returned no signed auth entry.");
-    return { signedAuthEntry: res.signedAuthEntry, signerAddress: res.signerAddress };
-  },
-});
-
-async function send(assembled: { signAndSend?: () => Promise<unknown> }) {
-  if (!assembled.signAndSend) throw new Error("This transaction cannot be signed.");
-  return assembled.signAndSend();
-}
 
 export function PlatformVaultPanel() {
   const { platformInfo } = usePlatformInfo();

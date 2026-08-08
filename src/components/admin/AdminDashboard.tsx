@@ -63,6 +63,7 @@ import { AdminWalletBar } from "./AdminWalletBar";
 import { PlatformAdminManager } from "./PlatformAdminManager";
 import { ConsensusReviewPanel } from "./ConsensusReviewPanel";
 import { PlatformVaultPanel } from "./PlatformVaultPanel";
+import { TreasuryGovernancePanel } from "./TreasuryGovernancePanel";
 import {
   useProjects,
   usePlatformInfo,
@@ -821,7 +822,10 @@ export function AdminDashboard() {
               exit={{ opacity: 0 }}
               transition={{ duration: 0.3 }}
             >
-              <PlatformVaultPanel />
+              <div className="space-y-8">
+                <PlatformVaultPanel />
+                <TreasuryGovernancePanel />
+              </div>
             </motion.div>
           )}
 
