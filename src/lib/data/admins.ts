@@ -20,10 +20,25 @@ import { requireAdmin } from "@/lib/supabase/auth";
  *   3. A wallet signature the contract  — whether a contract will accept it
  *      accepts
  *
- * requireAdmin below is not the boundary; RLS is. The policies on
- * platform_admins already restrict every statement to admins, so a caller who
- * bypassed this function would still write nothing. It runs first so the
- * failure is a clean 403 rather than a silent zero-row update.
+ * requireAdmin below IS the boundary for anything written through the
+ * service-role client, which bypasses RLS entirely. This comment used to claim
+ * the opposite — that RLS would still refuse a caller who got past
+ * requireAdmin — and that was false: a service-role write is not subject to any
+ * policy. Worth stating plainly, because a wrong belief about where a boundary
+ * lives is more dangerous than no belief at all.
+ *
+ * So the rule here is: use the service-role client only where it is genuinely
+ * needed (reading auth.users to bind an invite to an existing account), and go
+ * through the caller's own session for everything else. That keeps RLS as a
+ * real second layer instead of a decorative one, and it is also what lets the
+ * database see who is acting — guard_admin_removal reads auth.uid(), which is
+ * NULL under service_role, so a delete made that way silently skips the
+ * self-removal check.
+ *
+ * Note that both layers test *membership*, not ownership: any admin may add or
+ * remove any other. The on-chain roster has an owner and this table does not,
+ * so the two disagree about who may edit the list. Deliberate for now, but it
+ * is a difference worth knowing about rather than discovering.
  */
 
 const EmailSchema = z
@@ -122,7 +137,11 @@ export async function grantAdmin(
     (u) => (u.email ?? "").toLowerCase() === parsed,
   );
 
-  const { error } = await admin.from("platform_admins").insert({
+  // The service-role client is used above only for listUsers, which genuinely
+  // needs it. The row itself goes in through the caller's session so RLS still
+  // applies to the write that actually grants access.
+  const supabase = await createClient();
+  const { error } = await supabase.from("platform_admins").insert({
     email: parsed,
     display_name: displayName,
     user_id: match?.id ?? null,
@@ -168,8 +187,11 @@ export async function setAdminWallet(
   const parsed = EmailSchema.parse(email);
   const wallet = walletAddress.trim() ? WalletSchema.parse(walletAddress) : null;
 
-  const admin = createAdminClient();
-  const { data, error } = await admin
+  // The caller's own session rather than the service role, so RLS is a real
+  // second layer here instead of being bypassed. Nothing in this function needs
+  // privileges the caller lacks.
+  const supabase = await createClient();
+  const { data, error } = await supabase
     .from("platform_admins")
     .update({ wallet_address: wallet })
     .eq("email", parsed)
@@ -185,9 +207,9 @@ export async function setAdminWallet(
     throw new Error(`Could not update the wallet address: ${error.message}`);
   }
 
-  // The service-role client bypasses RLS, so a missing row updates nothing and
-  // reports success. Checked explicitly, otherwise a typo in the email looks
-  // like it worked.
+  // An update matching no row reports success either way — whether the email
+  // was mistyped or the policy declined it. Checked explicitly, so neither
+  // looks like it worked.
   if (!data || data.length === 0) {
     throw new Error(`${parsed} is not an administrator.`);
   }
@@ -205,14 +227,19 @@ export async function revokeAdmin(email: string): Promise<PlatformAdmin[]> {
   const caller = await requireAdmin();
   const parsed = EmailSchema.parse(email);
 
-  // Checked here for a readable message; the database enforces it regardless
-  // via guard_admin_removal, which also blocks emptying the roster entirely.
   if (parsed === (caller.email ?? "").toLowerCase()) {
     throw new Error("You cannot remove your own administrator access.");
   }
 
-  const admin = createAdminClient();
-  const { error } = await admin
+  // Deleted through the caller's session, which is what lets
+  // guard_admin_removal do its job. It compares against auth.uid() and
+  // auth.jwt()->>'email', both NULL under the service role — so the self-removal
+  // predicate evaluated to NULL rather than true and the trigger never raised.
+  // Only its last-admin count check survived that path. The comment above used
+  // to say the database enforced this "regardless"; it did not, and the check
+  // above was carrying it alone.
+  const supabase = await createClient();
+  const { error } = await supabase
     .from("platform_admins")
     .delete()
     .eq("email", parsed);

@@ -446,6 +446,20 @@ export function useStellarContract() {
   );
 
   /**
+   * Where the factory currently sends listing fees.
+   *
+   * The console never read this, so the fee wallet field rendered empty whatever
+   * the factory actually held — which meant a fee wallet pointing somewhere
+   * wrong looked identical to one not yet configured. That is the worst way for
+   * this particular setting to fail, because the money has already moved by the
+   * time anyone notices.
+   */
+  const getFeeWallet = useCallback(
+    () => simulate(() => factoryClient().get_fee_wallet(), "get_fee_wallet"),
+    [],
+  );
+
+  /**
    * Who may edit the on-chain roster.
    *
    * Worth reading separately from the roster itself: add_admin and remove_admin
@@ -538,6 +552,7 @@ export function useStellarContract() {
     // admin
     isPlatformAdmin,
     getAdmins,
+    getFeeWallet,
     getAdminOwner,
     addAdmin,
     removeAdmin,

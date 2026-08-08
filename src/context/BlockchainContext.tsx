@@ -98,7 +98,7 @@ interface BlockchainProviderProps {
 export const BlockchainProvider: React.FC<BlockchainProviderProps> = ({
   children,
 }) => {
-  const { getPlatformTerms, getAdmins, getAdminOwner } = useStellarContract();
+  const { getPlatformTerms, getAdmins, getAdminOwner, getFeeWallet } = useStellarContract();
 
   const [platformInfo, setPlatformInfo] = useState<PlatformInfo | null>(null);
   const [isLoadingPlatform, setIsLoadingPlatform] = useState(true);
@@ -122,7 +122,7 @@ export const BlockchainProvider: React.FC<BlockchainProviderProps> = ({
       // Platform terms live on the factory now, and the admin roster is its own
       // contract. The retired crowdfunding contract exposed all of it as one
       // Platform struct, which is why this used to be a single call.
-      const [terms, admins, owner] = await Promise.all([
+      const [terms, admins, owner, feeWallet] = await Promise.all([
         getPlatformTerms(),
         getAdmins(),
         // Read rather than inferred. `admin` below used to be adminList[0],
@@ -131,6 +131,11 @@ export const BlockchainProvider: React.FC<BlockchainProviderProps> = ({
         // appear in the array, so the console credited the deployer and hid
         // owner-only controls from the person who actually held them.
         getAdminOwner().catch(() => null),
+        // Read too, rather than left blank. The fee wallet field rendered empty
+        // whatever the factory actually held, so a fee wallet pointing at the
+        // wrong contract looked identical to one not yet configured — and by
+        // the time anyone noticed, the fees had already gone there.
+        getFeeWallet().catch(() => null),
       ]);
 
       let email = '';
@@ -149,7 +154,7 @@ export const BlockchainProvider: React.FC<BlockchainProviderProps> = ({
       setPlatformInfo({
         admin: (owner as string | null) ?? adminList[0] ?? '',
         owner: (owner as string | null) ?? '',
-        feeWalletAddress: '',
+        feeWalletAddress: (feeWallet as string | null) ?? '',
         feeWalletEmail: email,
         totalFeesCollected: '0',
         totalDonationsReceived: '0',
@@ -177,7 +182,7 @@ export const BlockchainProvider: React.FC<BlockchainProviderProps> = ({
     } finally {
       setIsLoadingPlatform(false);
     }
-  }, [getPlatformTerms, getAdmins, getAdminOwner]);
+  }, [getPlatformTerms, getAdmins, getAdminOwner, getFeeWallet]);
 
   const reconcileStaleProjects = useCallback(async (loadedProjects: Project[]) => {
     const stale = loadedProjects.filter(
