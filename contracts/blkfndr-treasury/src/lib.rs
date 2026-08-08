@@ -46,7 +46,7 @@
 
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, panic_with_error, symbol_short, token,
-    Address, Env, IntoVal, Symbol, Vec,
+    Address, BytesN, Env, IntoVal, Symbol, Vec,
 };
 
 const BPS_TOTAL: i128 = 10_000;
@@ -183,6 +183,33 @@ pub enum GovernedAction {
     /// being a single-signature write meant the whole design could be bypassed by
     /// changing who "everyone" is before asking them.
     SetShareholders(Vec<Shareholder>),
+    /// Change the performance bond, in basis points of the raise.
+    ///
+    /// The bond is what a builder forfeits by missing a milestone, so it is the
+    /// number that decides how much a promise costs to break. Raising it makes
+    /// listing more expensive and failure more painful; lowering it does the
+    /// reverse. Either direction is a policy change, which is why it is here
+    /// rather than on one admin's signature.
+    SetBondBps(u64),
+    /// Point new vaults at a different wasm — how the vault contract is upgraded.
+    ///
+    /// The most powerful action in this enum by some distance: it decides the
+    /// code every future vault runs. Existing vaults keep the code they were
+    /// deployed with, so this is not a retroactive rewrite, but a vote here
+    /// chooses what every builder after it is trusting.
+    SetWasmHash(BytesN<32>),
+    /// Send listing fees somewhere else — including to a replacement treasury.
+    ///
+    /// Necessary rather than optional. Once this contract is the factory's admin
+    /// it is the only thing that can repoint fees, so without this a treasury
+    /// that needed replacing could never hand over its own income.
+    SetFeeWallet(Address),
+    /// Change which registry vouches for builder identity.
+    SetIdentityRegistry(Address),
+    /// Change how long contributors have to vote on a milestone.
+    SetVotingWindow(u64),
+    /// Change the smallest contribution a vault will accept.
+    SetMinContribution(i128),
     /// Replace the owners, splitting the treasury equally between them.
     ///
     /// The ordinary way to add or remove an owner. Owners hold equal shares by
@@ -294,6 +321,19 @@ fn share_of(roster: &Vec<Shareholder>, who: &Address) -> Option<u32> {
 /// ceiling function: 2 of 3 gives 6 >= 6 and carries, 2 of 4 gives 6 >= 8 and
 /// does not. Integer division would round 2/3 of 4 down to 2 and let half the
 /// owners release the money.
+/// Invoke a one-argument admin function on the factory.
+///
+/// Symbol::new rather than symbol_short!, because the latter caps at nine
+/// characters and every one of these names is longer.
+fn call_factory(env: &Env, method: &str, arg: soroban_sdk::Val) {
+    let factory: Address = load(env, &DataKey::Factory);
+    env.invoke_contract::<()>(
+        &factory,
+        &Symbol::new(env, method),
+        soroban_sdk::vec![env, arg],
+    );
+}
+
 fn carried(approvals: u32, total: u32) -> bool {
     (approvals as u64) * (APPROVAL_DENOMINATOR as u64)
         >= (total as u64) * (APPROVAL_NUMERATOR as u64)
@@ -711,7 +751,24 @@ impl Treasury {
             GovernedAction::SetOwners(owners) => {
                 validate_roster(&env, &equal_shares(&env, owners));
             }
-            GovernedAction::TransferAdmin(_) => {}
+            // A bond above the whole raise would make listing impossible, and
+            // the factory would reject it anyway — caught here so the owners
+            // find out before spending a voting window rather than after.
+            GovernedAction::SetBondBps(bps) => {
+                if *bps > BPS_TOTAL as u64 {
+                    panic_with_error!(&env, Error::FeeOutOfRange);
+                }
+            }
+            GovernedAction::SetMinContribution(min) => {
+                if *min < 0 {
+                    panic_with_error!(&env, Error::FeeOutOfRange);
+                }
+            }
+            GovernedAction::TransferAdmin(_)
+            | GovernedAction::SetWasmHash(_)
+            | GovernedAction::SetFeeWallet(_)
+            | GovernedAction::SetIdentityRegistry(_)
+            | GovernedAction::SetVotingWindow(_) => {}
         }
 
         let roster: Vec<Shareholder> = load(&env, &DataKey::Shareholders);
@@ -819,20 +876,28 @@ impl Treasury {
         // these names are longer.
         match &proposal.action {
             GovernedAction::SetFee(fee) => {
-                let factory: Address = load(&env, &DataKey::Factory);
-                env.invoke_contract::<()>(
-                    &factory,
-                    &Symbol::new(&env, "update_platform_fee"),
-                    soroban_sdk::vec![&env, fee.into_val(&env)],
-                );
+                call_factory(&env, "update_platform_fee", fee.into_val(&env));
             }
             GovernedAction::TransferAdmin(new_admin) => {
-                let factory: Address = load(&env, &DataKey::Factory);
-                env.invoke_contract::<()>(
-                    &factory,
-                    &Symbol::new(&env, "transfer_admin"),
-                    soroban_sdk::vec![&env, new_admin.into_val(&env)],
-                );
+                call_factory(&env, "transfer_admin", new_admin.into_val(&env));
+            }
+            GovernedAction::SetBondBps(bps) => {
+                call_factory(&env, "update_bond_percentage", bps.into_val(&env));
+            }
+            GovernedAction::SetWasmHash(hash) => {
+                call_factory(&env, "update_wasm_hash", hash.into_val(&env));
+            }
+            GovernedAction::SetFeeWallet(wallet) => {
+                call_factory(&env, "update_fee_wallet", wallet.into_val(&env));
+            }
+            GovernedAction::SetIdentityRegistry(registry) => {
+                call_factory(&env, "update_identity_registry", registry.into_val(&env));
+            }
+            GovernedAction::SetVotingWindow(secs) => {
+                call_factory(&env, "update_voting_window", secs.into_val(&env));
+            }
+            GovernedAction::SetMinContribution(min) => {
+                call_factory(&env, "update_min_contribution", min.into_val(&env));
             }
             GovernedAction::SetOwners(owners) => {
                 let register = equal_shares(&env, owners);

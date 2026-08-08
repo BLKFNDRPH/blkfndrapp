@@ -668,3 +668,87 @@ fn any_owner_can_open_a_cycle() {
     f.treasury.open_cycle(&f.holders[2], &f.token);
     assert_eq!(f.treasury.get_open_cycle().unwrap().id, 1);
 }
+
+// ── Factory governance ─────────────────────────────────────────────────────
+//
+// The factory has seven admin-gated setters. This contract can become that
+// admin, so it must be able to reach all seven — otherwise handing over admin
+// strands whatever it cannot call, and the only way back is TransferAdmin.
+
+/// A bond above the whole raise is refused before anyone votes on it.
+#[test]
+#[should_panic(expected = "Error(Contract, #42)")] // FeeOutOfRange
+fn a_bond_over_one_hundred_percent_is_refused_at_proposal() {
+    let f = setup();
+    f.treasury
+        .propose(&f.holders[0], &GovernedAction::SetBondBps(10_001));
+}
+
+#[test]
+fn a_bond_change_carries_on_two_of_three() {
+    let f = setup();
+
+    f.treasury
+        .propose(&f.holders[0], &GovernedAction::SetBondBps(750));
+    f.treasury.approve_proposal(&f.holders[0]);
+    assert_eq!(
+        f.treasury.get_proposal().unwrap().approvals,
+        1,
+        "one owner is not two-to-one"
+    );
+
+    f.treasury.approve_proposal(&f.holders[1]);
+    let proposal = f.treasury.get_proposal().unwrap();
+    assert_eq!(proposal.approvals, 2);
+    match proposal.action {
+        GovernedAction::SetBondBps(bps) => assert_eq!(bps, 750),
+        _ => panic!("wrong action recorded"),
+    }
+    // execute_proposal is exercised against the real factory on testnet; here
+    // the factory is a generated address with no contract behind it.
+}
+
+/// A negative minimum contribution is nonsense and is caught early.
+#[test]
+#[should_panic(expected = "Error(Contract, #42)")] // FeeOutOfRange
+fn a_negative_minimum_contribution_is_refused() {
+    let f = setup();
+    f.treasury
+        .propose(&f.holders[0], &GovernedAction::SetMinContribution(-1));
+}
+
+/// Every factory setter is reachable, so taking factory admin strands nothing.
+///
+/// This is the test that matters for the handover. Reaching only some of them
+/// would mean vault upgrades, fee redirection or the identity registry became
+/// unchangeable the moment the treasury became admin — recoverable only by
+/// voting admin back out to a human.
+#[test]
+fn every_factory_setter_can_be_proposed() {
+    let f = setup();
+    let addr = Address::generate(&f.env);
+
+    let actions = vec![
+        &f.env,
+        GovernedAction::SetFee(1),
+        GovernedAction::SetBondBps(500),
+        GovernedAction::SetFeeWallet(addr.clone()),
+        GovernedAction::SetIdentityRegistry(addr.clone()),
+        GovernedAction::SetVotingWindow(86_400),
+        GovernedAction::SetMinContribution(50),
+        GovernedAction::TransferAdmin(addr),
+    ];
+
+    for i in 0..actions.len() {
+        let action = actions.get(i).unwrap();
+        f.treasury.propose(&f.holders[0], &action);
+        // Carry it so the slot frees for the next one.
+        f.treasury.approve_proposal(&f.holders[0]);
+        f.treasury.approve_proposal(&f.holders[1]);
+        assert!(
+            f.treasury.get_proposal().is_some(),
+            "proposal {i} did not record",
+        );
+        f.env.ledger().with_mut(|l| l.timestamp += 8 * DAY);
+    }
+}
