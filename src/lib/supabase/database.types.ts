@@ -193,6 +193,24 @@ export type Database = {
         Update: { fee_wallet_email?: string; id?: boolean; updated_at?: string };
         Relationships: [];
       };
+      feature_requests: {
+        Row: { id: string; title: string; body: string; submitted_by: string; status: "open" | "planned" | "declined" | "shipped"; response: string; decided_at: string | null; created_at: string };
+        Insert: { id?: string; title: string; body?: string; submitted_by: string; status?: "open" | "planned" | "declined" | "shipped"; response?: string; decided_at?: string | null; created_at?: string };
+        Update: { id?: string; title?: string; body?: string; submitted_by?: string; status?: "open" | "planned" | "declined" | "shipped"; response?: string; decided_at?: string | null; created_at?: string };
+        Relationships: [];
+      };
+      feature_request_votes: {
+        Row: { request_id: string; voter_id: string; created_at: string };
+        Insert: { request_id: string; voter_id: string; created_at?: string };
+        Update: { request_id?: string; voter_id?: string; created_at?: string };
+        Relationships: [];
+      };
+      feature_request_decisions: {
+        Row: { request_id: string; voter_id: string; approve: boolean; created_at: string };
+        Insert: { request_id: string; voter_id: string; approve: boolean; created_at?: string };
+        Update: { request_id?: string; voter_id?: string; approve?: boolean; created_at?: string };
+        Relationships: [];
+      };
       project_moderation: {
         Row: { project_id: string; state: "pending" | "approved" | "rejected"; flagged_by: string | null; flagged_at: string; decided_at: string | null; reason: string };
         Insert: { project_id: string; state?: "pending" | "approved" | "rejected"; flagged_by?: string | null; flagged_at?: string; decided_at?: string | null; reason?: string };
@@ -402,6 +420,7 @@ export type Database = {
     };
     Views: Record<never, never>;
     Functions: {
+      feature_request_consensus: { Args: { rid: string }; Returns: { approvals: number; rejections: number; owners: number; needed: number; carried: boolean }[] };
       project_consensus: { Args: { pid: string }; Returns: { approvals: number; rejections: number; owners: number; needed: number; carried: boolean }[] };
       project_awaiting_consensus: { Args: { pid: string }; Returns: boolean };
       is_admin: { Args: Record<never, never>; Returns: boolean };
