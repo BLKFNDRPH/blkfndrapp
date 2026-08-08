@@ -78,17 +78,17 @@ fn fees_accumulate_until_a_cycle_is_opened() {
 }
 
 #[test]
-fn a_majority_shareholder_cannot_release_alone() {
+fn a_single_owner_cannot_release_alone() {
     let f = setup();
     fees_arrive(&f, 1_000);
 
     f.treasury.open_cycle(&f.holders[0], &f.token);
-    // 5000 bps is exactly half, and the threshold is MORE than half.
+    // One of three. Two-to-one needs two, whatever their shares are.
     f.treasury.approve_cycle(&f.holders[0]);
 
     let cycle = f.treasury.get_open_cycle().unwrap();
-    assert_eq!(cycle.approved_bps, 5_000);
-    assert_eq!(cycle.state, CycleState::Voting, "half is not a majority");
+    assert_eq!(cycle.approvals, 1);
+    assert_eq!(cycle.state, CycleState::Voting, "one of three is not two-to-one");
 }
 
 #[test]
@@ -98,7 +98,7 @@ fn two_shareholders_carry_a_release() {
 
     f.treasury.open_cycle(&f.holders[0], &f.token);
     f.treasury.approve_cycle(&f.holders[0]);
-    f.treasury.approve_cycle(&f.holders[2]); // 5000 + 2000 = 7000
+    f.treasury.approve_cycle(&f.holders[2]); // two of three, carries
 
     assert_eq!(f.treasury.get_cycle(&1).unwrap().state, CycleState::Payable);
 }
@@ -185,7 +185,7 @@ fn a_lapsed_cycle_pays_nobody_and_strands_nothing() {
     fees_arrive(&f, 1_000);
 
     f.treasury.open_cycle(&f.holders[0], &f.token);
-    f.treasury.approve_cycle(&f.holders[2]); // 2000 only
+    f.treasury.approve_cycle(&f.holders[2]); // one of three
 
     f.env.ledger().with_mut(|l| l.timestamp += 8 * DAY);
     f.treasury.settle_lapsed_cycle();
@@ -231,10 +231,10 @@ fn one_shareholder_cannot_rewrite_the_register_and_take_everything() {
     // Their own 2000 bps is nowhere near the threshold, and executing on a vote
     // that has not carried is refused.
     f.treasury.approve_proposal(&attacker);
-    assert_eq!(f.treasury.get_proposal().unwrap().approved_bps, 2_000);
+    assert_eq!(f.treasury.get_proposal().unwrap().approvals, 1);
     assert!(
         f.treasury.try_execute_proposal().is_err(),
-        "a 20% holder must not be able to rewrite the register alone"
+        "one owner of three must not be able to rewrite the register alone"
     );
 
     // The register is untouched, so a cycle still pays all three.
@@ -267,7 +267,7 @@ fn a_majority_can_change_the_register_by_vote() {
         ]),
     );
     f.treasury.approve_proposal(&f.holders[0]);
-    f.treasury.approve_proposal(&f.holders[1]); // 8000, carried
+    f.treasury.approve_proposal(&f.holders[1]); // two of three, carries
     f.treasury.execute_proposal();
 
     let roster = f.treasury.get_shareholders();
@@ -310,6 +310,8 @@ fn a_new_cycle_opens_after_a_fully_claimed_one() {
     assert_eq!(f.treasury.balance_of(&f.token), 0);
 
     // More fees arrive, and the shareholders run the whole thing again.
+    // Releases are monthly, measured from the one that carried.
+    f.env.ledger().with_mut(|l| l.timestamp += 31 * DAY);
     fees_arrive(&f, 500);
     f.treasury.open_cycle(&f.holders[0], &f.token);
     f.treasury.approve_cycle(&f.holders[0]);
@@ -337,6 +339,7 @@ fn a_slow_claimant_does_not_block_the_next_cycle() {
     f.treasury.claim(&f.holders[0], &1); // holders 1 and 2 do not claim yet
 
     fees_arrive(&f, 500);
+    f.env.ledger().with_mut(|l| l.timestamp += 31 * DAY);
     f.treasury.open_cycle(&f.holders[1], &f.token);
     f.treasury.approve_cycle(&f.holders[0]);
     f.treasury.approve_cycle(&f.holders[1]);
@@ -441,14 +444,14 @@ fn a_fee_change_needs_more_than_half_the_shares() {
     let f = setup();
 
     f.treasury.propose(&f.holders[0], &GovernedAction::SetFee(50_000_000));
-    f.treasury.approve_proposal(&f.holders[0]); // 5000, exactly half
+    f.treasury.approve_proposal(&f.holders[0]); // one of three
 
     let proposal = f.treasury.get_proposal().unwrap();
-    assert_eq!(proposal.approved_bps, 5_000);
+    assert_eq!(proposal.approvals, 1);
     
 
-    f.treasury.approve_proposal(&f.holders[2]); // 7000, carried
-    assert_eq!(f.treasury.get_proposal().unwrap().approved_bps, 7_000);
+    f.treasury.approve_proposal(&f.holders[2]); // two of three, carries
+    assert_eq!(f.treasury.get_proposal().unwrap().approvals, 2);
 }
 
 #[test]
@@ -456,7 +459,7 @@ fn a_fee_change_needs_more_than_half_the_shares() {
 fn a_fee_change_cannot_be_applied_before_the_vote_carries() {
     let f = setup();
     f.treasury.propose(&f.holders[0], &GovernedAction::SetFee(50_000_000));
-    f.treasury.approve_proposal(&f.holders[0]); // half only
+    f.treasury.approve_proposal(&f.holders[0]); // one of three only
     f.treasury.execute_proposal();
 }
 
@@ -509,7 +512,7 @@ fn a_vote_can_hand_factory_admin_back() {
     f.treasury.approve_proposal(&f.holders[1]);
 
     let proposal = f.treasury.get_proposal().unwrap();
-    assert_eq!(proposal.approved_bps, 8_000);
+    assert_eq!(proposal.approvals, 2);
     match proposal.action {
         GovernedAction::TransferAdmin(a) => assert_eq!(a, human),
         _ => panic!("wrong action recorded"),
@@ -532,4 +535,136 @@ fn a_second_proposal_cannot_open_while_one_is_live() {
 fn the_treasury_records_the_factory_it_governs() {
     let f = setup();
     assert_eq!(f.treasury.get_factory(), f.factory);
+}
+
+// ── The owners' rules ──────────────────────────────────────────────────────
+//
+// Two-to-one by headcount, equal shares, and a release no more often than
+// monthly. Written as tests because each is a rule someone will eventually ask
+// "are we sure?" about.
+
+/// The strict rule, at the size it was specified for.
+#[test]
+fn two_of_three_carries_and_one_does_not() {
+    let f = setup();
+    fees_arrive(&f, 900);
+
+    f.treasury.open_cycle(&f.holders[0], &f.token);
+    f.treasury.approve_cycle(&f.holders[0]);
+    assert_eq!(
+        f.treasury.get_open_cycle().unwrap().state,
+        CycleState::Voting,
+        "one owner is not two-to-one"
+    );
+
+    f.treasury.approve_cycle(&f.holders[1]);
+    assert_eq!(f.treasury.get_cycle(&1).unwrap().state, CycleState::Payable);
+}
+
+/// Two thirds rounds up, so three of four is needed and two is not.
+///
+/// This is the case integer division gets wrong: 2/3 of 4 truncates to 2, which
+/// would let half the owners release the money.
+#[test]
+fn three_of_four_is_needed_once_a_fourth_owner_joins() {
+    let f = setup();
+    let fourth = Address::generate(&f.env);
+
+    f.treasury.propose(
+        &f.holders[0],
+        &GovernedAction::SetOwners(vec![
+            &f.env,
+            f.holders[0].clone(),
+            f.holders[1].clone(),
+            f.holders[2].clone(),
+            fourth.clone(),
+        ]),
+    );
+    f.treasury.approve_proposal(&f.holders[0]);
+    f.treasury.approve_proposal(&f.holders[1]);
+    f.treasury.execute_proposal();
+
+    fees_arrive(&f, 1_000);
+    f.treasury.open_cycle(&f.holders[0], &f.token);
+    f.treasury.approve_cycle(&f.holders[0]);
+    f.treasury.approve_cycle(&f.holders[1]);
+    assert_eq!(
+        f.treasury.get_open_cycle().unwrap().state,
+        CycleState::Voting,
+        "two of four is a half, not two thirds"
+    );
+
+    f.treasury.approve_cycle(&f.holders[2]);
+    assert_eq!(f.treasury.get_cycle(&1).unwrap().state, CycleState::Payable);
+}
+
+/// Owners hold equal shares, and 10 000 does not divide by three.
+#[test]
+fn owners_share_equally_with_the_remainder_going_to_the_earliest() {
+    let f = setup();
+
+    f.treasury.propose(
+        &f.holders[0],
+        &GovernedAction::SetOwners(vec![
+            &f.env,
+            f.holders[0].clone(),
+            f.holders[1].clone(),
+            f.holders[2].clone(),
+        ]),
+    );
+    f.treasury.approve_proposal(&f.holders[0]);
+    f.treasury.approve_proposal(&f.holders[1]);
+    f.treasury.execute_proposal();
+
+    let roster = f.treasury.get_shareholders();
+    assert_eq!(roster.get(0).unwrap().share_bps, 3_334);
+    assert_eq!(roster.get(1).unwrap().share_bps, 3_333);
+    assert_eq!(roster.get(2).unwrap().share_bps, 3_333);
+
+    let total: u32 = (0..roster.len()).map(|i| roster.get(i).unwrap().share_bps).sum();
+    assert_eq!(total, 10_000, "a register that does not total the whole strands money");
+}
+
+/// Monthly, and measured from the release that carried.
+#[test]
+#[should_panic(expected = "Error(Contract, #39)")] // ReleaseTooSoon
+fn a_second_release_cannot_open_within_thirty_days() {
+    let f = setup();
+    fees_arrive(&f, 1_000);
+
+    f.treasury.open_cycle(&f.holders[0], &f.token);
+    f.treasury.approve_cycle(&f.holders[0]);
+    f.treasury.approve_cycle(&f.holders[1]);
+
+    fees_arrive(&f, 500);
+    f.env.ledger().with_mut(|l| l.timestamp += 29 * DAY);
+    f.treasury.open_cycle(&f.holders[0], &f.token);
+}
+
+/// A vote that fails must not cost anyone a month.
+#[test]
+fn a_lapsed_cycle_does_not_start_the_monthly_clock() {
+    let f = setup();
+    fees_arrive(&f, 1_000);
+
+    f.treasury.open_cycle(&f.holders[0], &f.token);
+    f.treasury.approve_cycle(&f.holders[0]); // one of three, short
+    f.env.ledger().with_mut(|l| l.timestamp += 8 * DAY);
+    f.treasury.settle_lapsed_cycle();
+
+    // Immediately retryable: nothing was released, so nothing started the clock.
+    f.treasury.open_cycle(&f.holders[0], &f.token);
+    f.treasury.approve_cycle(&f.holders[0]);
+    f.treasury.approve_cycle(&f.holders[1]);
+    assert_eq!(f.treasury.get_cycle(&2).unwrap().state, CycleState::Payable);
+}
+
+/// Any owner may open the cycle, not just whoever opened the last one.
+#[test]
+fn any_owner_can_open_a_cycle() {
+    let f = setup();
+    fees_arrive(&f, 1_000);
+
+    f.treasury.open_cycle(&f.holders[2], &f.token);
+    assert_eq!(f.treasury.get_open_cycle().unwrap().id, 1);
 }
