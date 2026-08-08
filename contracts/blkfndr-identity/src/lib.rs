@@ -14,12 +14,16 @@ pub enum Error {
     NotInitialized     = 11,
     AlreadyAttested    = 12,
     NotAttested        = 13,
+    NotAnAttestor      = 14,
+    AlreadyAnAttestor  = 15,
 }
 
 const LEDGERS_TO_LIVE: u32 = 518_400; // ~30 days
 
 #[contracttype]
 pub enum DataKey {
+    /// address -> may attest. Absent means no.
+    Attestor(Address),
     Admin,
     Attestation(Address),
 }
@@ -39,6 +43,30 @@ fn extend_instance_ttl(env: &Env) {
 }
 
 // IDENTITY REGISTRY
+
+/// Require the caller to be an attestor, or the admin.
+///
+/// The admin retains the power deliberately: a registry whose only attestor
+/// has left must still be usable, and the alternative is appointing someone
+/// before you can appoint anyone.
+fn require_attestor(env: &Env, caller: &Address) {
+    caller.require_auth();
+
+    let admin: Address = env
+        .storage()
+        .instance()
+        .get(&DataKey::Admin)
+        .unwrap_or_else(|| panic_with_error!(env, Error::NotInitialized));
+
+    if caller != &admin
+        && !env
+            .storage()
+            .persistent()
+            .has(&DataKey::Attestor(caller.clone()))
+    {
+        panic_with_error!(env, Error::NotAnAttestor);
+    }
+}
 
 #[contract]
 pub struct IdentityRegistry;
@@ -68,13 +96,75 @@ impl IdentityRegistry {
         );
     }
 
+    // ATTESTORS
+    //
+    // Recording a KYC attestation used to require the admin's signature, and the
+    // admin is the deployer. Letting someone review identity documents therefore
+    // meant handing them the deployer key — which also transfers this registry
+    // away and, being the same key elsewhere, governs the factory. A support
+    // hire cannot be given that.
+    //
+    // An attestor may do exactly one thing: mark an identity verified, and
+    // unmark it. The key is worthless for anything else, so it can live on the
+    // laptop of whoever actually reviews the documents.
+
+    /// Authorise an address to attest. Admin only.
+    pub fn add_attestor(env: Env, account: Address) {
+        extend_instance_ttl(&env);
+        load_admin(&env).require_auth();
+
+        let key = DataKey::Attestor(account.clone());
+        if env.storage().persistent().has(&key) {
+            panic_with_error!(&env, Error::AlreadyAnAttestor);
+        }
+        env.storage().persistent().set(&key, &true);
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, LEDGERS_TO_LIVE, LEDGERS_TO_LIVE);
+
+        env.events().publish(
+            (symbol_short!("IDENTITY"), symbol_short!("ATTESTOR")),
+            (account, true),
+        );
+    }
+
+    /// Withdraw the authorisation. Admin only.
+    ///
+    /// Attestations already written stay written. Someone leaving should not
+    /// silently un-verify everyone they ever approved — that would turn a
+    /// personnel change into a platform-wide identity outage.
+    pub fn remove_attestor(env: Env, account: Address) {
+        extend_instance_ttl(&env);
+        load_admin(&env).require_auth();
+
+        let key = DataKey::Attestor(account.clone());
+        if !env.storage().persistent().has(&key) {
+            panic_with_error!(&env, Error::NotAnAttestor);
+        }
+        env.storage().persistent().remove(&key);
+
+        env.events().publish(
+            (symbol_short!("IDENTITY"), symbol_short!("ATTESTOR")),
+            (account, false),
+        );
+    }
+
+    pub fn is_attestor(env: Env, account: Address) -> bool {
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .unwrap_or_else(|| panic_with_error!(&env, Error::NotInitialized));
+        account == admin || env.storage().persistent().has(&DataKey::Attestor(account))
+    }
+
+
     // ATTESTATION MANAGEMENT
 
     /// Record a KYC attestation hash for an address.
-    pub fn attest(env: Env, address: Address, kyc_hash: BytesN<32>) {
+    pub fn attest(env: Env, attestor: Address, address: Address, kyc_hash: BytesN<32>) {
         extend_instance_ttl(&env);
-        let admin = load_admin(&env);
-        admin.require_auth();
+        require_attestor(&env, &attestor);
 
         let key = DataKey::Attestation(address.clone());
 
@@ -92,10 +182,9 @@ impl IdentityRegistry {
     }
 
     /// Revoke a KYC attestation for an address.
-    pub fn revoke(env: Env, address: Address) {
+    pub fn revoke(env: Env, attestor: Address, address: Address) {
         extend_instance_ttl(&env);
-        let admin = load_admin(&env);
-        admin.require_auth();
+        require_attestor(&env, &attestor);
 
         let key = DataKey::Attestation(address.clone());
 
