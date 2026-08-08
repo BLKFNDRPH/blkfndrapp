@@ -61,6 +61,7 @@ import { CategoryManager } from "./CategoryManager";
 import { useFreighterWallet } from "@/context/FreighterWalletContext";
 import { AdminWalletBar } from "./AdminWalletBar";
 import { PlatformAdminManager } from "./PlatformAdminManager";
+import { ConsensusReviewPanel } from "./ConsensusReviewPanel";
 import {
   useProjects,
   usePlatformInfo,
@@ -829,6 +830,7 @@ export function AdminDashboard() {
             >
               <div className="space-y-8">
                 <PlatformAdminManager />
+                <ConsensusReviewPanel />
                 <AdminManagement isMainAdmin={isMainAdmin} />
               </div>
             </motion.div>

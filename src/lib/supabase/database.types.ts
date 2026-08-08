@@ -193,6 +193,18 @@ export type Database = {
         Update: { fee_wallet_email?: string; id?: boolean; updated_at?: string };
         Relationships: [];
       };
+      project_moderation: {
+        Row: { project_id: string; state: "pending" | "approved" | "rejected"; flagged_by: string | null; flagged_at: string; decided_at: string | null; reason: string };
+        Insert: { project_id: string; state?: "pending" | "approved" | "rejected"; flagged_by?: string | null; flagged_at?: string; decided_at?: string | null; reason?: string };
+        Update: { project_id?: string; state?: "pending" | "approved" | "rejected"; flagged_by?: string | null; flagged_at?: string; decided_at?: string | null; reason?: string };
+        Relationships: [];
+      };
+      project_approval_votes: {
+        Row: { project_id: string; voter_id: string; approve: boolean; created_at: string };
+        Insert: { project_id: string; voter_id: string; approve: boolean; created_at?: string };
+        Update: { project_id?: string; voter_id?: string; approve?: boolean; created_at?: string };
+        Relationships: [];
+      };
       profiles: {
         Row: {
           avatar_url: string | null;
@@ -390,6 +402,8 @@ export type Database = {
     };
     Views: Record<never, never>;
     Functions: {
+      project_consensus: { Args: { pid: string }; Returns: { approvals: number; rejections: number; owners: number; needed: number; carried: boolean }[] };
+      project_awaiting_consensus: { Args: { pid: string }; Returns: boolean };
       is_admin: { Args: Record<never, never>; Returns: boolean };
       is_admin_wallet: { Args: { addr: string }; Returns: boolean };
       purge_expired_auth_challenges: { Args: Record<never, never>; Returns: undefined };
