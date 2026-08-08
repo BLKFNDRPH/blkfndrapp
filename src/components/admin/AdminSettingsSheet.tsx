@@ -14,6 +14,7 @@ import { Settings } from "lucide-react";
 import { Separator } from "../ui/separator";
 import { PlatformFeeForm } from "./PlatformFeeForm";
 import { PerformanceBondForm } from "./PerformanceBondForm";
+import { FeeContactForm } from "./FeeContactForm";
 
 export function AdminSettingsSheet() {
   return (
@@ -35,6 +36,8 @@ export function AdminSettingsSheet() {
           <PlatformFeeForm />
           <Separator />
           <PerformanceBondForm />
+          <Separator />
+          <FeeContactForm />
         </div>
       </SheetContent>
     </Sheet>

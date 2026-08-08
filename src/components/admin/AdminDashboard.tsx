@@ -54,7 +54,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ProjectsByStatusChart } from "./ProjectsByStatusChart";
-import { InternalDetails } from "./InternalDetails";
 import { AnimatePresence, motion } from "framer-motion";
 import { CubeSpinner } from "../ui/CubeSpinner";
 import { AdminManagement } from "./AdminManagement";
@@ -179,7 +178,6 @@ export function AdminDashboard() {
   const [withdrawalApprovals, setWithdrawalApprovals] = useState<
     Record<string, string[]>
   >({});
-  const [isInfoExpanded, setIsInfoExpanded] = useState(false);
   const [visibleRecentCount, setVisibleRecentCount] = useState(5);
   const [adminView, setAdminView] = useState<"projects" | "admins" | "vault" | "identity" | "categories">("projects");
 
@@ -437,14 +435,12 @@ export function AdminDashboard() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="lg"
-              onClick={() => setIsInfoExpanded((prev) => !prev)}
-            >
-              <Info className="mr-2 h-5 w-5" />
-              Tools
-            </Button>
+            {/* "Tools" opened exactly one panel: the fee destination and a
+                contact email, sharing a Save button. Redirecting every future
+                listing fee and correcting a typo in an email are not the same
+                kind of act. The destination now sits beside the vault balance it
+                redirects, behind a confirmation; the email is in Settings, which
+                is where contact details belong. */}
             {platformInfo && <AdminSettingsSheet />}
             <div className="flex items-center gap-1 border bg-card rounded-xl p-1 shadow-sm">
               <button
@@ -516,17 +512,6 @@ export function AdminDashboard() {
           </div>
         </div>
 
-        {isInfoExpanded && (
-          <motion.div
-            initial={{ opacity: 0, height: 0, y: -20 }}
-            animate={{ opacity: 1, height: "auto", y: 0 }}
-            exit={{ opacity: 0, height: 0, y: -20 }}
-            transition={{ duration: 0.3 }}
-            className="overflow-hidden"
-          >
-            <InternalDetails />
-          </motion.div>
-        )}
 
         <AnimatePresence mode="wait">
           {adminView === "projects" && (
