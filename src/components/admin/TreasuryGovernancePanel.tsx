@@ -21,7 +21,8 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useFreighterWallet } from "@/context/FreighterWalletContext";
 import { usePlatformInfo } from "@/context/BlockchainContext";
-import { treasuryClient, simulate } from "@/lib/stellar-clients";
+import { Asset } from "@stellar/stellar-sdk";
+import { treasuryClient, simulate, OPERATIONS_ID, NETWORK_PASSPHRASE } from "@/lib/stellar-clients";
 import { signerFor, send } from "@/lib/treasury-signing";
 import { shortenAddress } from "@/lib/utils";
 
@@ -40,6 +41,8 @@ import { shortenAddress } from "@/lib/utils";
  * have to multiply by ten million to raise the fee by one XLM.
  */
 const XLM = 10_000_000;
+/** The native asset (XLM) contract — the asset operations funding routes. */
+const NATIVE = Asset.native().contractId(NETWORK_PASSPHRASE);
 
 interface ActionSpec {
   key: string;
@@ -64,6 +67,11 @@ const isNum = (v: string) => v.trim() !== "" && !Number.isNaN(Number(v));
 // capability stays in the contract for a genuine emergency, exercised
 // deliberately by a key holder rather than a click, the same way the wasm-hash
 // upgrade was always kept out of this list.
+// The action is the binding's tagged-union shape — { tag, values } — not the
+// { Variant: value } shorthand, which the contract Spec rejects at serialization
+// with "no such enum entry". Confirmed on-chain: a { tag, values } proposal reads
+// back with the right variant; the shorthand throws before it ever leaves the
+// browser.
 const ACTIONS: ActionSpec[] = [
   {
     key: "SetFee",
@@ -72,7 +80,7 @@ const ACTIONS: ActionSpec[] = [
     placeholder: "10",
     hint: "A flat amount charged once per listing.",
     valid: (v) => isNum(v) && Number(v) >= 0,
-    toAction: (v) => ({ SetFee: BigInt(Math.round(Number(v) * XLM)) }),
+    toAction: (v) => ({ tag: "SetFee", values: [BigInt(Math.round(Number(v) * XLM))] }),
   },
   {
     key: "SetBondBps",
@@ -81,7 +89,7 @@ const ACTIONS: ActionSpec[] = [
     placeholder: "5",
     hint: "What a builder posts against their raise and forfeits by missing a milestone.",
     valid: (v) => isNum(v) && Number(v) >= 0 && Number(v) <= 100,
-    toAction: (v) => ({ SetBondBps: BigInt(Math.round(Number(v) * 100)) }),
+    toAction: (v) => ({ tag: "SetBondBps", values: [BigInt(Math.round(Number(v) * 100))] }),
   },
   {
     key: "SetMinContribution",
@@ -90,7 +98,7 @@ const ACTIONS: ActionSpec[] = [
     placeholder: "5",
     hint: "The smallest amount a vault will accept from a contributor.",
     valid: (v) => isNum(v) && Number(v) >= 0,
-    toAction: (v) => ({ SetMinContribution: BigInt(Math.round(Number(v) * XLM)) }),
+    toAction: (v) => ({ tag: "SetMinContribution", values: [BigInt(Math.round(Number(v) * XLM))] }),
   },
   {
     key: "SetVotingWindow",
@@ -99,7 +107,23 @@ const ACTIONS: ActionSpec[] = [
     placeholder: "7",
     hint: "How long contributors have to vote on a milestone once it opens.",
     valid: (v) => isNum(v) && Number(v) > 0,
-    toAction: (v) => ({ SetVotingWindow: BigInt(Math.round(Number(v) * 86_400)) }),
+    toAction: (v) => ({ tag: "SetVotingWindow", values: [BigInt(Math.round(Number(v) * 86_400))] }),
+  },
+  {
+    // The monthly cut of the treasury's XLM that funds the Operations Vault's gas
+    // budget. Vault and asset are fixed — the Operations Vault and XLM — so this
+    // asks only for the percentage. Present only when the vault address is
+    // configured; without it there is nowhere to route the funds.
+    key: "SetOpsFunding",
+    label: "Operations funding",
+    unit: "%",
+    placeholder: "10",
+    hint: "Monthly share of the treasury's XLM routed to the Operations Vault for moderation gas.",
+    valid: (v) => isNum(v) && Number(v) >= 0 && Number(v) <= 100,
+    toAction: (v) => ({
+      tag: "SetOpsFunding",
+      values: [{ vault: OPERATIONS_ID as string, token: NATIVE, bps: Math.round(Number(v) * 100) }],
+    }),
   },
 ];
 
@@ -387,7 +411,9 @@ export function TreasuryGovernancePanel() {
                     A proposal is open. Settle it before starting another.
                   </p>
                 )}
-                {ACTIONS.map(proposeRow)}
+                {ACTIONS.filter(
+                  (a) => a.key !== "SetOpsFunding" || Boolean(OPERATIONS_ID),
+                ).map(proposeRow)}
               </div>
             ) : (
               <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3">
