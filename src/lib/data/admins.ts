@@ -4,7 +4,13 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAdmin } from "@/lib/supabase/auth";
-import { ADMIN_ROLES, ROLE_LABELS, type AdminRole } from "@/lib/admin-roles";
+import {
+  ADMIN_ROLES,
+  ROLE_LABELS,
+  PLATFORM_MANAGED_WALLET,
+  type AdminRole,
+} from "@/lib/admin-roles";
+import { provisionManagedWallet, sweepAndDeleteManaged } from "@/lib/managed-wallet";
 
 // Re-exported so existing server-side importers of these from here keep working.
 export { ADMIN_ROLES, ROLE_LABELS, type AdminRole };
@@ -90,6 +96,15 @@ export interface PlatformAdmin {
    * signature — that is the on-chain roster, which does not read this table.
    */
   walletAddress: string | null;
+  /**
+   * The signing key the platform holds on this person's behalf, or null.
+   *
+   * Present only for a role the platform manages a key for (a KYC attestor). It
+   * is the public half; the private half lives in the Vault and never reaches
+   * this table or a browser. Distinct from walletAddress, which is a key the
+   * person connects themselves — a managed wallet is one they never see.
+   */
+  managedWallet: string | null;
 }
 
 export async function listAdmins(): Promise<PlatformAdmin[]> {
@@ -98,7 +113,7 @@ export async function listAdmins(): Promise<PlatformAdmin[]> {
 
   const { data, error } = await supabase
     .from("platform_admins")
-    .select("email, display_name, role, granted_at, note, user_id, wallet_address")
+    .select("email, display_name, role, granted_at, note, user_id, wallet_address, managed_wallet")
     .order("granted_at", { ascending: true });
 
   if (error) throw new Error(`Could not load administrators: ${error.message}`);
@@ -111,6 +126,7 @@ export async function listAdmins(): Promise<PlatformAdmin[]> {
     note: r.note,
     claimed: r.user_id !== null,
     walletAddress: r.wallet_address ?? null,
+    managedWallet: r.managed_wallet ?? null,
   }));
 }
 
@@ -184,11 +200,37 @@ export async function grantAdmin(
     throw new Error(`Could not add administrator: ${error.message}`);
   }
 
+  // A role whose key the platform manages — a KYC attestor — gets one generated,
+  // funded and stored now, so an owner can appoint it and the reviewer can work
+  // without ever holding a wallet. Provisioning reaches the chain and the Vault,
+  // so it can fail; if it does, undo the insert. The roster should never show a
+  // managed attestor with no key behind them — either both land, or neither.
+  let managedWallet: string | null = null;
+  if (PLATFORM_MANAGED_WALLET[parsedRole]) {
+    try {
+      managedWallet = await provisionManagedWallet(parsed);
+      const { error: setErr } = await admin
+        .from("platform_admins")
+        .update({ managed_wallet: managedWallet })
+        .eq("email", parsed);
+      if (setErr) throw new Error(setErr.message);
+    } catch (provisionErr) {
+      await supabase.from("platform_admins").delete().eq("email", parsed);
+      throw new Error(
+        `Could not provision a signing key for the attestor: ${
+          provisionErr instanceof Error ? provisionErr.message : String(provisionErr)
+        }`,
+      );
+    }
+  }
+
   await record(
     "admin.grant",
     caller.userId,
     parsed,
-    `${parsedRole}${wallet ? ` · wallet ${wallet}` : ""}`,
+    `${parsedRole}${wallet ? ` · wallet ${wallet}` : ""}${
+      managedWallet ? ` · managed ${managedWallet}` : ""
+    }`,
   );
   return listAdmins();
 }
@@ -253,6 +295,26 @@ export async function revokeAdmin(email: string): Promise<PlatformAdmin[]> {
     throw new Error("You cannot remove your own administrator access.");
   }
 
+  const supabase = await createClient();
+
+  // If the platform holds a signing key for this person, retire it before the
+  // row goes: sweep its remaining gas back to the operations account and destroy
+  // the key. First, and allowed to stop the removal — deleting the row while a
+  // funded key still exists would strand both the funds and the only record of
+  // where they are. A withdrawal of the on-chain attest authority is a separate,
+  // owner-signed step; the key is harmless here regardless, its secret is gone.
+  const { data: row } = await supabase
+    .from("platform_admins")
+    .select("managed_wallet")
+    .eq("email", parsed)
+    .maybeSingle();
+
+  let detail = "";
+  if (row?.managed_wallet) {
+    const swept = await sweepAndDeleteManaged(parsed);
+    detail = `managed ${row.managed_wallet} · ${swept.note}`;
+  }
+
   // Deleted through the caller's session, which is what lets
   // guard_admin_removal do its job. It compares against auth.uid() and
   // auth.jwt()->>'email', both NULL under the service role — so the self-removal
@@ -260,7 +322,6 @@ export async function revokeAdmin(email: string): Promise<PlatformAdmin[]> {
   // Only its last-admin count check survived that path. The comment above used
   // to say the database enforced this "regardless"; it did not, and the check
   // above was carrying it alone.
-  const supabase = await createClient();
   const { error } = await supabase
     .from("platform_admins")
     .delete()
@@ -268,7 +329,7 @@ export async function revokeAdmin(email: string): Promise<PlatformAdmin[]> {
 
   if (error) throw new Error(`Could not remove administrator: ${error.message}`);
 
-  await record("admin.revoke", caller.userId, parsed, "");
+  await record("admin.revoke", caller.userId, parsed, detail);
   return listAdmins();
 }
 

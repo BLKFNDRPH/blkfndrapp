@@ -1,10 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useFreighterWallet } from "@/context/FreighterWalletContext";
 import { useToast } from "@/hooks/use-toast";
 import { Client as IdentityClient } from "@/packages/blkfndr_identity/src";
-import { getKycRequests, getKycSubmission, updateKycRequestStatus } from "@/app/actions";
+import {
+  getKycRequests,
+  getKycSubmission,
+  updateKycRequestStatus,
+  attestKycAction,
+  revokeKycAction,
+  getMyManagedAttestorAction,
+} from "@/app/actions";
 import {
   Shield,
   RefreshCw,
@@ -30,14 +36,11 @@ import {
   DialogDescription,
   DialogFooter,
 } from "../ui/dialog";
-import { usePlatformInfo } from "@/context/BlockchainContext";
-import { signTransaction, signAuthEntry } from "@stellar/freighter-api";
 import { cn } from "@/lib/utils";
 
 const NETWORK_PASSPHRASE = "Test SDF Network ; September 2015";
 const SOROBAN_RPC_URL = "https://soroban-testnet.stellar.org";
 const IDENTITY_ID = process.env.NEXT_PUBLIC_BLKFNDR_IDENTITY_CONTRACT_ID || "";
-const ALLOWED_ADMIN = process.env.NEXT_PUBLIC_STELLAR_ADMIN_ADDRESS || "";
 
 /**
  * A row in the review queue.
@@ -69,34 +72,18 @@ interface CaseDetail {
   documentUrl: string | null;
 }
 
-const getSignerOptions = (publicKey: string) => ({
-  signTransaction: (xdrStr: string) =>
-    signTransaction(xdrStr, {
-      networkPassphrase: NETWORK_PASSPHRASE,
-      address: publicKey,
-    }),
-  signAuthEntry: async (xdrStr: string) => {
-    const res = await signAuthEntry(xdrStr, {
-      networkPassphrase: NETWORK_PASSPHRASE,
-      address: publicKey,
-    });
-    if (!res.signedAuthEntry) {
-      throw new Error("Freighter signedAuthEntry returned null");
-    }
-    return {
-      signedAuthEntry: res.signedAuthEntry,
-      signerAddress: res.signerAddress,
-    };
-  },
-});
-
 export function IdentityRegistryPanel() {
-  const { freighterWalletAddress } = useFreighterWallet();
   const { toast } = useToast();
-  const { platformInfo } = usePlatformInfo();
 
   const [loading, setLoading] = useState(false);
   const [kycRequests, setKycRequests] = useState<QueueRow[]>([]);
+
+  // The managed attestor key the platform holds for this reviewer, and whether
+  // the registry has appointed it. A KYC attestor approves through this key,
+  // signed server-side — they never connect a wallet. Null means they have no
+  // managed key, so attestation is offered to no one until an owner grants one.
+  const [managedWallet, setManagedWallet] = useState<string | null>(null);
+  const [managedAppointed, setManagedAppointed] = useState(false);
 
   // Case Review State. Details are fetched per case and cached by submission id,
   // so reopening a case does not re-read the identity columns.
@@ -122,21 +109,14 @@ export function IdentityRegistryPanel() {
     });
   };
 
-  // Attesting signs a transaction the identity contract accepts only from an
-  // admin on its own roster, so eligibility is that whole roster. It used to be
-  // `platformInfo.admin`, which is only adminList[0] -- every other on-chain
-  // admin was locked out -- falling back to NEXT_PUBLIC_STELLAR_ADMIN_ADDRESS,
-  // which ships as the literal string "FILL_ME" and so matched nobody at all.
-  const onChainAdmins = platformInfo?.multiSigAdmins ?? [];
-  const canAttest =
-    !!freighterWalletAddress &&
-    (onChainAdmins.includes(freighterWalletAddress) ||
-      (!!ALLOWED_ADMIN && ALLOWED_ADMIN !== "FILL_ME" && freighterWalletAddress === ALLOWED_ADMIN));
+  // A reviewer can attest once the platform holds a key for them and the
+  // registry has appointed it. Both are true only for an appointed KYC attestor;
+  // the server signs on their behalf, so no wallet is involved here.
+  const canAttest = Boolean(managedWallet && managedAppointed);
 
   // Rejecting and opening a case only touch the database, which requireAdmin()
-  // already gates server-side, so neither is held to the on-chain roster. That
-  // gate meant a console reviewer holding no contract key could not open a case
-  // to look at it, let alone turn away an obviously bad submission.
+  // already gates server-side, so neither is held to the attestor roster — a
+  // reviewer can always look at a case and turn away an obviously bad one.
 
   const fetchKycRequests = useCallback(async () => {
     try {
@@ -163,6 +143,37 @@ export function IdentityRegistryPanel() {
   useEffect(() => {
     fetchKycRequests();
   }, [fetchKycRequests]);
+
+  // Load the reviewer's managed key and check whether the registry has appointed
+  // it. The appointment read is a plain simulation — no signer — so it works for
+  // anyone; only the key's existence gates whether attestation is offered.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { managedWallet: mine } = await getMyManagedAttestorAction();
+      if (cancelled) return;
+      setManagedWallet(mine);
+      if (!mine || !IDENTITY_ID) {
+        setManagedAppointed(false);
+        return;
+      }
+      try {
+        const client = new IdentityClient({
+          contractId: IDENTITY_ID,
+          rpcUrl: SOROBAN_RPC_URL,
+          networkPassphrase: NETWORK_PASSPHRASE,
+        });
+        const tx = await client.is_attestor({ account: mine });
+        const sim = await tx.simulate();
+        if (!cancelled) setManagedAppointed(Boolean(sim.result));
+      } catch {
+        if (!cancelled) setManagedAppointed(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   /**
    * Open one case, pulling its identity data and a signed document URL.
@@ -207,78 +218,28 @@ export function IdentityRegistryPanel() {
     [openCase, details, toast],
   );
 
-  // The database is keyed by submission id; the contract is keyed by Stellar
-  // address. Passing the address to updateKycRequestStatus used to fail its uuid
-  // check before any decision was recorded, so both are threaded through here.
+  // The reviewer approves; the server signs the attestation with the managed key
+  // it holds for them. No wallet here — the whole point of the managed key. The
+  // details hash the attestation commits to is read server-side from the
+  // submission, so the reviewer does not thread it through the browser.
   const handleApproveRequest = async (req: QueueRow) => {
-    if (!freighterWalletAddress) return;
     const address = req.stellar_address;
     setLoading(true);
     try {
-      const client = new IdentityClient({
-        contractId: IDENTITY_ID,
-        rpcUrl: SOROBAN_RPC_URL,
-        networkPassphrase: NETWORK_PASSPHRASE,
-        publicKey: freighterWalletAddress,
-        ...getSignerOptions(freighterWalletAddress),
-      });
-
-      const checkTx = await client.is_kyc_approved({ address });
-      const checkSim = await checkTx.simulate();
-      const isApprovedOnChain = checkSim.result;
-
-      if (isApprovedOnChain) {
-        await updateKycRequestStatus(req.id, "approved");
+      const res = await attestKycAction(req.id);
+      if (res.success) {
         toast({
-          title: "Approved and Synced",
-          description: `KYC for ${address.slice(0, 6)}... has been synced as approved.`,
+          title: "Attested and Approved",
+          description: `KYC approved for ${address.slice(0, 6)}… on-chain.`,
         });
         fetchKycRequests();
-        return;
-      }
-
-      // The hash comes from the opened case. Attesting a zero hash would record
-      // a commitment matching no submission, so refuse rather than send one.
-      const detailsHash = details[req.id]?.details_hash;
-      if (!detailsHash) {
+      } else {
         toast({
-          title: "Open the case first",
-          description: "The attestation commits to this submission's details hash, which loads with the case.",
+          title: "Attestation Failed",
+          description: res.error,
           variant: "destructive",
         });
-        return;
       }
-
-      const tx = await client.attest({
-        attestor: freighterWalletAddress,
-        address,
-        kyc_hash: Buffer.from(detailsHash, "hex"),
-      });
-
-      await tx.signAndSend();
-      await updateKycRequestStatus(req.id, "approved");
-
-      toast({
-        title: "Attested and Approved",
-        description: `KYC successfully approved for ${address.slice(0, 6)}... on-chain.`,
-      });
-      fetchKycRequests();
-    } catch (err: any) {
-      const errStr = String(err);
-      if (errStr.includes("AlreadyAttested") || errStr.includes("Contract, #12")) {
-        await updateKycRequestStatus(req.id, "approved");
-        toast({
-          title: "Approved and Synced",
-          description: `KYC for ${address.slice(0, 6)}... has been synced as approved.`,
-        });
-        fetchKycRequests();
-        return;
-      }
-      toast({
-        title: "Attestation Failed",
-        description: err.message || String(err),
-        variant: "destructive",
-      });
     } finally {
       setLoading(false);
     }
@@ -309,37 +270,23 @@ export function IdentityRegistryPanel() {
   };
 
   const handleRevokeRequest = async (req: QueueRow) => {
-    if (!freighterWalletAddress) return;
     const address = req.stellar_address;
     setLoading(true);
     try {
-      const client = new IdentityClient({
-        contractId: IDENTITY_ID,
-        rpcUrl: SOROBAN_RPC_URL,
-        networkPassphrase: NETWORK_PASSPHRASE,
-        publicKey: freighterWalletAddress,
-        ...getSignerOptions(freighterWalletAddress),
-      });
-
-      const tx = await client.revoke({
-        attestor: freighterWalletAddress,
-        address,
-      });
-
-      await tx.signAndSend();
-      await updateKycRequestStatus(req.id, "rejected");
-
-      toast({
-        title: "Attestation Revoked",
-        description: `KYC has been revoked for ${address.slice(0, 6)}... on-chain.`,
-      });
-      fetchKycRequests();
-    } catch (err: any) {
-      toast({
-        title: "Revocation Failed",
-        description: err.message || String(err),
-        variant: "destructive",
-      });
+      const res = await revokeKycAction(req.id);
+      if (res.success) {
+        toast({
+          title: "Attestation Revoked",
+          description: `KYC revoked for ${address.slice(0, 6)}… on-chain.`,
+        });
+        fetchKycRequests();
+      } else {
+        toast({
+          title: "Revocation Failed",
+          description: res.error,
+          variant: "destructive",
+        });
+      }
     } finally {
       setLoading(false);
     }
@@ -369,9 +316,13 @@ export function IdentityRegistryPanel() {
                 <Badge
                   variant="secondary"
                   className="text-[10px] uppercase tracking-wider font-semibold"
-                  title="Cases can be reviewed and rejected. Attesting on-chain needs a wallet on the identity contract's admin roster."
+                  title={
+                    managedWallet
+                      ? "Your attestor key is not appointed yet. An owner appoints it under Admins → KYC Attestors."
+                      : "You are not a KYC attestor. An owner grants attest access under Admins → KYC Attestors. You can still review and reject."
+                  }
                 >
-                  No Attest Key
+                  {managedWallet ? "Key Not Appointed" : "Not an Attestor"}
                 </Badge>
               )}
               <Button
@@ -643,9 +594,11 @@ export function IdentityRegistryPanel() {
                       disabled={loading || !canAttest || !detail}
                       title={
                         !canAttest
-                          ? "Attesting signs a transaction the identity contract only accepts from an admin on its roster. Connect that wallet in Freighter."
+                          ? managedWallet
+                            ? "Your attestor key is not appointed yet. An owner appoints it under Admins → KYC Attestors."
+                            : "You are not a KYC attestor. Ask an owner to add you under Admins → KYC Attestors."
                           : !detail
-                            ? "Open the case first — the attestation commits to its details hash."
+                            ? "Open the case first to review it before approving."
                             : undefined
                       }
                       className="h-11 px-8 bg-accent hover:bg-accent/90 text-white text-sm font-semibold shadow-sm"
@@ -735,7 +688,7 @@ export function IdentityRegistryPanel() {
                       size="sm"
                       onClick={() => handleRevokeRequest(req)}
                       disabled={loading || !canAttest}
-                      title={!canAttest ? "Revoking signs an on-chain transaction as a contract admin." : undefined}
+                      title={!canAttest ? "Revoking needs an appointed managed attestor key." : undefined}
                       className="h-9 px-4 text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/10 border border-rose-200/30 text-xs font-semibold shrink-0"
                     >
                       Revoke

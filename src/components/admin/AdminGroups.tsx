@@ -8,6 +8,8 @@ import {
   Crown,
   Wrench,
   ShieldCheck,
+  ShieldPlus,
+  ShieldX,
   ClipboardCheck,
   Wallet,
   Check,
@@ -26,6 +28,8 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/context/AuthContext";
 import { usePlatformInfo } from "@/context/BlockchainContext";
+import { useFreighterWallet } from "@/context/FreighterWalletContext";
+import { useStellarContract } from "@/hooks/use-stellar-contract";
 import { treasuryClient, simulate } from "@/lib/stellar-clients";
 import { shortenAddress } from "@/lib/utils";
 import {
@@ -60,6 +64,7 @@ interface Row {
   email: string;
   role: AdminRole;
   walletAddress: string | null;
+  managedWallet: string | null;
   claimed: boolean;
 }
 
@@ -75,9 +80,14 @@ export function AdminGroups() {
   const { toast } = useToast();
   const { user } = useAuth();
   const { platformInfo } = usePlatformInfo();
+  const { freighterWalletAddress } = useFreighterWallet();
+  const { getIdentityAdmin, isAttestor, addAttestor, removeAttestor } = useStellarContract();
 
   const [rows, setRows] = useState<Row[]>([]);
   const [stakes, setStakes] = useState<Record<string, number>>({});
+  const [registryAdmin, setRegistryAdmin] = useState<string | null>(null);
+  const [attestorOf, setAttestorOf] = useState<Record<string, boolean>>({});
+  const [appointBusy, setAppointBusy] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [addingTo, setAddingTo] = useState<AdminRole | null>(null);
@@ -86,6 +96,15 @@ export function AdminGroups() {
 
   const treasury = platformInfo?.feeWalletAddress ?? "";
   const ownEmail = (user?.email ?? "").toLowerCase();
+
+  // Whoever is connected as the identity registry's admin may appoint or
+  // withdraw an attestor. That is the one on-chain, owner-signed step in the
+  // managed-attestor model: the platform holds the key, but granting it the
+  // authority to write KYC is a deliberate signature, not something the server
+  // does alone.
+  const isRegistryAdmin = Boolean(
+    freighterWalletAddress && registryAdmin && freighterWalletAddress === registryAdmin,
+  );
 
   const loadRoster = async () => {
     const res = await getAdminsAction();
@@ -115,6 +134,58 @@ export function AdminGroups() {
       cancelled = true;
     };
   }, [treasury]);
+
+  // The registry admin, read once — it decides whether appoint/withdraw shows.
+  useEffect(() => {
+    let cancelled = false;
+    getIdentityAdmin()
+      .then((a) => {
+        if (!cancelled) setRegistryAdmin((a as string | null) ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setRegistryAdmin(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [getIdentityAdmin]);
+
+  // Which managed wallets the registry has appointed. Keyed by wallet so a row
+  // shows its own status and the button knows which way to act.
+  useEffect(() => {
+    let cancelled = false;
+    const wallets = rows.map((r) => r.managedWallet).filter((w): w is string => Boolean(w));
+    if (wallets.length === 0) return;
+    (async () => {
+      const entries = await Promise.all(
+        wallets.map(async (w) => [w, Boolean(await isAttestor(w))] as const),
+      );
+      if (!cancelled) setAttestorOf(Object.fromEntries(entries));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [rows, isAttestor]);
+
+  const appoint = (wallet: string, grant: boolean) => {
+    setAppointBusy(wallet);
+    startTransition(async () => {
+      try {
+        if (grant) await addAttestor(wallet);
+        else await removeAttestor(wallet);
+        setAttestorOf((m) => ({ ...m, [wallet]: grant }));
+        toast({ title: grant ? "Attestor appointed" : "Authority withdrawn" });
+      } catch (err) {
+        toast({
+          title: grant ? "Appoint failed" : "Withdraw failed",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "destructive",
+        });
+      } finally {
+        setAppointBusy(null);
+      }
+    });
+  };
 
   const run = (
     key: string,
@@ -200,9 +271,9 @@ export function AdminGroups() {
                   {managed && (
                     <p className="text-xs text-muted-foreground">
                       No wallet field: the platform generates and funds this
-                      attestor&rsquo;s signing key, so they never connect one. (Key
-                      generation lands in a following change; for now this records
-                      the person.)
+                      attestor&rsquo;s signing key when you add them, so they never
+                      connect one. Once they appear below, appoint the key on-chain
+                      from their row (needs the registry admin wallet).
                     </p>
                   )}
                   <Button
@@ -237,6 +308,8 @@ export function AdminGroups() {
                   {members.map((m) => {
                     const isSelf = m.email.toLowerCase() === ownEmail;
                     const bps = m.walletAddress ? stakes[m.walletAddress] : undefined;
+                    const mw = m.managedWallet;
+                    const appointed = mw ? attestorOf[mw] : undefined;
                     return (
                       <li key={m.email} className="flex items-center justify-between gap-3 px-3 py-2.5">
                         <div className="min-w-0">
@@ -263,30 +336,73 @@ export function AdminGroups() {
                                 {bps ? `${(bps / 100).toFixed(2)}% stake` : "no stake yet"}
                               </Badge>
                             )}
+                            {managed && mw && (
+                              <Badge
+                                variant="outline"
+                                className={
+                                  appointed
+                                    ? "gap-1 border-emerald-500/40 text-emerald-500"
+                                    : "gap-1 text-muted-foreground"
+                                }
+                              >
+                                <ShieldCheck className="h-3 w-3" aria-hidden="true" />
+                                {appointed ? "Appointed" : "Not appointed"}
+                              </Badge>
+                            )}
                           </p>
                           <p className="text-xs text-muted-foreground">
                             {m.email}
-                            {m.walletAddress ? ` · ${shortenAddress(m.walletAddress)}` : ""}
+                            {managed
+                              ? mw
+                                ? ` · managed ${shortenAddress(mw)}`
+                                : " · provisioning key…"
+                              : m.walletAddress
+                                ? ` · ${shortenAddress(m.walletAddress)}`
+                                : ""}
                           </p>
                         </div>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          disabled={isSelf || busy === `rm:${m.email}`}
-                          title={isSelf ? "You cannot remove your own access" : "Remove"}
-                          aria-label={`Remove ${m.email}`}
-                          onClick={() =>
-                            run(`rm:${m.email}`, `Removed ${m.email}`, () =>
-                              revokeAdminAction(m.email),
-                            )
-                          }
-                        >
-                          {busy === `rm:${m.email}` ? (
-                            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                          ) : (
-                            <Trash2 className="h-4 w-4" aria-hidden="true" />
+                        <div className="flex shrink-0 items-center gap-1">
+                          {managed && mw && isRegistryAdmin && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={appointBusy === mw}
+                              title={
+                                appointed
+                                  ? "Withdraw this key's authority to attest"
+                                  : "Authorise this key to write KYC attestations"
+                              }
+                              onClick={() => appoint(mw, !appointed)}
+                            >
+                              {appointBusy === mw ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                              ) : appointed ? (
+                                <ShieldX className="h-3.5 w-3.5" aria-hidden="true" />
+                              ) : (
+                                <ShieldPlus className="h-3.5 w-3.5" aria-hidden="true" />
+                              )}
+                              <span className="ml-1.5">{appointed ? "Withdraw" : "Appoint"}</span>
+                            </Button>
                           )}
-                        </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            disabled={isSelf || busy === `rm:${m.email}`}
+                            title={isSelf ? "You cannot remove your own access" : "Remove"}
+                            aria-label={`Remove ${m.email}`}
+                            onClick={() =>
+                              run(`rm:${m.email}`, `Removed ${m.email}`, () =>
+                                revokeAdminAction(m.email),
+                              )
+                            }
+                          >
+                            {busy === `rm:${m.email}` ? (
+                              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                            ) : (
+                              <Trash2 className="h-4 w-4" aria-hidden="true" />
+                            )}
+                          </Button>
+                        </div>
                       </li>
                     );
                   })}
