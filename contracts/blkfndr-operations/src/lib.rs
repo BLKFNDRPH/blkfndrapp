@@ -47,6 +47,12 @@ const DEFAULT_VOTE_WINDOW: u64 = 7 * 24 * 60 * 60;
 /// Bounds the owner set so iteration and the threshold stay cheap and predictable.
 const MAX_OWNERS: u32 = 20;
 
+/// Bounds a batch release, so one vote funding the whole moderator roster still
+/// fits comfortably inside a single transaction's resource budget. A team larger
+/// than this funds in more than one batch — rare, and cheaper than an execution
+/// that runs out of gas half way through paying people.
+const MAX_RELEASE_BATCH: u32 = 50;
+
 const LEDGER_BUMP: u32 = 120_960; // ~7 days of ledgers
 const LEDGER_LIFETIME: u32 = 17_280;
 
@@ -71,6 +77,7 @@ pub enum Error {
 
     InvalidAmount = 50,
     InsufficientFunds = 51,
+    InvalidBatch = 52,
 }
 
 /// The terms of a spend: how much of which token goes where.
@@ -88,6 +95,11 @@ pub struct ReleaseTerms {
 pub enum GovernedAction {
     /// Pay operating funds out to a destination the owners name.
     Release(ReleaseTerms),
+    /// Pay several destinations in one carried vote — the monthly gas top-up to
+    /// every active custodial wallet at once, rather than a vote per wallet. It
+    /// is all-or-nothing: if any single transfer cannot be covered the whole
+    /// execution reverts, so a batch never funds some wallets and strands others.
+    ReleaseMany(Vec<ReleaseTerms>),
     /// Replace the owner set — the voters. The only way to add or remove one, so
     /// the body that decides how money moves is changed the same way money is.
     SetOwners(Vec<Address>),
@@ -217,6 +229,16 @@ impl Operations {
                     panic_with_error!(&env, Error::InvalidAmount);
                 }
             }
+            GovernedAction::ReleaseMany(items) => {
+                if items.is_empty() || items.len() > MAX_RELEASE_BATCH {
+                    panic_with_error!(&env, Error::InvalidBatch);
+                }
+                for i in 0..items.len() {
+                    if items.get(i).unwrap().amount <= 0 {
+                        panic_with_error!(&env, Error::InvalidAmount);
+                    }
+                }
+            }
             GovernedAction::SetOwners(next) => validate_owners(&env, next),
             GovernedAction::SetVotingWindow(_) => {}
         }
@@ -331,6 +353,25 @@ impl Operations {
                 env.events().publish(
                     (symbol_short!("OPSVAULT"), symbol_short!("RELEASE")),
                     (terms.token.clone(), terms.to.clone(), terms.amount),
+                );
+            }
+            GovernedAction::ReleaseMany(items) => {
+                // Atomic by virtue of the host: any panic here reverts the whole
+                // transaction, so a batch that cannot be fully covered pays no one.
+                // Balance is read per entry because each transfer lowers it, and
+                // two entries could name the same token.
+                for i in 0..items.len() {
+                    let t = items.get(i).unwrap();
+                    let client = token::Client::new(&env, &t.token);
+                    if client.balance(&env.current_contract_address()) < t.amount {
+                        panic_with_error!(&env, Error::InsufficientFunds);
+                    }
+                    client.transfer(&env.current_contract_address(), &t.to, &t.amount);
+                }
+
+                env.events().publish(
+                    (symbol_short!("OPSVAULT"), symbol_short!("RELEASES")),
+                    items.len(),
                 );
             }
             GovernedAction::SetOwners(next) => {

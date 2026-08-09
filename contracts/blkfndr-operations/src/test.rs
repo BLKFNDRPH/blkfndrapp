@@ -376,3 +376,73 @@ fn cannot_keep_voting_after_it_carries() {
     // Already carried; a third vote has nothing to add and is refused.
     f.ops.approve(&f.owners[2]);
 }
+
+// ── Batch releases (the monthly gas top-up) ─────────────────────────────────
+
+#[test]
+fn a_batch_funds_every_destination_in_one_vote() {
+    let f = setup();
+    fund(&f, 1_000);
+    let a = Address::generate(&f.env);
+    let b = Address::generate(&f.env);
+
+    let batch = GovernedAction::ReleaseMany(vec![
+        &f.env,
+        ReleaseTerms { token: f.token.clone(), amount: 300, to: a.clone() },
+        ReleaseTerms { token: f.token.clone(), amount: 200, to: b.clone() },
+    ]);
+    f.ops.propose(&f.owners[0], &batch);
+    f.ops.approve(&f.owners[0]);
+    f.ops.approve(&f.owners[1]);
+    f.ops.execute();
+
+    assert_eq!(f.token_client.balance(&a), 300);
+    assert_eq!(f.token_client.balance(&b), 200);
+    assert_eq!(f.ops.balance_of(&f.token), 500);
+    assert!(f.ops.get_proposal().is_none());
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #52)")] // InvalidBatch
+fn an_empty_batch_is_rejected() {
+    let f = setup();
+    let empty: Vec<ReleaseTerms> = vec![&f.env];
+    f.ops.propose(&f.owners[0], &GovernedAction::ReleaseMany(empty));
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #50)")] // InvalidAmount
+fn a_batch_with_a_zero_entry_is_rejected() {
+    let f = setup();
+    let dest = Address::generate(&f.env);
+    let batch = GovernedAction::ReleaseMany(vec![
+        &f.env,
+        ReleaseTerms { token: f.token.clone(), amount: 100, to: dest.clone() },
+        ReleaseTerms { token: f.token.clone(), amount: 0, to: dest.clone() },
+    ]);
+    f.ops.propose(&f.owners[0], &batch);
+}
+
+#[test]
+fn a_batch_beyond_the_balance_pays_no_one() {
+    let f = setup();
+    fund(&f, 400);
+    let a = Address::generate(&f.env);
+    let b = Address::generate(&f.env);
+
+    // 300 + 300 = 600 > 400: the second transfer cannot be covered, so the whole
+    // execution reverts and the first is rolled back too.
+    let batch = GovernedAction::ReleaseMany(vec![
+        &f.env,
+        ReleaseTerms { token: f.token.clone(), amount: 300, to: a.clone() },
+        ReleaseTerms { token: f.token.clone(), amount: 300, to: b.clone() },
+    ]);
+    f.ops.propose(&f.owners[0], &batch);
+    f.ops.approve(&f.owners[0]);
+    f.ops.approve(&f.owners[1]);
+
+    assert!(f.ops.try_execute().is_err()); // InsufficientFunds
+    assert_eq!(f.token_client.balance(&a), 0);
+    assert_eq!(f.token_client.balance(&b), 0);
+    assert_eq!(f.ops.balance_of(&f.token), 400);
+}
