@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireCaller, requireAdmin, AuthError } from "@/lib/supabase/auth";
 import { isStellarAccount } from "@/lib/stellar-address";
+import { signAttestation, signRevocation } from "@/lib/managed-wallet";
 
 /**
  * KYC data access.
@@ -226,6 +227,113 @@ export async function decideSubmission(
     .eq("id", submissionId);
 
   if (error) throw new Error(`Could not record KYC decision: ${error.message}`);
+}
+
+/**
+ * Approve a submission by writing its attestation on-chain, signed by the
+ * reviewer's platform-managed key — no wallet, no Freighter.
+ *
+ * This is the walletless path a KYC attestor works through every day: they open
+ * a case, decide, and the server signs the attestation with the key it holds for
+ * them. The key must already be appointed on the registry — an owner does that
+ * once, from their own wallet — or the chain rejects the write, which is the
+ * error the reviewer sees.
+ *
+ * The chain write comes before the database decision on purpose: a failed attest
+ * must not leave a submission marked approved that the ledger never recorded.
+ */
+export async function attestSubmission(submissionId: string) {
+  const caller = await requireAdmin();
+  z.string().uuid().parse(submissionId);
+
+  const email = (caller.email ?? "").toLowerCase();
+  if (!email) throw new Error("Your account has no email to bind a signing key to.");
+
+  const admin = createAdminClient();
+
+  // Confirm the reviewer holds a managed key before touching the submission, so
+  // someone without one gets a plain reason rather than a contract error.
+  const { data: me } = await admin
+    .from("platform_admins")
+    .select("managed_wallet")
+    .eq("email", email)
+    .maybeSingle();
+  if (!me?.managed_wallet) {
+    throw new Error(
+      "You do not have a managed attestor key. An owner grants one by adding you as a KYC Attestor.",
+    );
+  }
+
+  const { data: sub, error } = await admin
+    .from("kyc_requests")
+    .select("stellar_address, details_hash")
+    .eq("id", submissionId)
+    .maybeSingle();
+  if (error) throw new Error(`Could not read KYC submission: ${error.message}`);
+  if (!sub) throw new Error("That submission does not exist.");
+
+  try {
+    await signAttestation({
+      keyRef: email,
+      subject: sub.stellar_address,
+      kycHashHex: sub.details_hash,
+    });
+  } catch (err) {
+    // Already attested on a prior attempt whose database write did not land —
+    // the ledger is where it needs to be, so sync the decision rather than
+    // refuse. Any other failure still stops us marking it approved.
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!/AlreadyAttested|#12/i.test(msg)) throw err;
+  }
+  await decideSubmission(submissionId, "approved");
+
+  return { address: sub.stellar_address, attestor: me.managed_wallet };
+}
+
+/** The managed attestor key the platform holds for the current reviewer, or
+ *  null. The panel uses it to decide whether to offer walletless attestation. */
+export async function myManagedAttestor(): Promise<string | null> {
+  const caller = await requireAdmin();
+  const email = (caller.email ?? "").toLowerCase();
+  if (!email) return null;
+  const admin = createAdminClient();
+  const { data } = await admin
+    .from("platform_admins")
+    .select("managed_wallet")
+    .eq("email", email)
+    .maybeSingle();
+  return data?.managed_wallet ?? null;
+}
+
+/** Revoke a submission's attestation on-chain with the reviewer's managed key,
+ *  then mark it rejected. The mirror of attestSubmission. */
+export async function revokeSubmissionAttestation(submissionId: string) {
+  const caller = await requireAdmin();
+  z.string().uuid().parse(submissionId);
+
+  const email = (caller.email ?? "").toLowerCase();
+  const admin = createAdminClient();
+  const { data: me } = await admin
+    .from("platform_admins")
+    .select("managed_wallet")
+    .eq("email", email)
+    .maybeSingle();
+  if (!me?.managed_wallet) {
+    throw new Error("You do not have a managed attestor key.");
+  }
+
+  const { data: sub, error } = await admin
+    .from("kyc_requests")
+    .select("stellar_address")
+    .eq("id", submissionId)
+    .maybeSingle();
+  if (error) throw new Error(`Could not read KYC submission: ${error.message}`);
+  if (!sub) throw new Error("That submission does not exist.");
+
+  await signRevocation({ keyRef: email, subject: sub.stellar_address });
+  await decideSubmission(submissionId, "rejected");
+
+  return { address: sub.stellar_address };
 }
 
 export { AuthError };

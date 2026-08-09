@@ -13,437 +13,789 @@ export type Json =
   | boolean
   | null
   | { [key: string]: Json | undefined }
-  | Json[];
+  | Json[]
 
-/** Exact on-chain amounts cross the wire as text. */
-type Raw = number | string;
+// Manual patch the generator cannot express (see the header note): numeric(78,0)
+// i128 columns are read back as text and accepted as string on write, because a
+// JS number cannot hold an i128 exactly. Every *_raw column is typed `Raw`.
+type Raw = number | string
 
 export type Database = {
-  __InternalSupabase: { PostgrestVersion: "14.15" };
+  // Allows to automatically instantiate createClient with right options
+  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
+  __InternalSupabase: {
+    PostgrestVersion: "14.15"
+  }
   public: {
     Tables: {
+      admin_audit_log: {
+        Row: {
+          action: string
+          actor_id: string | null
+          created_at: string
+          detail: string
+          id: string
+          target_email: string
+        }
+        Insert: {
+          action: string
+          actor_id?: string | null
+          created_at?: string
+          detail?: string
+          id?: string
+          target_email?: string
+        }
+        Update: {
+          action?: string
+          actor_id?: string | null
+          created_at?: string
+          detail?: string
+          id?: string
+          target_email?: string
+        }
+        Relationships: []
+      }
       auth_challenges: {
-        Row: { created_at: string; expires_at: string; nonce: string; public_key: string };
-        Insert: { created_at?: string; expires_at?: string; nonce: string; public_key: string };
-        Update: { created_at?: string; expires_at?: string; nonce?: string; public_key?: string };
-        Relationships: [];
-      };
+        Row: {
+          created_at: string
+          expires_at: string
+          nonce: string
+          public_key: string
+        }
+        Insert: {
+          created_at?: string
+          expires_at?: string
+          nonce: string
+          public_key: string
+        }
+        Update: {
+          created_at?: string
+          expires_at?: string
+          nonce?: string
+          public_key?: string
+        }
+        Relationships: []
+      }
       claim_requests: {
-        Row: { created_at: string; id: string; project_id: string; requested_by: string };
-        Insert: { created_at?: string; id?: string; project_id: string; requested_by: string };
-        Update: { created_at?: string; id?: string; project_id?: string; requested_by?: string };
-        Relationships: [];
-      };
+        Row: {
+          created_at: string
+          id: string
+          project_id: string
+          requested_by: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          project_id: string
+          requested_by: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          project_id?: string
+          requested_by?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "claim_requests_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: true
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "claim_requests_requested_by_fkey"
+            columns: ["requested_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       contract_events: {
         Row: {
-          contract_id: string;
-          created_at: string;
-          error: string | null;
-          event_id: string;
-          id: string;
-          ledger: number;
-          ledger_closed_at: string | null;
-          payload: Json;
-          processed_at: string | null;
-          topic1: string;
-          topic2: string;
-        };
+          contract_id: string
+          created_at: string
+          error: string | null
+          event_id: string
+          id: string
+          ledger: number
+          ledger_closed_at: string | null
+          payload: Json
+          processed_at: string | null
+          topic1: string
+          topic2: string
+        }
         Insert: {
-          contract_id: string;
-          created_at?: string;
-          error?: string | null;
-          event_id: string;
-          id?: string;
-          ledger: number;
-          ledger_closed_at?: string | null;
-          payload?: Json;
-          processed_at?: string | null;
-          topic1?: string;
-          topic2?: string;
-        };
+          contract_id: string
+          created_at?: string
+          error?: string | null
+          event_id: string
+          id?: string
+          ledger: number
+          ledger_closed_at?: string | null
+          payload?: Json
+          processed_at?: string | null
+          topic1?: string
+          topic2?: string
+        }
         Update: {
-          contract_id?: string;
-          created_at?: string;
-          error?: string | null;
-          event_id?: string;
-          id?: string;
-          ledger?: number;
-          ledger_closed_at?: string | null;
-          payload?: Json;
-          processed_at?: string | null;
-          topic1?: string;
-          topic2?: string;
-        };
-        Relationships: [];
-      };
+          contract_id?: string
+          created_at?: string
+          error?: string | null
+          event_id?: string
+          id?: string
+          ledger?: number
+          ledger_closed_at?: string | null
+          payload?: Json
+          processed_at?: string | null
+          topic1?: string
+          topic2?: string
+        }
+        Relationships: []
+      }
+      feature_request_decisions: {
+        Row: {
+          approve: boolean
+          created_at: string
+          request_id: string
+          voter_id: string
+        }
+        Insert: {
+          approve: boolean
+          created_at?: string
+          request_id: string
+          voter_id: string
+        }
+        Update: {
+          approve?: boolean
+          created_at?: string
+          request_id?: string
+          voter_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "feature_request_decisions_request_id_fkey"
+            columns: ["request_id"]
+            isOneToOne: false
+            referencedRelation: "feature_requests"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      feature_request_votes: {
+        Row: {
+          created_at: string
+          request_id: string
+          voter_id: string
+        }
+        Insert: {
+          created_at?: string
+          request_id: string
+          voter_id: string
+        }
+        Update: {
+          created_at?: string
+          request_id?: string
+          voter_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "feature_request_votes_request_id_fkey"
+            columns: ["request_id"]
+            isOneToOne: false
+            referencedRelation: "feature_requests"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      feature_requests: {
+        Row: {
+          body: string
+          created_at: string
+          decided_at: string | null
+          id: string
+          response: string
+          status: Database["public"]["Enums"]["feature_request_status"]
+          submitted_by: string
+          title: string
+        }
+        Insert: {
+          body?: string
+          created_at?: string
+          decided_at?: string | null
+          id?: string
+          response?: string
+          status?: Database["public"]["Enums"]["feature_request_status"]
+          submitted_by: string
+          title: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          decided_at?: string | null
+          id?: string
+          response?: string
+          status?: Database["public"]["Enums"]["feature_request_status"]
+          submitted_by?: string
+          title?: string
+        }
+        Relationships: []
+      }
       indexer_state: {
-        Row: { key: string; updated_at: string; value: number };
-        Insert: { key: string; updated_at?: string; value: number };
-        Update: { key?: string; updated_at?: string; value?: number };
-        Relationships: [];
-      };
+        Row: {
+          key: string
+          updated_at: string
+          value: number
+        }
+        Insert: {
+          key: string
+          updated_at?: string
+          value: number
+        }
+        Update: {
+          key?: string
+          updated_at?: string
+          value?: number
+        }
+        Relationships: []
+      }
       kyc_requests: {
         Row: {
-          consent_given: boolean;
-          created_at: string;
-          date_of_birth: string | null;
-          details_hash: string;
-          document_expires_on: string | null;
-          document_path: string;
-          document_type: string;
-          email: string;
-          full_name: string;
-          id: string;
-          id_number: string | null;
-          rejection_reason: string;
-          residential_address: string | null;
-          status: string;
-          stellar_address: string;
-          updated_at: string;
-          user_id: string;
-        };
+          consent_given: boolean
+          created_at: string
+          date_of_birth: string | null
+          details_hash: string
+          document_expires_on: string | null
+          document_path: string
+          document_type: string
+          email: string
+          full_name: string
+          id: string
+          id_number: string | null
+          rejection_reason: string
+          residential_address: string | null
+          status: string
+          stellar_address: string
+          updated_at: string
+          user_id: string
+        }
         Insert: {
-          consent_given?: boolean;
-          created_at?: string;
-          date_of_birth?: string | null;
-          details_hash: string;
-          document_expires_on?: string | null;
-          document_path: string;
-          document_type: string;
-          email: string;
-          full_name: string;
-          id?: string;
-          id_number?: string | null;
-          rejection_reason?: string;
-          residential_address?: string | null;
-          status?: string;
-          stellar_address: string;
-          updated_at?: string;
-          user_id: string;
-        };
+          consent_given?: boolean
+          created_at?: string
+          date_of_birth?: string | null
+          details_hash: string
+          document_expires_on?: string | null
+          document_path: string
+          document_type: string
+          email: string
+          full_name: string
+          id?: string
+          id_number?: string | null
+          rejection_reason?: string
+          residential_address?: string | null
+          status?: string
+          stellar_address: string
+          updated_at?: string
+          user_id: string
+        }
         Update: {
-          consent_given?: boolean;
-          created_at?: string;
-          date_of_birth?: string | null;
-          details_hash?: string;
-          document_expires_on?: string | null;
-          document_path?: string;
-          document_type?: string;
-          email?: string;
-          full_name?: string;
-          id?: string;
-          id_number?: string | null;
-          rejection_reason?: string;
-          residential_address?: string | null;
-          status?: string;
-          stellar_address?: string;
-          updated_at?: string;
-          user_id?: string;
-        };
-        Relationships: [];
-      };
+          consent_given?: boolean
+          created_at?: string
+          date_of_birth?: string | null
+          details_hash?: string
+          document_expires_on?: string | null
+          document_path?: string
+          document_type?: string
+          email?: string
+          full_name?: string
+          id?: string
+          id_number?: string | null
+          rejection_reason?: string
+          residential_address?: string | null
+          status?: string
+          stellar_address?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "kyc_requests_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       notifications: {
         Row: {
-          caption: string;
-          created_at: string;
-          id: string;
-          is_read: boolean;
-          project_id: string | null;
-          title: string;
-          url: string | null;
-          user_id: string;
-        };
+          caption: string
+          created_at: string
+          id: string
+          is_read: boolean
+          project_id: string | null
+          title: string
+          url: string | null
+          user_id: string
+        }
         Insert: {
-          caption?: string;
-          created_at?: string;
-          id?: string;
-          is_read?: boolean;
-          project_id?: string | null;
-          title: string;
-          url?: string | null;
-          user_id: string;
-        };
+          caption?: string
+          created_at?: string
+          id?: string
+          is_read?: boolean
+          project_id?: string | null
+          title: string
+          url?: string | null
+          user_id: string
+        }
         Update: {
-          caption?: string;
-          created_at?: string;
-          id?: string;
-          is_read?: boolean;
-          project_id?: string | null;
-          title?: string;
-          url?: string | null;
-          user_id?: string;
-        };
-        Relationships: [];
-      };
+          caption?: string
+          created_at?: string
+          id?: string
+          is_read?: boolean
+          project_id?: string | null
+          title?: string
+          url?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notifications_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notifications_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       platform_admins: {
-        Row: { display_name: string; email: string; granted_at: string; granted_by: string | null; id: string; note: string; role: "owner" | "platform_admin" | "kyc_manager" | "project_approver" | "accountant"; user_id: string | null; wallet_address: string | null };
-        Insert: { display_name?: string; email: string; granted_at?: string; granted_by?: string | null; id?: string; note?: string; role?: "owner" | "platform_admin" | "kyc_manager" | "project_approver" | "accountant"; user_id?: string | null; wallet_address?: string | null };
-        Update: { display_name?: string; email?: string; granted_at?: string; granted_by?: string | null; id?: string; note?: string; role?: "owner" | "platform_admin" | "kyc_manager" | "project_approver" | "accountant"; user_id?: string | null; wallet_address?: string | null };
-        Relationships: [];
-      };
-      admin_audit_log: {
-        Row: { action: string; actor_id: string | null; created_at: string; detail: string; id: string; target_email: string };
-        Insert: { action: string; actor_id?: string | null; created_at?: string; detail?: string; id?: string; target_email?: string };
-        Update: { action?: string; actor_id?: string | null; created_at?: string; detail?: string; id?: string; target_email?: string };
-        Relationships: [];
-      };
+        Row: {
+          display_name: string
+          email: string
+          granted_at: string
+          granted_by: string | null
+          id: string
+          managed_wallet: string | null
+          note: string
+          role: Database["public"]["Enums"]["admin_role"]
+          user_id: string | null
+          wallet_address: string | null
+        }
+        Insert: {
+          display_name?: string
+          email: string
+          granted_at?: string
+          granted_by?: string | null
+          id?: string
+          managed_wallet?: string | null
+          note?: string
+          role?: Database["public"]["Enums"]["admin_role"]
+          user_id?: string | null
+          wallet_address?: string | null
+        }
+        Update: {
+          display_name?: string
+          email?: string
+          granted_at?: string
+          granted_by?: string | null
+          id?: string
+          managed_wallet?: string | null
+          note?: string
+          role?: Database["public"]["Enums"]["admin_role"]
+          user_id?: string | null
+          wallet_address?: string | null
+        }
+        Relationships: []
+      }
       platform_bans: {
-        Row: { user_id: string; banned_by: string | null; reason: string; created_at: string };
-        Insert: { user_id: string; banned_by?: string | null; reason?: string; created_at?: string };
-        Update: { user_id?: string; banned_by?: string | null; reason?: string; created_at?: string };
-        Relationships: [];
-      };
+        Row: {
+          banned_by: string | null
+          created_at: string
+          reason: string
+          user_id: string
+        }
+        Insert: {
+          banned_by?: string | null
+          created_at?: string
+          reason?: string
+          user_id: string
+        }
+        Update: {
+          banned_by?: string | null
+          created_at?: string
+          reason?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       platform_settings: {
-        Row: { fee_wallet_email: string; id: boolean; updated_at: string };
-        Insert: { fee_wallet_email?: string; id?: boolean; updated_at?: string };
-        Update: { fee_wallet_email?: string; id?: boolean; updated_at?: string };
-        Relationships: [];
-      };
-      feature_requests: {
-        Row: { id: string; title: string; body: string; submitted_by: string; status: "open" | "planned" | "declined" | "shipped"; response: string; decided_at: string | null; created_at: string };
-        Insert: { id?: string; title: string; body?: string; submitted_by: string; status?: "open" | "planned" | "declined" | "shipped"; response?: string; decided_at?: string | null; created_at?: string };
-        Update: { id?: string; title?: string; body?: string; submitted_by?: string; status?: "open" | "planned" | "declined" | "shipped"; response?: string; decided_at?: string | null; created_at?: string };
-        Relationships: [];
-      };
-      feature_request_votes: {
-        Row: { request_id: string; voter_id: string; created_at: string };
-        Insert: { request_id: string; voter_id: string; created_at?: string };
-        Update: { request_id?: string; voter_id?: string; created_at?: string };
-        Relationships: [];
-      };
-      feature_request_decisions: {
-        Row: { request_id: string; voter_id: string; approve: boolean; created_at: string };
-        Insert: { request_id: string; voter_id: string; approve: boolean; created_at?: string };
-        Update: { request_id?: string; voter_id?: string; approve?: boolean; created_at?: string };
-        Relationships: [];
-      };
-      project_moderation: {
-        Row: { project_id: string; state: "pending" | "approved" | "rejected"; flagged_by: string | null; flagged_at: string; decided_at: string | null; reason: string };
-        Insert: { project_id: string; state?: "pending" | "approved" | "rejected"; flagged_by?: string | null; flagged_at?: string; decided_at?: string | null; reason?: string };
-        Update: { project_id?: string; state?: "pending" | "approved" | "rejected"; flagged_by?: string | null; flagged_at?: string; decided_at?: string | null; reason?: string };
-        Relationships: [];
-      };
-      project_approval_votes: {
-        Row: { project_id: string; voter_id: string; approve: boolean; created_at: string };
-        Insert: { project_id: string; voter_id: string; approve: boolean; created_at?: string };
-        Update: { project_id?: string; voter_id?: string; approve?: boolean; created_at?: string };
-        Relationships: [];
-      };
+        Row: {
+          fee_wallet_email: string
+          id: boolean
+          updated_at: string
+        }
+        Insert: {
+          fee_wallet_email?: string
+          id?: boolean
+          updated_at?: string
+        }
+        Update: {
+          fee_wallet_email?: string
+          id?: boolean
+          updated_at?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
-          avatar_url: string | null;
-          created_at: string;
-          display_name: string;
-          id: string;
-          last_login_at: string | null;
-          stellar_public_key: string | null;
-          updated_at: string;
-          wallet_status: string;
-        };
+          avatar_url: string | null
+          created_at: string
+          display_name: string
+          id: string
+          last_login_at: string | null
+          stellar_public_key: string | null
+          updated_at: string
+          wallet_status: string
+        }
         Insert: {
-          avatar_url?: string | null;
-          created_at?: string;
-          display_name?: string;
-          id: string;
-          last_login_at?: string | null;
-          stellar_public_key?: string | null;
-          updated_at?: string;
-          wallet_status?: string;
-        };
+          avatar_url?: string | null
+          created_at?: string
+          display_name?: string
+          id: string
+          last_login_at?: string | null
+          stellar_public_key?: string | null
+          updated_at?: string
+          wallet_status?: string
+        }
         Update: {
-          avatar_url?: string | null;
-          created_at?: string;
-          display_name?: string;
-          id?: string;
-          last_login_at?: string | null;
-          stellar_public_key?: string | null;
-          updated_at?: string;
-          wallet_status?: string;
-        };
-        Relationships: [];
-      };
+          avatar_url?: string | null
+          created_at?: string
+          display_name?: string
+          id?: string
+          last_login_at?: string | null
+          stellar_public_key?: string | null
+          updated_at?: string
+          wallet_status?: string
+        }
+        Relationships: []
+      }
+      project_approval_votes: {
+        Row: {
+          approve: boolean
+          created_at: string
+          project_id: string
+          voter_id: string
+        }
+        Insert: {
+          approve: boolean
+          created_at?: string
+          project_id: string
+          voter_id: string
+        }
+        Update: {
+          approve?: boolean
+          created_at?: string
+          project_id?: string
+          voter_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_approval_votes_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "project_moderation"
+            referencedColumns: ["project_id"]
+          },
+        ]
+      }
       project_categories: {
         Row: {
-          created_at: string;
-          id: string;
-          name: string;
-          sort_order: number;
-        };
+          created_at: string
+          id: string
+          name: string
+          sort_order: number
+        }
         Insert: {
-          created_at?: string;
-          id?: string;
-          name: string;
-          sort_order?: number;
-        };
+          created_at?: string
+          id?: string
+          name: string
+          sort_order?: number
+        }
         Update: {
-          created_at?: string;
-          id?: string;
-          name?: string;
-          sort_order?: number;
-        };
-        Relationships: [];
-      };
+          created_at?: string
+          id?: string
+          name?: string
+          sort_order?: number
+        }
+        Relationships: []
+      }
       project_milestones: {
         Row: {
-          amount: number | null;
-          amount_raw: Raw;
-          created_at: string;
-          description: string;
-          id: string;
-          milestone_id: number;
-          project_id: string;
-          proof: string;
-          released: boolean;
-          title: string;
-          updated_at: string;
-        };
+          amount: number | null
+          amount_raw: Raw
+          created_at: string
+          description: string
+          id: string
+          milestone_id: number
+          project_id: string
+          proof: string
+          released: boolean
+          title: string
+          updated_at: string
+        }
         Insert: {
-          amount_raw: Raw;
-          created_at?: string;
-          description?: string;
-          id?: string;
-          milestone_id: number;
-          project_id: string;
-          proof?: string;
-          released?: boolean;
-          title?: string;
-          updated_at?: string;
-        };
+          amount?: number | null
+          amount_raw: Raw
+          created_at?: string
+          description?: string
+          id?: string
+          milestone_id: number
+          project_id: string
+          proof?: string
+          released?: boolean
+          title?: string
+          updated_at?: string
+        }
         Update: {
-          amount_raw?: Raw;
-          created_at?: string;
-          description?: string;
-          id?: string;
-          milestone_id?: number;
-          project_id?: string;
-          proof?: string;
-          released?: boolean;
-          title?: string;
-          updated_at?: string;
-        };
-        Relationships: [];
-      };
+          amount?: number | null
+          amount_raw?: Raw
+          created_at?: string
+          description?: string
+          id?: string
+          milestone_id?: number
+          project_id?: string
+          proof?: string
+          released?: boolean
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_milestones_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      project_moderation: {
+        Row: {
+          decided_at: string | null
+          flagged_at: string
+          flagged_by: string | null
+          project_id: string
+          reason: string
+          state: Database["public"]["Enums"]["project_approval_state"]
+        }
+        Insert: {
+          decided_at?: string | null
+          flagged_at?: string
+          flagged_by?: string | null
+          project_id: string
+          reason?: string
+          state?: Database["public"]["Enums"]["project_approval_state"]
+        }
+        Update: {
+          decided_at?: string | null
+          flagged_at?: string
+          flagged_by?: string | null
+          project_id?: string
+          reason?: string
+          state?: Database["public"]["Enums"]["project_approval_state"]
+        }
+        Relationships: []
+      }
       projects: {
         Row: {
-          bond_amount: number | null;
-          bond_amount_raw: Raw;
-          bond_posted: boolean;
-          category: string;
-          created_at: string;
-          created_on_chain_at: string;
-          creator_address: string;
-          creator_avatar_url: string;
-          creator_display: string;
-          currency: Database["public"]["Enums"]["currency_type"];
-          current_funding: number | null;
-          current_funding_raw: Raw;
-          description: string;
-          featured: boolean;
-          funding_deadline: string;
-          funding_goal: number | null;
-          funding_goal_raw: Raw;
-          id: string;
-          image_url: string;
-          is_public: boolean;
-          last_updated_ledger: number;
-          location: string;
-          location_lat: number | null;
-          location_lng: number | null;
-          metadata_cid: string;
-          project_id: string;
-          released_total: number | null;
-          released_total_raw: Raw;
-          status: Database["public"]["Enums"]["project_status"];
-          tagline: string;
-          title: string;
-          updated_at: string;
-          vault_address: string;
-        };
+          bond_amount: number | null
+          bond_amount_raw: Raw
+          bond_posted: boolean
+          category: string
+          created_at: string
+          created_on_chain_at: string
+          creator_address: string
+          creator_avatar_url: string
+          creator_display: string
+          currency: Database["public"]["Enums"]["currency_type"]
+          current_funding: number | null
+          current_funding_raw: Raw
+          description: string
+          featured: boolean
+          funding_deadline: string
+          funding_goal: number | null
+          funding_goal_raw: Raw
+          id: string
+          image_url: string
+          is_public: boolean
+          last_updated_ledger: number
+          location: string
+          location_lat: number | null
+          location_lng: number | null
+          metadata_cid: string
+          project_id: string
+          released_total: number | null
+          released_total_raw: Raw
+          status: Database["public"]["Enums"]["project_status"]
+          tagline: string
+          title: string
+          updated_at: string
+          vault_address: string
+        }
         Insert: {
-          bond_amount_raw?: Raw;
-          bond_posted?: boolean;
-          category?: string;
-          created_at?: string;
-          created_on_chain_at: string;
-          creator_address: string;
-          creator_avatar_url?: string;
-          creator_display?: string;
-          currency?: Database["public"]["Enums"]["currency_type"];
-          current_funding_raw?: Raw;
-          description?: string;
-          featured?: boolean;
-          funding_deadline: string;
-          funding_goal_raw: Raw;
-          id?: string;
-          image_url?: string;
-          is_public?: boolean;
-          last_updated_ledger?: number;
-          location?: string;
-          location_lat?: number | null;
-          location_lng?: number | null;
-          metadata_cid?: string;
-          project_id: string;
-          released_total_raw?: Raw;
-          status?: Database["public"]["Enums"]["project_status"];
-          tagline?: string;
-          title: string;
-          updated_at?: string;
-          vault_address: string;
-        };
+          bond_amount?: number | null
+          bond_amount_raw?: Raw
+          bond_posted?: boolean
+          category?: string
+          created_at?: string
+          created_on_chain_at: string
+          creator_address: string
+          creator_avatar_url?: string
+          creator_display?: string
+          currency?: Database["public"]["Enums"]["currency_type"]
+          current_funding?: number | null
+          current_funding_raw?: Raw
+          description?: string
+          featured?: boolean
+          funding_deadline: string
+          funding_goal?: number | null
+          funding_goal_raw: Raw
+          id?: string
+          image_url?: string
+          is_public?: boolean
+          last_updated_ledger?: number
+          location?: string
+          location_lat?: number | null
+          location_lng?: number | null
+          metadata_cid?: string
+          project_id: string
+          released_total?: number | null
+          released_total_raw?: Raw
+          status?: Database["public"]["Enums"]["project_status"]
+          tagline?: string
+          title: string
+          updated_at?: string
+          vault_address: string
+        }
         Update: {
-          bond_amount_raw?: Raw;
-          bond_posted?: boolean;
-          category?: string;
-          created_at?: string;
-          created_on_chain_at?: string;
-          creator_address?: string;
-          creator_avatar_url?: string;
-          creator_display?: string;
-          currency?: Database["public"]["Enums"]["currency_type"];
-          current_funding_raw?: Raw;
-          description?: string;
-          featured?: boolean;
-          funding_deadline?: string;
-          funding_goal_raw?: Raw;
-          id?: string;
-          image_url?: string;
-          is_public?: boolean;
-          last_updated_ledger?: number;
-          location?: string;
-          location_lat?: number | null;
-          location_lng?: number | null;
-          metadata_cid?: string;
-          project_id?: string;
-          released_total_raw?: Raw;
-          status?: Database["public"]["Enums"]["project_status"];
-          tagline?: string;
-          title?: string;
-          updated_at?: string;
-          vault_address?: string;
-        };
-        Relationships: [];
-      };
-    };
-    Views: Record<never, never>;
+          bond_amount?: number | null
+          bond_amount_raw?: Raw
+          bond_posted?: boolean
+          category?: string
+          created_at?: string
+          created_on_chain_at?: string
+          creator_address?: string
+          creator_avatar_url?: string
+          creator_display?: string
+          currency?: Database["public"]["Enums"]["currency_type"]
+          current_funding?: number | null
+          current_funding_raw?: Raw
+          description?: string
+          featured?: boolean
+          funding_deadline?: string
+          funding_goal?: number | null
+          funding_goal_raw?: Raw
+          id?: string
+          image_url?: string
+          is_public?: boolean
+          last_updated_ledger?: number
+          location?: string
+          location_lat?: number | null
+          location_lng?: number | null
+          metadata_cid?: string
+          project_id?: string
+          released_total?: number | null
+          released_total_raw?: Raw
+          status?: Database["public"]["Enums"]["project_status"]
+          tagline?: string
+          title?: string
+          updated_at?: string
+          vault_address?: string
+        }
+        Relationships: []
+      }
+    }
+    Views: {
+      [_ in never]: never
+    }
     Functions: {
-      feature_request_consensus: { Args: { rid: string }; Returns: { approvals: number; rejections: number; owners: number; needed: number; carried: boolean }[] };
-      project_consensus: { Args: { pid: string }; Returns: { approvals: number; rejections: number; owners: number; needed: number; carried: boolean }[] };
-      project_awaiting_consensus: { Args: { pid: string }; Returns: boolean };
-      is_admin: { Args: Record<never, never>; Returns: boolean };
-      is_owner: { Args: Record<never, never>; Returns: boolean };
-      has_admin_role: { Args: { wanted: "owner" | "platform_admin" | "kyc_manager" | "project_approver" | "accountant" }; Returns: boolean };
-      is_banned: { Args: { uid: string }; Returns: boolean };
-      creator_is_banned: { Args: { addr: string }; Returns: boolean };
-      my_role: { Args: Record<never, never>; Returns: "owner" | "platform_admin" | "kyc_manager" | "project_approver" | "accountant" | null };
-      get_platform_secret: { Args: { secret_name: string }; Returns: string | null };
-      set_platform_secret: { Args: { secret_name: string; secret_value: string }; Returns: undefined };
-      platform_secret_status: { Args: Record<never, never>; Returns: { name: string; is_set: boolean; updated_at: string | null }[] };
-      is_admin_wallet: { Args: { addr: string }; Returns: boolean };
-      purge_expired_auth_challenges: { Args: Record<never, never>; Returns: undefined };
-      stroops_to_units: { Args: { raw: number }; Returns: number };
-    };
+      creator_is_banned: { Args: { addr: string }; Returns: boolean }
+      delete_managed_key: { Args: { key_ref: string }; Returns: undefined }
+      feature_request_consensus: {
+        Args: { rid: string }
+        Returns: {
+          approvals: number
+          carried: boolean
+          needed: number
+          owners: number
+          rejections: number
+        }[]
+      }
+      get_managed_key: { Args: { key_ref: string }; Returns: string }
+      get_platform_secret: { Args: { secret_name: string }; Returns: string }
+      has_admin_role: {
+        Args: { wanted: Database["public"]["Enums"]["admin_role"] }
+        Returns: boolean
+      }
+      is_admin: { Args: never; Returns: boolean }
+      is_admin_wallet: { Args: { addr: string }; Returns: boolean }
+      is_banned: { Args: { uid: string }; Returns: boolean }
+      is_owner: { Args: never; Returns: boolean }
+      my_role: {
+        Args: never
+        Returns: Database["public"]["Enums"]["admin_role"]
+      }
+      owner_count: { Args: never; Returns: number }
+      owner_vote_carried: { Args: { yes: number }; Returns: boolean }
+      owner_votes_needed: { Args: never; Returns: number }
+      platform_secret_status: {
+        Args: never
+        Returns: {
+          is_set: boolean
+          name: string
+          updated_at: string
+        }[]
+      }
+      project_awaiting_consensus: { Args: { pid: string }; Returns: boolean }
+      project_consensus: {
+        Args: { pid: string }
+        Returns: {
+          approvals: number
+          carried: boolean
+          needed: number
+          owners: number
+          rejections: number
+        }[]
+      }
+      purge_expired_auth_challenges: { Args: never; Returns: undefined }
+      set_managed_key: {
+        Args: { key_ref: string; secret_value: string }
+        Returns: undefined
+      }
+      set_platform_secret: {
+        Args: { secret_name: string; secret_value: string }
+        Returns: undefined
+      }
+      stroops_to_units: { Args: { raw: number }; Returns: number }
+    }
     Enums: {
-      currency_type: "USDC" | "USDT" | "XLM" | "WBTC" | "WETH";
+      admin_role:
+        | "owner"
+        | "kyc_manager"
+        | "project_approver"
+        | "accountant"
+        | "platform_admin"
+      currency_type: "USDC" | "USDT" | "XLM" | "WBTC" | "WETH"
+      feature_request_status: "open" | "planned" | "declined" | "shipped"
+      project_approval_state: "pending" | "approved" | "rejected"
       project_status:
         | "pending"
         | "approved"
@@ -455,17 +807,157 @@ export type Database = {
         | "refunding"
         | "expired"
         | "rejected"
-        | "hidden";
-    };
-    CompositeTypes: Record<never, never>;
-  };
-};
+        | "hidden"
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
+}
 
-export type Tables<T extends keyof Database["public"]["Tables"]> =
-  Database["public"]["Tables"][T]["Row"];
-export type TablesInsert<T extends keyof Database["public"]["Tables"]> =
-  Database["public"]["Tables"][T]["Insert"];
-export type TablesUpdate<T extends keyof Database["public"]["Tables"]> =
-  Database["public"]["Tables"][T]["Update"];
-export type Enums<T extends keyof Database["public"]["Enums"]> =
-  Database["public"]["Enums"][T];
+type DatabaseWithoutInternals = Omit<Database, "__InternalSupabase">
+
+type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, "public">]
+
+export type Tables<
+  DefaultSchemaTableNameOrOptions extends
+    | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+        DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
+    : never = never,
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+      DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])[TableName] extends {
+      Row: infer R
+    }
+    ? R
+    : never
+  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema["Tables"] &
+        DefaultSchema["Views"])
+    ? (DefaultSchema["Tables"] &
+        DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends {
+        Row: infer R
+      }
+      ? R
+      : never
+    : never
+
+export type TablesInsert<
+  DefaultSchemaTableNameOrOptions extends
+    | keyof DefaultSchema["Tables"]
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+    : never = never,
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+      Insert: infer I
+    }
+    ? I
+    : never
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+        Insert: infer I
+      }
+      ? I
+      : never
+    : never
+
+export type TablesUpdate<
+  DefaultSchemaTableNameOrOptions extends
+    | keyof DefaultSchema["Tables"]
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+    : never = never,
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+      Update: infer U
+    }
+    ? U
+    : never
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+        Update: infer U
+      }
+      ? U
+      : never
+    : never
+
+export type Enums<
+  DefaultSchemaEnumNameOrOptions extends
+    | keyof DefaultSchema["Enums"]
+    | { schema: keyof DatabaseWithoutInternals },
+  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
+    : never = never,
+> = DefaultSchemaEnumNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"][EnumName]
+  : DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema["Enums"]
+    ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
+    : never
+
+export type CompositeTypes<
+  PublicCompositeTypeNameOrOptions extends
+    | keyof DefaultSchema["CompositeTypes"]
+    | { schema: keyof DatabaseWithoutInternals },
+  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
+    : never = never,
+> = PublicCompositeTypeNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"][CompositeTypeName]
+  : PublicCompositeTypeNameOrOptions extends keyof DefaultSchema["CompositeTypes"]
+    ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
+    : never
+
+export const Constants = {
+  public: {
+    Enums: {
+      admin_role: [
+        "owner",
+        "kyc_manager",
+        "project_approver",
+        "accountant",
+        "platform_admin",
+      ],
+      currency_type: ["USDC", "USDT", "XLM", "WBTC", "WETH"],
+      feature_request_status: ["open", "planned", "declined", "shipped"],
+      project_approval_state: ["pending", "approved", "rejected"],
+      project_status: [
+        "pending",
+        "approved",
+        "raising",
+        "funded",
+        "active",
+        "completed",
+        "failed",
+        "refunding",
+        "expired",
+        "rejected",
+        "hidden",
+      ],
+    },
+  },
+} as const

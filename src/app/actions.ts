@@ -16,6 +16,9 @@ import {
   listSubmissionsForReview,
   getSubmissionForReview,
   decideSubmission,
+  attestSubmission,
+  revokeSubmissionAttestation,
+  myManagedAttestor,
 } from "@/lib/data/kyc";
 import { getVaultCreator } from "@/lib/vault-state";
 
@@ -112,6 +115,54 @@ export async function updateKycRequestStatus(
     return { success: true as const };
   } catch (error) {
     return authFailure(error) ?? { success: false, error: "Could not record decision." };
+  }
+}
+
+/**
+ * Approve and attest a submission with the reviewer's managed key — the
+ * walletless path. The server signs the on-chain attestation; the reviewer never
+ * connects Freighter. Returns the address attested so the panel can refresh.
+ */
+export async function attestKycAction(
+  submissionId: string,
+): Promise<{ success: true; address: string } | { success: false; error: string }> {
+  try {
+    const { address } = await attestSubmission(submissionId);
+    return { success: true as const, address };
+  } catch (error) {
+    return (
+      authFailure(error) ?? {
+        success: false,
+        error: error instanceof Error ? error.message : "Could not attest submission.",
+      }
+    );
+  }
+}
+
+/** Revoke a submission's attestation with the reviewer's managed key. */
+export async function revokeKycAction(
+  submissionId: string,
+): Promise<{ success: true; address: string } | { success: false; error: string }> {
+  try {
+    const { address } = await revokeSubmissionAttestation(submissionId);
+    return { success: true as const, address };
+  } catch (error) {
+    return (
+      authFailure(error) ?? {
+        success: false,
+        error: error instanceof Error ? error.message : "Could not revoke attestation.",
+      }
+    );
+  }
+}
+
+/** The managed attestor wallet the platform holds for the caller, or null. Lets
+ *  the review queue offer walletless attestation only to those who have one. */
+export async function getMyManagedAttestorAction(): Promise<{ managedWallet: string | null }> {
+  try {
+    return { managedWallet: await myManagedAttestor() };
+  } catch {
+    return { managedWallet: null };
   }
 }
 
