@@ -256,6 +256,39 @@ services:
       - "app.name=blkfndr3-ops-funding"
       - "app.description=Triggers the monthly operations-funding transfer"
 
+  # Presses the abandoned-vault reclaim button. settle_stalled on each vault is
+  # permissionless and self-gated (it reverts unless the vault has been abandoned
+  # past its ~90-day stall window), so this can poll freely — it reclaims only the
+  # vaults genuinely due and skips the rest. Daily is plenty. Shares the
+  # OPS_FUNDING_SUBMITTER_SECRET gas payer; until that is set the endpoint skips.
+  settle-stalled-cron:
+    image: curlimages/curl:8.11.1
+    restart: unless-stopped
+    depends_on:
+      blkfndr-app:
+        condition: service_healthy
+    environment:
+      - INDEXER_SECRET=${INDEXER_SECRET:-}
+      - SETTLE_STALLED_INTERVAL_SECONDS=${SETTLE_STALLED_INTERVAL_SECONDS:-86400}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "settle-stalled-cron: polling every $${SETTLE_STALLED_INTERVAL_SECONDS}s"
+        while true; do
+          curl --silent --show-error --fail --max-time 120 \
+            -X POST http://blkfndr-app:3000/api/settle-stalled \
+            -H "Authorization: Bearer $${INDEXER_SECRET}" \
+            -H "Content-Type: application/json" \
+            -d '{}' \
+            || echo "settle-stalled-cron: run failed at $$(date -u +%FT%TZ)"
+          sleep "$${SETTLE_STALLED_INTERVAL_SECONDS}"
+        done
+    networks:
+      - blkfndr-network
+    labels:
+      - "app.name=blkfndr3-settle-stalled"
+      - "app.description=Reclaims abandoned funded vaults for contributors"
+
 volumes:
   next-cache:
     driver: local
