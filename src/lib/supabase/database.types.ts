@@ -427,6 +427,9 @@ export type Database = {
       is_owner: { Args: Record<never, never>; Returns: boolean };
       has_admin_role: { Args: { wanted: "owner" | "kyc_manager" | "project_approver" | "accountant" }; Returns: boolean };
       my_role: { Args: Record<never, never>; Returns: "owner" | "kyc_manager" | "project_approver" | "accountant" | null };
+      get_platform_secret: { Args: { secret_name: string }; Returns: string | null };
+      set_platform_secret: { Args: { secret_name: string; secret_value: string }; Returns: undefined };
+      platform_secret_status: { Args: Record<never, never>; Returns: { name: string; is_set: boolean; updated_at: string | null }[] };
       is_admin_wallet: { Args: { addr: string }; Returns: boolean };
       purge_expired_auth_challenges: { Args: Record<never, never>; Returns: undefined };
       stroops_to_units: { Args: { raw: number }; Returns: number };
