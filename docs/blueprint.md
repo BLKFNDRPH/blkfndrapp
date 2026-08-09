@@ -2,13 +2,13 @@
 
 ## Core Features:
 
-- Project Listing Creation: Allow users to create and submit project listings via a smart contract UI, integrated with Stellar/Soroban contracts and Pinata storage, for admin approval.
-- Admin Listing Approval: Enable admins to review and approve project listings through a dedicated UI, which then updates smart contract state and off-chain metadata.
-- Approved Listings View: Display all approved project listings in a comprehensive view, pulling indexed data to reflect real-time updates.
-- Project Funding: Facilitate project funding by users, including calculation of a 3% platform fee, with updates synchronized to on-chain and application views.
-- Admin Funding Claim: Enable admins to claim project funding once a listing is fully funded, using smart contract functions triggered via the admin UI.
-- Secure Authentication with Wallet + Session: Support wallet-connected identity and persistent application sessions.
-- AI-Powered Listing Quality Tool: Utilize an AI-powered "listing quality tool" that scans listing details to suggest improvements or flag potential issues, assisting admins in maintaining high listing standards.
+- Project Vault Creation: Let a builder create a project and deploy its own vault via the factory, integrated with Stellar/Soroban contracts and Pinata storage. The builder's performance bond and a flat platform fee are taken in the same transaction that creates the vault.
+- Listing Moderation: Enable platform and project administrators to review, flag and clear listings through a dedicated console — off-chain, over Supabase with Row Level Security. Moderation never touches the vault.
+- Live Project View: Display projects in a card-based view, pulling indexed on-chain and off-chain data to reflect real-time state (raising, funded, active, refunding, completed).
+- Staking into a Vault: Let stakeholders back a project by contributing to its vault (from a $5 minimum). The stake is the voting weight it carries, capped at 20% per wallet, and stays the stakeholder's to reclaim.
+- Stakeholder-Voted Releases: Milestone tranches leave the vault only when more than 50% of the total stake votes to release them; once carried, anyone can execute the release. There is no admin claim and no key that can withhold or redirect funds.
+- Secure Authentication with Wallet + Session: Support Supabase Auth sessions (email/password, Google) plus Freighter wallet linking for staking and governance signatures.
+- AI-Powered Listing Quality Tool: Use an AI-powered "listing quality tool" (Genkit + Gemini 2.5 Flash) that scans a draft listing to suggest improvements or flag issues before it goes live.
 
 ## Style Guidelines:
 

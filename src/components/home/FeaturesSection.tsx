@@ -18,8 +18,8 @@ const FEATURES = [
   },
   {
     icon: Scale,
-    title: "Contributor-weighted milestone voting",
-    body: "What you contributed is the weight your vote carries. A tranche is released only when more than half of the total raise votes for it, inside a window fixed when the project was created.",
+    title: "Stakeholder-weighted milestone voting",
+    body: "The stake you hold is the weight your vote carries. A tranche leaves the vault only when more than half of the total stake votes for it, inside a window fixed when the project was created.",
   },
   {
     icon: Unlock,
@@ -62,8 +62,8 @@ export function FeaturesSection() {
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
         <SectionHeading
           eyebrow="Features"
-          title="Everything the platform does, and nothing it can do to your money"
-          lead="The feature list and the security model are the same list read twice. Each capability below is built so that using it never requires trusting blkfndr with custody or with a decision."
+          title="Everything the platform does, and nothing it can do to the vault"
+          lead="The feature list and the security model are the same list read twice. Each capability below is built so that using it never requires trusting BLKFNDR with custody or with a decision."
         />
 
         <div className="mt-14 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">

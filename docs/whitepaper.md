@@ -1,12 +1,12 @@
-# **blkfndr: Build, Fund, and Own Real-World Developments on the Blockchain**
+# **blkfndr: A Secure, On-Chain Vault for Real-World Projects**
 
-**Motto:** Build, Fund, and Own Real-World Developments on the Blockchain.
+**Motto:** Transparency you can verify, not trust.
 
 ## **Abstract**
 
-blkfndr is a crowdfunding protocol on Stellar for real-world property development, built so that funding a project never requires trusting the platform that hosts it.
+blkfndr gives every real-world project its own secure vault on Stellar, built so that no one — least of all the platform — has to be trusted with the money or the record. The funds a vault holds, the milestones it tracks and every release it makes are on-chain and governed by the project's own stakeholders, and its entire history is public and permanent.
 
-Contributions pool into a vault contract deployed for one project alone. The builder's performance bond is locked in that same contract, taken in the transaction that creates the vault, so no project can begin collecting money before its builder has capital of their own at risk. Money leaves the vault in milestone tranches, and a tranche is released only when contributors — weighted by what they actually contributed — vote to release it. A milestone that fails forfeits the bond to those contributors automatically. Closing a project writes a permanent record to an append-only registry.
+Each project's vault is a contract deployed for that project alone. The builder's performance bond is locked in the same contract, taken in the transaction that creates the vault, so no project can begin taking stakes before its builder has capital of their own at risk. Money leaves the vault in milestone tranches, and a tranche is released only when the stakeholders — weighted by the stake each holds — vote to release it. A milestone that fails forfeits the bond to those stakeholders automatically. Closing a project writes a permanent record to an append-only registry.
 
 There is no appointed signer, no admin key and no platform role anywhere in the path that moves money. This document describes the mechanism that makes that claim true, the economics around it, and — in [Section 7](#7-what-this-does-not-protect-against) — the things it deliberately does not solve.
 
@@ -16,19 +16,19 @@ There is no appointed signer, no admin key and no platform role anywhere in the 
 
 ## **1. The Problem**
 
-### **1.1 Builders cannot reach capital**
+### **1.1 You have to trust whoever holds the money**
 
-Local developers, particularly across the Philippines and Southeast Asia, meet red tape, high interest rates and localized liquidity bottlenecks the moment they approach a traditional bank. A viable development with sound economics stalls at the blueprint stage for reasons that have nothing to do with the building.
+The moment you back someone else's project, you are trusting whoever holds the funds — a platform, a team, an escrow account — to release them as promised and to tell you the truth about what happened to them. On a conventional platform the honest answer to *who can move this money* is that a company holds it and its own policy governs its release. On most on-chain funding the answer is worse: a team wallet with a withdrawal key, which is precisely the structure every rugpull has ever needed.
 
-### **1.2 Ordinary people cannot reach the asset class**
+An exit scam is not a sophisticated attack. It is the default outcome of letting the party who benefits from moving the money be the party who is able to move it.
 
-Real estate is the oldest and most reliable asset class in the world and one of the most exclusive. Participating has historically required capital most people will never assemble in one place, so the returns from development accrue to those who already hold the capital.
+### **1.2 The record belongs to the party with the most reason to edit it**
 
-### **1.3 Crowdfunding never solved the trust problem**
+Even when the money is handled honestly, you usually cannot see the account, cannot audit the decisions, and cannot check the history against anyone else's copy of it. When a project goes wrong, the account of what was promised and what was delivered belongs to whoever has the most reason to revise it. Accountability that rests on one party's private bookkeeping is not accountability.
 
-Connecting the two sides is the easy part, and platforms have done it for years. What none of them removed is the question the contributor is really asking: *once I send this money, who can move it, and what happens to me if the project never gets built?*
+### **1.3 The access problem underneath**
 
-On a conventional platform the honest answer is that a company holds the funds and its own policy governs their release. On most on-chain crowdfunding the answer is worse — a team wallet with a withdrawal key, which is precisely the structure every rugpull has ever needed. An exit scam is not a sophisticated attack. It is the default outcome of letting the party who benefits from moving the money be the party who is able to move it.
+This trust problem sits on top of a real one. Local developers — particularly across the Philippines and Southeast Asia — meet red tape, high interest rates and localized liquidity bottlenecks the moment they approach a traditional bank, and ordinary people are priced out of the asset class entirely. Connecting the two sides is the easy part, and platforms have done it for years. What none of them removed is the question the backer is really asking: *once I send this money, who can move it, and what happens to me if the project never gets built?*
 
 blkfndr treats that as a design constraint rather than a policy problem.
 
@@ -67,13 +67,15 @@ Stellar is purpose-built for global payments and asset issuance, which makes it 
 
 | Contract | Responsibility |
 |---|---|
-| `blkfndr-vault` | Per-project vault: contributions, bond, contributor-weighted milestone voting, refunds, forfeiture |
+| `blkfndr-vault` | Per-project vault: stakes, bond, stakeholder-weighted milestone voting, refunds, forfeiture |
 | `blkfndr-factory` | Deploys vaults and pins the platform addresses each one trusts |
 | `blkfndr-attestation` | Append-only builder completion record. No update or delete entrypoint exists |
 | `blkfndr-identity` | KYC attestation registry |
 | `blkfndr-admin` | Platform administrator roster. **Not in the path that releases funds** |
+| `blkfndr-treasury` | Platform fee treasury and owner-voted governance (fee, bond, ops-funding cut) |
+| `blkfndr-operations` | Operations Vault: the governed gas budget for moderation. Holds no project funds |
 
-The vault is not deployed as a single shared contract. Its wasm is uploaded once and the factory instantiates one instance per project from that hash, so every project's funds are isolated from every other project's, and any vault can be checked against a published hash.
+The vault is not deployed as a single shared contract. Its wasm is uploaded once and the factory instantiates one instance per project from that hash, so every project's funds are isolated from every other project's, and any vault can be checked against a published hash. The treasury and Operations Vault hold only the platform's own money — pooled listing fees and a gas budget — and both move it only on an owner vote (two-thirds by headcount), never on a single key. See [Smart Contracts](smart-contracts.md) for the full API.
 
 ### **3.3 Vault lifecycle**
 
@@ -197,7 +199,7 @@ Each of these changes the legal character of a contribution and none will ship a
 
 The properties in [Section 4](#4-release-authority) are enforced by contract logic, not by application code or platform policy. The admin roster contract exists for platform administration and is deliberately absent from the release path.
 
-The contract suite currently stands at **81 passing tests**, covering the threshold arithmetic, the weight cap, the distinct-wallet requirement, lapse handling, forfeiture and refund accounting.
+The bonded-vault contract alone stands at **81 passing tests**, with the treasury and Operations Vault adding a further **45** and **26**, covering the threshold arithmetic, the weight cap, the distinct-wallet requirement, lapse handling, forfeiture, refund accounting, and the two-thirds governance model.
 
 ### **6.2 Off-chain**
 
@@ -266,6 +268,6 @@ Real estate is the oldest and most reliable asset class in the world, and one of
 
 blkfndr's answer is to remove the discretion. The builder posts a bond before the vault exists. Contributors, weighted by their stake and capped so no one dominates, decide when each tranche is earned. Anyone can execute a decision once it carries, silence returns money rather than releasing it, and every outcome is written somewhere it cannot be edited.
 
-What is left is a platform that cannot rug you, because it was never given the ability to.
+What is left is a platform that cannot rug you, because it was never given the ability to — and a record you can verify instead of trust.
 
-*Build, Fund, and Own with blkfndr.*
+*A secure vault for real-world projects, on Stellar.*
