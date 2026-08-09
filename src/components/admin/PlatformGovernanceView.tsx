@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Landmark, AlertTriangle, Coins, ShieldAlert } from "lucide-react";
+import { Landmark, AlertTriangle, Coins, ShieldAlert, Lock, Copy } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -9,8 +9,11 @@ import {
   CardTitle,
   CardDescription,
 } from "../ui/card";
+import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
 import { usePlatformInfo } from "@/context/BlockchainContext";
 import { useStellarContract } from "@/hooks/use-stellar-contract";
+import { FACTORY_ID, IDENTITY_ID } from "@/lib/stellar-clients";
 import { TreasuryGovernancePanel } from "./TreasuryGovernancePanel";
 import { shortenAddress } from "@/lib/utils";
 
@@ -135,6 +138,90 @@ export function PlatformGovernanceView() {
       </Card>
 
       <TreasuryGovernancePanel />
+
+      <CoreWiring
+        factory={FACTORY_ID ?? ""}
+        treasury={treasury}
+        identity={IDENTITY_ID ?? ""}
+        factoryAdmin={factoryAdmin}
+      />
     </div>
+  );
+}
+
+/**
+ * The platform's fixed wiring, shown but not editable.
+ *
+ * These addresses are set when the platform is deployed and are not meant to
+ * move: fees flow to the treasury, vaults check the identity registry, the
+ * factory has its admin. Changing one is a core-system operation with real
+ * blockchain consequences, done deliberately by a key holder if it is ever
+ * needed at all — not a governance vote and not a form. They live in the
+ * environment; this is only a window onto them, so an owner can confirm what the
+ * platform is wired to without being able to knock a digit loose.
+ */
+function CoreWiring({
+  factory,
+  treasury,
+  identity,
+  factoryAdmin,
+}: {
+  factory: string;
+  treasury: string;
+  identity: string;
+  factoryAdmin: string | null;
+}) {
+  const { toast } = useToast();
+  const rows: { label: string; value: string }[] = [
+    { label: "Factory contract", value: factory },
+    { label: "Treasury (fee destination)", value: treasury },
+    { label: "Identity registry", value: identity },
+    { label: "Factory admin", value: factoryAdmin ?? "" },
+  ];
+
+  const copy = (value: string) => {
+    if (!value) return;
+    navigator.clipboard.writeText(value);
+    toast({ title: "Copied" });
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Lock className="h-5 w-5" aria-hidden="true" />
+          Core system
+        </CardTitle>
+        <CardDescription>
+          Fixed at deployment and not changed through governance. Shown for
+          reference — these are the addresses the platform is wired to.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <ul className="divide-y rounded-lg border">
+          {rows.map((r) => (
+            <li key={r.label} className="flex items-center justify-between gap-3 px-3 py-2.5">
+              <span className="text-sm font-medium">{r.label}</span>
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="truncate font-mono text-xs text-muted-foreground">
+                  {r.value ? shortenAddress(r.value) : "—"}
+                </span>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-7 w-7 shrink-0"
+                  disabled={!r.value}
+                  title={`Copy ${r.label.toLowerCase()}`}
+                  aria-label={`Copy ${r.label.toLowerCase()}`}
+                  onClick={() => copy(r.value)}
+                >
+                  <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+                </Button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </CardContent>
+    </Card>
   );
 }
