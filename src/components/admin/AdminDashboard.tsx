@@ -23,6 +23,8 @@ import {
   Clock,
   Landmark,
   Cog,
+  UserX,
+  Activity,
 } from "lucide-react";
 import { IdentityRegistryPanel } from "./IdentityRegistryPanel";
 import { AttestorManager } from "./AttestorManager";
@@ -69,6 +71,8 @@ import { getMyRoleAction } from "@/actions/admins";
 import { TreasuryGovernancePanel } from "./TreasuryGovernancePanel";
 import { PlatformGovernanceView } from "./PlatformGovernanceView";
 import { SettingsView } from "./SettingsView";
+import { UsersView } from "./UsersView";
+import { HealthView } from "./HealthView";
 import {
   useProjects,
   usePlatformInfo,
@@ -185,7 +189,7 @@ export function AdminDashboard() {
   >({});
   const [visibleRecentCount, setVisibleRecentCount] = useState(5);
   const [adminView, setAdminView] = useState<
-    "projects" | "admins" | "vault" | "governance" | "settings" | "identity" | "categories"
+    "projects" | "admins" | "vault" | "governance" | "settings" | "identity" | "categories" | "users" | "health"
   >("projects");
 
   // Which tabs a role may see. Owners see everything; each moderator sees the
@@ -198,9 +202,9 @@ export function AdminDashboard() {
   >(null);
 
   const VIEWS_BY_ROLE: Record<string, Array<typeof adminView>> = {
-    owner: ["projects", "identity", "admins", "vault", "governance", "settings", "categories"],
+    owner: ["projects", "identity", "admins", "vault", "governance", "settings", "categories", "users", "health"],
     kyc_manager: ["identity"],
-    platform_admin: ["projects"],
+    platform_admin: ["users", "health", "projects"],
     project_approver: ["projects"],
     accountant: ["vault"],
   };
@@ -569,6 +573,36 @@ export function AdminDashboard() {
                   Settings
                 </button>
               )}
+              {canSee("users") && (
+                <button
+                  type="button"
+                  onClick={() => setAdminView("users")}
+                  className={cn(
+                    "flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-all",
+                    adminView === "users"
+                      ? "bg-accent text-accent-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  <UserX className="h-4 w-4" />
+                  Users
+                </button>
+              )}
+              {canSee("health") && (
+                <button
+                  type="button"
+                  onClick={() => setAdminView("health")}
+                  className={cn(
+                    "flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-all",
+                    adminView === "health"
+                      ? "bg-accent text-accent-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  <Activity className="h-4 w-4" />
+                  Health
+                </button>
+              )}
               {canSee("categories") && (
                 <button
                   type="button"
@@ -929,6 +963,30 @@ export function AdminDashboard() {
               transition={{ duration: 0.3 }}
             >
               <SettingsView />
+            </motion.div>
+          )}
+
+          {canSee("users") && adminView === "users" && (
+            <motion.div
+              key="users-view"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.3 }}
+            >
+              <UsersView />
+            </motion.div>
+          )}
+
+          {canSee("health") && adminView === "health" && (
+            <motion.div
+              key="health-view"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.3 }}
+            >
+              <HealthView />
             </motion.div>
           )}
 
