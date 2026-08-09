@@ -12,7 +12,7 @@ export class AuthError extends Error {
   }
 }
 
-export type AdminRole = "owner" | "kyc_manager" | "project_approver" | "accountant";
+export type AdminRole = "owner" | "platform_admin" | "kyc_manager" | "project_approver" | "accountant";
 
 export interface AuthedCaller {
   userId: string;

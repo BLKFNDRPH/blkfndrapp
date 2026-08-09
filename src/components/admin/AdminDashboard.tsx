@@ -59,11 +59,10 @@ import {
 import { ProjectsByStatusChart } from "./ProjectsByStatusChart";
 import { AnimatePresence, motion } from "framer-motion";
 import { CubeSpinner } from "../ui/CubeSpinner";
-import { AdminManagement } from "./AdminManagement";
 import { CategoryManager } from "./CategoryManager";
 import { useFreighterWallet } from "@/context/FreighterWalletContext";
 import { AdminWalletBar } from "./AdminWalletBar";
-import { PlatformAdminManager } from "./PlatformAdminManager";
+import { AdminGroups } from "./AdminGroups";
 import { ConsensusReviewPanel } from "./ConsensusReviewPanel";
 import { PlatformVaultPanel } from "./PlatformVaultPanel";
 import { getMyRoleAction } from "@/actions/admins";
@@ -195,12 +194,13 @@ export function AdminDashboard() {
   // not the security. A null role means the answer has not arrived yet, and no
   // tabs show until it does rather than flashing the full set to a moderator.
   const [myRole, setMyRole] = useState<
-    "owner" | "kyc_manager" | "project_approver" | "accountant" | null
+    "owner" | "platform_admin" | "kyc_manager" | "project_approver" | "accountant" | null
   >(null);
 
   const VIEWS_BY_ROLE: Record<string, Array<typeof adminView>> = {
     owner: ["projects", "identity", "admins", "vault", "governance", "settings", "categories"],
     kyc_manager: ["identity"],
+    platform_admin: ["projects"],
     project_approver: ["projects"],
     accountant: ["vault"],
   };
@@ -890,9 +890,8 @@ export function AdminDashboard() {
               transition={{ duration: 0.3 }}
             >
               <div className="space-y-8">
-                <PlatformAdminManager />
+                <AdminGroups />
                 <ConsensusReviewPanel />
-                <AdminManagement isMainAdmin={isMainAdmin} />
               </div>
             </motion.div>
           )}

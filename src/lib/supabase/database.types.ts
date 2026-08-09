@@ -176,9 +176,9 @@ export type Database = {
         Relationships: [];
       };
       platform_admins: {
-        Row: { display_name: string; email: string; granted_at: string; granted_by: string | null; id: string; note: string; role: "owner" | "kyc_manager" | "project_approver" | "accountant"; user_id: string | null; wallet_address: string | null };
-        Insert: { display_name?: string; email: string; granted_at?: string; granted_by?: string | null; id?: string; note?: string; role?: "owner" | "kyc_manager" | "project_approver" | "accountant"; user_id?: string | null; wallet_address?: string | null };
-        Update: { display_name?: string; email?: string; granted_at?: string; granted_by?: string | null; id?: string; note?: string; role?: "owner" | "kyc_manager" | "project_approver" | "accountant"; user_id?: string | null; wallet_address?: string | null };
+        Row: { display_name: string; email: string; granted_at: string; granted_by: string | null; id: string; note: string; role: "owner" | "platform_admin" | "kyc_manager" | "project_approver" | "accountant"; user_id: string | null; wallet_address: string | null };
+        Insert: { display_name?: string; email: string; granted_at?: string; granted_by?: string | null; id?: string; note?: string; role?: "owner" | "platform_admin" | "kyc_manager" | "project_approver" | "accountant"; user_id?: string | null; wallet_address?: string | null };
+        Update: { display_name?: string; email?: string; granted_at?: string; granted_by?: string | null; id?: string; note?: string; role?: "owner" | "platform_admin" | "kyc_manager" | "project_approver" | "accountant"; user_id?: string | null; wallet_address?: string | null };
         Relationships: [];
       };
       admin_audit_log: {
@@ -425,8 +425,8 @@ export type Database = {
       project_awaiting_consensus: { Args: { pid: string }; Returns: boolean };
       is_admin: { Args: Record<never, never>; Returns: boolean };
       is_owner: { Args: Record<never, never>; Returns: boolean };
-      has_admin_role: { Args: { wanted: "owner" | "kyc_manager" | "project_approver" | "accountant" }; Returns: boolean };
-      my_role: { Args: Record<never, never>; Returns: "owner" | "kyc_manager" | "project_approver" | "accountant" | null };
+      has_admin_role: { Args: { wanted: "owner" | "platform_admin" | "kyc_manager" | "project_approver" | "accountant" }; Returns: boolean };
+      my_role: { Args: Record<never, never>; Returns: "owner" | "platform_admin" | "kyc_manager" | "project_approver" | "accountant" | null };
       get_platform_secret: { Args: { secret_name: string }; Returns: string | null };
       set_platform_secret: { Args: { secret_name: string; secret_value: string }; Returns: undefined };
       platform_secret_status: { Args: Record<never, never>; Returns: { name: string; is_set: boolean; updated_at: string | null }[] };
