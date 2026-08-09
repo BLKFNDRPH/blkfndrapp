@@ -11,14 +11,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Card,
   CardContent,
@@ -34,76 +26,109 @@ import { signerFor, send } from "@/lib/treasury-signing";
 import { shortenAddress } from "@/lib/utils";
 
 /**
- * Changing a platform setting, by vote.
+ * Proposing and voting on platform settings.
  *
- * Once the factory's admin is this treasury, every one of its settings — the
- * listing fee, the performance bond, the vault wasm, the fee destination, the
- * identity registry, the voting window, the minimum contribution — moves only
- * when two thirds of the owners agree. This is where that happens.
+ * Once the factory's admin is this treasury, every one of its settings moves
+ * only when two thirds of the owners agree. Each setting gets its own row —
+ * enter a change, propose it — rather than a dropdown you have to open to
+ * discover what is governable. The contract allows one open proposal at a time,
+ * so while a vote is live every row's Propose is held.
  *
- * It exists because the alternative was the CLI. Handing the factory to a
- * contract that only responds to `stellar contract invoke` would mean every
- * owner needed the toolchain installed and their key in a CLI keystore, which is
- * a worse position than the single admin key it replaced — the governance would
- * be real and unusable at the same time.
- *
- * One proposal at a time, which the contract enforces. That is deliberate: two
- * open votes on the same setting would make "what did we agree" a question about
- * ordering.
+ * Values are entered in the units a person thinks in and converted to the units
+ * the ledger stores. The fee is XLM on screen and stroops on chain; the bond is
+ * a percentage and basis points; the window is days and seconds. Nobody should
+ * have to multiply by ten million to raise the fee by one XLM.
  */
+const XLM = 10_000_000;
 
-/** The actions, and how to read the one number each of them takes. */
-const ACTIONS = [
+interface ActionSpec {
+  key: string;
+  label: string;
+  /** Shown beside the field. Empty for an address. */
+  unit: string;
+  placeholder: string;
+  mono?: boolean;
+  hint: string;
+  valid: (v: string) => boolean;
+  /** Human input to the contract's action shape and units. */
+  toAction: (v: string) => Record<string, unknown>;
+}
+
+const isNum = (v: string) => v.trim() !== "" && !Number.isNaN(Number(v));
+
+const ACTIONS: ActionSpec[] = [
   {
     key: "SetFee",
     label: "Listing fee",
-    hint: "A flat amount in stroops. 10 000 000 stroops = 1 XLM.",
-    placeholder: "100000000",
-    parse: (v: string) => ({ SetFee: BigInt(v) }),
+    unit: "XLM",
+    placeholder: "10",
+    hint: "A flat amount charged once per listing.",
+    valid: (v) => isNum(v) && Number(v) >= 0,
+    toAction: (v) => ({ SetFee: BigInt(Math.round(Number(v) * XLM)) }),
   },
   {
     key: "SetBondBps",
     label: "Performance bond",
-    hint: "Basis points of the raise. 500 = 5%. What a builder forfeits by missing a milestone.",
-    placeholder: "500",
-    parse: (v: string) => ({ SetBondBps: BigInt(v) }),
+    unit: "%",
+    placeholder: "5",
+    hint: "What a builder posts against their raise and forfeits by missing a milestone.",
+    valid: (v) => isNum(v) && Number(v) >= 0 && Number(v) <= 100,
+    toAction: (v) => ({ SetBondBps: BigInt(Math.round(Number(v) * 100)) }),
   },
   {
     key: "SetMinContribution",
     label: "Minimum contribution",
-    hint: "The smallest amount a vault will accept, in stroops.",
-    placeholder: "50000000",
-    parse: (v: string) => ({ SetMinContribution: BigInt(v) }),
+    unit: "XLM",
+    placeholder: "5",
+    hint: "The smallest amount a vault will accept from a contributor.",
+    valid: (v) => isNum(v) && Number(v) >= 0,
+    toAction: (v) => ({ SetMinContribution: BigInt(Math.round(Number(v) * XLM)) }),
   },
   {
     key: "SetVotingWindow",
     label: "Milestone voting window",
-    hint: "Seconds contributors have to vote on a milestone. 604 800 = 7 days.",
-    placeholder: "604800",
-    parse: (v: string) => ({ SetVotingWindow: BigInt(v) }),
+    unit: "days",
+    placeholder: "7",
+    hint: "How long contributors have to vote on a milestone once it opens.",
+    valid: (v) => isNum(v) && Number(v) > 0,
+    toAction: (v) => ({ SetVotingWindow: BigInt(Math.round(Number(v) * 86_400)) }),
   },
   {
     key: "SetFeeWallet",
     label: "Fee destination",
+    unit: "",
+    placeholder: "C… vault address",
+    mono: true,
     hint: "Where listing fees go. Pointing this away is how this treasury is eventually replaced.",
-    placeholder: "C…",
-    parse: (v: string) => ({ SetFeeWallet: v.trim() }),
+    valid: (v) => /^C[A-Z2-7]{55}$/.test(v.trim()),
+    toAction: (v) => ({ SetFeeWallet: v.trim() }),
   },
   {
     key: "SetIdentityRegistry",
     label: "Identity registry",
+    unit: "",
+    placeholder: "C… contract address",
+    mono: true,
     hint: "Which contract vouches for builder identity.",
-    placeholder: "C…",
-    parse: (v: string) => ({ SetIdentityRegistry: v.trim() }),
+    valid: (v) => /^C[A-Z2-7]{55}$/.test(v.trim()),
+    toAction: (v) => ({ SetIdentityRegistry: v.trim() }),
   },
   {
     key: "TransferAdmin",
     label: "Hand factory admin away",
-    hint: "The escape hatch. Returns control of the factory to an address outside this treasury.",
-    placeholder: "G… or C…",
-    parse: (v: string) => ({ TransferAdmin: v.trim() }),
+    unit: "",
+    placeholder: "G… or C… address",
+    mono: true,
+    hint: "The escape hatch: returns control of the factory to an address outside this treasury.",
+    valid: (v) => /^[GC][A-Z2-7]{55}$/.test(v.trim()),
+    toAction: (v) => ({ TransferAdmin: v.trim() }),
   },
-] as const;
+];
+
+/** How a live proposal's stored action reads back for a person. */
+const ACTION_LABELS: Record<string, string> = Object.fromEntries(
+  ACTIONS.map((a) => [a.key, a.label]),
+);
 
 interface ProposalState {
   id: number;
@@ -125,12 +150,10 @@ export function TreasuryGovernancePanel() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
-  const [actionKey, setActionKey] = useState<string>(ACTIONS[0].key);
-  const [value, setValue] = useState("");
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [, startTransition] = useTransition();
 
   const address = platformInfo?.feeWalletAddress ?? "";
-  const chosen = ACTIONS.find((a) => a.key === actionKey) ?? ACTIONS[0];
 
   useEffect(() => {
     let cancelled = false;
@@ -154,17 +177,15 @@ export function TreasuryGovernancePanel() {
       if (open) {
         const p = open as any;
         const approvals = Number(p.approvals ?? 0);
-        // Two thirds rounded up, matching the contract exactly. Shown rather
-        // than left implicit because it is not obvious at every roster size —
-        // three of four is needed, not two.
         const needed = Math.ceil((list.length * 2) / 3);
+        const tag = typeof p.action?.tag === "string" ? p.action.tag : String(p.action);
         setProposal({
           id: Number(p.id),
           approvals,
           owners: list.length,
           needed,
           closesAt: Number(p.closes_at) * 1000,
-          action: typeof p.action?.tag === "string" ? p.action.tag : String(p.action),
+          action: ACTION_LABELS[tag] ?? tag,
           carried: approvals >= needed,
         });
       } else {
@@ -196,7 +217,7 @@ export function TreasuryGovernancePanel() {
       try {
         await run(treasuryClient(address, signerFor(freighterWalletAddress)));
         setReload((n) => n + 1);
-        setValue("");
+        setDrafts({});
         toast({ title: label });
       } catch (err: any) {
         toast({
@@ -213,18 +234,20 @@ export function TreasuryGovernancePanel() {
   if (!address) return null;
 
   const expired = proposal ? proposal.closesAt <= Date.now() : false;
+  // A proposal that is open and still being voted on holds the single slot.
+  const slotTaken = Boolean(proposal && !expired && !proposal.carried);
 
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Gavel className="h-5 w-5" aria-hidden="true" />
-          Platform Governance
+          Proposals
         </CardTitle>
         <CardDescription>
-          Platform settings change by vote, not by one signature. A proposal
-          carries on two thirds of the owners and can then be executed by anyone
-          — execution should not depend on the goodwill of whoever proposed it.
+          A change carries on two thirds of the owners and can then be executed
+          by anyone — applying an agreed change should not wait on the goodwill of
+          whoever proposed it. One proposal runs at a time.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
@@ -318,63 +341,76 @@ export function TreasuryGovernancePanel() {
                 )}
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground">
-                No proposal is open.
-              </p>
+              <p className="text-sm text-muted-foreground">No proposal is open.</p>
             )}
 
             {isOwner ? (
               <div className="space-y-2 border-t pt-4">
-                <Label>Propose a change</Label>
-                <div className="flex flex-wrap gap-2">
-                  <Select value={actionKey} onValueChange={setActionKey}>
-                    <SelectTrigger className="w-[240px]">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {ACTIONS.map((a) => (
-                        <SelectItem key={a.key} value={a.key}>
-                          {a.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Input
-                    value={value}
-                    onChange={(e) => setValue(e.target.value)}
-                    placeholder={chosen.placeholder}
-                    className="max-w-xs font-mono text-xs"
-                    spellCheck={false}
-                    aria-label={`New value for ${chosen.label}`}
-                  />
-                  <Button
-                    size="sm"
-                    disabled={busy !== null || !value.trim() || Boolean(proposal && !expired && !proposal.carried)}
-                    title={
-                      proposal && !expired && !proposal.carried
-                        ? "A proposal is already open — one at a time"
-                        : `Propose a change to the ${chosen.label.toLowerCase()}`
-                    }
-                    onClick={() =>
-                      act("propose", "Proposal opened", async (c) =>
-                        send(
-                          await (c as any).propose({
-                            proposer: freighterWalletAddress,
-                            action: chosen.parse(value),
-                          }),
-                        ),
-                      )
-                    }
-                  >
-                    {busy === "propose" ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-                    ) : (
-                      <Gavel className="h-3.5 w-3.5" aria-hidden="true" />
-                    )}
-                    <span className="ml-1.5">Propose</span>
-                  </Button>
-                </div>
-                <p className="text-xs text-muted-foreground">{chosen.hint}</p>
+                {slotTaken && (
+                  <p className="text-xs text-amber-500">
+                    A proposal is open. Settle it before starting another.
+                  </p>
+                )}
+                {ACTIONS.map((a) => {
+                  const value = drafts[a.key] ?? "";
+                  const ready = value.trim() !== "" && a.valid(value);
+                  return (
+                    <div key={a.key} className="flex flex-wrap items-center gap-2">
+                      <div className="w-44 shrink-0 text-sm font-medium">
+                        {a.label}
+                      </div>
+                      <div className="relative min-w-0 flex-1 sm:max-w-[260px]">
+                        <Input
+                          value={value}
+                          onChange={(e) =>
+                            setDrafts((d) => ({ ...d, [a.key]: e.target.value }))
+                          }
+                          placeholder={a.placeholder}
+                          title={a.hint}
+                          disabled={slotTaken}
+                          className={a.mono ? "pr-3 font-mono text-xs" : "pr-14"}
+                          inputMode={a.unit ? "decimal" : "text"}
+                          spellCheck={false}
+                          aria-label={`New ${a.label.toLowerCase()}`}
+                        />
+                        {a.unit && (
+                          <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                            {a.unit}
+                          </span>
+                        )}
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={busy !== null || slotTaken || !ready}
+                        title={
+                          slotTaken
+                            ? "A proposal is already open — one at a time"
+                            : !ready
+                              ? a.hint
+                              : `Propose a new ${a.label.toLowerCase()}`
+                        }
+                        onClick={() =>
+                          act(`propose:${a.key}`, "Proposal opened", async (c) =>
+                            send(
+                              await (c as any).propose({
+                                proposer: freighterWalletAddress,
+                                action: a.toAction(value),
+                              }),
+                            ),
+                          )
+                        }
+                      >
+                        {busy === `propose:${a.key}` ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                        ) : (
+                          <Gavel className="h-3.5 w-3.5" aria-hidden="true" />
+                        )}
+                        <span className="ml-1.5">Propose</span>
+                      </Button>
+                    </div>
+                  );
+                })}
               </div>
             ) : (
               <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3">
