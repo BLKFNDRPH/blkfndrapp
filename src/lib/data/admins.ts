@@ -4,6 +4,10 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAdmin } from "@/lib/supabase/auth";
+import { ADMIN_ROLES, ROLE_LABELS, type AdminRole } from "@/lib/admin-roles";
+
+// Re-exported so existing server-side importers of these from here keep working.
+export { ADMIN_ROLES, ROLE_LABELS, type AdminRole };
 
 /**
  * The platform admin roster — who may use the console.
@@ -67,11 +71,14 @@ const WalletSchema = z
     "Enter a valid Stellar address — 56 characters beginning with G.",
   );
 
+const RoleSchema = z.enum(ADMIN_ROLES);
+
 export interface PlatformAdmin {
   /** Who this is. Recorded at grant time; a profile lookup cannot name someone
    *  who has not signed in yet, which is when the roster is least legible. */
   name: string;
   email: string;
+  role: AdminRole;
   grantedAt: string;
   note: string;
   /** Null until the invited address first signs in. */
@@ -91,7 +98,7 @@ export async function listAdmins(): Promise<PlatformAdmin[]> {
 
   const { data, error } = await supabase
     .from("platform_admins")
-    .select("email, display_name, granted_at, note, user_id, wallet_address")
+    .select("email, display_name, role, granted_at, note, user_id, wallet_address")
     .order("granted_at", { ascending: true });
 
   if (error) throw new Error(`Could not load administrators: ${error.message}`);
@@ -99,6 +106,7 @@ export async function listAdmins(): Promise<PlatformAdmin[]> {
   return (data ?? []).map((r) => ({
     name: r.display_name || r.email.split("@")[0],
     email: r.email,
+    role: r.role,
     grantedAt: r.granted_at,
     note: r.note,
     claimed: r.user_id !== null,
@@ -118,12 +126,14 @@ export async function grantAdmin(
   email: string,
   walletAddress = "",
   name = "",
+  role: AdminRole = "owner",
   note = "",
 ): Promise<PlatformAdmin[]> {
   const caller = await requireAdmin();
   const parsed = EmailSchema.parse(email);
   const wallet = walletAddress.trim() ? WalletSchema.parse(walletAddress) : null;
   const displayName = name.trim().slice(0, 120);
+  const parsedRole = RoleSchema.parse(role);
 
   const admin = createAdminClient();
 
@@ -144,6 +154,7 @@ export async function grantAdmin(
   const { error } = await supabase.from("platform_admins").insert({
     email: parsed,
     display_name: displayName,
+    role: parsedRole,
     user_id: match?.id ?? null,
     wallet_address: wallet,
     granted_by: caller.userId,
@@ -164,10 +175,21 @@ export async function grantAdmin(
     if (error.code === "23514") {
       throw new Error("That is not a valid Stellar address.");
     }
+    // The insert goes through the caller's session, and only owners may write
+    // the roster. A moderator who reaches this — the form is theirs to see only
+    // if they are an owner — gets a readable reason rather than a raw RLS code.
+    if (error.code === "42501") {
+      throw new Error("Only an owner can add or change administrators.");
+    }
     throw new Error(`Could not add administrator: ${error.message}`);
   }
 
-  await record("admin.grant", caller.userId, parsed, wallet ? `wallet ${wallet}` : note);
+  await record(
+    "admin.grant",
+    caller.userId,
+    parsed,
+    `${parsedRole}${wallet ? ` · wallet ${wallet}` : ""}`,
+  );
   return listAdmins();
 }
 

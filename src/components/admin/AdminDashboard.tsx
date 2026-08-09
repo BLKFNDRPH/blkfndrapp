@@ -63,6 +63,7 @@ import { AdminWalletBar } from "./AdminWalletBar";
 import { PlatformAdminManager } from "./PlatformAdminManager";
 import { ConsensusReviewPanel } from "./ConsensusReviewPanel";
 import { PlatformVaultPanel } from "./PlatformVaultPanel";
+import { getMyRoleAction } from "@/actions/admins";
 import { TreasuryGovernancePanel } from "./TreasuryGovernancePanel";
 import {
   useProjects,
@@ -181,6 +182,35 @@ export function AdminDashboard() {
   >({});
   const [visibleRecentCount, setVisibleRecentCount] = useState(5);
   const [adminView, setAdminView] = useState<"projects" | "admins" | "vault" | "identity" | "categories">("projects");
+
+  // Which tabs a role may see. Owners see everything; each moderator sees the
+  // one surface their job needs. This is presentation — the database enforces
+  // the same boundary on every read and write, so a hidden tab is a convenience,
+  // not the security. A null role means the answer has not arrived yet, and no
+  // tabs show until it does rather than flashing the full set to a moderator.
+  const [myRole, setMyRole] = useState<
+    "owner" | "kyc_manager" | "project_approver" | "accountant" | null
+  >(null);
+
+  const VIEWS_BY_ROLE: Record<string, Array<typeof adminView>> = {
+    owner: ["projects", "identity", "admins", "vault", "categories"],
+    kyc_manager: ["identity"],
+    project_approver: ["projects"],
+    accountant: ["vault"],
+  };
+  const visibleViews = myRole ? VIEWS_BY_ROLE[myRole] : [];
+  const canSee = (v: typeof adminView) => visibleViews.includes(v);
+
+  useEffect(() => {
+    getMyRoleAction().then((r) => setMyRole(r.role));
+  }, []);
+
+  // A moderator whose default tab is one they cannot see would land on a blank
+  // dashboard. Once the role is known, move them to their first real tab.
+  useEffect(() => {
+    if (myRole && !canSee(adminView)) setAdminView(visibleViews[0] ?? "projects");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [myRole]);
 
   // KYC and withdrawals SWR Polling
   const { data: withdrawalsData } = useSWR("/api/admin/withdrawals", fetcher, {
@@ -444,78 +474,88 @@ export function AdminDashboard() {
                 is where contact details belong. */}
             {platformInfo && <AdminSettingsSheet />}
             <div className="flex items-center gap-1 border bg-card rounded-xl p-1 shadow-sm">
-              <button
-                type="button"
-                onClick={() => setAdminView("projects")}
-                className={cn(
-                  "flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-all",
-                  adminView === "projects"
-                    ? "bg-accent text-accent-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                <LayoutGrid className="h-4 w-4" />
-                Projects
-              </button>
-              <button
-                type="button"
-                onClick={() => setAdminView("identity")}
-                className={cn(
-                  "flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-all",
-                  adminView === "identity"
-                    ? "bg-accent text-accent-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                <UserCheck className="h-4 w-4" />
-                Identity Verification
-              </button>
-              <button
-                type="button"
-                onClick={() => setAdminView("admins")}
-                className={cn(
-                  "flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-all",
-                  adminView === "admins"
-                    ? "bg-accent text-accent-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                <Users className="h-4 w-4" />
-                Admins
-              </button>
-              <button
-                type="button"
-                onClick={() => setAdminView("vault")}
-                className={cn(
-                  "flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-all",
-                  adminView === "vault"
-                    ? "bg-accent text-accent-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                <Vault className="h-4 w-4" />
-                Vault
-              </button>
-              <button
-                type="button"
-                onClick={() => setAdminView("categories")}
-                className={cn(
-                  "flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-all",
-                  adminView === "categories"
-                    ? "bg-accent text-accent-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                <Tags className="h-4 w-4" />
-                Categories
-              </button>
+              {canSee("projects") && (
+                <button
+                  type="button"
+                  onClick={() => setAdminView("projects")}
+                  className={cn(
+                    "flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-all",
+                    adminView === "projects"
+                      ? "bg-accent text-accent-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  <LayoutGrid className="h-4 w-4" />
+                  Projects
+                </button>
+              )}
+              {canSee("identity") && (
+                <button
+                  type="button"
+                  onClick={() => setAdminView("identity")}
+                  className={cn(
+                    "flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-all",
+                    adminView === "identity"
+                      ? "bg-accent text-accent-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  <UserCheck className="h-4 w-4" />
+                  Identity Verification
+                </button>
+              )}
+              {canSee("admins") && (
+                <button
+                  type="button"
+                  onClick={() => setAdminView("admins")}
+                  className={cn(
+                    "flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-all",
+                    adminView === "admins"
+                      ? "bg-accent text-accent-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  <Users className="h-4 w-4" />
+                  Admins
+                </button>
+              )}
+              {canSee("vault") && (
+                <button
+                  type="button"
+                  onClick={() => setAdminView("vault")}
+                  className={cn(
+                    "flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-all",
+                    adminView === "vault"
+                      ? "bg-accent text-accent-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  <Vault className="h-4 w-4" />
+                  Vault
+                </button>
+              )}
+              {canSee("categories") && (
+                <button
+                  type="button"
+                  onClick={() => setAdminView("categories")}
+                  className={cn(
+                    "flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-all",
+                    adminView === "categories"
+                      ? "bg-accent text-accent-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  <Tags className="h-4 w-4" />
+                  Categories
+                </button>
+              )}
             </div>
           </div>
         </div>
 
 
         <AnimatePresence mode="wait">
-          {adminView === "projects" && (
+          {canSee("projects") && adminView === "projects" && (
             <motion.div
               key="projects-view"
               initial={{ opacity: 0 }}
@@ -786,7 +826,7 @@ export function AdminDashboard() {
             </motion.div>
           )}
 
-          {adminView === "identity" && (
+          {canSee("identity") && adminView === "identity" && (
             <motion.div
               key="identity-view"
               initial={{ opacity: 0 }}
@@ -798,7 +838,7 @@ export function AdminDashboard() {
             </motion.div>
           )}
 
-          {adminView === "admins" && (
+          {canSee("admins") && adminView === "admins" && (
             <motion.div
               key="admins-view"
               initial={{ opacity: 0 }}
@@ -814,7 +854,7 @@ export function AdminDashboard() {
             </motion.div>
           )}
 
-          {adminView === "vault" && (
+          {canSee("vault") && adminView === "vault" && (
             <motion.div
               key="vault-view"
               initial={{ opacity: 0 }}
@@ -829,7 +869,7 @@ export function AdminDashboard() {
             </motion.div>
           )}
 
-          {adminView === "categories" && (
+          {canSee("categories") && adminView === "categories" && (
             <motion.div
               key="categories-view"
               initial={{ opacity: 0 }}
