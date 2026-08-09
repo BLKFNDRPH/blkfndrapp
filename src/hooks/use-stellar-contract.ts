@@ -505,6 +505,19 @@ export function useStellarContract() {
   );
 
   /**
+   * Who administers the factory — the wallet whose signature its setters accept.
+   *
+   * The governance UI needs this to tell the truth about what a carried vote can
+   * actually do. Until this is the treasury, a proposal can be raised and passed
+   * but not executed, because executing calls the factory as its admin and the
+   * treasury is not yet that admin.
+   */
+  const getFactoryAdmin = useCallback(
+    () => simulate(() => factoryClient().get_admin(), "factory get_admin"),
+    [],
+  );
+
+  /**
    * Who may edit the on-chain roster.
    *
    * Worth reading separately from the roster itself: add_admin and remove_admin
@@ -602,6 +615,7 @@ export function useStellarContract() {
     isPlatformAdmin,
     getAdmins,
     getFeeWallet,
+    getFactoryAdmin,
     getAdminOwner,
     addAdmin,
     removeAdmin,

@@ -21,6 +21,8 @@ import {
   Tags,
   Vault,
   Clock,
+  Landmark,
+  Cog,
 } from "lucide-react";
 import { IdentityRegistryPanel } from "./IdentityRegistryPanel";
 import { AttestorManager } from "./AttestorManager";
@@ -66,6 +68,8 @@ import { ConsensusReviewPanel } from "./ConsensusReviewPanel";
 import { PlatformVaultPanel } from "./PlatformVaultPanel";
 import { getMyRoleAction } from "@/actions/admins";
 import { TreasuryGovernancePanel } from "./TreasuryGovernancePanel";
+import { PlatformGovernanceView } from "./PlatformGovernanceView";
+import { SettingsView } from "./SettingsView";
 import {
   useProjects,
   usePlatformInfo,
@@ -73,7 +77,6 @@ import {
 } from "@/context/BlockchainContext";
 import { useProjectDetails } from "@/context/ProjectDetailsContext";
 import { formatCurrency } from "@/lib/formatters";
-import { AdminSettingsSheet } from "./AdminSettingsSheet";
 import { useStellarContract } from "@/hooks/use-stellar-contract";
 import { Client as VaultClient } from "@/packages/blkfndr_vault/src";
 import { SOROBAN_RPC_URL, NETWORK_PASSPHRASE } from "@/lib/stellar";
@@ -182,7 +185,9 @@ export function AdminDashboard() {
     Record<string, string[]>
   >({});
   const [visibleRecentCount, setVisibleRecentCount] = useState(5);
-  const [adminView, setAdminView] = useState<"projects" | "admins" | "vault" | "identity" | "categories">("projects");
+  const [adminView, setAdminView] = useState<
+    "projects" | "admins" | "vault" | "governance" | "settings" | "identity" | "categories"
+  >("projects");
 
   // Which tabs a role may see. Owners see everything; each moderator sees the
   // one surface their job needs. This is presentation — the database enforces
@@ -194,7 +199,7 @@ export function AdminDashboard() {
   >(null);
 
   const VIEWS_BY_ROLE: Record<string, Array<typeof adminView>> = {
-    owner: ["projects", "identity", "admins", "vault", "categories"],
+    owner: ["projects", "identity", "admins", "vault", "governance", "settings", "categories"],
     kyc_manager: ["identity"],
     project_approver: ["projects"],
     accountant: ["vault"],
@@ -473,7 +478,6 @@ export function AdminDashboard() {
                 kind of act. The destination now sits beside the vault balance it
                 redirects, behind a confirmation; the email is in Settings, which
                 is where contact details belong. */}
-            {platformInfo && <AdminSettingsSheet />}
             <div className="flex items-center gap-1 border bg-card rounded-xl p-1 shadow-sm">
               {canSee("projects") && (
                 <button
@@ -533,6 +537,36 @@ export function AdminDashboard() {
                 >
                   <Vault className="h-4 w-4" />
                   Vault
+                </button>
+              )}
+              {canSee("governance") && (
+                <button
+                  type="button"
+                  onClick={() => setAdminView("governance")}
+                  className={cn(
+                    "flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-all",
+                    adminView === "governance"
+                      ? "bg-accent text-accent-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  <Landmark className="h-4 w-4" />
+                  Governance
+                </button>
+              )}
+              {canSee("settings") && (
+                <button
+                  type="button"
+                  onClick={() => setAdminView("settings")}
+                  className={cn(
+                    "flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-all",
+                    adminView === "settings"
+                      ? "bg-accent text-accent-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  <Cog className="h-4 w-4" />
+                  Settings
                 </button>
               )}
               {canSee("categories") && (
@@ -871,10 +905,31 @@ export function AdminDashboard() {
               exit={{ opacity: 0 }}
               transition={{ duration: 0.3 }}
             >
-              <div className="space-y-8">
-                <PlatformVaultPanel />
-                <TreasuryGovernancePanel />
-              </div>
+              <PlatformVaultPanel />
+            </motion.div>
+          )}
+
+          {canSee("governance") && adminView === "governance" && (
+            <motion.div
+              key="governance-view"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.3 }}
+            >
+              <PlatformGovernanceView />
+            </motion.div>
+          )}
+
+          {canSee("settings") && adminView === "settings" && (
+            <motion.div
+              key="settings-view"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.3 }}
+            >
+              <SettingsView />
             </motion.div>
           )}
 
