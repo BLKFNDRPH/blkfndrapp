@@ -3,7 +3,7 @@ import "server-only";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { requireAdmin } from "@/lib/supabase/auth";
+import { requireAdmin, AuthError } from "@/lib/supabase/auth";
 import {
   ADMIN_ROLES,
   ROLE_LABELS,
@@ -289,6 +289,16 @@ export async function setAdminWallet(
 
 export async function revokeAdmin(email: string): Promise<PlatformAdmin[]> {
   const caller = await requireAdmin();
+
+  // Owner-only, enforced here before any side effect. Roster removal is already
+  // gated on is_owner() by RLS, but that gate is on the row delete below — which
+  // runs AFTER the managed-key teardown. Without this check a non-owner admin
+  // would trigger the irreversible key sweep/delete and then silently no-op the
+  // delete (0 rows, no error), reporting success. Reject non-owners up front.
+  if (caller.role !== "owner") {
+    throw new AuthError("Only an owner can remove an administrator.", 403);
+  }
+
   const parsed = EmailSchema.parse(email);
 
   if (parsed === (caller.email ?? "").toLowerCase()) {

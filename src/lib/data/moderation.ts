@@ -127,7 +127,12 @@ export interface PlatformHealth {
  */
 export async function getHealth(): Promise<PlatformHealth> {
   await requirePlatformAdmin();
-  const supabase = await createClient();
+  // Service-role: contract_events / indexer_state (and pending-KYC) have their
+  // grants revoked from browser roles, so reading them through the caller's
+  // session client silently returned zero — masking indexer staleness, the very
+  // thing this view exists to surface. This function is already platform-admin
+  // gated, so the admin client is the right layer.
+  const supabase = createAdminClient();
 
   const [users, projects, kyc, bans, events, indexer] = await Promise.all([
     supabase.from("profiles").select("id", { count: "exact", head: true }),
