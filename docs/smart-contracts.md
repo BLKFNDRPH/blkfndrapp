@@ -46,8 +46,10 @@ A vault trusts only the addresses the factory pinned into it at creation, so a p
 The vault is **not** deployed as a contract of its own. Its wasm is uploaded once and the factory instantiates one instance per project from that hash, so any project's vault can be checked against it:
 
 ```
-blkfndr_vault.wasm  sha256:9c20bca3e364d26240f83f03c11bd40ee30092fa2520bb1e767ba2c9a596db41
+blkfndr_vault.wasm  sha256:70e5f3a81a3d66155b46780f0c7bc1bd7574721d5477865f7a2cd471d9746b53
 ```
+
+This is the hash the factory instantiates today, after the security-hardening redeploy (the fund-lock timeout, the milestone cap, and the checks-effects-interactions fixes). Projects created before that redeploy run the prior wasm, `9c20bca3…`; vaults are immutable per project, so an older project keeps the code it was built with and is verified against the older hash.
 
 Amounts are in stroops throughout (1 unit = 10,000,000 stroops, 7 decimals). Deployed parameters: flat fee 10 units, minimum contribution 5 units, milestone voting window 7 days, minimum bond 5% of goal.
 
@@ -55,7 +57,7 @@ Amounts are in stroops throughout (1 unit = 10,000,000 stroops, 7 decimals). Dep
 
 ## blkfndr-vault
 
-One vault per project. It holds every stake and the builder's performance bond in the same contract, runs the milestone votes that release money, and refunds automatically when a project misses its goal or a milestone fails. **81 tests.**
+One vault per project. It holds every stake and the builder's performance bond in the same contract, runs the milestone votes that release money, and refunds automatically when a project misses its goal or a milestone fails. **38 tests.**
 
 ### Lifecycle states
 

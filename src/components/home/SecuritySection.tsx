@@ -119,7 +119,7 @@ const CONTRACTS = [
 ];
 
 const VAULT_WASM_HASH =
-  "9c20bca3e364d26240f83f03c11bd40ee30092fa2520bb1e767ba2c9a596db41";
+  "70e5f3a81a3d66155b46780f0c7bc1bd7574721d5477865f7a2cd471d9746b53";
 
 export function SecuritySection() {
   return (
@@ -309,7 +309,7 @@ export function SecuritySection() {
 
             <p className="mt-5 text-xs leading-relaxed text-muted-foreground">
               Deployed to Stellar testnet. The vault&apos;s release rules alone
-              are pinned by 81 passing tests, with the treasury and operations
+              are pinned by 38 passing tests, with the treasury and operations
               vault adding 45 and 26 more. Mainnet is planned and not yet
               deployed — treat anything on testnet as a live rehearsal, not a
               place to commit funds you need back.
