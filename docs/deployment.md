@@ -90,6 +90,7 @@ docker compose logs -f blkfndr-app
 | `NEXT_PUBLIC_BLKFNDR_IDENTITY_CONTRACT_ID` | KYC gating |
 | `NEXT_PUBLIC_BLKFNDR_ADMIN_CONTRACT_ID` | On-chain admin roster |
 | `NEXT_PUBLIC_BLKFNDR_ATTESTATION_CONTRACT_ID` | Builder completion record |
+| `NEXT_PUBLIC_BLKFNDR_OPERATIONS_CONTRACT_ID` | Operations Vault. Its governance panel reads "Not configured" without it. **Build arg, not runtime** — setting it only in the stack environment leaves it empty in the bundle |
 | `NEXT_PUBLIC_STELLAR_XLM_TOKEN_ID` | A currency left blank is simply not offered |
 | `NEXT_PUBLIC_STELLAR_USDC_TOKEN_ID` | ditto |
 | `NEXT_PUBLIC_SOROBAN_RPC_URL` | **Defaults to testnet** — see below |
@@ -117,9 +118,11 @@ docker compose logs -f blkfndr-app
 | `PINATA_JWT` | Project creation fails without it. **Not** `NEXT_PUBLIC_PINATA_JWT` |
 | `PINATA_GATEWAY_URL` | |
 | `PINATA_GROUP_BLKDFNDR` | |
-| `INDEXER_SECRET` | Bearer token for `POST /api/indexer`. Invent a long random value |
+| `INDEXER_SECRET` | Bearer token for `POST /api/indexer` and `POST /api/ops-funding`. Invent a long random value |
+| `OPS_FUNDING_SUBMITTER_SECRET` | Optional. Funded account that pays the fee for the monthly operations-funding transfer. Holds no authority — the transfer is authorised by the owners' `SetOpsFunding` vote. Unset means the transfer cleanly skips |
 | `GEMINI_API_KEY` | Optional, AI listing review. The Genkit plugin reads `GEMINI_API_KEY`, `GOOGLE_API_KEY` or `GOOGLE_GENAI_API_KEY` — not `GOOGLE_GENERATIVEAI_API_KEY` |
 | `INDEX_INTERVAL_SECONDS` | Optional, defaults to 60 |
+| `OPS_FUNDING_INTERVAL_SECONDS` | Optional, defaults to 86400 (daily). How often the ops-funding-cron polls `/api/ops-funding`; the on-chain 30-day gate means it moves money at most once a month |
 | `APP_PORT` | Optional, defaults to 8788. Host port to publish on |
 
 ### Token contract addresses
@@ -170,8 +173,10 @@ is usually the better trade.
 
 ## The indexer service
 
-The stack runs two services. The second, `indexer-cron`, calls
-`POST /api/indexer` on a loop.
+The stack runs three services. The second, `indexer-cron`, calls
+`POST /api/indexer` on a loop. The third, `ops-funding-cron`, calls
+`POST /api/ops-funding` daily to run the monthly gas top-up — it no-ops until
+owners vote `SetOpsFunding` and `OPS_FUNDING_SUBMITTER_SECRET` is set.
 
 This is not optional housekeeping. The ledger is the source of truth but the
 site reads Postgres, and nothing in the app self-triggers — without it a newly

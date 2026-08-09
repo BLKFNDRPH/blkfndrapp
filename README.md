@@ -26,6 +26,9 @@ Release authority is contribution-weighted rather than held by appointed signers
 |---|---|
 | Bonded vault with contributor-weighted release | ✅ Deployed to testnet, 81 tests passing |
 | Builder attestation registry | ✅ Deployed to testnet |
+| Platform treasury + owner-voted governance (fee, bond, ops funding) | ✅ Deployed to testnet, 45 tests passing |
+| Operations Vault (governed gas budget) + managed KYC-attestor keys | ✅ Deployed to testnet, 26 tests passing |
+| Four admin groups, user bans, platform health, KYC review | ✅ Live |
 | Supabase schema, RLS, and auth | ✅ Applied, verified, and the app runs on it |
 | MongoDB | ✅ Fully removed |
 | TypeScript contract bindings | ✅ Regenerated from the deployed wasm |
@@ -79,8 +82,10 @@ MongoDB is still present in the codebase and is being removed collection by coll
 | `blkfndr-vault` | Per-project vault: contributions, bond, contributor-weighted milestone voting, refunds, forfeiture |
 | `blkfndr-factory` | Deploys vaults and pins the platform addresses each one trusts |
 | `blkfndr-attestation` | Append-only builder completion record. No update or delete entrypoint exists |
-| `blkfndr-identity` | KYC attestation registry |
+| `blkfndr-identity` | KYC attestation registry. Named attestors write approvals; the platform holds their signing keys so reviewers never touch a wallet |
 | `blkfndr-admin` | Platform administrator roster. **Not in the path that releases funds** |
+| `blkfndr-treasury` | Platform fee treasury and governance: fees pool here, owners vote (two-thirds by headcount) to release to shareholders and to set the fee, bond and a monthly cut to the Operations Vault |
+| `blkfndr-operations` | Operations Vault: the gas budget for moderation, released by owner vote to fund the managed KYC-attestor wallets. Holds no project funds |
 
 ### Deployed Contracts (Testnet)
 
@@ -90,8 +95,12 @@ The rebuilt set, deployed with `scripts/deploy-contracts.sh` and wiring verified
 |---|---|
 | Factory | [`CDIXGE5M...F7BGKR7D5`](https://stellar.expert/explorer/testnet/contract/CDIXGE5MWFAYXA7FKLB4CDRSSQZ6VQSGHT6O6OY3TFTWVF6F7BGKR7D5) |
 | Attestation registry | [`CDLL2A4R...JSNB2SO7`](https://stellar.expert/explorer/testnet/contract/CDLL2A4RBSQPKSPTEE3O4HNSDICSJEGCHAWIGUYVRPGOKVEPJSNB2SO7) |
-| Identity registry | [`CAJGOVZ7...F4QNLSGS7`](https://stellar.expert/explorer/testnet/contract/CAJGOVZ7DZTCVCBY44N24DDVEBEEMYSUIZFE3ZO5CDHWPGPF4QNLSGS7) |
+| Identity registry | [`CCDBWBFE...RWZT27TGW`](https://stellar.expert/explorer/testnet/contract/CCDBWBFEK3YVXD2CDTJ4NFDPO7DB3OLB4YVX7BZI22M7QM4RWZT27TGW) |
 | Admin roster | [`CAHAOAX5...AU6WAGOG`](https://stellar.expert/explorer/testnet/contract/CAHAOAX52JAQ75C3INJIDVKT7EITWDVPYP2K27NJTD4CPYZUAU6WAGOG) |
+| Treasury (fee destination + governance) | [`CCNID3UW...H3XGIGZS`](https://stellar.expert/explorer/testnet/contract/CCNID3UWTBEV67U7COG7LEWGTT63KYBM42M5XQ2OX6TWFLE3H3XGIGZS) |
+| Operations Vault (gas budget) | [`CDZXCWKY...Z3PDHJQAP`](https://stellar.expert/explorer/testnet/contract/CDZXCWKY7J4CEF7MFXMOHB377OREDLM3LESNIZIQ4LIVIR6Z3PDHJQAP) |
+
+The treasury is the factory's fee wallet, so the app reads its address from the factory rather than from configuration. It was redeployed to add the operations-funding transfer; the previous treasury (`CC5SKZMP…`, empty) is superseded.
 
 The **vault is not deployed as a contract**. Its wasm is uploaded and the factory instantiates one instance per project from that hash:
 
@@ -166,13 +175,15 @@ cargo test --workspace
 | `NEXT_PUBLIC_BLKFNDR_IDENTITY_CONTRACT_ID` | Yes | Identity registry contract ID |
 | `NEXT_PUBLIC_BLKFNDR_ADMIN_CONTRACT_ID` | Yes | Admin roster contract ID |
 | `NEXT_PUBLIC_BLKFNDR_ATTESTATION_CONTRACT_ID` | Yes | Attestation registry contract ID |
+| `NEXT_PUBLIC_BLKFNDR_OPERATIONS_CONTRACT_ID` | Recommended | Operations Vault contract ID. Its governance panel reads "Not configured" without it |
 | `NEXT_PUBLIC_STELLAR_XLM_TOKEN_ID` | Yes | XLM token contract ID (also `_USDC_`, `_USDT_`, `_WBTC_`, `_WETH_`) |
 | `NEXT_PUBLIC_STELLAR_ADMIN_ADDRESS` | Yes | Platform admin public key |
 | `NEXT_PUBLIC_STELLAR_FALLBACK_ADDRESS` | Yes | Fallback account public key |
 | `PINATA_JWT` | Yes | Pinata API JWT for IPFS uploads. Server-only |
 | `PINATA_GATEWAY_URL` | Recommended | Dedicated Pinata gateway hostname. The shared public one rate-limits |
-| `GOOGLE_GENERATIVEAI_API_KEY` | Yes | Gemini API key for AI features |
-| `INDEXER_SECRET` | Yes | Bearer token for `POST /api/indexer`. Generate with `openssl rand -hex 32` |
+| `GEMINI_API_KEY` | Optional | Gemini API key for the AI listing review. Server-only. Without it that feature is simply off |
+| `INDEXER_SECRET` | Yes | Bearer token for `POST /api/indexer` and `POST /api/ops-funding`. Generate with `openssl rand -hex 32` |
+| `OPS_FUNDING_SUBMITTER_SECRET` | Optional | Funded account that pays the fee for the monthly operations-funding transfer. Server-only. Unset means the transfer cleanly skips |
 
 Anything prefixed `NEXT_PUBLIC_` is inlined into the client bundle at build time and visible to every visitor. Never put a secret behind that prefix. See [.env.example](.env.example) for how each variable reaches the container.
 
@@ -208,7 +219,9 @@ blkfndrapp/
 │   ├── blkfndr-factory/        # Vault deployment and registry
 │   ├── blkfndr-attestation/    # Append-only builder record
 │   ├── blkfndr-identity/       # KYC attestation registry
-│   └── blkfndr-admin/          # Platform admin roster
+│   ├── blkfndr-admin/          # Platform admin roster
+│   ├── blkfndr-treasury/       # Fee treasury and owner-voted governance
+│   └── blkfndr-operations/     # Operations Vault: governed gas budget
 ├── supabase/
 │   └── migrations/             # Tracked SQL, schema plus RLS
 ├── scripts/
@@ -265,7 +278,7 @@ blkfndrapp/
 - [GitBook Sync](docs/gitbook-sync.md) — GitHub/GitBook synchronization
 - [Content Migration](docs/content-migration.md) — Feature coverage checklist
 
-> Several documents predate the contract rebuild and describe the superseded multi-sig release model. [smart-contracts.md](docs/smart-contracts.md) and [architecture.md](docs/architecture.md) are the ones to read with that in mind.
+> **Heads-up on doc freshness.** [smart-contracts.md](docs/smart-contracts.md), [architecture.md](docs/architecture.md) and [api-reference.md](docs/api-reference.md) predate the contract rebuild — they describe a superseded crowdfunding/multi-sig contract and routes that no longer exist, and do not cover the current vault / factory / treasury / operations suite, the governance flow, or the gas-funding transfer. This README, [docs/deployment.md](docs/deployment.md), and the per-contract package READMEs under `src/packages/` are the current sources; the older docs are pending a rewrite.
 
 ## GitHub to GitBook Single Source of Truth
 
