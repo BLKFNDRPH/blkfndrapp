@@ -1,0 +1,18 @@
+[package]
+name    = "blkfndr-operations"
+version = "0.1.0"
+edition = "2021"
+description = "BLKFNDR Crowdfunding Platform — Operations Vault: governed gas budget"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+soroban-sdk = { workspace = true }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
+
+[features]
+testutils = ["soroban-sdk/testutils"]

@@ -5,6 +5,7 @@ import { Client as AttestationClient } from "@/packages/blkfndr_attestation/src"
 import { Client as IdentityClient } from "@/packages/blkfndr_identity/src";
 import { Client as AdminClient } from "@/packages/blkfndr_admin/src";
 import { Client as TreasuryClient } from "@/packages/blkfndr_treasury/src";
+import { Client as OperationsClient } from "@/packages/blkfndr_operations/src";
 
 /**
  * One place to construct contract clients.
@@ -25,6 +26,7 @@ export const FACTORY_ID = process.env.NEXT_PUBLIC_BLKFNDR_FACTORY_CONTRACT_ID;
 export const ATTESTATION_ID = process.env.NEXT_PUBLIC_BLKFNDR_ATTESTATION_CONTRACT_ID;
 export const IDENTITY_ID = process.env.NEXT_PUBLIC_BLKFNDR_IDENTITY_CONTRACT_ID;
 export const ADMIN_ID = process.env.NEXT_PUBLIC_BLKFNDR_ADMIN_CONTRACT_ID;
+export const OPERATIONS_ID = process.env.NEXT_PUBLIC_BLKFNDR_OPERATIONS_CONTRACT_ID;
 
 /** Signing callbacks, supplied by the wallet layer. Absent for reads. */
 export interface Signer {
@@ -80,6 +82,17 @@ export function identityClient(signer?: Signer) {
 export function adminClient(signer?: Signer) {
   return new AdminClient(
     base(required(ADMIN_ID, "NEXT_PUBLIC_BLKFNDR_ADMIN_CONTRACT_ID"), signer),
+  );
+}
+
+/**
+ * The Operations Vault — the governed gas budget. Its address is fixed
+ * configuration, like the factory's and the identity registry's, not read from
+ * another contract the way the fee treasury's is.
+ */
+export function operationsClient(signer?: Signer) {
+  return new OperationsClient(
+    base(required(OPERATIONS_ID, "NEXT_PUBLIC_BLKFNDR_OPERATIONS_CONTRACT_ID"), signer),
   );
 }
 
