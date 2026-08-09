@@ -49,10 +49,9 @@ fn setup() -> Setup {
     let builder = Address::generate(&env);
 
     let factory_id = env.register(MockFactory, ());
-    let factory_client = MockFactoryClient::new(&env, &factory_id);
     let mut vaults = Vec::new(&env);
     vaults.push_back(vault.clone());
-    factory_client.set_vaults(&vaults);
+    MockFactoryClient::new(&env, &factory_id).set_vaults(&vaults);
 
     let registry_id = env.register(AttestationRegistry, ());
     let registry = AttestationRegistryClient::new(&env, &registry_id);
@@ -61,68 +60,78 @@ fn setup() -> Setup {
     Setup { env, registry, vault, builder, factory_id, admin }
 }
 
+/// Register `n` fresh vaults on a factory's allow-list and return them. A vault
+/// closes exactly once, so a builder with several projects has several vaults.
+fn vaults_on(env: &Env, factory: &Address, n: u32) -> Vec<Address> {
+    let mut out = Vec::new(env);
+    for _ in 0..n {
+        out.push_back(Address::generate(env));
+    }
+    MockFactoryClient::new(env, factory).set_vaults(&out);
+    out
+}
+
+fn one_vault(env: &Env, factory: &Address) -> Address {
+    vaults_on(env, factory, 1).get(0).unwrap()
+}
+
 #[test]
 fn records_a_completed_project() {
     let s = setup();
 
     s.registry.attest(
-        &s.vault,
-        &s.factory_id,
-        &s.builder,
-        &7u64,
-        &Outcome::Completed,
-        &10_000_000_000i128,
-        &500_000_000i128,
-        &3u32,
-        &3u32,
+        &s.vault, &s.factory_id, &s.builder, &7u64,
+        &Outcome::Completed, &10_000_000_000i128, &500_000_000i128, &3u32, &3u32,
     );
 
-    let record = s.registry.get_record(&7u64);
+    let record = s.registry.get_record(&s.vault);
     assert_eq!(record.builder, s.builder);
+    assert_eq!(record.vault, s.vault);
     assert_eq!(record.project_id, 7);
     assert_eq!(record.outcome, Outcome::Completed);
     assert_eq!(record.total_raised, 10_000_000_000);
     assert_eq!(record.bond_posted, 500_000_000);
     assert_eq!(record.milestones_approved, 3);
-    assert!(s.registry.has_record(&7u64));
+    assert!(s.registry.has_record(&s.vault));
 }
 
 #[test]
 fn builds_a_portable_history_across_projects() {
     let s = setup();
+    let vaults = vaults_on(&s.env, &s.factory_id, 3);
+    let (v1, v2, v3) = (
+        vaults.get(0).unwrap(),
+        vaults.get(1).unwrap(),
+        vaults.get(2).unwrap(),
+    );
 
-    s.registry.attest(&s.vault, &s.factory_id, &s.builder, &1u64, &Outcome::Completed, &100i128, &10i128, &2u32, &2u32);
-    s.registry.attest(&s.vault, &s.factory_id, &s.builder, &2u64, &Outcome::FailedWithForfeiture, &200i128, &20i128, &3u32, &1u32);
-    s.registry.attest(&s.vault, &s.factory_id, &s.builder, &3u64, &Outcome::FailedToFund, &0i128, &30i128, &2u32, &0u32);
+    s.registry.attest(&v1, &s.factory_id, &s.builder, &1u64, &Outcome::Completed, &100i128, &10i128, &2u32, &2u32);
+    s.registry.attest(&v2, &s.factory_id, &s.builder, &2u64, &Outcome::FailedWithForfeiture, &200i128, &20i128, &3u32, &1u32);
+    s.registry.attest(&v3, &s.factory_id, &s.builder, &3u64, &Outcome::FailedToFund, &0i128, &30i128, &2u32, &0u32);
 
-    let ids = s.registry.get_builder_projects(&s.builder);
-    assert_eq!(ids.len(), 3);
-
-    let history = s.registry.get_builder_history(&s.builder, &0u32, &100u32);
-    assert_eq!(history.len(), 3);
-
-    let (completed, forfeited, unfunded) = s.registry.get_builder_summary(&s.builder);
-    assert_eq!(completed, 1);
-    assert_eq!(forfeited, 1);
-    assert_eq!(unfunded, 1);
+    assert_eq!(s.registry.get_builder_vaults(&s.builder).len(), 3);
+    assert_eq!(s.registry.get_builder_history(&s.builder, &0u32, &100u32).len(), 3);
+    assert_eq!(s.registry.get_builder_summary(&s.builder), (1, 1, 1));
 }
 
 #[test]
 fn a_second_builder_has_a_separate_history() {
     let s = setup();
     let other = Address::generate(&s.env);
+    let vaults = vaults_on(&s.env, &s.factory_id, 2);
+    let (v1, v2) = (vaults.get(0).unwrap(), vaults.get(1).unwrap());
 
-    s.registry.attest(&s.vault, &s.factory_id, &s.builder, &1u64, &Outcome::Completed, &100i128, &10i128, &1u32, &1u32);
-    s.registry.attest(&s.vault, &s.factory_id, &other, &2u64, &Outcome::FailedWithForfeiture, &200i128, &20i128, &1u32, &0u32);
+    s.registry.attest(&v1, &s.factory_id, &s.builder, &1u64, &Outcome::Completed, &100i128, &10i128, &1u32, &1u32);
+    s.registry.attest(&v2, &s.factory_id, &other, &2u64, &Outcome::FailedWithForfeiture, &200i128, &20i128, &1u32, &0u32);
 
-    assert_eq!(s.registry.get_builder_projects(&s.builder).len(), 1);
-    assert_eq!(s.registry.get_builder_projects(&other).len(), 1);
+    assert_eq!(s.registry.get_builder_vaults(&s.builder).len(), 1);
+    assert_eq!(s.registry.get_builder_vaults(&other).len(), 1);
     assert_eq!(s.registry.get_builder_summary(&s.builder), (1, 0, 0));
     assert_eq!(s.registry.get_builder_summary(&other), (0, 1, 0));
 }
 
-/// The immutability claim in the SOW rests on this: a record cannot be
-/// overwritten, and no update or delete entrypoint exists to try instead.
+/// A vault closes once, and its record cannot be overwritten. No update or
+/// delete entrypoint exists to try instead.
 #[test]
 fn a_record_cannot_be_overwritten() {
     let s = setup();
@@ -130,20 +139,12 @@ fn a_record_cannot_be_overwritten() {
     s.registry.attest(&s.vault, &s.factory_id, &s.builder, &1u64, &Outcome::FailedWithForfeiture, &100i128, &10i128, &2u32, &0u32);
 
     let retry = s.registry.try_attest(
-        &s.vault,
-        &s.factory_id,
-        &s.builder,
-        &1u64,
-        &Outcome::Completed,
-        &100i128,
-        &10i128,
-        &2u32,
-        &2u32,
+        &s.vault, &s.factory_id, &s.builder, &1u64,
+        &Outcome::Completed, &100i128, &10i128, &2u32, &2u32,
     );
     assert!(retry.is_err(), "rewriting a closed record must fail");
 
-    // The original stands.
-    let record = s.registry.get_record(&1u64);
+    let record = s.registry.get_record(&s.vault);
     assert_eq!(record.outcome, Outcome::FailedWithForfeiture);
     assert_eq!(record.milestones_approved, 0);
 }
@@ -154,18 +155,11 @@ fn rejects_writes_from_contracts_the_factory_does_not_know() {
     let impostor = Address::generate(&s.env);
 
     let result = s.registry.try_attest(
-        &impostor,
-        &s.factory_id,
-        &s.builder,
-        &99u64,
-        &Outcome::Completed,
-        &1_000i128,
-        &10i128,
-        &1u32,
-        &1u32,
+        &impostor, &s.factory_id, &s.builder, &99u64,
+        &Outcome::Completed, &1_000i128, &10i128, &1u32, &1u32,
     );
     assert!(result.is_err(), "only factory-deployed vaults may attest");
-    assert!(!s.registry.has_record(&99u64));
+    assert!(!s.registry.has_record(&impostor));
 }
 
 #[test]
@@ -174,29 +168,15 @@ fn rejects_incoherent_records() {
 
     // More milestones approved than exist.
     let bad = s.registry.try_attest(
-        &s.vault,
-        &s.factory_id,
-        &s.builder,
-        &1u64,
-        &Outcome::Completed,
-        &100i128,
-        &10i128,
-        &2u32,
-        &5u32,
+        &s.vault, &s.factory_id, &s.builder, &1u64,
+        &Outcome::Completed, &100i128, &10i128, &2u32, &5u32,
     );
     assert!(bad.is_err());
 
     // Negative raise.
     let negative = s.registry.try_attest(
-        &s.vault,
-        &s.factory_id,
-        &s.builder,
-        &2u64,
-        &Outcome::Completed,
-        &-1i128,
-        &10i128,
-        &1u32,
-        &1u32,
+        &s.vault, &s.factory_id, &s.builder, &2u64,
+        &Outcome::Completed, &-1i128, &10i128, &1u32, &1u32,
     );
     assert!(negative.is_err());
 }
@@ -214,9 +194,10 @@ fn cannot_be_initialized_twice() {
 #[test]
 fn unknown_record_reads_are_reported_not_guessed() {
     let s = setup();
-    assert!(!s.registry.has_record(&42u64));
-    assert!(s.registry.try_get_record(&42u64).is_err());
-    assert_eq!(s.registry.get_builder_projects(&s.builder).len(), 0);
+    let unknown = Address::generate(&s.env);
+    assert!(!s.registry.has_record(&unknown));
+    assert!(s.registry.try_get_record(&unknown).is_err());
+    assert_eq!(s.registry.get_builder_vaults(&s.builder).len(), 0);
     assert_eq!(s.registry.get_builder_summary(&s.builder), (0, 0, 0));
 }
 
@@ -238,32 +219,33 @@ fn naming_an_untrusted_factory_is_refused() {
         &Outcome::Completed, &100i128, &10i128, &1u32, &1u32,
     );
     assert!(result.is_err(), "vouching for yourself is not enough");
-    assert!(!s.registry.has_record(&1u64));
+    assert!(!s.registry.has_record(&s.vault));
 }
 
-/// A factory upgrade must not fragment a builder's history across registries.
+/// The collision H-07 fixes: a second factory restarts its project ids at 1, so
+/// its first vault shares a project_id with the original factory's first. Records
+/// are keyed by vault, so the two coexist — where keying by project_id used to
+/// hit AlreadyAttested and leave the second vault unable to record (and so unable
+/// to settle).
 #[test]
-fn an_added_factory_writes_into_the_same_history() {
+fn a_second_factory_with_a_colliding_project_id_still_records() {
     let s = setup();
 
     s.registry.attest(&s.vault, &s.factory_id, &s.builder, &1u64,
         &Outcome::Completed, &100i128, &10i128, &1u32, &1u32);
 
-    // Platform upgrade: a new factory, and a vault it deployed.
     let next_factory = s.env.register(MockFactory, ());
-    let next_vault = Address::generate(&s.env);
-    let mut vaults = Vec::new(&s.env);
-    vaults.push_back(next_vault.clone());
-    MockFactoryClient::new(&s.env, &next_factory).set_vaults(&vaults);
-
+    let next_vault = one_vault(&s.env, &next_factory);
     s.registry.add_factory(&next_factory);
     assert!(s.registry.is_factory_trusted(&next_factory));
 
-    s.registry.attest(&next_vault, &next_factory, &s.builder, &2u64,
+    // Same project_id (1), a different vault — this used to revert.
+    s.registry.attest(&next_vault, &next_factory, &s.builder, &1u64,
         &Outcome::Completed, &200i128, &20i128, &1u32, &1u32);
 
-    // One continuous record, not two registries to stitch together.
-    assert_eq!(s.registry.get_builder_projects(&s.builder).len(), 2);
+    assert!(s.registry.has_record(&s.vault));
+    assert!(s.registry.has_record(&next_vault));
+    assert_eq!(s.registry.get_builder_vaults(&s.builder).len(), 2);
     assert_eq!(s.registry.get_builder_summary(&s.builder), (2, 0, 0));
 }
 
@@ -274,23 +256,45 @@ fn a_factory_cannot_be_trusted_twice() {
     assert_eq!(s.registry.get_factories().len(), 1);
 }
 
-/// Removing a factory would orphan every record its vaults had written, so no
-/// such entrypoint exists. This test exists to make that deliberate.
+/// M-04: a compromised factory can be de-authorized. Its future writes stop;
+/// every record its vaults already wrote stays readable, because no read
+/// consults the trusted set.
 #[test]
-fn trust_is_append_only() {
+fn a_disabled_factory_can_no_longer_attest_but_its_records_remain() {
     let s = setup();
+
     s.registry.attest(&s.vault, &s.factory_id, &s.builder, &1u64,
         &Outcome::FailedWithForfeiture, &100i128, &10i128, &2u32, &0u32);
 
+    // A second factory is trusted and writes a record.
     let next_factory = s.env.register(MockFactory, ());
+    let next_vault = one_vault(&s.env, &next_factory);
     s.registry.add_factory(&next_factory);
+    s.registry.attest(&next_vault, &next_factory, &s.builder, &2u64,
+        &Outcome::Completed, &200i128, &20i128, &1u32, &1u32);
 
-    // The original factory is still trusted; adding never displaces.
-    assert!(s.registry.is_factory_trusted(&s.factory_id));
-    assert!(s.registry.is_factory_trusted(&next_factory));
-    assert_eq!(s.registry.get_factories().len(), 2);
-    // And the record it wrote is untouched.
-    assert_eq!(s.registry.get_record(&1u64).outcome, Outcome::FailedWithForfeiture);
+    // Now disable it.
+    s.registry.disable_factory(&next_factory);
+    assert!(!s.registry.is_factory_trusted(&next_factory));
+    assert!(s.registry.is_factory_trusted(&s.factory_id), "disabling one leaves the other");
+
+    // Its vaults can no longer write.
+    let later_vault = one_vault(&s.env, &next_factory);
+    let refused = s.registry.try_attest(&later_vault, &next_factory, &s.builder, &3u64,
+        &Outcome::Completed, &50i128, &5i128, &1u32, &1u32);
+    assert!(refused.is_err(), "a disabled factory's vaults cannot attest");
+
+    // But both existing records stay intact and readable.
+    assert_eq!(s.registry.get_record(&s.vault).outcome, Outcome::FailedWithForfeiture);
+    assert_eq!(s.registry.get_record(&next_vault).outcome, Outcome::Completed);
+    assert_eq!(s.registry.get_builder_summary(&s.builder), (1, 1, 0));
+}
+
+#[test]
+fn disabling_an_untrusted_factory_is_refused() {
+    let s = setup();
+    let stranger = Address::generate(&s.env);
+    assert!(s.registry.try_disable_factory(&stranger).is_err());
 }
 
 #[test]
