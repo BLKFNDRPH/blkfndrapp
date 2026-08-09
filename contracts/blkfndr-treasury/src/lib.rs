@@ -1050,15 +1050,18 @@ impl Treasury {
             panic_with_error!(&env, Error::NothingToRelease);
         }
 
+        // Set the 30-day clock before the transfer (checks-effects-interactions):
+        // a re-entrant token then fails the interval gate and cannot siphon
+        // additional tranches within a single call.
+        env.storage()
+            .instance()
+            .set(&DataKey::LastOpsFundingAt, &env.ledger().timestamp());
+
         token::Client::new(&env, &terms.token).transfer(
             &env.current_contract_address(),
             &terms.vault,
             &amount,
         );
-
-        env.storage()
-            .instance()
-            .set(&DataKey::LastOpsFundingAt, &env.ledger().timestamp());
 
         env.events().publish(
             (symbol_short!("OPSFUND"), symbol_short!("SENT")),

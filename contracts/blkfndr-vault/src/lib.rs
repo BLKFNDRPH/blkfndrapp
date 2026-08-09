@@ -56,6 +56,7 @@ pub enum Error {
     VotingWindowNotElapsed   = 22,
     MilestoneFailed          = 23,
     BelowMinimumContribution = 24,
+    NotStalled               = 25,
 }
 
 const LEDGERS_TO_LIVE: u32 = 518_400; // ~30 days
@@ -69,6 +70,16 @@ const RELEASE_THRESHOLD_BPS: i128 = 5_000;
 /// Ceiling on any paged read, so a caller cannot ask for a page large enough
 /// to exceed the resource budget.
 const MAX_PAGE: u32 = 100;
+/// Ceiling on the milestone count. `release_milestone` scans every milestone and
+/// `write_attestation` loops them, both re-serialising the whole `ProjectInfo`,
+/// so an unbounded list could make a vault impossible to settle. A builder with
+/// more phases than this splits the project.
+const MAX_MILESTONES: u32 = 20;
+/// How long a funded vault may sit without the builder opening the next
+/// milestone vote before anyone may reclaim it for its contributors. A funded
+/// vault advances only on a builder action no one else can take, so without a
+/// timeout an abandoned project would strand contributor funds forever.
+const BUILDER_STALL_WINDOW: u64 = 90 * 24 * 60 * 60; // 90 days
 
 #[contracttype]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -164,6 +175,10 @@ pub enum DataKey {
     Contributors,
     /// Whether a contributor has voted on a given milestone.
     Vote(u32, Address),
+    /// Unix seconds of the last builder progress: set when the raise is funded
+    /// and on each release. `settle_stalled` measures the abandonment window
+    /// against this.
+    LastActivity,
 }
 
 #[contractclient(name = "IdentityRegistryClient")]
@@ -304,6 +319,11 @@ fn sync_state(env: &Env) -> VaultState {
 
     match current {
         VaultState::Funded => {
+            // Start the abandonment clock: the builder must now open the first
+            // milestone vote, and settle_stalled measures inactivity from here.
+            env.storage()
+                .instance()
+                .set(&DataKey::LastActivity, &env.ledger().timestamp());
             env.events().publish(
                 (symbol_short!("VAULT"), symbol_short!("FUNDED")),
                 (info.project_id, info.raised_amount),
@@ -382,6 +402,7 @@ impl BlkfndrVault {
             || config.min_contribution <= 0
             || config.voting_window_secs == 0
             || config.milestones.is_empty()
+            || config.milestones.len() > MAX_MILESTONES
             || config.deadline <= env.ledger().timestamp()
         {
             panic_with_error!(&env, Error::InvalidConfiguration);
@@ -540,6 +561,12 @@ impl BlkfndrVault {
 
         if goal_reached {
             save_state(&env, VaultState::Funded);
+            // Start the abandonment clock the moment the raise closes early, the
+            // same as the deadline-reached path in sync_state. settle_stalled
+            // measures builder inactivity from here.
+            env.storage()
+                .instance()
+                .set(&DataKey::LastActivity, &env.ledger().timestamp());
             env.events().publish(
                 (symbol_short!("VAULT"), symbol_short!("FUNDED")),
                 (info.project_id, info.raised_amount),
@@ -582,7 +609,12 @@ impl BlkfndrVault {
             panic_with_error!(&env, Error::NoFundsToRefund);
         }
 
+        // Persist bond_returned before the external attestation call and the
+        // transfer (checks-effects-interactions). A re-entrant attestation
+        // registry then reads bond_returned == true from storage and cannot
+        // drive a second payout.
         info.bond_returned = true;
+        save_info(&env, &info);
         write_attestation(&env, &mut info, Outcome::FailedToFund);
         save_info(&env, &info);
 
@@ -747,6 +779,11 @@ impl BlkfndrVault {
             VaultState::Active
         };
         save_state(&env, next_state);
+        // Builder made progress — reset the abandonment clock for the next
+        // milestone. Harmless once Completed.
+        env.storage()
+            .instance()
+            .set(&DataKey::LastActivity, &env.ledger().timestamp());
 
         let token_client = token::Client::new(&env, &info.token);
 
@@ -832,6 +869,79 @@ impl BlkfndrVault {
                 approved_weight,
                 info.raised_amount,
             ),
+        );
+        env.events().publish(
+            (symbol_short!("BOND"), symbol_short!("SLASHED")),
+            (info.project_id, info.bond_amount),
+        );
+    }
+
+    /// Reclaim an abandoned funded project for its contributors.
+    ///
+    /// Permissionless recovery. A funded vault advances only when the builder
+    /// opens a milestone vote — something no one else can do — so a builder who
+    /// opens none (a lost key, or spite) would otherwise strand contributor
+    /// funds forever: every path to `Refunding` requires a vote to have been
+    /// opened. After `BUILDER_STALL_WINDOW` of inactivity since funding, or since
+    /// the last release, anyone may fail the project. The bond is forfeited,
+    /// exactly as a lapsed milestone forfeits it, and contributors reclaim their
+    /// principal through `claim_refund`.
+    pub fn settle_stalled(env: Env) {
+        extend_instance_ttl(&env);
+        let state = sync_state(&env);
+        if state != VaultState::Funded && state != VaultState::Active {
+            panic_with_error!(&env, Error::InvalidStatus);
+        }
+
+        let last_activity: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::LastActivity)
+            .unwrap_or(0);
+        if last_activity == 0
+            || env.ledger().timestamp() < last_activity + BUILDER_STALL_WINDOW
+        {
+            panic_with_error!(&env, Error::NotStalled);
+        }
+
+        let mut info = load_info(&env);
+
+        // If a milestone vote is open and still inside its window, the builder is
+        // active — this is not abandonment. A window that has already elapsed is
+        // settle_lapsed_milestone's job, not this one.
+        for i in 0..info.milestones.len() {
+            let m = info.milestones.get(i).unwrap();
+            if !m.released
+                && !m.failed
+                && m.vote_opens_at != 0
+                && env.ledger().timestamp() < m.vote_opens_at + info.voting_window_secs
+            {
+                panic_with_error!(&env, Error::VotingAlreadyOpen);
+            }
+        }
+
+        // Fail the first still-open milestone. A vault with every milestone
+        // released is Completed, not Funded/Active, so one always exists here.
+        for i in 0..info.milestones.len() {
+            let mut m = info.milestones.get(i).unwrap();
+            if !m.released && !m.failed {
+                m.failed = true;
+                info.milestones.set(i, m);
+                break;
+            }
+        }
+
+        // Move to Refunding before the external attestation call (CEI). No funds
+        // move here — refunds are pulled separately via claim_refund — but the
+        // ordering keeps a re-entrant registry from finding a still-fundable
+        // vault.
+        save_state(&env, VaultState::Refunding);
+        write_attestation(&env, &mut info, Outcome::FailedWithForfeiture);
+        save_info(&env, &info);
+
+        env.events().publish(
+            (symbol_short!("VAULT"), symbol_short!("STALLED")),
+            (info.project_id, last_activity),
         );
         env.events().publish(
             (symbol_short!("BOND"), symbol_short!("SLASHED")),

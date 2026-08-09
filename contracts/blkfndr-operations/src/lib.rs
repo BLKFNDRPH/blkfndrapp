@@ -341,6 +341,11 @@ impl Operations {
             panic_with_error!(&env, Error::ThresholdNotMet);
         }
 
+        // Clear the proposal before executing (checks-effects-interactions). A
+        // Release to a malicious token that re-enters execute then finds no open
+        // proposal and reverts, so one carried vote can never pay more than once.
+        env.storage().instance().remove(&DataKey::Proposal);
+
         match &proposal.action {
             GovernedAction::Release(terms) => {
                 let client = token::Client::new(&env, &terms.token);
@@ -394,8 +399,6 @@ impl Operations {
                 );
             }
         }
-
-        env.storage().instance().remove(&DataKey::Proposal);
 
         env.events().publish(
             (symbol_short!("PROPOSAL"), symbol_short!("APPLIED")),
