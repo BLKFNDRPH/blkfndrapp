@@ -24,7 +24,7 @@ Release authority is contribution-weighted rather than held by appointed signers
 
 | Area | State |
 |---|---|
-| Bonded vault with contributor-weighted release | ✅ Deployed to testnet, 81 tests passing |
+| Bonded vault with contributor-weighted release | ✅ Deployed to testnet, 38 tests passing |
 | Builder attestation registry | ✅ Deployed to testnet |
 | Platform treasury + owner-voted governance (fee, bond, ops funding) | ✅ Deployed to testnet, 45 tests passing |
 | Operations Vault (governed gas budget) + managed KYC-attestor keys | ✅ Deployed to testnet, 26 tests passing |
@@ -105,7 +105,7 @@ The treasury is the factory's fee wallet, so the app reads its address from the 
 The **vault is not deployed as a contract**. Its wasm is uploaded and the factory instantiates one instance per project from that hash:
 
 ```
-blkfndr_vault.wasm  sha256:9c20bca3e364d26240f83f03c11bd40ee30092fa2520bb1e767ba2c9a596db41
+blkfndr_vault.wasm  sha256:70e5f3a81a3d66155b46780f0c7bc1bd7574721d5477865f7a2cd471d9746b53
 ```
 
 A reviewer checks any project's vault against that hash. `scripts/build-contracts.sh` reproduces it from source.

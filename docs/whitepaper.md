@@ -199,7 +199,7 @@ Each of these changes the legal character of a contribution and none will ship a
 
 The properties in [Section 4](#4-release-authority) are enforced by contract logic, not by application code or platform policy. The admin roster contract exists for platform administration and is deliberately absent from the release path.
 
-The bonded-vault contract alone stands at **81 passing tests**, with the treasury and Operations Vault adding a further **45** and **26**, covering the threshold arithmetic, the weight cap, the distinct-wallet requirement, lapse handling, forfeiture, refund accounting, and the two-thirds governance model.
+The bonded-vault contract alone stands at **38 passing tests**, with the treasury and Operations Vault adding a further **45** and **26**, covering the threshold arithmetic, the weight cap, the distinct-wallet requirement, lapse handling, forfeiture, refund accounting, and the two-thirds governance model.
 
 ### **6.2 Off-chain**
 
@@ -216,7 +216,7 @@ Authorization is enforced by the database, not only by the application:
 A reader should not have to take this document's word for any of it. The vault wasm hash is published, and `scripts/build-contracts.sh` reproduces it from source:
 
 ```
-blkfndr_vault.wasm  sha256:9c20bca3e364d26240f83f03c11bd40ee30092fa2520bb1e767ba2c9a596db41
+blkfndr_vault.wasm  sha256:70e5f3a81a3d66155b46780f0c7bc1bd7574721d5477865f7a2cd471d9746b53
 ```
 
 Any project's vault can be checked against that hash. Deployed contract addresses are listed in the [README](../README.md) and are viewable on stellar.expert.
