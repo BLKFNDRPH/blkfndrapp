@@ -44,10 +44,9 @@ const XLM = 10_000_000;
 interface ActionSpec {
   key: string;
   label: string;
-  /** Shown beside the field. Empty for an address. */
+  /** Shown beside the field. */
   unit: string;
   placeholder: string;
-  mono?: boolean;
   hint: string;
   valid: (v: string) => boolean;
   /** Human input to the contract's action shape and units. */
@@ -56,6 +55,15 @@ interface ActionSpec {
 
 const isNum = (v: string) => v.trim() !== "" && !Number.isNaN(Number(v));
 
+// Only the economic terms are here. The contract can also repoint the fee
+// destination, the identity registry and factory admin — but those are core
+// wiring, fixed when the platform is deployed. Fees flow to the treasury, vaults
+// check the identity registry, the factory has its admin, and none of that is
+// meant to move in normal operation; a wrong address there does real damage a
+// wrong fee does not. So they are not surfaced as routine proposals. The
+// capability stays in the contract for a genuine emergency, exercised
+// deliberately by a key holder rather than a click, the same way the wasm-hash
+// upgrade was always kept out of this list.
 const ACTIONS: ActionSpec[] = [
   {
     key: "SetFee",
@@ -92,36 +100,6 @@ const ACTIONS: ActionSpec[] = [
     hint: "How long contributors have to vote on a milestone once it opens.",
     valid: (v) => isNum(v) && Number(v) > 0,
     toAction: (v) => ({ SetVotingWindow: BigInt(Math.round(Number(v) * 86_400)) }),
-  },
-  {
-    key: "SetFeeWallet",
-    label: "Fee destination",
-    unit: "",
-    placeholder: "C… vault address",
-    mono: true,
-    hint: "Where listing fees go. Pointing this away is how this treasury is eventually replaced.",
-    valid: (v) => /^C[A-Z2-7]{55}$/.test(v.trim()),
-    toAction: (v) => ({ SetFeeWallet: v.trim() }),
-  },
-  {
-    key: "SetIdentityRegistry",
-    label: "Identity registry",
-    unit: "",
-    placeholder: "C… contract address",
-    mono: true,
-    hint: "Which contract vouches for builder identity.",
-    valid: (v) => /^C[A-Z2-7]{55}$/.test(v.trim()),
-    toAction: (v) => ({ SetIdentityRegistry: v.trim() }),
-  },
-  {
-    key: "TransferAdmin",
-    label: "Hand factory admin away",
-    unit: "",
-    placeholder: "G… or C… address",
-    mono: true,
-    hint: "The escape hatch: returns control of the factory to an address outside this treasury.",
-    valid: (v) => /^[GC][A-Z2-7]{55}$/.test(v.trim()),
-    toAction: (v) => ({ TransferAdmin: v.trim() }),
   },
 ];
 
@@ -237,6 +215,64 @@ export function TreasuryGovernancePanel() {
   // A proposal that is open and still being voted on holds the single slot.
   const slotTaken = Boolean(proposal && !expired && !proposal.carried);
 
+  // One row: label, a value in human units, a Propose.
+  const proposeRow = (a: ActionSpec) => {
+    const value = drafts[a.key] ?? "";
+    const ready = value.trim() !== "" && a.valid(value);
+    return (
+      <div key={a.key} className="flex flex-wrap items-center gap-2">
+        <div className="w-44 shrink-0 text-sm font-medium">{a.label}</div>
+        <div className="relative min-w-0 flex-1 sm:max-w-[260px]">
+          <Input
+            value={value}
+            onChange={(e) => setDrafts((d) => ({ ...d, [a.key]: e.target.value }))}
+            placeholder={a.placeholder}
+            title={a.hint}
+            disabled={slotTaken}
+            className="pr-14"
+            inputMode="decimal"
+            spellCheck={false}
+            aria-label={`New ${a.label.toLowerCase()}`}
+          />
+          {a.unit && (
+            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+              {a.unit}
+            </span>
+          )}
+        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={busy !== null || slotTaken || !ready}
+          title={
+            slotTaken
+              ? "A proposal is already open — one at a time"
+              : !ready
+                ? a.hint
+                : `Propose a new ${a.label.toLowerCase()}`
+          }
+          onClick={() =>
+            act(`propose:${a.key}`, "Proposal opened", async (c) =>
+              send(
+                await (c as any).propose({
+                  proposer: freighterWalletAddress,
+                  action: a.toAction(value),
+                }),
+              ),
+            )
+          }
+        >
+          {busy === `propose:${a.key}` ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+          ) : (
+            <Gavel className="h-3.5 w-3.5" aria-hidden="true" />
+          )}
+          <span className="ml-1.5">Propose</span>
+        </Button>
+      </div>
+    );
+  };
+
   return (
     <Card>
       <CardHeader>
@@ -351,66 +387,7 @@ export function TreasuryGovernancePanel() {
                     A proposal is open. Settle it before starting another.
                   </p>
                 )}
-                {ACTIONS.map((a) => {
-                  const value = drafts[a.key] ?? "";
-                  const ready = value.trim() !== "" && a.valid(value);
-                  return (
-                    <div key={a.key} className="flex flex-wrap items-center gap-2">
-                      <div className="w-44 shrink-0 text-sm font-medium">
-                        {a.label}
-                      </div>
-                      <div className="relative min-w-0 flex-1 sm:max-w-[260px]">
-                        <Input
-                          value={value}
-                          onChange={(e) =>
-                            setDrafts((d) => ({ ...d, [a.key]: e.target.value }))
-                          }
-                          placeholder={a.placeholder}
-                          title={a.hint}
-                          disabled={slotTaken}
-                          className={a.mono ? "pr-3 font-mono text-xs" : "pr-14"}
-                          inputMode={a.unit ? "decimal" : "text"}
-                          spellCheck={false}
-                          aria-label={`New ${a.label.toLowerCase()}`}
-                        />
-                        {a.unit && (
-                          <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
-                            {a.unit}
-                          </span>
-                        )}
-                      </div>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={busy !== null || slotTaken || !ready}
-                        title={
-                          slotTaken
-                            ? "A proposal is already open — one at a time"
-                            : !ready
-                              ? a.hint
-                              : `Propose a new ${a.label.toLowerCase()}`
-                        }
-                        onClick={() =>
-                          act(`propose:${a.key}`, "Proposal opened", async (c) =>
-                            send(
-                              await (c as any).propose({
-                                proposer: freighterWalletAddress,
-                                action: a.toAction(value),
-                              }),
-                            ),
-                          )
-                        }
-                      >
-                        {busy === `propose:${a.key}` ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-                        ) : (
-                          <Gavel className="h-3.5 w-3.5" aria-hidden="true" />
-                        )}
-                        <span className="ml-1.5">Propose</span>
-                      </Button>
-                    </div>
-                  );
-                })}
+                {ACTIONS.map(proposeRow)}
               </div>
             ) : (
               <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3">
