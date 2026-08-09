@@ -352,10 +352,15 @@ export function useStellarContract() {
     [],
   );
 
+  // The connected wallet is the attestor — the registry now names the caller so
+  // it can check them against its roster. It must be the admin or an authorised
+  // attestor, or the ledger rejects the write. The wallet signs and identifies
+  // itself in the same call.
   const attestKyc = useCallback(
     async ({ address, kycHash }: { address: string; kycHash: Buffer }) => {
-      const admin = requireWallet();
-      const tx = await identityClient(signerFor(admin)).attest({
+      const attestor = requireWallet();
+      const tx = await identityClient(signerFor(attestor)).attest({
+        attestor,
         address,
         kyc_hash: kycHash,
       });
@@ -366,8 +371,11 @@ export function useStellarContract() {
 
   const revokeKyc = useCallback(
     async (address: string) => {
-      const admin = requireWallet();
-      const tx = await identityClient(signerFor(admin)).revoke({ address });
+      const attestor = requireWallet();
+      const tx = await identityClient(signerFor(attestor)).revoke({
+        attestor,
+        address,
+      });
       return signAndSend(tx);
     },
     [requireWallet],
