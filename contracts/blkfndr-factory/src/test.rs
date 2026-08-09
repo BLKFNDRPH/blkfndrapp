@@ -327,7 +327,7 @@ mod deployment {
         s.env.ledger().set_timestamp(now + 31 * 24 * 60 * 60);
         vault.settle();
 
-        let record = s.registry.get_record(&1u64);
+        let record = s.registry.get_record(&vault_address);
         assert_eq!(record.builder, s.builder);
         assert_eq!(record.vault, vault_address);
         assert_eq!(s.registry.get_builder_summary(&s.builder), (0, 0, 1));

@@ -677,7 +677,7 @@ fn completion_writes_a_permanent_builder_record() {
         s.vault.release_milestone(&id);
     }
 
-    let record = s.registry.get_record(&42u64);
+    let record = s.registry.get_record(&s.vault_address);
     assert_eq!(record.builder, s.builder);
     assert_eq!(record.outcome, RegistryOutcome::Completed);
     assert_eq!(record.total_raised, GOAL);
@@ -703,7 +703,7 @@ fn forfeiture_writes_a_record_against_the_builder() {
     advance(&s.env, VOTING_WINDOW + 1);
     s.vault.settle_lapsed_milestone(&2u32);
 
-    let record = s.registry.get_record(&42u64);
+    let record = s.registry.get_record(&s.vault_address);
     assert_eq!(record.outcome, RegistryOutcome::FailedWithForfeiture);
     assert_eq!(record.milestones_approved, 1, "one of three delivered");
     assert_eq!(s.registry.get_builder_summary(&s.builder), (0, 1, 0));
@@ -717,7 +717,7 @@ fn failing_to_fund_is_recorded_without_blaming_the_builder() {
     advance(&s.env, DEADLINE + 1);
     s.vault.settle();
 
-    let record = s.registry.get_record(&42u64);
+    let record = s.registry.get_record(&s.vault_address);
     assert_eq!(record.outcome, RegistryOutcome::FailedToFund);
     assert_eq!(record.milestones_approved, 0);
     // Counted separately from a forfeiture, because it is not a default.
@@ -733,14 +733,14 @@ fn a_projects_record_is_written_once_and_never_amended() {
     advance(&s.env, VOTING_WINDOW + 1);
     s.vault.settle_lapsed_milestone(&1u32);
 
-    let first = s.registry.get_record(&42u64);
+    let first = s.registry.get_record(&s.vault_address);
     assert_eq!(first.outcome, RegistryOutcome::FailedWithForfeiture);
 
     // Draining the vault afterwards must not rewrite history.
     s.vault.claim_refund(&s.alice);
     s.vault.settle();
 
-    let after = s.registry.get_record(&42u64);
+    let after = s.registry.get_record(&s.vault_address);
     assert_eq!(after.outcome, RegistryOutcome::FailedWithForfeiture);
     assert_eq!(after.closed_at, first.closed_at);
 }

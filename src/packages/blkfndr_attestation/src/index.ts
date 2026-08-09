@@ -42,7 +42,8 @@ export const Errors = {
   6: {message:"InvalidRecord"},
   7: {message:"UntrustedFactory"},
   8: {message:"FactoryAlreadyTrusted"},
-  9: {message:"TooManyFactories"}
+  9: {message:"TooManyFactories"},
+  10: {message:"FactoryNotTrusted"}
 }
 
 /**
@@ -70,7 +71,7 @@ export interface Attestation {
   vault: string;
 }
 
-export type DataKey = {tag: "Admin", values: void} | {tag: "Factories", values: void} | {tag: "Record", values: readonly [u64]} | {tag: "BuilderProjects", values: readonly [string]};
+export type DataKey = {tag: "Admin", values: void} | {tag: "Factories", values: void} | {tag: "Record", values: readonly [string]} | {tag: "BuilderVaults", values: readonly [string]};
 
 export interface Client {
   /**
@@ -85,14 +86,22 @@ export interface Client {
   /**
    * Construct and simulate a add_factory transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
    * Trust an additional factory, so a platform upgrade keeps writing into
-   * the same history.
-   * 
-   * Append-only by design. There is no counterpart that removes a factory,
-   * because doing so would orphan every record its vaults had already
-   * written — an admin could quietly erase a builder's history without
-   * touching a single record.
+   * the same history. Reversible with disable_factory.
    */
   add_factory: ({factory}: {factory: string}, options?: MethodOptions) => Promise<AssembledTransaction<null>>
+
+  /**
+   * Construct and simulate a disable_factory transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+   * Stop trusting a factory: its vaults may no longer write new records.
+   * 
+   * Safe, and here for containment. No read path consults the trusted set —
+   * get_record, has_record and the builder history all read records directly
+   * — so disabling a factory stops only its future writes; every record its
+   * vaults already wrote stays intact and readable. Without this a compromised
+   * factory key (which can point new vaults at malicious wasm) could mint
+   * false records forever with no way to revoke it.
+   */
+  disable_factory: ({factory}: {factory: string}, options?: MethodOptions) => Promise<AssembledTransaction<null>>
 
   /**
    * Construct and simulate a transfer_admin transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
@@ -111,18 +120,19 @@ export interface Client {
   /**
    * Construct and simulate a get_record transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
    */
-  get_record: ({project_id}: {project_id: u64}, options?: MethodOptions) => Promise<AssembledTransaction<Attestation>>
+  get_record: ({vault}: {vault: string}, options?: MethodOptions) => Promise<AssembledTransaction<Attestation>>
 
   /**
    * Construct and simulate a has_record transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
    */
-  has_record: ({project_id}: {project_id: u64}, options?: MethodOptions) => Promise<AssembledTransaction<boolean>>
+  has_record: ({vault}: {vault: string}, options?: MethodOptions) => Promise<AssembledTransaction<boolean>>
 
   /**
-   * Construct and simulate a get_builder_projects transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
-   * Every project id this builder has closed, in the order they closed.
+   * Construct and simulate a get_builder_vaults transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+   * Every vault this builder has closed, in the order they closed. The
+   * records themselves — read via get_builder_history — carry the project ids.
    */
-  get_builder_projects: ({builder}: {builder: string}, options?: MethodOptions) => Promise<AssembledTransaction<Array<u64>>>
+  get_builder_vaults: ({builder}: {builder: string}, options?: MethodOptions) => Promise<AssembledTransaction<Array<string>>>
 
   /**
    * Construct and simulate a get_builder_history transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
@@ -175,17 +185,18 @@ export class Client extends ContractClient {
   }
   constructor(public readonly options: ContractClientOptions) {
     super(
-      new ContractSpec([ "AAAABAAAAAAAAAAAAAAABUVycm9yAAAAAAAACQAAAAAAAAASQWxyZWFkeUluaXRpYWxpemVkAAAAAAABAAAAAAAAAA5Ob3RJbml0aWFsaXplZAAAAAAAAgAAAAAAAAAJTm90QVZhdWx0AAAAAAAAAwAAAAAAAAAPQWxyZWFkeUF0dGVzdGVkAAAAAAQAAAAAAAAADlJlY29yZE5vdEZvdW5kAAAAAAAFAAAAAAAAAA1JbnZhbGlkUmVjb3JkAAAAAAAABgAAAAAAAAAQVW50cnVzdGVkRmFjdG9yeQAAAAcAAAAAAAAAFUZhY3RvcnlBbHJlYWR5VHJ1c3RlZAAAAAAAAAgAAAAAAAAAEFRvb01hbnlGYWN0b3JpZXMAAAAJ",
+      new ContractSpec([ "AAAABAAAAAAAAAAAAAAABUVycm9yAAAAAAAACgAAAAAAAAASQWxyZWFkeUluaXRpYWxpemVkAAAAAAABAAAAAAAAAA5Ob3RJbml0aWFsaXplZAAAAAAAAgAAAAAAAAAJTm90QVZhdWx0AAAAAAAAAwAAAAAAAAAPQWxyZWFkeUF0dGVzdGVkAAAAAAQAAAAAAAAADlJlY29yZE5vdEZvdW5kAAAAAAAFAAAAAAAAAA1JbnZhbGlkUmVjb3JkAAAAAAAABgAAAAAAAAAQVW50cnVzdGVkRmFjdG9yeQAAAAcAAAAAAAAAFUZhY3RvcnlBbHJlYWR5VHJ1c3RlZAAAAAAAAAgAAAAAAAAAEFRvb01hbnlGYWN0b3JpZXMAAAAJAAAAAAAAABFGYWN0b3J5Tm90VHJ1c3RlZAAAAAAAAAo=",
         "AAAAAwAAABRIb3cgYSBwcm9qZWN0IGVuZGVkLgAAAAAAAAAHT3V0Y29tZQAAAAADAAAAOkV2ZXJ5IG1pbGVzdG9uZSB3YXMgYXBwcm92ZWQgYnkgY29udHJpYnV0b3JzIGFuZCByZWxlYXNlZC4AAAAAAAlDb21wbGV0ZWQAAAAAAAAAAAAAR0EgbWlsZXN0b25lIGZhaWxlZDsgdGhlIHBlcmZvcm1hbmNlIGJvbmQgd2FzIGZvcmZlaXRlZCB0byBjb250cmlidXRvcnMuAAAAABRGYWlsZWRXaXRoRm9yZmVpdHVyZQAAAAEAAACJVGhlIGZ1bmRpbmcgZ29hbCB3YXMgbmV2ZXIgbWV0OyBjb250cmlidXRpb25zIHdlcmUgcmV0dXJuZWQgYW5kIHRoZSBib25kCndlbnQgYmFjayB0byB0aGUgYnVpbGRlci4gTm8gZmF1bHQgYXR0YWNoZXMgdG8gdGhlIGJ1aWxkZXIgaGVyZS4AAAAAAAAMRmFpbGVkVG9GdW5kAAAAAg==",
         "AAAAAQAAAC5UaGUgcGVybWFuZW50IHJlY29yZCBvZiBvbmUgcHJvamVjdCdzIG91dGNvbWUuAAAAAAAAAAAAC0F0dGVzdGF0aW9uAAAAAAkAAAAAAAAAC2JvbmRfcG9zdGVkAAAAAAsAAAAAAAAAB2J1aWxkZXIAAAAAEwAAAAAAAAAJY2xvc2VkX2F0AAAAAAAABgAAAAAAAAATbWlsZXN0b25lc19hcHByb3ZlZAAAAAAEAAAAAAAAABBtaWxlc3RvbmVzX3RvdGFsAAAABAAAAAAAAAAHb3V0Y29tZQAAAAfQAAAAB091dGNvbWUAAAAAAAAAAApwcm9qZWN0X2lkAAAAAAAGAAAAAAAAAAx0b3RhbF9yYWlzZWQAAAALAAAAAAAAAAV2YXVsdAAAAAAAABM=",
-        "AAAAAgAAAAAAAAAAAAAAB0RhdGFLZXkAAAAABAAAAAAAAAA6TWF5IGFkZCB0cnVzdGVkIGZhY3Rvcmllcy4gRGVsaWJlcmF0ZWx5IGNhbm5vdCByZW1vdmUgb25lLgAAAAAABUFkbWluAAAAAAAAAAAAAaJGYWN0b3JpZXMgd2hvc2UgdmF1bHRzIGFyZSBwZXJtaXR0ZWQgdG8gd3JpdGUuCgpBIHNldCByYXRoZXIgdGhhbiBhIHNpbmdsZSBhZGRyZXNzIHNvIHRoYXQgYSBmYWN0b3J5IHVwZ3JhZGUgZG9lcyBub3QKb3JwaGFuIHRoZSBoaXN0b3J5OiBuZXcgdmF1bHRzIGNvbWUgZnJvbSBhIG5ldyBmYWN0b3J5LCBhbmQgaWYgdGhpcwpyZWdpc3RyeSBjb3VsZCBvbmx5IGV2ZXIgdHJ1c3QgdGhlIG9yaWdpbmFsIG9uZSwgYSBzZWNvbmQgcmVnaXN0cnkgd291bGQKYmUgbmVlZGVkIGFuZCBhIGJ1aWxkZXIncyByZWNvcmQgd291bGQgc3BsaXQgYWNyb3NzIHRoZSB0d28uIEEgcmVjb3JkCnRoYXQgZnJhZ21lbnRzIG9uIGV2ZXJ5IHBsYXRmb3JtIHVwZ3JhZGUgaXMgbm90IHBvcnRhYmxlLCB3aGljaCBpcyB0aGUKd2hvbGUgcG9pbnQgb2YgaXQuAAAAAAAJRmFjdG9yaWVzAAAAAAAAAQAAACNBdHRlc3RhdGlvbiBmb3IgYSBnaXZlbiBwcm9qZWN0IGlkLgAAAAAGUmVjb3JkAAAAAAABAAAABgAAAAEAAAAmRXZlcnkgcHJvamVjdCBpZCBhIGJ1aWxkZXIgaGFzIGNsb3NlZC4AAAAAAA9CdWlsZGVyUHJvamVjdHMAAAAAAQAAABM=",
+        "AAAAAgAAAAAAAAAAAAAAB0RhdGFLZXkAAAAABAAAAAAAAAAmTWF5IGFkZCBhbmQgZGlzYWJsZSB0cnVzdGVkIGZhY3Rvcmllcy4AAAAAAAVBZG1pbgAAAAAAAAAAAAE/RmFjdG9yaWVzIHdob3NlIHZhdWx0cyBhcmUgcGVybWl0dGVkIHRvIHdyaXRlLgoKQSBzZXQgcmF0aGVyIHRoYW4gYSBzaW5nbGUgYWRkcmVzcyBzbyB0aGF0IGEgZmFjdG9yeSB1cGdyYWRlIGRvZXMgbm90Cm9ycGhhbiB0aGUgaGlzdG9yeTogbmV3IHZhdWx0cyBjb21lIGZyb20gYSBuZXcgZmFjdG9yeSwgYW5kIGlmIHRoaXMKcmVnaXN0cnkgY291bGQgb25seSBldmVyIHRydXN0IHRoZSBvcmlnaW5hbCBvbmUsIGEgc2Vjb25kIHJlZ2lzdHJ5IHdvdWxkCmJlIG5lZWRlZCBhbmQgYSBidWlsZGVyJ3MgcmVjb3JkIHdvdWxkIHNwbGl0IGFjcm9zcyB0aGUgdHdvLgAAAAAJRmFjdG9yaWVzAAAAAAAAAQAAAXNBdHRlc3RhdGlvbiBmb3IgYSBnaXZlbiB2YXVsdC4KCktleWVkIGJ5IHRoZSB2YXVsdCdzIGFkZHJlc3Mg4oCUIGdsb2JhbGx5IHVuaXF1ZSDigJQgcmF0aGVyIHRoYW4gYnkgcHJvamVjdAppZC4gUHJvamVjdCBpZHMgcmVzdGFydCBhdCAxIGluIGV2ZXJ5IGZhY3RvcnksIHNvIGtleWluZyByZWNvcmRzIGJ5IHRoZW0KY29sbGlkZXMgdGhlIG1vbWVudCBhIHNlY29uZCBmYWN0b3J5IGlzIHRydXN0ZWQ6IHRoZSBuZXcgZmFjdG9yeSdzCnByb2plY3QgMSB3b3VsZCBjbGFzaCB3aXRoIHRoZSBvcmlnaW5hbCdzLCBhbmQgdGhlIGNvbGxpZGluZyB2YXVsdCBjb3VsZApuZXZlciB3cml0ZSBpdHMgcmVjb3JkLCBhbmQgc28gY291bGQgbmV2ZXIgc2V0dGxlLgAAAAAGUmVjb3JkAAAAAAABAAAAEwAAAAEAAACCRXZlcnkgdmF1bHQgYSBidWlsZGVyIGhhcyBjbG9zZWQuIFZhdWx0cywgbm90IHByb2plY3QgaWRzLCBmb3IgdGhlIHNhbWUKdW5pcXVlbmVzcyByZWFzb247IGVhY2ggcmVjb3JkIGNhcnJpZXMgaXRzIG93biBwcm9qZWN0IGlkLgAAAAAADUJ1aWxkZXJWYXVsdHMAAAAAAAABAAAAEw==",
         "AAAAAAAAAL5CaW5kIHRoZSByZWdpc3RyeSB0byB0aGUgZmFjdG9yeSB3aG9zZSB2YXVsdHMgbWF5IHdyaXRlIHJlY29yZHMuCgpgYWRtaW5gIG11c3QgYXV0aG9yaXplLCBzbyB0aGUgYmluZGluZyBjYW5ub3QgYmUgZnJvbnQtcnVuIGJ5IHdob2V2ZXIKbm90aWNlcyB0aGUgZGVwbG95ZWQtYnV0LXVuaW5pdGlhbGl6ZWQgY29udHJhY3QgZmlyc3QuAAAAAAAKaW5pdGlhbGl6ZQAAAAAAAgAAAAAAAAAFYWRtaW4AAAAAAAATAAAAAAAAAAdmYWN0b3J5AAAAABMAAAAA",
-        "AAAAAAAAAUBUcnVzdCBhbiBhZGRpdGlvbmFsIGZhY3RvcnksIHNvIGEgcGxhdGZvcm0gdXBncmFkZSBrZWVwcyB3cml0aW5nIGludG8KdGhlIHNhbWUgaGlzdG9yeS4KCkFwcGVuZC1vbmx5IGJ5IGRlc2lnbi4gVGhlcmUgaXMgbm8gY291bnRlcnBhcnQgdGhhdCByZW1vdmVzIGEgZmFjdG9yeSwKYmVjYXVzZSBkb2luZyBzbyB3b3VsZCBvcnBoYW4gZXZlcnkgcmVjb3JkIGl0cyB2YXVsdHMgaGFkIGFscmVhZHkKd3JpdHRlbiDigJQgYW4gYWRtaW4gY291bGQgcXVpZXRseSBlcmFzZSBhIGJ1aWxkZXIncyBoaXN0b3J5IHdpdGhvdXQKdG91Y2hpbmcgYSBzaW5nbGUgcmVjb3JkLgAAAAthZGRfZmFjdG9yeQAAAAABAAAAAAAAAAdmYWN0b3J5AAAAABMAAAAA",
+        "AAAAAAAAAHhUcnVzdCBhbiBhZGRpdGlvbmFsIGZhY3RvcnksIHNvIGEgcGxhdGZvcm0gdXBncmFkZSBrZWVwcyB3cml0aW5nIGludG8KdGhlIHNhbWUgaGlzdG9yeS4gUmV2ZXJzaWJsZSB3aXRoIGRpc2FibGVfZmFjdG9yeS4AAAALYWRkX2ZhY3RvcnkAAAAAAQAAAAAAAAAHZmFjdG9yeQAAAAATAAAAAA==",
+        "AAAAAAAAAeNTdG9wIHRydXN0aW5nIGEgZmFjdG9yeTogaXRzIHZhdWx0cyBtYXkgbm8gbG9uZ2VyIHdyaXRlIG5ldyByZWNvcmRzLgoKU2FmZSwgYW5kIGhlcmUgZm9yIGNvbnRhaW5tZW50LiBObyByZWFkIHBhdGggY29uc3VsdHMgdGhlIHRydXN0ZWQgc2V0IOKAlApnZXRfcmVjb3JkLCBoYXNfcmVjb3JkIGFuZCB0aGUgYnVpbGRlciBoaXN0b3J5IGFsbCByZWFkIHJlY29yZHMgZGlyZWN0bHkK4oCUIHNvIGRpc2FibGluZyBhIGZhY3Rvcnkgc3RvcHMgb25seSBpdHMgZnV0dXJlIHdyaXRlczsgZXZlcnkgcmVjb3JkIGl0cwp2YXVsdHMgYWxyZWFkeSB3cm90ZSBzdGF5cyBpbnRhY3QgYW5kIHJlYWRhYmxlLiBXaXRob3V0IHRoaXMgYSBjb21wcm9taXNlZApmYWN0b3J5IGtleSAod2hpY2ggY2FuIHBvaW50IG5ldyB2YXVsdHMgYXQgbWFsaWNpb3VzIHdhc20pIGNvdWxkIG1pbnQKZmFsc2UgcmVjb3JkcyBmb3JldmVyIHdpdGggbm8gd2F5IHRvIHJldm9rZSBpdC4AAAAAD2Rpc2FibGVfZmFjdG9yeQAAAAABAAAAAAAAAAdmYWN0b3J5AAAAABMAAAAA",
         "AAAAAAAAAAAAAAAOdHJhbnNmZXJfYWRtaW4AAAAAAAEAAAAAAAAACW5ld19hZG1pbgAAAAAAABMAAAAA",
         "AAAAAAAAALZXcml0ZSBhIHByb2plY3QncyBjbG9zaW5nIHJlY29yZC4gQ2FsbGFibGUgb25seSBieSBhIHZhdWx0IHRoZSB0cnVzdGVkCmZhY3RvcnkgZGVwbG95ZWQsIGFuZCBvbmx5IG9uY2UgcGVyIHByb2plY3QuCgpEZWxpYmVyYXRlbHkgYWJzZW50OiBhbnkgd2F5IHRvIGFtZW5kIG9yIHJlbW92ZSB3aGF0IHRoaXMgd3JpdGVzLgAAAAAABmF0dGVzdAAAAAAACQAAAAAAAAAFdmF1bHQAAAAAAAATAAAAAAAAAAdmYWN0b3J5AAAAABMAAAAAAAAAB2J1aWxkZXIAAAAAEwAAAAAAAAAKcHJvamVjdF9pZAAAAAAABgAAAAAAAAAHb3V0Y29tZQAAAAfQAAAAB091dGNvbWUAAAAAAAAAAAx0b3RhbF9yYWlzZWQAAAALAAAAAAAAAAtib25kX3Bvc3RlZAAAAAALAAAAAAAAABBtaWxlc3RvbmVzX3RvdGFsAAAABAAAAAAAAAATbWlsZXN0b25lc19hcHByb3ZlZAAAAAAEAAAAAA==",
-        "AAAAAAAAAAAAAAAKZ2V0X3JlY29yZAAAAAAAAQAAAAAAAAAKcHJvamVjdF9pZAAAAAAABgAAAAEAAAfQAAAAC0F0dGVzdGF0aW9uAA==",
-        "AAAAAAAAAAAAAAAKaGFzX3JlY29yZAAAAAAAAQAAAAAAAAAKcHJvamVjdF9pZAAAAAAABgAAAAEAAAAB",
-        "AAAAAAAAAENFdmVyeSBwcm9qZWN0IGlkIHRoaXMgYnVpbGRlciBoYXMgY2xvc2VkLCBpbiB0aGUgb3JkZXIgdGhleSBjbG9zZWQuAAAAABRnZXRfYnVpbGRlcl9wcm9qZWN0cwAAAAEAAAAAAAAAB2J1aWxkZXIAAAAAEwAAAAEAAAPqAAAABg==",
+        "AAAAAAAAAAAAAAAKZ2V0X3JlY29yZAAAAAAAAQAAAAAAAAAFdmF1bHQAAAAAAAATAAAAAQAAB9AAAAALQXR0ZXN0YXRpb24A",
+        "AAAAAAAAAAAAAAAKaGFzX3JlY29yZAAAAAAAAQAAAAAAAAAFdmF1bHQAAAAAAAATAAAAAQAAAAE=",
+        "AAAAAAAAAJFFdmVyeSB2YXVsdCB0aGlzIGJ1aWxkZXIgaGFzIGNsb3NlZCwgaW4gdGhlIG9yZGVyIHRoZXkgY2xvc2VkLiBUaGUKcmVjb3JkcyB0aGVtc2VsdmVzIOKAlCByZWFkIHZpYSBnZXRfYnVpbGRlcl9oaXN0b3J5IOKAlCBjYXJyeSB0aGUgcHJvamVjdCBpZHMuAAAAAAAAEmdldF9idWlsZGVyX3ZhdWx0cwAAAAAAAQAAAAAAAAAHYnVpbGRlcgAAAAATAAAAAQAAA+oAAAAT",
         "AAAAAAAAAXBBIHBhZ2Ugb2YgYSBidWlsZGVyJ3MgaGlzdG9yeS4gVGhpcyBpcyB3aGF0IGEgZ3JhbnQgcHJvZ3JhbW1lLCBsZW5kZXIsCm9yIGxhdW5jaHBhZCByZWFkcyB0byBkZWNpZGUgd2hldGhlciB0byB0YWtlIHNvbWVvbmUgb24uCgpQYWdlZCByYXRoZXIgdGhhbiB3aG9sZTogYSBidWlsZGVyJ3MgcmVjb3JkIG9ubHkgZXZlciBncm93cywgc28gYSBjYWxsCnRoYXQgbWF0ZXJpYWxpc2VzIGFsbCBvZiBpdCB3b3VsZCBldmVudHVhbGx5IGV4Y2VlZCB0aGUgcmVzb3VyY2UgYnVkZ2V0CmFuZCBmYWlsIGZvciBleGFjdGx5IHRoZSBidWlsZGVycyB3aXRoIHRoZSBsb25nZXN0IHRyYWNrIHJlY29yZC4KYGxpbWl0YCBpcyBjbGFtcGVkIHRvIE1BWF9QQUdFLgAAABNnZXRfYnVpbGRlcl9oaXN0b3J5AAAAAAMAAAAAAAAAB2J1aWxkZXIAAAAAEwAAAAAAAAAGb2Zmc2V0AAAAAAAEAAAAAAAAAAVsaW1pdAAAAAAAAAQAAAABAAAD6gAAB9AAAAALQXR0ZXN0YXRpb24A",
         "AAAAAAAAAFBDb21wYWN0IHJlcHV0YXRpb24gc3VtbWFyeTogKGNvbXBsZXRlZCwgZmFpbGVkX3dpdGhfZm9yZmVpdHVyZSwgZmFpbGVkX3RvX2Z1bmQpLgAAABNnZXRfYnVpbGRlcl9zdW1tYXJ5AAAAAAEAAAAAAAAAB2J1aWxkZXIAAAAAEwAAAAEAAAPtAAAAAwAAAAQAAAAEAAAABA==",
         "AAAAAAAAAAAAAAANZ2V0X2ZhY3RvcmllcwAAAAAAAAAAAAABAAAD6gAAABM=",
@@ -197,11 +208,12 @@ export class Client extends ContractClient {
   public readonly fromJSON = {
     initialize: this.txFromJSON<null>,
         add_factory: this.txFromJSON<null>,
+        disable_factory: this.txFromJSON<null>,
         transfer_admin: this.txFromJSON<null>,
         attest: this.txFromJSON<null>,
         get_record: this.txFromJSON<Attestation>,
         has_record: this.txFromJSON<boolean>,
-        get_builder_projects: this.txFromJSON<Array<u64>>,
+        get_builder_vaults: this.txFromJSON<Array<string>>,
         get_builder_history: this.txFromJSON<Array<Attestation>>,
         get_builder_summary: this.txFromJSON<readonly [u32, u32, u32]>,
         get_factories: this.txFromJSON<Array<string>>,

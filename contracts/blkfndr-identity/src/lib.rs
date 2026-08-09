@@ -58,14 +58,20 @@ fn require_attestor(env: &Env, caller: &Address) {
         .get(&DataKey::Admin)
         .unwrap_or_else(|| panic_with_error!(env, Error::NotInitialized));
 
-    if caller != &admin
-        && !env
-            .storage()
-            .persistent()
-            .has(&DataKey::Attestor(caller.clone()))
-    {
+    if caller == &admin {
+        return;
+    }
+
+    let key = DataKey::Attestor(caller.clone());
+    if !env.storage().persistent().has(&key) {
         panic_with_error!(env, Error::NotAnAttestor);
     }
+    // Re-extend on use: an attestor who attests regularly never lets their own
+    // authorisation archive (~30 days), which would otherwise silently brick the
+    // key mid-service. Soroban does not auto-extend a persistent entry on read.
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, LEDGERS_TO_LIVE, LEDGERS_TO_LIVE);
 }
 
 #[contract]
@@ -229,16 +235,61 @@ impl IdentityRegistry {
     /// Check if the address has a valid KYC attestation on file.
     pub fn is_kyc_approved(env: Env, address: Address) -> bool {
         let key = DataKey::Attestation(address);
-        env.storage().persistent().has(&key)
+        if env.storage().persistent().has(&key) {
+            // Re-extend on the check the vault runs at creation, so an approval
+            // stays alive as long as it is relied on rather than archiving ~30
+            // days after it was written and silently un-approving the holder.
+            env.storage()
+                .persistent()
+                .extend_ttl(&key, LEDGERS_TO_LIVE, LEDGERS_TO_LIVE);
+            true
+        } else {
+            false
+        }
     }
 
     /// Retrieve the KYC attestation hash for the given address.
     pub fn get_attestation(env: Env, address: Address) -> BytesN<32> {
         let key = DataKey::Attestation(address);
-        env.storage()
+        let hash = env
+            .storage()
             .persistent()
             .get(&key)
-            .unwrap_or_else(|| panic_with_error!(&env, Error::NotAttested))
+            .unwrap_or_else(|| panic_with_error!(&env, Error::NotAttested));
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, LEDGERS_TO_LIVE, LEDGERS_TO_LIVE);
+        hash
+    }
+
+    /// Extend a KYC attestation's lifetime without changing it.
+    ///
+    /// Permissionless, so a keeper — or the holder — can keep an approval from
+    /// archiving through a stretch where the holder creates no vaults (the
+    /// on-access extension in is_kyc_approved only helps while they are active).
+    /// A missing attestation reverts, so a keeper iterating approvals can tell a
+    /// revoked one apart.
+    pub fn bump_kyc(env: Env, address: Address) {
+        let key = DataKey::Attestation(address);
+        if !env.storage().persistent().has(&key) {
+            panic_with_error!(&env, Error::NotAttested);
+        }
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, LEDGERS_TO_LIVE, LEDGERS_TO_LIVE);
+    }
+
+    /// Extend an attestor's authorisation lifetime. Permissionless, for the same
+    /// reason as bump_kyc: a keeper keeps a newly-appointed or rarely-active
+    /// attestor from archiving before they next attest.
+    pub fn bump_attestor(env: Env, account: Address) {
+        let key = DataKey::Attestor(account);
+        if !env.storage().persistent().has(&key) {
+            panic_with_error!(&env, Error::NotAnAttestor);
+        }
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, LEDGERS_TO_LIVE, LEDGERS_TO_LIVE);
     }
 }
 

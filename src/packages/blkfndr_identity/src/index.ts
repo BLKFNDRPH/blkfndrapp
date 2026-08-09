@@ -118,6 +118,26 @@ export interface Client {
    */
   get_attestation: ({address}: {address: string}, options?: MethodOptions) => Promise<AssembledTransaction<Buffer>>
 
+  /**
+   * Construct and simulate a bump_kyc transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+   * Extend a KYC attestation's lifetime without changing it.
+   * 
+   * Permissionless, so a keeper — or the holder — can keep an approval from
+   * archiving through a stretch where the holder creates no vaults (the
+   * on-access extension in is_kyc_approved only helps while they are active).
+   * A missing attestation reverts, so a keeper iterating approvals can tell a
+   * revoked one apart.
+   */
+  bump_kyc: ({address}: {address: string}, options?: MethodOptions) => Promise<AssembledTransaction<null>>
+
+  /**
+   * Construct and simulate a bump_attestor transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+   * Extend an attestor's authorisation lifetime. Permissionless, for the same
+   * reason as bump_kyc: a keeper keeps a newly-appointed or rarely-active
+   * attestor from archiving before they next attest.
+   */
+  bump_attestor: ({account}: {account: string}, options?: MethodOptions) => Promise<AssembledTransaction<null>>
+
 }
 export class Client extends ContractClient {
   static async deploy<T = Client>(
@@ -147,7 +167,9 @@ export class Client extends ContractClient {
         "AAAAAAAAARJIYW5kIHRoZSByZWdpc3RyeSB0byBhIG5ldyBhZG1pbi4KCldpdGhvdXQgdGhpcyB0aGUgYWRtaW4gc2V0IGF0IGluaXRpYWxpemF0aW9uIHdvdWxkIGJlIHBlcm1hbmVudCwgYW5kIGEKbG9zdCBvciBjb21wcm9taXNlZCBrZXkgd291bGQgbWVhbiBubyBmdXJ0aGVyIEtZQyBhdHRlc3RhdGlvbiB3YXMKcG9zc2libGUgZm9yIHRoZSBsaWZlIG9mIHRoZSBjb250cmFjdCDigJQgcmVjb3ZlcmFibGUgb25seSBieSByZWRlcGxveWluZwphbmQgcmUtYXR0ZXN0aW5nIGV2ZXJ5IHVzZXIuAAAAAAAOdHJhbnNmZXJfYWRtaW4AAAAAAAEAAAAAAAAACW5ld19hZG1pbgAAAAAAABMAAAAA",
         "AAAAAAAAACdUaGUgYWNjb3VudCB0aGF0IG1heSBhdHRlc3QgYW5kIHJldm9rZS4AAAAACWdldF9hZG1pbgAAAAAAAAAAAAABAAAAEw==",
         "AAAAAAAAADlDaGVjayBpZiB0aGUgYWRkcmVzcyBoYXMgYSB2YWxpZCBLWUMgYXR0ZXN0YXRpb24gb24gZmlsZS4AAAAAAAAPaXNfa3ljX2FwcHJvdmVkAAAAAAEAAAAAAAAAB2FkZHJlc3MAAAAAEwAAAAEAAAAB",
-        "AAAAAAAAADhSZXRyaWV2ZSB0aGUgS1lDIGF0dGVzdGF0aW9uIGhhc2ggZm9yIHRoZSBnaXZlbiBhZGRyZXNzLgAAAA9nZXRfYXR0ZXN0YXRpb24AAAAAAQAAAAAAAAAHYWRkcmVzcwAAAAATAAAAAQAAA+4AAAAg" ]),
+        "AAAAAAAAADhSZXRyaWV2ZSB0aGUgS1lDIGF0dGVzdGF0aW9uIGhhc2ggZm9yIHRoZSBnaXZlbiBhZGRyZXNzLgAAAA9nZXRfYXR0ZXN0YXRpb24AAAAAAQAAAAAAAAAHYWRkcmVzcwAAAAATAAAAAQAAA+4AAAAg",
+        "AAAAAAAAAXBFeHRlbmQgYSBLWUMgYXR0ZXN0YXRpb24ncyBsaWZldGltZSB3aXRob3V0IGNoYW5naW5nIGl0LgoKUGVybWlzc2lvbmxlc3MsIHNvIGEga2VlcGVyIOKAlCBvciB0aGUgaG9sZGVyIOKAlCBjYW4ga2VlcCBhbiBhcHByb3ZhbCBmcm9tCmFyY2hpdmluZyB0aHJvdWdoIGEgc3RyZXRjaCB3aGVyZSB0aGUgaG9sZGVyIGNyZWF0ZXMgbm8gdmF1bHRzICh0aGUKb24tYWNjZXNzIGV4dGVuc2lvbiBpbiBpc19reWNfYXBwcm92ZWQgb25seSBoZWxwcyB3aGlsZSB0aGV5IGFyZSBhY3RpdmUpLgpBIG1pc3NpbmcgYXR0ZXN0YXRpb24gcmV2ZXJ0cywgc28gYSBrZWVwZXIgaXRlcmF0aW5nIGFwcHJvdmFscyBjYW4gdGVsbCBhCnJldm9rZWQgb25lIGFwYXJ0LgAAAAhidW1wX2t5YwAAAAEAAAAAAAAAB2FkZHJlc3MAAAAAEwAAAAA=",
+        "AAAAAAAAAMBFeHRlbmQgYW4gYXR0ZXN0b3IncyBhdXRob3Jpc2F0aW9uIGxpZmV0aW1lLiBQZXJtaXNzaW9ubGVzcywgZm9yIHRoZSBzYW1lCnJlYXNvbiBhcyBidW1wX2t5YzogYSBrZWVwZXIga2VlcHMgYSBuZXdseS1hcHBvaW50ZWQgb3IgcmFyZWx5LWFjdGl2ZQphdHRlc3RvciBmcm9tIGFyY2hpdmluZyBiZWZvcmUgdGhleSBuZXh0IGF0dGVzdC4AAAANYnVtcF9hdHRlc3RvcgAAAAAAAAEAAAAAAAAAB2FjY291bnQAAAAAEwAAAAA=" ]),
       options
     )
   }
@@ -161,6 +183,8 @@ export class Client extends ContractClient {
         transfer_admin: this.txFromJSON<null>,
         get_admin: this.txFromJSON<string>,
         is_kyc_approved: this.txFromJSON<boolean>,
-        get_attestation: this.txFromJSON<Buffer>
+        get_attestation: this.txFromJSON<Buffer>,
+        bump_kyc: this.txFromJSON<null>,
+        bump_attestor: this.txFromJSON<null>
   }
 }

@@ -273,4 +273,49 @@ mod tests {
         );
     }
 
+    // ── TTL upkeep (M-02) ────────────────────────────────────────────────────
+    //
+    // Persistent entries archive ~30 days after their last write, and Soroban
+    // does not auto-extend on read. The on-access extensions in is_kyc_approved
+    // and require_attestor keep active entries alive; these permissionless bumps
+    // cover the inactive stretch. The archival behaviour itself is not practical
+    // to unit-test, so these prove the entrypoint contract: extend if present,
+    // revert if not, so a keeper can distinguish a revoked entry.
+
+    #[test]
+    fn bump_kyc_extends_present_and_rejects_absent() {
+        let s = setup();
+        s.client.initialize(&s.admin);
+
+        let user = Address::generate(&s.env);
+        s.client.attest(&s.admin, &user, &mock_kyc_hash(&s.env));
+
+        s.client.bump_kyc(&user); // present -> ok
+        assert!(s.client.is_kyc_approved(&user));
+
+        let stranger = Address::generate(&s.env);
+        assert!(
+            s.client.try_bump_kyc(&stranger).is_err(),
+            "no approval to extend"
+        );
+    }
+
+    #[test]
+    fn bump_attestor_extends_present_and_rejects_absent() {
+        let s = setup();
+        s.client.initialize(&s.admin);
+
+        let reviewer = Address::generate(&s.env);
+        s.client.add_attestor(&reviewer);
+
+        s.client.bump_attestor(&reviewer); // present -> ok
+        assert!(s.client.is_attestor(&reviewer));
+
+        let stranger = Address::generate(&s.env);
+        assert!(
+            s.client.try_bump_attestor(&stranger).is_err(),
+            "not an attestor"
+        );
+    }
+
 }

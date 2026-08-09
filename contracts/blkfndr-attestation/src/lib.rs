@@ -33,6 +33,7 @@ pub enum Error {
     UntrustedFactory   = 7,
     FactoryAlreadyTrusted = 8,
     TooManyFactories   = 9,
+    FactoryNotTrusted  = 10,
 }
 
 const LEDGERS_TO_LIVE: u32 = 518_400; // ~30 days
@@ -75,21 +76,26 @@ const MAX_FACTORIES: u32 = 16;
 
 #[contracttype]
 pub enum DataKey {
-    /// May add trusted factories. Deliberately cannot remove one.
+    /// May add and disable trusted factories.
     Admin,
     /// Factories whose vaults are permitted to write.
     ///
     /// A set rather than a single address so that a factory upgrade does not
     /// orphan the history: new vaults come from a new factory, and if this
     /// registry could only ever trust the original one, a second registry would
-    /// be needed and a builder's record would split across the two. A record
-    /// that fragments on every platform upgrade is not portable, which is the
-    /// whole point of it.
+    /// be needed and a builder's record would split across the two.
     Factories,
-    /// Attestation for a given project id.
-    Record(u64),
-    /// Every project id a builder has closed.
-    BuilderProjects(Address),
+    /// Attestation for a given vault.
+    ///
+    /// Keyed by the vault's address — globally unique — rather than by project
+    /// id. Project ids restart at 1 in every factory, so keying records by them
+    /// collides the moment a second factory is trusted: the new factory's
+    /// project 1 would clash with the original's, and the colliding vault could
+    /// never write its record, and so could never settle.
+    Record(Address),
+    /// Every vault a builder has closed. Vaults, not project ids, for the same
+    /// uniqueness reason; each record carries its own project id.
+    BuilderVaults(Address),
 }
 
 /// Read-side of the factory: lets this registry confirm that a caller claiming
@@ -153,12 +159,7 @@ impl AttestationRegistry {
     }
 
     /// Trust an additional factory, so a platform upgrade keeps writing into
-    /// the same history.
-    ///
-    /// Append-only by design. There is no counterpart that removes a factory,
-    /// because doing so would orphan every record its vaults had already
-    /// written — an admin could quietly erase a builder's history without
-    /// touching a single record.
+    /// the same history. Reversible with disable_factory.
     pub fn add_factory(env: Env, factory: Address) {
         extend_instance_ttl(&env);
         let admin = load_admin(&env);
@@ -177,6 +178,40 @@ impl AttestationRegistry {
 
         env.events().publish(
             (symbol_short!("ATTEST"), symbol_short!("FACTORY")),
+            factory,
+        );
+    }
+
+    /// Stop trusting a factory: its vaults may no longer write new records.
+    ///
+    /// Safe, and here for containment. No read path consults the trusted set —
+    /// get_record, has_record and the builder history all read records directly
+    /// — so disabling a factory stops only its future writes; every record its
+    /// vaults already wrote stays intact and readable. Without this a compromised
+    /// factory key (which can point new vaults at malicious wasm) could mint
+    /// false records forever with no way to revoke it.
+    pub fn disable_factory(env: Env, factory: Address) {
+        extend_instance_ttl(&env);
+        let admin = load_admin(&env);
+        admin.require_auth();
+
+        let factories = load_factories(&env);
+        if factories.first_index_of(&factory).is_none() {
+            panic_with_error!(&env, Error::FactoryNotTrusted);
+        }
+
+        // Rebuild without the target rather than remove-by-index: clearer, and it
+        // does not depend on the exact semantics of Vec::remove.
+        let mut kept = Vec::new(&env);
+        for f in factories.iter() {
+            if f != factory {
+                kept.push_back(f);
+            }
+        }
+        env.storage().instance().set(&DataKey::Factories, &kept);
+
+        env.events().publish(
+            (symbol_short!("ATTEST"), symbol_short!("DISABLE")),
             factory,
         );
     }
@@ -235,14 +270,17 @@ impl AttestationRegistry {
             panic_with_error!(&env, Error::InvalidRecord);
         }
 
-        let key = DataKey::Record(project_id);
+        // Keyed by vault, not project_id: a vault closes exactly once, and its
+        // address is unique across every factory, so this is both the correct
+        // once-per-project guard and collision-free when a second factory joins.
+        let key = DataKey::Record(vault.clone());
         if env.storage().persistent().has(&key) {
             panic_with_error!(&env, Error::AlreadyAttested);
         }
 
         let record = Attestation {
             builder: builder.clone(),
-            vault,
+            vault: vault.clone(),
             project_id,
             outcome,
             total_raised,
@@ -257,14 +295,14 @@ impl AttestationRegistry {
             .persistent()
             .extend_ttl(&key, LEDGERS_TO_LIVE, LEDGERS_TO_LIVE);
 
-        let index_key = DataKey::BuilderProjects(builder.clone());
-        let mut projects: Vec<u64> = env
+        let index_key = DataKey::BuilderVaults(builder.clone());
+        let mut vaults: Vec<Address> = env
             .storage()
             .persistent()
             .get(&index_key)
             .unwrap_or_else(|| Vec::new(&env));
-        projects.push_back(project_id);
-        env.storage().persistent().set(&index_key, &projects);
+        vaults.push_back(vault);
+        env.storage().persistent().set(&index_key, &vaults);
         env.storage()
             .persistent()
             .extend_ttl(&index_key, LEDGERS_TO_LIVE, LEDGERS_TO_LIVE);
@@ -285,22 +323,23 @@ impl AttestationRegistry {
 
     // QUERIES
 
-    pub fn get_record(env: Env, project_id: u64) -> Attestation {
+    pub fn get_record(env: Env, vault: Address) -> Attestation {
         env.storage()
             .persistent()
-            .get(&DataKey::Record(project_id))
+            .get(&DataKey::Record(vault))
             .unwrap_or_else(|| panic_with_error!(&env, Error::RecordNotFound))
     }
 
-    pub fn has_record(env: Env, project_id: u64) -> bool {
-        env.storage().persistent().has(&DataKey::Record(project_id))
+    pub fn has_record(env: Env, vault: Address) -> bool {
+        env.storage().persistent().has(&DataKey::Record(vault))
     }
 
-    /// Every project id this builder has closed, in the order they closed.
-    pub fn get_builder_projects(env: Env, builder: Address) -> Vec<u64> {
+    /// Every vault this builder has closed, in the order they closed. The
+    /// records themselves — read via get_builder_history — carry the project ids.
+    pub fn get_builder_vaults(env: Env, builder: Address) -> Vec<Address> {
         env.storage()
             .persistent()
-            .get(&DataKey::BuilderProjects(builder))
+            .get(&DataKey::BuilderVaults(builder))
             .unwrap_or_else(|| Vec::new(&env))
     }
 
@@ -317,17 +356,17 @@ impl AttestationRegistry {
         offset: u32,
         limit: u32,
     ) -> Vec<Attestation> {
-        let ids = Self::get_builder_projects(env.clone(), builder);
+        let vaults = Self::get_builder_vaults(env.clone(), builder);
         let capped = if limit == 0 || limit > MAX_PAGE { MAX_PAGE } else { limit };
 
         let mut out = Vec::new(&env);
         let mut i = offset;
-        while i < ids.len() && out.len() < capped {
-            let id = ids.get(i).unwrap();
+        while i < vaults.len() && out.len() < capped {
+            let vault = vaults.get(i).unwrap();
             if let Some(record) = env
                 .storage()
                 .persistent()
-                .get::<DataKey, Attestation>(&DataKey::Record(id))
+                .get::<DataKey, Attestation>(&DataKey::Record(vault))
             {
                 out.push_back(record);
             }
@@ -340,7 +379,7 @@ impl AttestationRegistry {
     pub fn get_builder_summary(env: Env, builder: Address) -> (u32, u32, u32) {
         // Pages through rather than taking one slice, so the counts stay correct
         // for a builder with more projects than a single page holds.
-        let ids = Self::get_builder_projects(env.clone(), builder);
+        let vaults = Self::get_builder_vaults(env.clone(), builder);
         let mut completed = 0u32;
         let mut forfeited = 0u32;
         let mut unfunded = 0u32;
@@ -348,11 +387,11 @@ impl AttestationRegistry {
         // Reads records directly rather than going through the paged history,
         // so the counts stay correct for a builder with more projects than a
         // single page holds.
-        for id in ids.iter() {
+        for vault in vaults.iter() {
             if let Some(record) = env
                 .storage()
                 .persistent()
-                .get::<DataKey, Attestation>(&DataKey::Record(id))
+                .get::<DataKey, Attestation>(&DataKey::Record(vault))
             {
                 match record.outcome {
                     Outcome::Completed => completed += 1,
