@@ -50,6 +50,11 @@ services:
         - NEXT_PUBLIC_BLKFNDR_IDENTITY_CONTRACT_ID=${NEXT_PUBLIC_BLKFNDR_IDENTITY_CONTRACT_ID}
         - NEXT_PUBLIC_BLKFNDR_ADMIN_CONTRACT_ID=${NEXT_PUBLIC_BLKFNDR_ADMIN_CONTRACT_ID}
         - NEXT_PUBLIC_BLKFNDR_ATTESTATION_CONTRACT_ID=${NEXT_PUBLIC_BLKFNDR_ATTESTATION_CONTRACT_ID}
+        # The Operations Vault — the governed gas budget. Build arg, so the panel
+        # can find it: setting it only in the stack environment leaves it empty in
+        # the bundle, which is exactly the "Not configured" you saw. Rebuild after
+        # setting it — a redeploy alone does not re-inline a NEXT_PUBLIC_ value.
+        - NEXT_PUBLIC_BLKFNDR_OPERATIONS_CONTRACT_ID=${NEXT_PUBLIC_BLKFNDR_OPERATIONS_CONTRACT_ID}
 
         # ── Token contracts ──────────────────────────────────────────────────
         # Derived, not looked up, and different per network:
@@ -130,9 +135,16 @@ services:
       - PINATA_GROUP_BLKDFNDR=${PINATA_GROUP_BLKDFNDR}
 
       # ── Indexer auth (required, SECRET) ──────────────────────────────────
-      # Bearer token for POST /api/indexer. The endpoint is public without it.
-      # Shared with the indexer-cron service below.
+      # Bearer token for POST /api/indexer and POST /api/ops-funding. The
+      # endpoints are public without it. Shared with the cron services below.
       - INDEXER_SECRET=${INDEXER_SECRET}
+
+      # ── Operations funding submitter (optional, SECRET) ──────────────────
+      # A funded classic account that pays the fee for the monthly
+      # fund_operations call. It holds no authority — the transfer is authorised
+      # by the owners' SetOpsFunding vote — so it only needs a little XLM for gas.
+      # Unset means POST /api/ops-funding cleanly skips instead of moving money.
+      - OPS_FUNDING_SUBMITTER_SECRET=${OPS_FUNDING_SUBMITTER_SECRET}
 
       # ── Genkit / Gemini (optional) ───────────────────────────────────────
       # The @genkit-ai/googleai plugin reads GEMINI_API_KEY, GOOGLE_API_KEY or
@@ -201,6 +213,40 @@ services:
     labels:
       - "app.name=blkfndr3-indexer"
       - "app.description=Periodically advances the chain event indexer"
+
+  # Presses the monthly operations-funding button. fund_operations on the
+  # treasury is permissionless and gated to once every thirty days on-chain, so
+  # this can poll freely — it moves money at most once a month and skips the
+  # rest. Daily is plenty; the interval only decides how soon after the gate
+  # opens the top-up lands. Does nothing until owners vote SetOpsFunding and
+  # OPS_FUNDING_SUBMITTER_SECRET is set — until then the endpoint returns a skip.
+  ops-funding-cron:
+    image: curlimages/curl:8.11.1
+    restart: unless-stopped
+    depends_on:
+      blkfndr-app:
+        condition: service_healthy
+    environment:
+      - INDEXER_SECRET=${INDEXER_SECRET}
+      - OPS_FUNDING_INTERVAL_SECONDS=${OPS_FUNDING_INTERVAL_SECONDS:-86400}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "ops-funding-cron: polling every $${OPS_FUNDING_INTERVAL_SECONDS}s"
+        while true; do
+          curl --silent --show-error --fail --max-time 120 \
+            -X POST http://blkfndr-app:3000/api/ops-funding \
+            -H "Authorization: Bearer $${INDEXER_SECRET}" \
+            -H "Content-Type: application/json" \
+            -d '{}' \
+            || echo "ops-funding-cron: run failed at $$(date -u +%FT%TZ)"
+          sleep "$${OPS_FUNDING_INTERVAL_SECONDS}"
+        done
+    networks:
+      - blkfndr-network
+    labels:
+      - "app.name=blkfndr3-ops-funding"
+      - "app.description=Triggers the monthly operations-funding transfer"
 
 volumes:
   next-cache:
