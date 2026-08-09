@@ -23,6 +23,7 @@ import {
   Clock,
 } from "lucide-react";
 import { IdentityRegistryPanel } from "./IdentityRegistryPanel";
+import { AttestorManager } from "./AttestorManager";
 import { Badge } from "../ui/badge";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
@@ -834,7 +835,15 @@ export function AdminDashboard() {
               exit={{ opacity: 0 }}
               transition={{ duration: 0.3 }}
             >
-              <IdentityRegistryPanel />
+              <div className="space-y-8">
+                <IdentityRegistryPanel />
+                {/* Only an owner needs to appoint attestors, and only they see
+                    the Admins tab where wallets are recorded — but the panel
+                    itself gates its controls to the registry admin wallet, so
+                    showing it to any identity-tab viewer discloses nothing they
+                    could act on. */}
+                {myRole === "owner" && <AttestorManager />}
+              </div>
             </motion.div>
           )}
 

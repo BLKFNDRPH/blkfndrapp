@@ -381,6 +381,43 @@ export function useStellarContract() {
     [requireWallet],
   );
 
+  // ── Attestor roster ──────────────────────────────────────────────────────
+  //
+  // Who may write a KYC attestation. add/remove are admin-only on the registry,
+  // so these authorise against the registry's own admin — not the platform
+  // roster, which the ledger does not consult.
+
+  /** The registry's admin — the only wallet that may appoint attestors. */
+  const getIdentityAdmin = useCallback(
+    () => simulate(() => identityClient().get_admin(), "identity get_admin"),
+    [],
+  );
+
+  /** Whether a wallet may attest. */
+  const isAttestor = useCallback(
+    (account: string) =>
+      simulate(() => identityClient().is_attestor({ account }), `is_attestor(${account})`),
+    [],
+  );
+
+  const addAttestor = useCallback(
+    async (account: string) => {
+      const admin = requireWallet();
+      const tx = await identityClient(signerFor(admin)).add_attestor({ account });
+      return signAndSend(tx);
+    },
+    [requireWallet],
+  );
+
+  const removeAttestor = useCallback(
+    async (account: string) => {
+      const admin = requireWallet();
+      const tx = await identityClient(signerFor(admin)).remove_attestor({ account });
+      return signAndSend(tx);
+    },
+    [requireWallet],
+  );
+
   // ── Platform terms ───────────────────────────────────────────────────────
   //
   // These change the terms for vaults created from here on. A vault's config is
@@ -551,6 +588,10 @@ export function useStellarContract() {
     isKycApproved,
     attestKyc,
     revokeKyc,
+    getIdentityAdmin,
+    isAttestor,
+    addAttestor,
+    removeAttestor,
     // platform terms
     updatePlatformFee,
     updateBondPercentage,
