@@ -15,6 +15,7 @@ import { usePlatformInfo } from "@/context/BlockchainContext";
 import { useStellarContract } from "@/hooks/use-stellar-contract";
 import { FACTORY_ID, IDENTITY_ID } from "@/lib/stellar-clients";
 import { TreasuryGovernancePanel } from "./TreasuryGovernancePanel";
+import { OperationsVaultPanel } from "./OperationsVaultPanel";
 import { shortenAddress } from "@/lib/utils";
 
 /**
@@ -138,6 +139,8 @@ export function PlatformGovernanceView() {
       </Card>
 
       <TreasuryGovernancePanel />
+
+      <OperationsVaultPanel />
 
       <CoreWiring
         factory={FACTORY_ID ?? ""}
