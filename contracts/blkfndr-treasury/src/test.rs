@@ -752,3 +752,130 @@ fn every_factory_setter_can_be_proposed() {
         f.env.ledger().with_mut(|l| l.timestamp += 8 * DAY);
     }
 }
+
+// ── Operations funding: the monthly XLM cut to the Operations Vault ──────────
+
+/// Configure ops funding by a carried vote — the setup every ops test needs.
+fn set_ops_funding(f: &Fixture, vault: &Address, bps: u32) {
+    f.treasury.propose(
+        &f.holders[0],
+        &GovernedAction::SetOpsFunding(OpsFundingTerms {
+            vault: vault.clone(),
+            token: f.token.clone(),
+            bps,
+        }),
+    );
+    f.treasury.approve_proposal(&f.holders[0]);
+    f.treasury.approve_proposal(&f.holders[1]);
+    f.treasury.execute_proposal();
+}
+
+#[test]
+fn ops_funding_routes_the_monthly_cut() {
+    let f = setup();
+    let ops = Address::generate(&f.env);
+    fees_arrive(&f, 1_000);
+    set_ops_funding(&f, &ops, 2_000); // 20%
+
+    assert_eq!(f.treasury.ops_funding_available(), 200);
+    f.treasury.fund_operations();
+    assert_eq!(f.token_client.balance(&ops), 200);
+    assert_eq!(f.treasury.balance_of(&f.token), 800);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #43)")] // OpsFundingNotSet
+fn ops_funding_needs_configuring_first() {
+    let f = setup();
+    f.treasury.fund_operations();
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #42)")] // FeeOutOfRange
+fn ops_funding_over_one_hundred_percent_is_rejected() {
+    let f = setup();
+    let ops = Address::generate(&f.env);
+    f.treasury.propose(
+        &f.holders[0],
+        &GovernedAction::SetOpsFunding(OpsFundingTerms {
+            vault: ops,
+            token: f.token.clone(),
+            bps: 10_001,
+        }),
+    );
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #32)")] // NothingToRelease
+fn ops_funding_with_an_empty_treasury_moves_nothing() {
+    let f = setup();
+    let ops = Address::generate(&f.env);
+    set_ops_funding(&f, &ops, 2_000);
+    f.treasury.fund_operations();
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #39)")] // ReleaseTooSoon
+fn ops_funding_is_monthly() {
+    let f = setup();
+    let ops = Address::generate(&f.env);
+    fees_arrive(&f, 1_000);
+    set_ops_funding(&f, &ops, 2_000);
+    f.treasury.fund_operations();
+    // Again within the month — refused, whatever fresh fees arrive.
+    fees_arrive(&f, 1_000);
+    f.treasury.fund_operations();
+}
+
+#[test]
+fn ops_funding_runs_again_after_a_month() {
+    let f = setup();
+    let ops = Address::generate(&f.env);
+    fees_arrive(&f, 1_000);
+    set_ops_funding(&f, &ops, 5_000); // 50%
+
+    f.treasury.fund_operations(); // 500 to ops, 500 left
+    f.env.ledger().with_mut(|l| l.timestamp += 31 * DAY);
+    f.treasury.fund_operations(); // 50% of 500 = 250 more
+
+    assert_eq!(f.token_client.balance(&ops), 750);
+    assert_eq!(f.treasury.balance_of(&f.token), 250);
+}
+
+#[test]
+fn ops_funding_never_touches_reserved_shareholder_money() {
+    let f = setup();
+    let ops = Address::generate(&f.env);
+
+    // A cycle carries and reserves the whole 1_000 for shareholders.
+    fees_arrive(&f, 1_000);
+    f.treasury.open_cycle(&f.holders[0], &f.token);
+    f.treasury.approve_cycle(&f.holders[0]);
+    f.treasury.approve_cycle(&f.holders[1]);
+    assert_eq!(f.treasury.get_reserved(&f.token), 1_000);
+
+    // Fresh fees arrive — only these are unreserved.
+    fees_arrive(&f, 500);
+    set_ops_funding(&f, &ops, 2_000); // 20% of the unreserved 500
+
+    assert_eq!(f.treasury.ops_funding_available(), 100);
+    f.treasury.fund_operations();
+    assert_eq!(f.token_client.balance(&ops), 100);
+    // The reserved 1_000 is untouched; balance is 1_500 - 100.
+    assert_eq!(f.treasury.get_reserved(&f.token), 1_000);
+    assert_eq!(f.treasury.balance_of(&f.token), 1_400);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #31)")] // CycleAlreadyOpen
+fn ops_funding_refused_while_a_cycle_is_being_voted_on() {
+    let f = setup();
+    let ops = Address::generate(&f.env);
+    fees_arrive(&f, 1_000);
+    set_ops_funding(&f, &ops, 2_000);
+
+    // A cycle is open for voting; moving money out now could undercut its
+    // snapshot, so funding is refused until it settles.
+    f.treasury.open_cycle(&f.holders[0], &f.token);
+    f.treasury.fund_operations();
+}
