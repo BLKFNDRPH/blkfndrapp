@@ -9,7 +9,7 @@ import {
 import { requireCaller, requireAdmin, requireWalletOwnerOrAdmin, authFailure } from "@/lib/auth/guards";
 import { getProjects as listProjects, setMilestoneProof, getProjectByVault } from "@/lib/data/projects";
 import { dismissAll } from "@/lib/data/notifications";
-import { notifyAdmins, notify } from "@/lib/data/notifications";
+import { notifyAdmins } from "@/lib/data/notifications";
 import {
   submitOwnKyc,
   getOwnSubmission,
@@ -217,4 +217,6 @@ export async function submitMilestoneProof(
   }
 }
 
-export { notify as createNotification };
+// `notify` is intentionally NOT re-exported as an action — see the note in
+// src/actions/notifications.ts. It is a no-auth service-role insert and must
+// stay internal to the server-only data layer.

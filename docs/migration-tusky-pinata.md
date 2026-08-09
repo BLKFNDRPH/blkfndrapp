@@ -35,10 +35,13 @@ Replace Tusky environment variables with Pinata credentials:
 - `NEXT_PUBLIC_TUSKY_VAULT_ID`
 - `NEXT_PUBLIC_TUSKY_API_KEY`
 
-**Add to `.env.local`:**
+**Add to `.env.local`** — server-side only. Never prefix a Pinata credential
+with `NEXT_PUBLIC_`: that inlines it into the browser bundle at build time and
+lets anyone pin to the platform's paid account. The live code reads a server-side
+`PINATA_JWT` (fetched from Supabase Vault); see [deployment.md](deployment.md).
 ```bash
-NEXT_PUBLIC_PINATA_API_KEY=your_pinata_api_key
-NEXT_PUBLIC_PINATA_API_SECRET=your_pinata_api_secret
+PINATA_JWT=your_pinata_jwt
+PINATA_GATEWAY_URL=your_dedicated_gateway_host
 ```
 
 ## Next Steps
@@ -57,10 +60,9 @@ npm install pinata --save
 1. Go to [Pinata Cloud](https://app.pinata.cloud/)
 2. Create an API key with file upload permissions
 3. Get your API key and secret
-4. Add to your environment variables:
+4. Add to your environment variables (server-side only — not `NEXT_PUBLIC_`):
    ```bash
-   NEXT_PUBLIC_PINATA_API_KEY=your_key_here
-   NEXT_PUBLIC_PINATA_API_SECRET=your_secret_here
+   PINATA_JWT=your_jwt_here
    ```
 
 ### 4. Update Database/Records (if needed)

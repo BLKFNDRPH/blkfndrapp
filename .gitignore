@@ -31,10 +31,15 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# local env files.
+# local env files. Broadened beyond *.local so a stray .env.production /
+# .env.development (both first-class Next.js env filenames) can never be
+# committed with real secrets. .env.example stays tracked (it has no secrets).
 .env
 .env.local
 .env*.local
+.env.development
+.env.production
+.env.test
 
 # vercel
 .vercel

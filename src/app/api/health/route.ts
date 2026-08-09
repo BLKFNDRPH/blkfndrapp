@@ -7,7 +7,6 @@ export async function GET() {
       {
         status: 'ok',
         timestamp: new Date().toISOString(),
-        service: 'blkfndr3',
       },
       { status: 200 }
     );

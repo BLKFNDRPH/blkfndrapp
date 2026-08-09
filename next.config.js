@@ -4,6 +4,29 @@ const nextConfig = {
   output: "standalone",
   serverExternalPackages: ["genkit", "@genkit-ai/ai", "@genkit-ai/googleai", "@genkit-ai/core"],
 
+  // Baseline security headers on every response. A conservative, non-breaking
+  // set: clickjacking (frame-ancestors + X-Frame-Options), MIME sniffing,
+  // referrer and permissions hardening, and HSTS for the HTTPS origin. A full
+  // content Content-Security-Policy (script/style/connect sources) is a
+  // deliberate follow-up — it must be tested against Next.js, Supabase, Pinata
+  // and the wallet flows — so only frame-ancestors is set here, which does not
+  // affect resource loading.
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: [
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+          { key: "Strict-Transport-Security", value: "max-age=31536000" },
+          { key: "Content-Security-Policy", value: "frame-ancestors 'none'" },
+        ],
+      },
+    ];
+  },
+
   // This is the only next.config in the tree. Two others existed alongside it
   // (next.config.ts and src/next.config.ts) with conflicting settings that
   // silently never applied, because Next resolves next.config.js first.

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getFeeWalletEmail, setFeeWalletEmail } from "@/lib/data/platform";
-import { AuthError } from "@/lib/supabase/auth";
+import { AuthError, requireAdmin } from "@/lib/supabase/auth";
 
 const fail = (error: unknown, label: string) => {
   if (error instanceof AuthError) {
@@ -20,6 +20,9 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
+    // Authenticate before touching the request body, so an unauthenticated
+    // caller is rejected cleanly (401) rather than reaching JSON.parse first.
+    await requireAdmin();
     const { feeWalletEmail } = await req.json();
     await setFeeWalletEmail(feeWalletEmail);
     return NextResponse.json({ success: true });
