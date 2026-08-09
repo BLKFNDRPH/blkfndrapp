@@ -47,7 +47,7 @@ import { ROLE_LABELS } from "@/lib/admin-roles";
 interface Candidate {
   email: string;
   name: string;
-  role: "owner" | "kyc_manager" | "project_approver" | "accountant";
+  role: "owner" | "platform_admin" | "kyc_manager" | "project_approver" | "accountant";
   wallet: string;
   isAttestor: boolean | null;
 }
