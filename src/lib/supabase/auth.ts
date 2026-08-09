@@ -69,6 +69,32 @@ export async function requireAdmin(): Promise<AuthedCaller> {
   return caller;
 }
 
+/**
+ * Roles permitted to read KYC identity records and their document URLs.
+ *
+ * These reads go through the service-role client (the identity PII columns are
+ * granted to no browser role, so RLS alone cannot serve them), which means the
+ * gate is this code, not a policy. It used to be `requireAdmin` — any roster
+ * role — so a `project_approver` or `accountant` could open any applicant's
+ * government-ID scan. Those two are now excluded.
+ *
+ * `platform_admin` is deliberately kept: it is the platform operator's role and
+ * running KYC review is part of running the platform. To enforce strict
+ * least-privilege instead — KYC review for `kyc_manager` and `owner` only —
+ * drop `"platform_admin"` from the set below (and assign the operator the
+ * `kyc_manager` role). That also matches the `has_admin_role('kyc_manager')`
+ * RLS already on `kyc_requests`.
+ */
+const KYC_REVIEWER_ROLES: readonly AdminRole[] = ["owner", "platform_admin", "kyc_manager"];
+
+export async function requireKycReviewer(): Promise<AuthedCaller> {
+  const caller = await requireCaller();
+  if (caller.role === null || !KYC_REVIEWER_ROLES.includes(caller.role)) {
+    throw new AuthError("Forbidden", 403);
+  }
+  return caller;
+}
+
 /** Null instead of throwing, for pages that render differently when signed out. */
 export async function getCaller(): Promise<AuthedCaller | null> {
   try {
