@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { PinataSDK } from "pinata";
 import { requireCaller, AuthError } from "@/lib/supabase/auth";
+import { getSecret } from "@/lib/secrets";
 
 const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
 
@@ -72,20 +73,19 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // ── 1. Env var check ──────────────────────────────────────────────────────
-  // Server-only vars: a NEXT_PUBLIC_ fallback would ship the JWT to every browser.
-  const pinataJwt = process.env.PINATA_JWT;
+  // ── 1. Credentials ────────────────────────────────────────────────────────
+  // The JWT comes from the Vault, falling back to the environment for a deploy
+  // that has not moved it yet. Either way it is read server-side only — a
+  // NEXT_PUBLIC_ fallback would ship the key to every browser. The gateway and
+  // group are not secret and stay in the environment.
+  const pinataJwt = await getSecret("pinata_jwt");
   const pinataGatewayRaw = process.env.PINATA_GATEWAY_URL;
   const pinataGroupId = process.env.PINATA_GROUP_BLKDFNDR;
 
-  console.log("[env] PINATA_JWT present:", !!pinataJwt);
-  console.log("[env] PINATA_GATEWAY_URL raw:", pinataGatewayRaw ?? "not set");
-  console.log("[env] PINATA_GROUP_BLKDFNDR:", pinataGroupId ?? "not set");
-
   if (!pinataJwt) {
-    console.error("[error] PINATA_JWT is missing — aborting");
+    console.error("[error] Pinata JWT is not set in the Vault or the environment");
     return NextResponse.json(
-      { error: "Server misconfiguration: PINATA_JWT is not set." },
+      { error: "Server misconfiguration: the Pinata key is not set." },
       { status: 500 }
     );
   }

@@ -9,6 +9,8 @@ import {
   CardDescription,
 } from "../ui/card";
 import { FeeContactForm } from "./FeeContactForm";
+import { PlatformSecretsForm } from "./PlatformSecretsForm";
+import { Separator } from "../ui/separator";
 
 /**
  * Platform settings, in the page rather than a drawer.
@@ -22,9 +24,9 @@ import { FeeContactForm } from "./FeeContactForm";
  * saved by one signature — a setting you can change alone and a term the owners
  * agree on are different kinds of thing and should not share a panel.
  *
- * The integration secrets — Pinata and Resend — belong here too and land in a
- * follow-up: they go to the Supabase Vault, written but never shown back, so a
- * key can be replaced from this page without ever being readable from it.
+ * The integration secrets — Pinata and Resend — go to the Supabase Vault,
+ * written but never shown back, so a key can be replaced from this page without
+ * ever being readable from it.
  */
 export function SettingsView() {
   return (
@@ -40,8 +42,10 @@ export function SettingsView() {
             Platform Governance, not here.
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-6">
           <FeeContactForm />
+          <Separator />
+          <PlatformSecretsForm />
         </CardContent>
       </Card>
     </div>
