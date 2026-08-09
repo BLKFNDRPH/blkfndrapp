@@ -116,7 +116,11 @@ export async function linkWallet(stellarPublicKey: string) {
     throw new Error("Not a Stellar account address.");
   }
 
-  const supabase = await createClient();
+  // Service-role: stellar_public_key and wallet_status are no longer writable by
+  // the browser (their column UPDATE grant is revoked), so the link is written
+  // server-side — but only here, after the challenge has proven the caller
+  // controls the key. Scoped in code to the caller's own row.
+  const supabase = createAdminClient();
   const { error } = await supabase
     .from("profiles")
     .update({
@@ -140,7 +144,9 @@ export async function linkWallet(stellarPublicKey: string) {
 
 export async function unlinkWallet() {
   const caller = await requireCaller();
-  const supabase = await createClient();
+  // Service-role, for the same reason as linkWallet: these columns are no longer
+  // browser-writable. Scoped in code to the caller's own row.
+  const supabase = createAdminClient();
 
   const { error } = await supabase
     .from("profiles")

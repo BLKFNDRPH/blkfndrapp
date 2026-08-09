@@ -3,7 +3,7 @@ import "server-only";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { requireCaller, requireAdmin, AuthError } from "@/lib/supabase/auth";
+import { requireCaller, requireKycReviewer, AuthError } from "@/lib/supabase/auth";
 import { isStellarAccount } from "@/lib/stellar-address";
 import { signAttestation, signRevocation } from "@/lib/managed-wallet";
 
@@ -160,7 +160,7 @@ export async function getOwnSubmission(): Promise<ApplicantSubmission | null> {
 export async function listSubmissionsForReview(
   status?: "pending" | "approved" | "rejected",
 ) {
-  await requireAdmin();
+  await requireKycReviewer();
 
   const admin = createAdminClient();
   let query = admin
@@ -183,7 +183,7 @@ export async function listSubmissionsForReview(
  * reviewer opening a case, never a bulk export.
  */
 export async function getSubmissionForReview(submissionId: string) {
-  await requireAdmin();
+  await requireKycReviewer();
   z.string().uuid().parse(submissionId);
 
   const admin = createAdminClient();
@@ -213,7 +213,7 @@ export async function decideSubmission(
   decision: "approved" | "rejected",
   rejectionReason = "",
 ) {
-  await requireAdmin();
+  await requireKycReviewer();
   z.string().uuid().parse(submissionId);
   z.enum(["approved", "rejected"]).parse(decision);
 
@@ -243,7 +243,7 @@ export async function decideSubmission(
  * must not leave a submission marked approved that the ledger never recorded.
  */
 export async function attestSubmission(submissionId: string) {
-  const caller = await requireAdmin();
+  const caller = await requireKycReviewer();
   z.string().uuid().parse(submissionId);
 
   const email = (caller.email ?? "").toLowerCase();
@@ -293,7 +293,7 @@ export async function attestSubmission(submissionId: string) {
 /** The managed attestor key the platform holds for the current reviewer, or
  *  null. The panel uses it to decide whether to offer walletless attestation. */
 export async function myManagedAttestor(): Promise<string | null> {
-  const caller = await requireAdmin();
+  const caller = await requireKycReviewer();
   const email = (caller.email ?? "").toLowerCase();
   if (!email) return null;
   const admin = createAdminClient();
@@ -308,7 +308,7 @@ export async function myManagedAttestor(): Promise<string | null> {
 /** Revoke a submission's attestation on-chain with the reviewer's managed key,
  *  then mark it rejected. The mirror of attestSubmission. */
 export async function revokeSubmissionAttestation(submissionId: string) {
-  const caller = await requireAdmin();
+  const caller = await requireKycReviewer();
   z.string().uuid().parse(submissionId);
 
   const email = (caller.email ?? "").toLowerCase();
