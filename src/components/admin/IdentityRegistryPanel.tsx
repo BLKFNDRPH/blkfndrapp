@@ -250,6 +250,7 @@ export function IdentityRegistryPanel() {
       }
 
       const tx = await client.attest({
+        attestor: freighterWalletAddress,
         address,
         kyc_hash: Buffer.from(detailsHash, "hex"),
       });
@@ -321,6 +322,7 @@ export function IdentityRegistryPanel() {
       });
 
       const tx = await client.revoke({
+        attestor: freighterWalletAddress,
         address,
       });
 
