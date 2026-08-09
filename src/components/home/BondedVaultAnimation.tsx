@@ -40,7 +40,7 @@ export function BondedVaultAnimation() {
         viewBox="0 0 400 470"
         className="bv-svg"
         role="img"
-        aria-label="Contributions collect in a per-project vault; the build rises one milestone at a time as contributors vote each tranche out, while the builder's performance bond stays locked in the same contract."
+        aria-label="Contributions collect in a per-project vault; the build rises one milestone at a time as stakeholders vote each tranche out, while the builder's performance bond stays locked in the same contract."
       >
         <defs>
           <linearGradient id="bv-slab" x1="0" y1="0" x2="0" y2="1">
@@ -168,7 +168,7 @@ export function BondedVaultAnimation() {
 
       <p className="bv-caption">
         No admin key sits anywhere in this path. Every tranche leaves the vault
-        on a contributor vote, or not at all.
+        on a stakeholder vote, or not at all.
       </p>
     </div>
   );

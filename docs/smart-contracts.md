@@ -1,303 +1,248 @@
 # Smart Contracts
 
-## Overview
+blkfndr is a suite of seven Soroban contracts (Rust, compiled to WASM) on Stellar. The design has one governing idea: **no platform key sits anywhere in the path that moves money.** A project's funds live in a contract, not an account; releases happen on a vote by the people with a stake in the project; and the record of what happened is append-only. What the platform can do — set fees, review KYC, moderate listings — is deliberately kept out of the contracts that hold value.
 
-blkfndr uses **Soroban** smart contracts written in **Rust** and compiled to **WASM** for execution on the Stellar blockchain. The contract suite consists of a core `crowdfunding` contract and a set of token bridge contracts for multi-currency support.
+Everything below is generated to TypeScript bindings under `src/packages/` and is reproducible from source with `bash scripts/build-contracts.sh`.
 
-## Network
+## The suite
 
-All contracts are deployed on **Stellar Testnet**.
+| Contract | Responsibility | Holds value? |
+|---|---|---|
+| `blkfndr-vault` | Per-project vault: stakes, the builder's bond, stakeholder-weighted milestone voting, refunds, forfeiture | **Yes** — one instance per project |
+| `blkfndr-factory` | Deploys vaults from one audited wasm hash and pins the platform addresses each vault trusts | No |
+| `blkfndr-attestation` | Append-only builder completion record. No update and no delete entrypoint exists | No |
+| `blkfndr-identity` | KYC attestation registry. Named attestors write approvals; the platform holds their signing keys | No |
+| `blkfndr-admin` | Platform-administrator roster. **Not in the path that releases funds** | No |
+| `blkfndr-treasury` | Platform fee treasury and owner-voted governance (fee, bond, shareholders, ops-funding cut) | **Yes** — pooled fees only |
+| `blkfndr-operations` | Operations Vault: the governed gas budget for moderation. Holds no project funds | **Yes** — gas only |
 
-## Contract Suite
+### How they relate
 
-### 1. Crowdfunding Contract (`crowdfunding`)
-
-The core platform contract managing the full lifecycle of crowdfunding campaigns.
-
-**Contract ID**: `[DEPLOYED_CONTRACT_ID]`
-
-#### Data Structures
-
-##### Project
-
-```rust
-struct Project {
-    id: u64,                    // Auto-incrementing project ID
-    title: String,              // Project title
-    tagline: String,            // Short tagline
-    description: String,        // Full description
-    category: String,           // Project category
-    goal: u64,                  // Funding goal (in smallest unit)
-    blob_id: String,            // IPFS hash of project metadata/image
-    creator: Address,           // Creator's Stellar address
-    status: ProjectStatus,      // Current status (see enum below)
-    raised_amount: u64,         // Total amount raised
-    currency_type: CurrencyType,// XLM, USDC, USDT, WBTC, or WETH
-    created_at: u64,            // Creation timestamp
-    funding_deadline: u64,      // Deadline timestamp for funding
-    has_pending_withdrawal: bool, // Whether a withdrawal is pending
-}
+```mermaid
+graph TB
+    F[blkfndr-factory] -->|deploys, pins addresses| V[blkfndr-vault<br/>one per project]
+    V -->|writes outcome on close| A[blkfndr-attestation]
+    V -->|checks builder KYC| I[blkfndr-identity]
+    F -->|flat fee on creation| T[blkfndr-treasury]
+    T -->|monthly voted cut of XLM| O[blkfndr-operations]
+    O -->|voted gas release| MW[Managed attestor wallets]
+    MW -->|attest| I
+    ADM[blkfndr-admin] -.->|roster only, off the money path| APP[Platform app]
 ```
 
-##### ProjectStatus
+A vault trusts only the addresses the factory pinned into it at creation, so a project cannot be pointed at a different fee wallet or identity registry after the fact. The factory's own admin can be handed to the treasury, which puts fee and policy changes behind an owner vote rather than one signature.
 
-```rust
-enum ProjectStatus {
-    Hidden,      // Not publicly visible
-    Pending,     // Awaiting admin review
-    Rejected,    // Rejected by admin
-    Approved,    // Approved and accepting funding
-    Funded,      // Funding goal reached
-    Completed,   // Funds claimed by creator
-    Expired,     // Funding deadline passed without reaching goal
-}
+### Deployed to testnet
+
+| Contract | Address |
+|---|---|
+| Factory | [`CDIXGE5M…F7BGKR7D5`](https://stellar.expert/explorer/testnet/contract/CDIXGE5MWFAYXA7FKLB4CDRSSQZ6VQSGHT6O6OY3TFTWVF6F7BGKR7D5) |
+| Attestation registry | [`CDLL2A4R…JSNB2SO7`](https://stellar.expert/explorer/testnet/contract/CDLL2A4RBSQPKSPTEE3O4HNSDICSJEGCHAWIGUYVRPGOKVEPJSNB2SO7) |
+| Identity registry | [`CCDBWBFE…RWZT27TGW`](https://stellar.expert/explorer/testnet/contract/CCDBWBFEK3YVXD2CDTJ4NFDPO7DB3OLB4YVX7BZI22M7QM4RWZT27TGW) |
+| Admin roster | [`CAHAOAX5…AU6WAGOG`](https://stellar.expert/explorer/testnet/contract/CAHAOAX52JAQ75C3INJIDVKT7EITWDVPYP2K27NJTD4CPYZUAU6WAGOG) |
+| Treasury | [`CCNID3UW…H3XGIGZS`](https://stellar.expert/explorer/testnet/contract/CCNID3UWTBEV67U7COG7LEWGTT63KYBM42M5XQ2OX6TWFLE3H3XGIGZS) |
+| Operations Vault | [`CDZXCWKY…Z3PDHJQAP`](https://stellar.expert/explorer/testnet/contract/CDZXCWKY7J4CEF7MFXMOHB377OREDLM3LESNIZIQ4LIVIR6Z3PDHJQAP) |
+
+The vault is **not** deployed as a contract of its own. Its wasm is uploaded once and the factory instantiates one instance per project from that hash, so any project's vault can be checked against it:
+
+```
+blkfndr_vault.wasm  sha256:9c20bca3e364d26240f83f03c11bd40ee30092fa2520bb1e767ba2c9a596db41
 ```
 
-##### Platform
-
-```rust
-struct Platform {
-    admin: Address,                  // Primary admin address
-    multi_sig_admins: Vec<Address>,  // Multi-sig admin list
-    fee_wallet_address: Address,     // Fee collection wallet
-    fee_percentage: u64,             // Platform fee in basis points (e.g., 300 = 3%)
-    total_fees_collected: u64,       // Lifetime fees collected
-}
-```
-
-##### InvestmentReceipt (SBT)
-
-```rust
-struct InvestmentReceipt {
-    investment_id: u64,     // Unique investment ID
-    investor: Address,      // Investor's Stellar address
-    project_id: u64,        // Funded project ID
-    amount: u64,            // Investment amount
-    share_percentage: u64,  // Investor's share of total raised
-    fee_paid: u64,          // Platform fee paid
-    investment_date: u64,   // Timestamp of investment
-}
-```
-
-##### AdminProposal
-
-```rust
-struct AdminProposal {
-    proposal_id: u64,       // Unique proposal ID
-    proposer: Address,      // Admin who created the proposal
-    project_id: u64,        // Target project (for withdrawals)
-    amount: u64,            // Proposed amount
-    approvals: Vec<Address>,// Admins who have approved
-    executed: bool,         // Whether proposal has been executed
-}
-```
-
-#### Contract Functions
-
-##### Project Management
-
-| Function                                                                                        | Access | Description                                            |
-| ----------------------------------------------------------------------------------------------- | ------ | ------------------------------------------------------ |
-| `create_project(title, tagline, description, category, goal, blob_id, currency_type, deadline)` | Public | Create a new project listing. Status set to `Pending`. |
-| `approve_project(project_id)`                                                                   | Admin  | Approve a pending project. Status → `Approved`.        |
-| `reject_project(project_id)`                                                                    | Admin  | Reject a pending project. Status → `Rejected`.         |
-| `update_project_status(project_id, new_status)`                                                 | Admin  | Update project status manually.                        |
-
-##### Funding
-
-| Function                                          | Access  | Description                                                                                                                                                    |
-| ------------------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `fund_project(project_id, amount, currency_type)` | Public  | Fund an approved project. Transfers tokens, mints SBT receipt.                                                                                                 |
-| `claim_funds(project_id)`                         | Creator | Claim raised funds after project is fully funded. Status → `Completed`.                                                                                        |
-| `refund_investor(project_id, investor)`           | Public  | Refund investor if project expires without reaching goal. Returns **contribution + platform fee** for that project's receipts and burns the investment SBT(s). |
-
-##### Admin Governance
-
-| Function                                 | Access          | Description                                          |
-| ---------------------------------------- | --------------- | ---------------------------------------------------- |
-| `propose_withdrawal(project_id, amount)` | Multi-sig Admin | Create a withdrawal proposal for a funded project.   |
-| `vote_withdrawal(proposal_id)`           | Multi-sig Admin | Vote to approve a withdrawal proposal.               |
-| `execute_withdrawal(proposal_id)`        | Multi-sig Admin | Execute withdrawal after threshold of approvals met. |
-| `update_fee(new_fee_bps)`                | Admin           | Update platform fee percentage (max 1000 bps = 10%). |
-| `add_multi_sig_admin(address)`           | Admin           | Add a new multi-sig admin.                           |
-| `remove_multi_sig_admin(address)`        | Admin           | Remove a multi-sig admin.                            |
-| `transfer_admin(new_admin)`              | Admin           | Transfer primary admin role.                         |
-
-##### Queries (Read-Only)
-
-| Function                                | Description                         |
-| --------------------------------------- | ----------------------------------- |
-| `get_project(project_id)`               | Get full project details.           |
-| `get_all_projects()`                    | List all projects.                  |
-| `get_projects_by_status(status)`        | Filter projects by status.          |
-| `get_platform_info()`                   | Get platform configuration.         |
-| `get_investment_receipt(investment_id)` | Get investment receipt details.     |
-| `get_user_investments(address)`         | Get all investments for an address. |
-| `get_pending_proposals()`               | List all pending admin proposals.   |
-
-#### Error Codes
-
-| Code | Name                    | Description                             |
-| ---- | ----------------------- | --------------------------------------- |
-| 0    | `NotAdmin`              | Caller is not the platform admin        |
-| 1    | `NotMultiSig`           | Caller is not a multi-sig admin         |
-| 3    | `ProjectNotApproved`    | Project is not in approved status       |
-| 4    | `InsufficientFunds`     | Investor has insufficient balance       |
-| 5    | `GoalAlreadyReached`    | Project funding goal already met        |
-| 6    | `InvalidPercentage`     | Fee percentage out of valid range       |
-| 7    | `NotProjectCreator`     | Caller is not the project creator       |
-| 8    | `ProjectNotFunded`      | Project has not reached funding goal    |
-| 9    | `InvalidStatus`         | Invalid project status transition       |
-| 10   | `InvalidCurrency`       | Unsupported currency type               |
-| 11   | `ProjectHasFunds`       | Cannot modify project with active funds |
-| 12   | `ProjectAlreadyFunded`  | Project already fully funded            |
-| 13   | `NotAuthorized`         | General authorization failure           |
-| 14   | `AlreadyVoted`          | Admin already voted on this proposal    |
-| 15   | `InsufficientApprovals` | Not enough multi-sig approvals          |
-| 16   | `FundingDeadlinePassed` | Project funding deadline has expired    |
-| 17   | `ProjectMismatch`       | Project ID mismatch in operation        |
-| 18   | `NoFundsToRefund`       | No funds available for refund           |
-| 19   | `ProposalAlreadyExists` | Duplicate proposal                      |
-| 20   | `IncorrectFee`          | Fee amount does not match platform fee  |
-| 21   | `InvalidFee`            | Fee exceeds maximum (1000 bps)          |
-
-#### Constants
-
-| Constant             | Value | Description                |
-| -------------------- | ----- | -------------------------- |
-| `BASIS_POINTS`       | 10000 | Basis points per 100%      |
-| `MAX_FEE_PERCENTAGE` | 1000  | Maximum platform fee (10%) |
+Amounts are in stroops throughout (1 unit = 10,000,000 stroops, 7 decimals). Deployed parameters: flat fee 10 units, minimum contribution 5 units, milestone voting window 7 days, minimum bond 5% of goal.
 
 ---
 
-### 2. Bridge Contracts (`bridge/`)
+## blkfndr-vault
 
-Token wrapper contracts enabling multi-currency support on the platform.
+One vault per project. It holds every stake and the builder's performance bond in the same contract, runs the milestone votes that release money, and refunds automatically when a project misses its goal or a milestone fails. **81 tests.**
 
-#### Supported Assets
+### Lifecycle states
 
-| Asset    | Contract                   | Description              |
-| -------- | -------------------------- | ------------------------ |
-| **USDC** | `bridge/sources/usdc.move` | USD Coin wrapper         |
-| **USDT** | `bridge/sources/usdt.move` | Tether USD wrapper       |
-| **WBTC** | `bridge/sources/wbtc.move` | Wrapped Bitcoin wrapper  |
-| **WETH** | `bridge/sources/weth.move` | Wrapped Ethereum wrapper |
+`VaultState`: `Raising` → `Funded` → `Active` → `Completed`, with `Failed` and `Refunding` as the terminal money-returning branches.
 
-#### Bridge Functions (per token)
+### Key type
 
-| Function              | Description                                      |
-| --------------------- | ------------------------------------------------ |
-| `mint(amount)`        | Mint wrapped tokens (1:1 backed by native asset) |
-| `burn(amount)`        | Burn wrapped tokens to release native asset      |
-| `balance_of(address)` | Get token balance for an address                 |
-| `total_supply()`      | Get total circulating supply                     |
-
-#### Native Asset
-
-**XLM** (Stellar Lumens) is used natively and does not require a bridge contract.
-
----
-
-## Currency Types & Decimals
-
-| Currency | Decimals | Smallest Unit |
-| -------- | -------- | ------------- |
-| XLM      | 7        | Stroop        |
-| USDC     | 7        | Micro-USDC    |
-| USDT     | 7        | Micro-USDT    |
-| WBTC     | 7        | Micro-WBTC    |
-| WETH     | 7        | Micro-WETH    |
-
-> **Note**: Stellar uses 7 decimal places for all assets by default. Amounts in contract calls should be expressed in the smallest unit (e.g., 1 XLM = 10,000,000 stroops).
-
----
-
-## Transaction Flow
-
-### Building & Submitting Transactions
-
-```typescript
-// 1. Build the contract invocation
-const tx = new TransactionBuilder(account, {
-  fee: "100",
-  networkPassphrase: Networks.TESTNET,
-})
-  .addOperation(contract.call("fund_project", ...args))
-  .setTimeout(30)
-  .build();
-
-// 2. Simulate to validate and get footprint
-const simResult = await rpc.simulateTransaction(tx);
-
-// 3. Sign with Freighter wallet
-const signedTx = await freighter.signTransaction(tx);
-
-// 4. Submit to network
-const result = await rpc.sendTransaction(signedTx);
-
-// 5. Wait for confirmation
-if (result.status === "SUCCESS") {
-  console.log("Transaction confirmed:", result.hash);
+```rust
+struct VaultInitConfig {
+    project_id: u64, creator: Address, token: Address,
+    goal: i128, deadline: u64, bond_amount: i128,
+    identity_registry: Address, attestation_registry: Address,
+    factory: Address, fee_wallet_address: Address,
+    platform_fee: i128, voting_window_secs: u64,
+    min_contribution: i128, milestones: Vec<MilestoneInput>,
+    metadata_cid: String,
 }
 ```
 
-### Reading Contract State
+### Entrypoints
 
-```typescript
-// Query contract storage via Soroban RPC
-const response = await rpc.getLedgerEntries(contractKey);
-const projectData = response.entries[0].value;
-```
+| Function | Who | Effect |
+|---|---|---|
+| `initialize(config)` | Factory only | Takes the bond + flat fee from the creator in the same transaction, pins the trusted addresses, opens the raise |
+| `contribute(contributor, amount)` | Anyone (KYC-gated) | Adds a stake; `amount ≥ min_contribution`; records voting weight |
+| `settle()` | Anyone | Closes the raise: `Funded` if the goal is met, `Failed` if the deadline passed short |
+| `return_bond()` | Anyone | Returns the bond to the builder when a failed raise is settled |
+| `open_milestone_vote(id)` | Creator | Opens a fixed-window vote on a milestone tranche |
+| `approve_milestone(contributor, id)` | Stakeholder | Casts weighted approval for a milestone |
+| `release_milestone(id)` | **Anyone** | Permissionless: executes a carried vote and pays the tranche |
+| `settle_lapsed_milestone(id)` | Anyone | Fails a milestone whose window lapsed without carrying; forfeits the bond |
+| `claim_refund(contributor)` | Stakeholder | Pro-rata claim of remaining funds (and forfeited bond) after failure |
+
+Reads: `get_state`, `get_info`, `get_balance`, `get_contributors(offset, limit)`, `contributor_count`, `get_voting_weight`, `has_voted`, `get_milestone_vote`.
+
+### Invariants
+
+- **>50% of the total raise** must approve a release (`RELEASE_THRESHOLD_BPS = 5_000`).
+- **No wallet counts for more than 20%** of the vote, however much it contributed (`WEIGHT_CAP_BPS = 2_000`). Clearing >50% in ≤20% steps always takes **at least three distinct wallets** — pinned by `a_majority_contributor_cannot_release_alone` and `release_requires_at_least_three_distinct_wallets`.
+- **Silence returns money, never releases it.** A lapsed window fails the milestone and makes funds claimable; it can never pay the builder.
+- Paged reads are capped (`MAX_PAGE = 100`) so no caller can request a page large enough to exceed the resource budget.
 
 ---
 
-## Deployment
+## blkfndr-factory
 
-### Prerequisites
+Deploys vaults and is the single place that decides what code a vault runs and which platform addresses it trusts.
 
-1. Stellar account with testnet XLM (from Friendbot)
-2. Soroban CLI installed
-3. Rust toolchain with `wasm32-unknown-unknown` target
+| Function | Who | Effect |
+|---|---|---|
+| `initialize(...)` | Deployer, once | Sets admin, fee wallet, fee, bond %, identity + attestation registries, voting window, min contribution, vault wasm hash |
+| `create_vault(config)` | Builder | Instantiates a vault from the pinned wasm hash and pins the trusted addresses into it |
+| `update_wasm_hash / update_fee_wallet / update_platform_fee / update_bond_percentage / update_identity_registry / update_voting_window / update_min_contribution` | Admin | Policy for **future** vaults; existing vaults keep what they were created with |
+| `transfer_admin(new_admin)` | Admin | Hands factory admin over — this is how admin is handed to the treasury for vote-gated governance |
 
-### Build & Deploy
+Reads: `is_vault`, `get_vault(project_id)`, `get_admin`, `get_fee_wallet`, `get_platform_fee`, `get_bond_percentage`, `get_identity_registry`, `get_attestation_registry`, `get_voting_window`, `get_min_contribution`, `get_project_count`.
+
+The app reads the treasury address from the factory's `get_fee_wallet` rather than from configuration, so repointing fees repoints the whole app.
+
+---
+
+## blkfndr-attestation
+
+An append-only record of every project a builder has closed. There is **no update entrypoint and no delete entrypoint** — a bad outcome cannot be scrubbed before the next raise. Trusted factories may be added but **deliberately never removed**. `MAX_PAGE = 100`, `MAX_FACTORIES = 16`.
+
+| Function | Who | Effect |
+|---|---|---|
+| `initialize(admin, factory)` | Deployer | Sets admin and the first trusted factory |
+| `add_factory(factory)` | Admin | Trusts another factory's vaults to write; cannot be undone |
+| `attest(...)` | A trusted factory's vault | Writes `builder, project, outcome, raise, bond, milestones_approved, timestamp` |
+| `transfer_admin(new_admin)` | Admin | — |
+
+Reads: `get_record(project_id)`, `has_record`, `get_builder_projects(builder)`, `get_builder_history(...)`, `get_builder_summary(builder) -> (succeeded, failed, total)`, `get_factories`, `is_factory_trusted`, `get_admin`. `Outcome` records how a project ended.
+
+---
+
+## blkfndr-identity
+
+The KYC gate. Named attestors write approvals; the vault checks them before accepting a stake. The platform holds the attestors' signing keys as **managed, gas-only wallets** (see [Architecture](architecture.md)), so a human reviewer approves KYC in the console and the server signs `attest` — the reviewer never touches a wallet.
+
+| Function | Who | Effect |
+|---|---|---|
+| `initialize(admin)` | Deployer | — |
+| `add_attestor(account)` / `remove_attestor(account)` | Admin (owner Freighter) | Appoints / removes a KYC attestor. Kept owner-signed on purpose: the registry admin key also carries `set_admin` power |
+| `attest(attestor, address, kyc_hash)` | Attestor | Records an approval (hash of the off-chain KYC record) |
+| `revoke(attestor, address)` | Attestor | Withdraws an approval |
+| `transfer_admin(new_admin)` | Admin | — |
+
+Reads: `is_kyc_approved(address)`, `get_attestation(address)`, `is_attestor`, `get_admin`. An attestor's managed key can **only** call `attest`/`revoke` — it is contract-enforced to hold no other authority and never custodies funds.
+
+---
+
+## blkfndr-admin
+
+The platform-administrator roster, and nothing more. It is **not** in the path that releases funds — it exists so the app can check "is this account a platform admin?" on-chain. `DataKey` is just `Owner` and `Admins`.
+
+| Function | Who | Effect |
+|---|---|---|
+| `initialize(owner)` | Deployer | — |
+| `add_admin(account)` / `remove_admin(account)` | Owner | Roster edits |
+| `transfer_ownership(new_owner)` | Owner | — |
+
+Reads: `is_admin(account)`, `get_admins`, `get_owner`, `admin_count`.
+
+---
+
+## blkfndr-treasury
+
+Where the flat listing fees pool, and the governance seat for the whole platform. Owners hold equal shares by default and vote **two-thirds by headcount** (`APPROVAL 2/3`: two of three, three of four) to distribute the balance to shareholders and to set platform policy. **45 tests.**
+
+Two independent flows share the contract:
+
+- **Distribution cycles** — `open_cycle(opener, token)` → `approve_cycle(voter)` → `claim(shareholder, cycle_id)`, with `settle_lapsed_cycle` to expire a stalled vote. A carried cycle *reserves* its snapshot so a later cycle can never pay an earlier shareholder's owed share to someone else. Releases are rate-limited to one per **30 days** (`MIN_RELEASE_INTERVAL`).
+- **Policy proposals** — `propose(proposer, action)` → `approve_proposal(voter)` → `execute_proposal()`.
+
+`GovernedAction` — everything a vote can change:
+
+| Variant | Changes |
+|---|---|
+| `SetFee(i128)` | The flat listing fee |
+| `SetBondBps(u64)` | The performance bond, in basis points of the raise |
+| `SetShareholders(Vec<Shareholder>)` | The shareholder register (deliberate unequal splits) |
+| `SetOwners(Vec<Address>)` | The owners, splitting the treasury equally between them |
+| `SetWasmHash(BytesN<32>)` | The wasm every **future** vault runs — the platform's upgrade lever |
+| `SetFeeWallet(Address)` | Where fees go — including to a replacement treasury |
+| `SetIdentityRegistry(Address)` | Which registry vouches for builder identity |
+| `SetVotingWindow(u64)` | How long milestone votes stay open |
+| `SetMinContribution(i128)` | The smallest stake a vault accepts |
+| `TransferAdmin(Address)` | Hands factory admin back to a human — the reversible escape hatch |
+| `SetOpsFunding(OpsFundingTerms)` | The monthly XLM cut routed to the Operations Vault |
+
+Ops-funding, once voted, runs itself: `fund_operations()` is **permissionless and 30-day-gated**, moving `bps` of the **unreserved** XLM balance to the Operations Vault. It refuses while a distribution cycle is mid-vote, and it never touches money owed to a shareholder.
+
+```rust
+struct Shareholder { address: Address, share_bps: u32 }   // all shares total 10_000
+struct OpsFundingTerms { vault: Address, token: Address, bps: u32 }
+```
+
+Reads: `get_shareholders`, `get_cycle`, `get_open_cycle`, `get_reserved`, `get_available`, `get_proposal`, `get_factory`, `has_claimed`, `balance_of`, `next_release_at`, `get_ops_funding`, `next_ops_funding_at`, `ops_funding_available`.
+
+---
+
+## blkfndr-operations
+
+The Operations Vault: a governed pot of XLM that pays the gas for moderation (KYC attestation, project approval). It holds **no project funds** — only the platform's own gas budget. Owners are plain voters with no shares; they vote **two-thirds by headcount** and execution is **permissionless** (the carried vote is the authority — no owner key signs the transfer). **26 tests.**
+
+| Function | Who | Effect |
+|---|---|---|
+| `initialize(deployer, owners)` | Deployer, once | Sets the owner set (bounded `MAX_OWNERS = 20`) |
+| `propose(proposer, action)` | Owner | Opens a proposal |
+| `approve(voter)` | Owner | Casts a vote |
+| `execute()` | **Anyone** | Runs a carried proposal |
+
+`GovernedAction`:
+
+| Variant | Effect |
+|---|---|
+| `Release(ReleaseTerms)` | Pay one destination |
+| `ReleaseMany(Vec<ReleaseTerms>)` | Pay the whole custodial-wallet roster in one carried vote — **all-or-nothing** (bounded `MAX_RELEASE_BATCH = 50`), so a batch never funds some wallets and strands others |
+| `SetOwners(Vec<Address>)` | Replace the owner set |
+| `SetVotingWindow(u64)` | Change how long a proposal stays open |
+
+```rust
+struct ReleaseTerms { token: Address, amount: i128, to: Address }
+```
+
+`ReleaseMany` is the monthly gas top-up to every active managed attestor wallet at once. Because a Soroban SAC `transfer` to a fresh classic address both creates and funds that account, one carried vote can provision a brand-new moderator's wallet directly from the vault.
+
+Reads: `get_owners`, `is_owner`, `get_proposal`, `vote_window`, `balance_of`.
+
+---
+
+## Governance model, in one place
+
+Both value-governing contracts (treasury, operations) share the same spine, chosen for a reason:
+
+- **Two-thirds by headcount, not by share.** Weighting by share once meant a majority holder's agreement was necessary for anything to move; once owners hold equal shares, headcount is simpler and removes that veto. `carried(approvals, total) = approvals * 3 ≥ total * 2`.
+- **Permissionless execution.** A carried vote is the authority. Anyone can submit the execution transaction, so there is no appointed signer to chase and no one who can sit on a decision the owners already made.
+- **Bounded everything.** Owner sets, shareholder registers, batch releases and paged reads are all capped so iteration stays inside a single transaction's resource budget.
+- **Votes expire.** An unfinished vote (7-day default window) lapses and can be replaced, rather than pinning a balance forever.
+
+## Building and verifying
 
 ```bash
-# Build the contract
-soroban contract build
-
-# Deploy to testnet
-soroban contract deploy \
-  --wasm target/wasm32-unknown-unknown/release/crowdfunding.wasm \
-  --source <ADMIN_SECRET_KEY> \
-  --network testnet
-
-# Initialize the contract
-soroban contract invoke \
-  --id <CONTRACT_ID> \
-  --source <ADMIN_SECRET_KEY> \
-  --network testnet \
-  -- initialize \
-  --admin <ADMIN_PUBLIC_KEY> \
-  --fee_wallet <FEE_WALLET_PUBLIC_KEY> \
-  --fee_percentage 300
+bash scripts/build-contracts.sh   # compiles all seven, prints sha256 of each wasm
+cargo test --workspace            # the full test suite
+cargo clippy --workspace --all-targets -- -D warnings
 ```
 
-### Upgrade Process
-
-Soroban contracts are immutable once deployed. To upgrade:
-
-1. Deploy new contract version
-2. Migrate state from old contract to new contract
-3. Update frontend with new contract ID
-4. Deprecate old contract (prevent new interactions)
-
----
-
-## Security Considerations
-
-- **Multi-sig Governance**: All admin actions (fee changes, withdrawals) require multiple admin approvals
-- **Fee Caps**: Platform fee is hard-capped at 10% (1000 basis points)
-- **Status Guards**: Strict status transition validation prevents invalid state changes
-- **Deadline Enforcement**: Funding deadlines are enforced at the contract level
-- **SBT Receipts**: Investment receipts are non-transferable, preventing secondary market manipulation
-- **Balance Checks**: All funding operations verify sufficient balances before execution
+`build-contracts.sh` must run before `cargo test` — the factory's deployment tests need the vault compiled to wasm and skip themselves when it is absent. A reviewer reproduces `blkfndr_vault.wasm`, checks its sha256 against the hash above, and can then confirm any project's on-chain vault was instantiated from exactly that code.

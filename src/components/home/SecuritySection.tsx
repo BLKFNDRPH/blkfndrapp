@@ -22,8 +22,8 @@ const PROTECTIONS = [
   },
   {
     icon: Users,
-    title: "Money moves only on a contributor vote",
-    body: "A milestone tranche is released when more than 50% of the total raise votes to release it. Not a majority of voters — a majority of the money actually contributed. The builder can open the vote; they cannot decide it.",
+    title: "Money moves only on a stakeholder vote",
+    body: "A tranche leaves the vault when more than 50% of the total stake votes to release it. Not a majority of voters — a majority of the stake actually committed. The builder can open the vote; they cannot decide it.",
   },
   {
     icon: Ban,
@@ -102,7 +102,15 @@ const CONTRACTS = [
   },
   {
     label: "Identity registry",
-    id: "CAJGOVZ7DZTCVCBY44N24DDVEBEEMYSUIZFE3ZO5CDHWPGPF4QNLSGS7",
+    id: "CCDBWBFEK3YVXD2CDTJ4NFDPO7DB3OLB4YVX7BZI22M7QM4RWZT27TGW",
+  },
+  {
+    label: "Treasury (fee destination + governance)",
+    id: "CCNID3UWTBEV67U7COG7LEWGTT63KYBM42M5XQ2OX6TWFLE3H3XGIGZS",
+  },
+  {
+    label: "Operations Vault (governed gas budget)",
+    id: "CDZXCWKY7J4CEF7MFXMOHB377OREDLM3LESNIZIQ4LIVIR6Z3PDHJQAP",
   },
   {
     label: "Admin roster (not in the release path)",
@@ -123,7 +131,7 @@ export function SecuritySection() {
         <SectionHeading
           eyebrow="Security & rugpull protection"
           title="There is no admin key in the path that moves money"
-          lead="Most crowdfunding platforms ask you to trust that the people running them will behave. blkfndr removes the question. Nobody at the platform can release a tranche, withhold one, redirect a refund, or edit a builder's history — not because of policy, but because no entrypoint exists for it."
+          lead="Platforms that hold your money ask you to trust that the people running them will behave. BLKFNDR removes the question. Nobody at the platform can release a tranche, withhold one, redirect a refund, or edit a project's history — not because of policy, but because no entrypoint exists for it."
         />
 
         <div className="mt-14 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
@@ -300,9 +308,11 @@ export function SecuritySection() {
             </ul>
 
             <p className="mt-5 text-xs leading-relaxed text-muted-foreground">
-              Deployed to Stellar testnet, with 81 contract tests passing.
-              Mainnet is planned and not yet deployed — treat anything on testnet
-              as a live rehearsal, not a place to commit funds you need back.
+              Deployed to Stellar testnet. The vault&apos;s release rules alone
+              are pinned by 81 passing tests, with the treasury and operations
+              vault adding 45 and 26 more. Mainnet is planned and not yet
+              deployed — treat anything on testnet as a live rehearsal, not a
+              place to commit funds you need back.
             </p>
           </div>
         </div>

@@ -102,7 +102,7 @@ export function ContactSection() {
         <SectionHeading
           eyebrow="Contact"
           title="Talk to the people building it"
-          lead="Whether you are bringing a development to fund, weighing up backing one, or you have found a hole in the contracts, there is a direct way to reach us."
+          lead="Whether you are bringing a project to BLKFNDR, weighing up a stake in one, or you have found a hole in the contracts, there is a direct way to reach us."
         />
 
         <div className="mt-14 grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] lg:gap-12">

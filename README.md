@@ -1,6 +1,6 @@
 # blkfndr
 
-> A bonded crowdfunding platform built on Stellar and Soroban.
+> A secure, on-chain vault for real-world projects — built on Stellar and Soroban.
 
 **Live on testnet: [testnetv2.blkfndr.com](https://testnetv2.blkfndr.com/)**
 
@@ -12,9 +12,9 @@ This repository is the technical source of truth for blkfndr documentation. The 
 
 ## Overview
 
-blkfndr lets creators raise funds on Stellar with the builder economically accountable on-chain. Contributions pool into a per-project vault, the builder's performance bond is locked in the same contract, and milestone tranches are released only when contributors themselves vote to release them — weighted by what they contributed. A milestone that fails forfeits the bond to contributors automatically, and every project leaves a permanent completion record on-chain.
+blkfndr gives every real-world project its own vault on Stellar. The funds it holds, the milestones it tracks, and every release it makes are recorded on-chain and governed by the project's own stakeholders — not by the platform. A project's whole history is public and permanent, so anyone can verify what happened instead of trusting the people running it to report it honestly.
 
-There is no appointed signer, no admin key, and no platform role anywhere in the path that moves money.
+Under the hood the vault is bonded and stakeholder-governed. The builder's performance bond is locked in the same contract that holds the stakes; milestone tranches are released only when the stakeholders vote to release them, weighted by the stake each holds; a failed milestone forfeits the bond automatically; and closing a project writes a permanent completion record. There is no appointed signer, no admin key, and no platform role anywhere in the path that moves money.
 
 ## Status
 
@@ -38,10 +38,10 @@ Release authority is contribution-weighted rather than held by appointed signers
 
 See [the rebuild PR](https://github.com/BLKFNDRPH/blkfndrapp/pull/1) for what changed and why.
 
-## How funding works
+## How a project's vault works
 
-1. **A builder creates a project.** The performance bond and a flat platform fee are taken in the same transaction that creates the vault — there is no path to a vault without a bond behind it.
-2. **Contributors back it,** from $5 USDC upward. The amount contributed is also the voting weight it carries. No fee is deducted from a contribution.
+1. **A project gets its own vault.** The builder's performance bond and a flat platform fee are taken in the same transaction that creates the vault — there is no path to a vault without a bond behind it.
+2. **Stakeholders take a position,** from $5 USDC upward. The stake held is the voting weight it carries, and it stays the stakeholder's to reclaim. No fee is deducted from a stake.
 3. **The goal closes the raise.** Reaching it moves the vault to `Funded`; missing it by the deadline returns every contribution in full and the bond to the builder.
 4. **The builder opens a milestone vote,** which runs for a fixed window set at project creation.
 5. **Contributors vote.** A release needs more than 50% of the total raise behind it, and no single wallet counts for more than 20% however much it put in — so a release always takes at least three distinct wallets.
@@ -170,7 +170,6 @@ cargo test --workspace
 | `SUPABASE_SECRET_KEY` | Yes | Service-role key. Bypasses RLS. **Server-only — never prefix `NEXT_PUBLIC_`** |
 | `NEXT_PUBLIC_APP_URL` | Yes | Application origin. `http://localhost:9002` locally, `https://testnetv2.blkfndr.com` on testnet. Must match the Supabase Site URL |
 | `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Yes | Google OAuth client ID |
-| `NEXT_PUBLIC_BLKFNDR_CONTRACT_ID` | Yes | Core crowdfunding contract ID |
 | `NEXT_PUBLIC_BLKFNDR_FACTORY_CONTRACT_ID` | Yes | Factory contract ID |
 | `NEXT_PUBLIC_BLKFNDR_IDENTITY_CONTRACT_ID` | Yes | Identity registry contract ID |
 | `NEXT_PUBLIC_BLKFNDR_ADMIN_CONTRACT_ID` | Yes | Admin roster contract ID |
@@ -278,7 +277,7 @@ blkfndrapp/
 - [GitBook Sync](docs/gitbook-sync.md) — GitHub/GitBook synchronization
 - [Content Migration](docs/content-migration.md) — Feature coverage checklist
 
-> **Heads-up on doc freshness.** [smart-contracts.md](docs/smart-contracts.md), [architecture.md](docs/architecture.md) and [api-reference.md](docs/api-reference.md) predate the contract rebuild — they describe a superseded crowdfunding/multi-sig contract and routes that no longer exist, and do not cover the current vault / factory / treasury / operations suite, the governance flow, or the gas-funding transfer. This README, [docs/deployment.md](docs/deployment.md), and the per-contract package READMEs under `src/packages/` are the current sources; the older docs are pending a rewrite.
+> The core docs — [whitepaper.md](docs/whitepaper.md), [architecture.md](docs/architecture.md), [smart-contracts.md](docs/smart-contracts.md) and [api-reference.md](docs/api-reference.md) — were rewritten for the current vault / factory / attestation / identity / admin / treasury / operations suite, the two-thirds governance model, and the gas-funding transfer. [authentication.md](docs/authentication.md), [ai-features.md](docs/ai-features.md) and [deployment.md](docs/deployment.md) round out the set.
 
 ## GitHub to GitBook Single Source of Truth
 

@@ -13,34 +13,34 @@ const LIFECYCLE = [
   {
     step: "01",
     icon: Building2,
-    title: "A builder creates a project",
-    body: "The performance bond and a flat platform fee are taken in the same transaction that creates the vault. There is no path to a vault without a bond behind it.",
+    title: "A project gets its own vault",
+    body: "The vault is created on-chain with the builder's performance bond and a flat platform fee committed in the same transaction. There is no vault without a stake behind it.",
   },
   {
     step: "02",
     icon: HandCoins,
-    title: "Contributors back it",
-    body: "From $5 USDC upward. The amount contributed is also the voting weight it carries, and no fee is deducted from a contribution.",
+    title: "Stakeholders take a position",
+    body: "Anyone backing the project joins its vault. The stake they hold is the weight their vote carries — and it stays theirs to reclaim.",
   },
   {
     step: "03",
     icon: Vote,
-    title: "Contributors vote each milestone out",
-    body: "The builder opens a milestone vote. Release needs a contributor majority — and once the vote carries, anyone can execute it.",
+    title: "Every release is voted on-chain",
+    body: "No tranche leaves the vault until the stakeholders vote it out, inside a window fixed when the project began. Once a vote carries, anyone can execute it — no appointed signer, no discretion.",
   },
   {
     step: "04",
     icon: FileCheck,
-    title: "Close writes a permanent record",
-    body: "Builder, project, outcome, raise, bond, milestones approved and timestamp go to an append-only registry that has no update or delete entrypoint.",
+    title: "Every outcome goes on the record",
+    body: "Closing the project appends the outcome — who built it, what was released and how it ended — to a registry with no update and no delete entrypoint.",
   },
 ];
 
 const PARAMETERS = [
-  { value: "$5", label: "Minimum contribution" },
-  { value: "Flat", label: "Platform fee, never a % of the raise" },
+  { value: "$5", label: "Minimum stake" },
+  { value: "Flat", label: "Platform fee, never a % of the vault" },
   { value: "5%", label: "Minimum performance bond" },
-  { value: "7 days", label: "Milestone voting window" },
+  { value: "7 days", label: "Release voting window" },
 ];
 
 export function AboutSection() {
@@ -52,8 +52,8 @@ export function AboutSection() {
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
         <SectionHeading
           eyebrow="About"
-          title="Real-world buildings, funded by the people who want them built"
-          lead="blkfndr is a crowdfunding platform on Stellar where the builder is economically accountable on-chain. Contributions pool into a per-project vault, the builder's performance bond is locked in the same contract, and milestone tranches are released only when contributors themselves vote to release them."
+          title="A vault the platform can't open, and a record it can't rewrite"
+          lead="BLKFNDR gives every real-world project its own vault on Stellar. The funds it safeguards, the milestones it tracks and every release it makes are recorded on-chain and governed by the project's own stakeholders. The platform holds no key that can move money or edit the record — so you verify what happened instead of trusting anyone to report it."
         />
 
         <div className="mx-auto mt-14 grid max-w-5xl gap-8 md:grid-cols-2">
@@ -67,12 +67,12 @@ export function AboutSection() {
               </h3>
             </div>
             <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
-              Local developers — particularly across the Philippines and
-              Southeast Asia — meet red tape, high interest rates and local
-              liquidity bottlenecks the moment they approach a traditional bank.
-              At the same time, ordinary people are priced out of the asset class
-              entirely, because participating at all has historically demanded
-              capital most of them will never have in one place.
+              Backing a real-world project means handing money to whoever holds
+              it — a platform, a team, an escrow account — and trusting them to
+              release it as promised and to report honestly on what happened. You
+              rarely see the account. You can&apos;t audit the decisions. And
+              when a project goes wrong, the record of it belongs to the party
+              with the most reason to edit it.
             </p>
           </div>
 
@@ -86,19 +86,18 @@ export function AboutSection() {
               </h3>
             </div>
             <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
-              It connects those builders directly to global on-chain liquidity,
-              from the blueprint stage, and it does so without asking anyone to
-              trust the platform. Money sits in a contract rather than an
-              account, the builder has their own capital at risk in that same
-              contract, and the people who funded the project are the ones who
-              decide when the next tranche is earned.
+              It replaces that trust with a contract. Every project runs on its
+              own vault where the money, the milestones and every release are
+              on-chain. The people with a stake in the project govern it, the
+              platform holds no key that can move funds, and the full history is
+              public and permanent — a shared record no one can quietly rewrite.
             </p>
           </div>
         </div>
 
         <div className="mt-16">
           <h3 className="text-center font-headline text-xl font-semibold sm:text-2xl">
-            How funding works
+            How a project&apos;s vault works
           </h3>
           <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
             {LIFECYCLE.map(({ step, icon: Icon, title, body }) => (

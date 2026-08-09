@@ -21,9 +21,9 @@ import { SecuritySection } from "@/components/home/SecuritySection";
 import { ContactSection } from "@/components/home/ContactSection";
 
 const HERO_CHIPS = [
-  { icon: Lock, label: "Builder bond locked in the same contract" },
-  { icon: Users, label: "Tranches released by contributor vote" },
-  { icon: ShieldCheck, label: "No admin key in the money path" },
+  { icon: Lock, label: "Funds held in a contract, not a platform account" },
+  { icon: Users, label: "Every release governed by the project's stakeholders" },
+  { icon: ShieldCheck, label: "No admin key that can override the vault" },
 ];
 
 const SECTION_LINKS = [
@@ -113,15 +113,16 @@ export default function Home() {
               </div>
 
               <h1 className="mt-2 font-headline text-2xl font-bold leading-tight tracking-tight text-foreground sm:text-3xl md:text-4xl">
-                Build, fund and own real-world developments on the blockchain.
+                A secure on-chain vault for real-world projects — and a record
+                anyone can verify.
               </h1>
 
               <p className="mx-auto mt-5 max-w-xl text-base leading-relaxed text-foreground/70 sm:text-lg lg:mx-0">
-                Contributions pool into a per-project vault. The builder&apos;s
-                performance bond is locked in the same contract. Milestone
-                tranches are released only when contributors vote to release
-                them — and a milestone that fails forfeits the bond to the people
-                who funded it.
+                BLKFNDR gives every project its own vault on Stellar. The funds
+                it holds, the milestones it tracks and every release it makes are
+                written on-chain and governed by the project&apos;s own
+                stakeholders — never by the platform. Nothing moves on an
+                admin&apos;s say-so, and anyone can audit the whole history.
               </p>
 
               <div className="mt-8 flex flex-col items-center gap-3 sm:flex-row sm:justify-center lg:justify-start">
@@ -141,7 +142,7 @@ export default function Home() {
                   variant="outline"
                   className="w-full border-foreground/25 bg-foreground/5 text-foreground hover:bg-foreground/10 hover:text-foreground sm:w-auto"
                 >
-                  <Link href="#security">How your money is protected</Link>
+                  <Link href="#security">Why you don&apos;t have to trust us</Link>
                 </Button>
               </div>
 
@@ -188,8 +189,8 @@ export default function Home() {
                 Featured Projects
               </h2>
               <p className="mt-2 text-base text-muted-foreground sm:text-lg">
-                Developments raising right now, each one behind its own bonded
-                vault.
+                Live projects on BLKFNDR, each one running on its own transparent
+                on-chain vault.
               </p>
             </div>
             {isLoading ? (

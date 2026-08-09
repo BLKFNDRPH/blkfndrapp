@@ -13,9 +13,9 @@ import { BlockchainProvider } from "@/context/BlockchainContext";
 import { FreighterWalletProvider } from "@/context/FreighterWalletProvider";
 
 export const metadata: Metadata = {
-  title: "BLKFNDR — Bonded crowdfunding for real-world builds, on Stellar",
+  title: "BLKFNDR — A secure on-chain vault for real-world projects, on Stellar",
   description:
-    "Contributions pool into a per-project vault, the builder's performance bond is locked in the same contract, and milestone tranches are released only when contributors vote to release them. No admin key in the path that moves money.",
+    "Every project gets its own vault on Stellar. The funds it holds, the milestones it tracks and every release it makes are on-chain and governed by the project's own stakeholders — never by the platform. No admin key in the path that moves money, and a record anyone can verify.",
 };
 
 export default async function RootLayout({
