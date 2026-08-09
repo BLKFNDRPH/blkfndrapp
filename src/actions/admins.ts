@@ -7,7 +7,9 @@ import {
   setAdminWallet,
   recognizeWallet,
   listAuditLog,
+  type AdminRole,
 } from "@/lib/data/admins";
+import { getCaller } from "@/lib/supabase/auth";
 import { authFailure } from "@/lib/auth/guards";
 
 /**
@@ -43,16 +45,22 @@ export async function getAdminsAction() {
  * it. Doing it the other way round would mean a server that either holds an
  * admin key or writes rows for transactions that never landed.
  */
+export async function getMyRoleAction() {
+  const caller = await getCaller();
+  return { role: caller?.role ?? null };
+}
+
 export async function grantAdminAction(
   email: string,
   walletAddress?: string,
   name?: string,
+  role?: AdminRole,
   note?: string,
 ) {
   try {
     return {
       success: true as const,
-      admins: await grantAdmin(email, walletAddress ?? "", name ?? "", note ?? ""),
+      admins: await grantAdmin(email, walletAddress ?? "", name ?? "", role ?? "owner", note ?? ""),
     };
   } catch (error) {
     return fail(error, "Could not add administrator.");

@@ -56,24 +56,40 @@ import {
 } from "@/components/ui/form";
 import { Input } from '../ui/input';
 import { Badge } from '../ui/badge';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { usePlatformInfo, useRefreshAfterTx } from '@/context/BlockchainContext';
 import { useStellarContract } from '@/hooks/use-stellar-contract';
+import { ROLE_LABELS, ADMIN_ROLES } from '@/lib/admin-roles';
 
 interface AdminManagementProps {
   isMainAdmin: boolean;
 }
 
-const addAdminFormSchema = z.object({
-  name: z.string().trim().min(1, 'Enter a name for this administrator.').max(120),
-  // The email is what decides whether someone is an admin when they sign in;
-  // the wallet is what the ledger will accept a signature from. Both are taken
-  // here so an administrator exists once, rather than half-existing in two
-  // places and needing a second visit to a different card to finish.
-  email: z.string().trim().toLowerCase().email('Enter a valid email address.').max(320),
-  address: z.string().trim().regex(/^G[A-Z2-7]{55}$/, {
-    message: 'Enter a valid Stellar address — 56 characters beginning with G.',
-  }),
-});
+// Only an owner needs a wallet: an owner votes on the treasury on-chain, and
+// their signature is what the ledger accepts. A moderator does a job in the
+// console and never signs a contract, so requiring a wallet of them would be
+// asking for a key they have no use for.
+const addAdminFormSchema = z
+  .object({
+    name: z.string().trim().min(1, 'Enter a name for this administrator.').max(120),
+    email: z.string().trim().toLowerCase().email('Enter a valid email address.').max(320),
+    role: z.enum(['owner', 'kyc_manager', 'project_approver', 'accountant']),
+    address: z.string().trim(),
+  })
+  .refine(
+    (v) => v.role !== 'owner' || /^G[A-Z2-7]{55}$/.test(v.address),
+    { path: ['address'], message: 'An owner needs a wallet to vote on-chain — 56 characters beginning with G.' },
+  )
+  .refine(
+    (v) => v.address === '' || /^G[A-Z2-7]{55}$/.test(v.address),
+    { path: ['address'], message: 'Enter a valid Stellar address, or leave it blank.' },
+  );
 type AddAdminFormSchema = z.infer<typeof addAdminFormSchema>;
 
 type AdminInfo = {
@@ -104,7 +120,7 @@ export function AdminManagement({ isMainAdmin }: AdminManagementProps) {
 
   const form = useForm<AddAdminFormSchema>({
     resolver: zodResolver(addAdminFormSchema),
-    defaultValues: { name: '', email: '', address: '' },
+    defaultValues: { name: '', email: '', role: 'owner', address: '' },
   });
 
   useEffect(() => {
@@ -258,6 +274,36 @@ export function AdminManagement({ isMainAdmin }: AdminManagementProps) {
 
     startTransition(async () => {
       try {
+        // A moderator holds no contract-signing key, so there is no chain half
+        // to do — just the console record. This is the whole reason moderators
+        // exist: console access without a wallet on the roster and without a
+        // share of the money.
+        if (values.role !== 'owner') {
+          const recorded = await grantAdminAction(
+            values.email,
+            values.address || undefined,
+            values.name,
+            values.role,
+          );
+          if (!recorded.success) {
+            toast({ title: 'Could not add', description: recorded.error, variant: 'destructive' });
+            return;
+          }
+          await refreshAfterTx();
+          toast({
+            title: 'Moderator added',
+            description: `${values.name} can sign in with ${values.email} as ${values.role.replace('_', ' ')}.`,
+          });
+          setIsDialogOpen(false);
+          form.reset();
+          return;
+        }
+
+        // An owner votes on-chain, so the wallet goes onto the on-chain roster
+        // first, then the console record. This order matters: only the chain
+        // half needs a signature, and a console row written for a transaction
+        // that never landed would grant sign-in access to someone the ledger
+        // does not recognise.
         const result = await addAdmin(values.address);
 
         const txStatus = (result as any)?.getTransactionResponse?.status;
@@ -265,14 +311,11 @@ export function AdminManagement({ isMainAdmin }: AdminManagementProps) {
           throw new Error("Add admin transaction failed on-chain.");
         }
 
-        // The ledger accepted the wallet; now record who it belongs to. This
-        // order matters: only the chain half needs a signature, and a console
-        // row written for a transaction that never landed would grant sign-in
-        // access to someone the ledger does not recognise.
         const recorded = await grantAdminAction(
           values.email,
           values.address,
           values.name,
+          'owner',
         );
 
         await refreshAfterTx();
@@ -293,8 +336,8 @@ export function AdminManagement({ isMainAdmin }: AdminManagementProps) {
         }
 
         toast({
-          title: "Administrator added",
-          description: `${values.name} can sign in with ${values.email}, and sign transactions with this wallet.`,
+          title: "Owner added",
+          description: `${values.name} can sign in with ${values.email}, and votes with this wallet. Adding an owner dilutes every other owner's share.`,
         });
         setIsDialogOpen(false);
         form.reset();
@@ -363,26 +406,61 @@ export function AdminManagement({ isMainAdmin }: AdminManagementProps) {
                     />
                     <FormField
                       control={form.control}
-                      name="address"
+                      name="role"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Wallet Address</FormLabel>
-                          <FormControl>
-                            <Input
-                              placeholder="G..."
-                              className="font-mono text-xs"
-                              spellCheck={false}
-                              {...field}
-                            />
-                          </FormControl>
+                          <FormLabel>Role</FormLabel>
+                          <Select value={field.value} onValueChange={field.onChange}>
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {ADMIN_ROLES.map((r) => (
+                                <SelectItem key={r} value={r}>
+                                  {ROLE_LABELS[r].label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                           <FormDescription>
-                            Added to the on-chain roster in the same step, which
-                            needs your signature.
+                            {ROLE_LABELS[form.watch('role')].blurb}
                           </FormDescription>
                           <FormMessage />
                         </FormItem>
                       )}
                     />
+                    {/* An owner needs a wallet — they vote on the treasury
+                        on-chain. A moderator holds no signing key, so the field
+                        is not shown to them: asking for a wallet they never use
+                        is how half-configured moderators get created. */}
+                    {form.watch('role') === 'owner' && (
+                      <FormField
+                        control={form.control}
+                        name="address"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Wallet Address</FormLabel>
+                            <FormControl>
+                              <Input
+                                placeholder="G..."
+                                className="font-mono text-xs"
+                                spellCheck={false}
+                                {...field}
+                              />
+                            </FormControl>
+                            <FormDescription>
+                              Added to the on-chain roster in the same step, which
+                              needs your signature. An owner holds a share of the
+                              platform, so adding one dilutes every existing
+                              owner&rsquo;s cut of the fees.
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    )}
                     <DialogFooter>
                       <DialogClose asChild>
                         <Button type="button" variant="secondary">Cancel</Button>

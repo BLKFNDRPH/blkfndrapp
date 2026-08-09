@@ -33,9 +33,11 @@ import {
   revokeAdminAction,
   setAdminWalletAction,
 } from "@/actions/admins";
+import { ROLE_LABELS } from "@/lib/admin-roles";
 
 interface Row {
   email: string;
+  role: "owner" | "kyc_manager" | "project_approver" | "accountant";
   grantedAt: string;
   note: string;
   claimed: boolean;
@@ -185,10 +187,20 @@ export function PlatformAdminManager() {
               return (
                 <li key={a.email} className="flex items-center justify-between gap-3 px-3 py-2.5">
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">
+                    <p className="flex items-center gap-2 truncate text-sm font-medium">
                       {a.email}
+                      <Badge
+                        variant="outline"
+                        className={
+                          a.role === "owner"
+                            ? "border-emerald-500/40 text-emerald-500"
+                            : "text-muted-foreground"
+                        }
+                      >
+                        {ROLE_LABELS[a.role].label}
+                      </Badge>
                       {isSelf && (
-                        <span className="ml-2 text-xs font-normal text-muted-foreground">
+                        <span className="text-xs font-normal text-muted-foreground">
                           (you)
                         </span>
                       )}

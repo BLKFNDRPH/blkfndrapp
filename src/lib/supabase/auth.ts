@@ -12,10 +12,14 @@ export class AuthError extends Error {
   }
 }
 
+export type AdminRole = "owner" | "kyc_manager" | "project_approver" | "accountant";
+
 export interface AuthedCaller {
   userId: string;
   email: string | null;
   isAdmin: boolean;
+  /** Their role on the roster, or null if not an admin. Read fresh, like isAdmin. */
+  role: AdminRole | null;
 }
 
 /**
@@ -43,12 +47,17 @@ export async function requireCaller(): Promise<AuthedCaller> {
   // admin until it happened to be reissued. is_admin() is SECURITY DEFINER and
   // takes no arguments — it answers only about the caller — so asking the
   // database costs one round trip and cannot be forged by editing a token.
-  const { data: isAdmin } = await supabase.rpc("is_admin");
+  // One round trip answers both: the role, and — by its presence — whether they
+  // are an admin at all. A null role is a non-admin; is_admin() would agree, so
+  // asking it separately would be a second trip for a fact this one already
+  // carries.
+  const { data: role } = await supabase.rpc("my_role");
 
   return {
     userId: claims.sub,
     email: (claims.email as string | undefined) ?? null,
-    isAdmin: isAdmin === true,
+    isAdmin: role != null,
+    role: (role as AdminRole | null) ?? null,
   };
 }
 

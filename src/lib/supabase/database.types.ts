@@ -176,9 +176,9 @@ export type Database = {
         Relationships: [];
       };
       platform_admins: {
-        Row: { display_name: string; email: string; granted_at: string; granted_by: string | null; id: string; note: string; user_id: string | null; wallet_address: string | null };
-        Insert: { display_name?: string; email: string; granted_at?: string; granted_by?: string | null; id?: string; note?: string; user_id?: string | null; wallet_address?: string | null };
-        Update: { display_name?: string; email?: string; granted_at?: string; granted_by?: string | null; id?: string; note?: string; user_id?: string | null; wallet_address?: string | null };
+        Row: { display_name: string; email: string; granted_at: string; granted_by: string | null; id: string; note: string; role: "owner" | "kyc_manager" | "project_approver" | "accountant"; user_id: string | null; wallet_address: string | null };
+        Insert: { display_name?: string; email: string; granted_at?: string; granted_by?: string | null; id?: string; note?: string; role?: "owner" | "kyc_manager" | "project_approver" | "accountant"; user_id?: string | null; wallet_address?: string | null };
+        Update: { display_name?: string; email?: string; granted_at?: string; granted_by?: string | null; id?: string; note?: string; role?: "owner" | "kyc_manager" | "project_approver" | "accountant"; user_id?: string | null; wallet_address?: string | null };
         Relationships: [];
       };
       admin_audit_log: {
@@ -424,6 +424,9 @@ export type Database = {
       project_consensus: { Args: { pid: string }; Returns: { approvals: number; rejections: number; owners: number; needed: number; carried: boolean }[] };
       project_awaiting_consensus: { Args: { pid: string }; Returns: boolean };
       is_admin: { Args: Record<never, never>; Returns: boolean };
+      is_owner: { Args: Record<never, never>; Returns: boolean };
+      has_admin_role: { Args: { wanted: "owner" | "kyc_manager" | "project_approver" | "accountant" }; Returns: boolean };
+      my_role: { Args: Record<never, never>; Returns: "owner" | "kyc_manager" | "project_approver" | "accountant" | null };
       is_admin_wallet: { Args: { addr: string }; Returns: boolean };
       purge_expired_auth_challenges: { Args: Record<never, never>; Returns: undefined };
       stroops_to_units: { Args: { raw: number }; Returns: number };
