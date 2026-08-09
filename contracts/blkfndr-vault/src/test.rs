@@ -828,3 +828,128 @@ fn an_oversized_page_request_is_clamped() {
     let zero = s.vault.get_contributors(&0u32, &0u32);
     assert_eq!(zero.len(), 3);
 }
+
+// ── Abandonment recovery ────────────────────────────────────────────────────
+//
+// A funded vault advances only when the builder opens the next milestone vote —
+// an action no one else can take. settle_stalled is the permissionless escape
+// hatch so an abandoned project cannot strand contributor funds forever.
+
+const STALL_WINDOW: u64 = 90 * 24 * 60 * 60; // mirrors BUILDER_STALL_WINDOW
+
+#[test]
+fn an_abandoned_funded_vault_can_be_reclaimed_for_contributors() {
+    let s = setup();
+    fund_evenly(&s); // early-closes to Funded; the abandonment clock starts here
+    assert_eq!(s.vault.get_state(), VaultState::Funded);
+
+    // Builder opens no vote. Before the window elapses, nobody can force it.
+    advance(&s.env, STALL_WINDOW - 1);
+    assert!(
+        s.vault.try_settle_stalled().is_err(),
+        "cannot reclaim before the stall window elapses"
+    );
+
+    // Past the window, anyone may fail the project and free the funds.
+    advance(&s.env, 2);
+    s.vault.settle_stalled();
+    assert_eq!(s.vault.get_state(), VaultState::Refunding);
+
+    // Nothing was ever released, so the builder keeps nothing and the bond is
+    // forfeited: each backer reclaims principal plus a third of the bond.
+    let expected = 100 * UNIT + (100 * UNIT * BOND / (300 * UNIT));
+    let before = s.token.balance(&s.alice);
+    s.vault.claim_refund(&s.alice);
+    assert_eq!(s.token.balance(&s.alice) - before, expected);
+    assert_eq!(s.token.balance(&s.builder), 0, "an abandoning builder keeps nothing");
+}
+
+#[test]
+fn releasing_a_milestone_resets_the_stall_clock() {
+    let s = setup();
+    fund_evenly(&s);
+
+    // A month in, the builder releases the first milestone.
+    advance(&s.env, 30 * 24 * 60 * 60);
+    s.vault.open_milestone_vote(&1u32);
+    s.vault.approve_milestone(&s.alice, &1u32);
+    s.vault.approve_milestone(&s.bob, &1u32);
+    s.vault.approve_milestone(&s.carol, &1u32);
+    s.vault.release_milestone(&1u32);
+    assert_eq!(s.vault.get_state(), VaultState::Active);
+
+    // 65 days later: 95 from funding, but only 65 from the release. Measured from
+    // funding this would be stalled; measured from the last release it is not —
+    // which is the point of the reset.
+    advance(&s.env, 65 * 24 * 60 * 60);
+    assert!(
+        s.vault.try_settle_stalled().is_err(),
+        "each release resets the abandonment clock"
+    );
+
+    // Genuinely idle past the window (in the Active state), it is reclaimable.
+    advance(&s.env, STALL_WINDOW);
+    s.vault.settle_stalled();
+    assert_eq!(s.vault.get_state(), VaultState::Refunding);
+}
+
+#[test]
+fn an_open_vote_is_not_abandonment() {
+    let s = setup();
+    fund_evenly(&s);
+
+    // Just before the window closes, the builder opens a vote — they are active.
+    advance(&s.env, STALL_WINDOW - 10);
+    s.vault.open_milestone_vote(&1u32);
+
+    // Even now past the funding-anchored window, an open and unelapsed vote
+    // blocks the stall path; the lapse path governs an open vote, not this one.
+    advance(&s.env, 20);
+    assert!(
+        s.vault.try_settle_stalled().is_err(),
+        "an open, unelapsed vote is not abandonment"
+    );
+}
+
+#[test]
+fn rejects_more_milestones_than_the_cap() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().set_timestamp(1_000_000);
+
+    let builder = Address::generate(&env);
+    let issuer = Address::generate(&env);
+    let asset = env.register_stellar_asset_contract_v2(issuer.clone());
+    StellarAssetClient::new(&env, &asset.address()).mint(&builder, &(BOND + PLATFORM_FEE));
+
+    let identity_id = env.register(MockIdentity, ());
+    MockIdentityClient::new(&env, &identity_id).set_approved(&builder, &true);
+    let vault = BlkfndrVaultClient::new(&env, &env.register(BlkfndrVault, ()));
+
+    // 21 milestones — one past MAX_MILESTONES — summing to the goal, so the only
+    // thing wrong is the count.
+    let mut milestones = Vec::new(&env);
+    for i in 0..21u32 {
+        milestones.push_back(MilestoneInput { id: i + 1, amount: UNIT });
+    }
+
+    let result = vault.try_initialize(&VaultInitConfig {
+        project_id: 1,
+        creator: builder.clone(),
+        token: asset.address(),
+        goal: 21 * UNIT,
+        deadline: env.ledger().timestamp() + DEADLINE,
+        bond_amount: BOND,
+        identity_registry: identity_id,
+        attestation_registry: Address::generate(&env),
+        factory: Address::generate(&env),
+        fee_wallet_address: Address::generate(&env),
+        platform_fee: PLATFORM_FEE,
+        voting_window_secs: VOTING_WINDOW,
+        min_contribution: MIN_CONTRIBUTION,
+        milestones,
+        metadata_cid: String::from_str(&env, "cid"),
+    });
+
+    assert!(result.is_err(), "a milestone list past the cap is rejected");
+}
