@@ -112,6 +112,7 @@ pub enum Error {
     NoProposalOpen      = 40,
     ProposalAlreadyOpen = 41,
     FeeOutOfRange       = 42,
+    OpsFundingNotSet    = 43,
 }
 
 #[contracttype]
@@ -222,6 +223,12 @@ pub enum GovernedAction {
     /// who need console access without a share are a separate role entirely and
     /// never appear here.
     SetOwners(Vec<Address>),
+    /// Route a monthly share of the treasury's gas asset to the Operations
+    /// Vault, which pays for the platform's moderation gas. Owners set the vault,
+    /// the asset (XLM) and the percentage once; thereafter fund_operations moves
+    /// that share every thirty days, permissionlessly. Deliberately a percentage
+    /// of the *unreserved* balance, so it never touches a shareholder's owed pay.
+    SetOpsFunding(OpsFundingTerms),
 }
 
 #[contracttype]
@@ -233,6 +240,17 @@ pub struct Proposal {
     pub opened_at: u64,
     pub closes_at: u64,
     pub approvals: u32,
+}
+
+/// How the treasury funds operations gas: where it goes, which asset it routes
+/// (the native token — XLM), and the monthly cut in basis points.
+#[contracttype]
+#[derive(Clone)]
+pub struct OpsFundingTerms {
+    pub vault: Address,
+    pub token: Address,
+    /// Basis points of the unreserved balance, moved every thirty days.
+    pub bps: u32,
 }
 
 #[contracttype]
@@ -263,6 +281,11 @@ pub enum DataKey {
     NextProposalId,
     /// (proposal_id, voter) -> voted
     ProposalVote(u32, Address),
+    /// The Operations Vault funding terms — vault, asset, monthly bps.
+    OpsFunding,
+    /// When operations funding last ran. Monthly, and this is its clock —
+    /// separate from LastReleaseAt so gas top-ups and dividends never share one.
+    LastOpsFundingAt,
 }
 
 fn bump(env: &Env) {
@@ -337,6 +360,19 @@ fn call_factory(env: &Env, method: &str, arg: soroban_sdk::Val) {
 fn carried(approvals: u32, total: u32) -> bool {
     (approvals as u64) * (APPROVAL_DENOMINATOR as u64)
         >= (total as u64) * (APPROVAL_NUMERATOR as u64)
+}
+
+/// The unreserved balance of the ops-funding asset — what a top-up may take
+/// without touching money already owed to shareholders of a payable cycle.
+fn ops_available(env: &Env, terms: &OpsFundingTerms) -> i128 {
+    let balance =
+        token::Client::new(env, &terms.token).balance(&env.current_contract_address());
+    let reserved: i128 = env
+        .storage()
+        .persistent()
+        .get(&DataKey::Reserved(terms.token.clone()))
+        .unwrap_or(0);
+    balance - reserved
 }
 
 /// An equal register over `owners`, totalling exactly 10 000.
@@ -764,6 +800,13 @@ impl Treasury {
                     panic_with_error!(&env, Error::FeeOutOfRange);
                 }
             }
+            // A cut above the whole balance is meaningless; anything up to 100%
+            // is a policy choice the owners are making with open eyes.
+            GovernedAction::SetOpsFunding(terms) => {
+                if terms.bps as i128 > BPS_TOTAL {
+                    panic_with_error!(&env, Error::FeeOutOfRange);
+                }
+            }
             GovernedAction::TransferAdmin(_)
             | GovernedAction::SetWasmHash(_)
             | GovernedAction::SetFeeWallet(_)
@@ -922,6 +965,14 @@ impl Treasury {
                     next.len(),
                 );
             }
+            GovernedAction::SetOpsFunding(terms) => {
+                env.storage().instance().set(&DataKey::OpsFunding, terms);
+
+                env.events().publish(
+                    (symbol_short!("OPSFUND"), symbol_short!("SET")),
+                    (terms.vault.clone(), terms.bps),
+                );
+            }
         }
 
         env.storage().instance().remove(&DataKey::Proposal);
@@ -929,6 +980,89 @@ impl Treasury {
         env.events().publish(
             (symbol_short!("PROPOSAL"), symbol_short!("APPLIED")),
             proposal.id,
+        );
+    }
+
+    // ── Operations funding ──────────────────────────────────────────────────
+
+    /// Move this month's operations funding to the Operations Vault.
+    ///
+    /// Permissionless and time-gated: anyone may trigger it — the indexer cron
+    /// does — but only once every thirty days, so no caller can drain the cut by
+    /// calling in a loop. It moves a set percentage of the *unreserved* balance
+    /// of the configured asset, never a shareholder's owed money, and only while
+    /// no cycle is mid-vote — a cycle has already snapshotted the balance it will
+    /// pay, and moving money out from under that snapshot could leave the treasury
+    /// unable to honour it.
+    ///
+    /// The owners set the vault, asset and percentage once, by vote
+    /// (SetOpsFunding); after that this needs no further approval, which is the
+    /// point — the gas budget refills itself.
+    pub fn fund_operations(env: Env) {
+        bump(&env);
+
+        let terms: OpsFundingTerms = env
+            .storage()
+            .instance()
+            .get(&DataKey::OpsFunding)
+            .unwrap_or_else(|| panic_with_error!(&env, Error::OpsFundingNotSet));
+
+        // Thirty days between top-ups, on their own clock.
+        if let Some(last) = env
+            .storage()
+            .instance()
+            .get::<_, u64>(&DataKey::LastOpsFundingAt)
+        {
+            if env.ledger().timestamp() < last + MIN_RELEASE_INTERVAL {
+                panic_with_error!(&env, Error::ReleaseTooSoon);
+            }
+        }
+
+        // Not while a cycle is being voted on. It snapshotted the available
+        // balance at open and will reserve that amount if it carries; taking money
+        // out now could make the reservation exceed the balance and strand claims.
+        if let Some(open_id) = env
+            .storage()
+            .instance()
+            .get::<_, u32>(&DataKey::OpenCycleId)
+        {
+            if let Some(c) = env
+                .storage()
+                .persistent()
+                .get::<_, Cycle>(&DataKey::Cycle(open_id))
+            {
+                if c.state == CycleState::Voting && env.ledger().timestamp() < c.closes_at {
+                    panic_with_error!(&env, Error::CycleAlreadyOpen);
+                }
+            }
+        }
+
+        let available = ops_available(&env, &terms);
+        if available <= 0 {
+            panic_with_error!(&env, Error::NothingToRelease);
+        }
+        let amount = available
+            .checked_mul(terms.bps as i128)
+            .unwrap()
+            .checked_div(BPS_TOTAL)
+            .unwrap();
+        if amount <= 0 {
+            panic_with_error!(&env, Error::NothingToRelease);
+        }
+
+        token::Client::new(&env, &terms.token).transfer(
+            &env.current_contract_address(),
+            &terms.vault,
+            &amount,
+        );
+
+        env.storage()
+            .instance()
+            .set(&DataKey::LastOpsFundingAt, &env.ledger().timestamp());
+
+        env.events().publish(
+            (symbol_short!("OPSFUND"), symbol_short!("SENT")),
+            (terms.vault, terms.token, amount),
         );
     }
 
@@ -993,6 +1127,39 @@ impl Treasury {
 
     pub fn balance_of(env: Env, token: Address) -> i128 {
         token::Client::new(&env, &token).balance(&env.current_contract_address())
+    }
+
+    /// The operations funding terms, if the owners have set them.
+    pub fn get_ops_funding(env: Env) -> Option<OpsFundingTerms> {
+        env.storage().instance().get(&DataKey::OpsFunding)
+    }
+
+    /// When operations funding may next run. Zero if it has never run — the first
+    /// call is allowed the moment funding is configured.
+    pub fn next_ops_funding_at(env: Env) -> u64 {
+        env.storage()
+            .instance()
+            .get::<_, u64>(&DataKey::LastOpsFundingAt)
+            .map(|last| last + MIN_RELEASE_INTERVAL)
+            .unwrap_or(0)
+    }
+
+    /// What the next funding run would move: bps of the unreserved balance of the
+    /// configured asset. Zero if funding is not configured.
+    pub fn ops_funding_available(env: Env) -> i128 {
+        let terms: OpsFundingTerms = match env.storage().instance().get(&DataKey::OpsFunding) {
+            Some(t) => t,
+            None => return 0,
+        };
+        let available = ops_available(&env, &terms);
+        if available <= 0 {
+            return 0;
+        }
+        available
+            .checked_mul(terms.bps as i128)
+            .unwrap()
+            .checked_div(BPS_TOTAL)
+            .unwrap()
     }
 }
 
