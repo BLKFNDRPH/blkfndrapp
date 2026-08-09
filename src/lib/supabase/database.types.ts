@@ -187,6 +187,12 @@ export type Database = {
         Update: { action?: string; actor_id?: string | null; created_at?: string; detail?: string; id?: string; target_email?: string };
         Relationships: [];
       };
+      platform_bans: {
+        Row: { user_id: string; banned_by: string | null; reason: string; created_at: string };
+        Insert: { user_id: string; banned_by?: string | null; reason?: string; created_at?: string };
+        Update: { user_id?: string; banned_by?: string | null; reason?: string; created_at?: string };
+        Relationships: [];
+      };
       platform_settings: {
         Row: { fee_wallet_email: string; id: boolean; updated_at: string };
         Insert: { fee_wallet_email?: string; id?: boolean; updated_at?: string };
@@ -426,6 +432,8 @@ export type Database = {
       is_admin: { Args: Record<never, never>; Returns: boolean };
       is_owner: { Args: Record<never, never>; Returns: boolean };
       has_admin_role: { Args: { wanted: "owner" | "platform_admin" | "kyc_manager" | "project_approver" | "accountant" }; Returns: boolean };
+      is_banned: { Args: { uid: string }; Returns: boolean };
+      creator_is_banned: { Args: { addr: string }; Returns: boolean };
       my_role: { Args: Record<never, never>; Returns: "owner" | "platform_admin" | "kyc_manager" | "project_approver" | "accountant" | null };
       get_platform_secret: { Args: { secret_name: string }; Returns: string | null };
       set_platform_secret: { Args: { secret_name: string; secret_value: string }; Returns: undefined };
