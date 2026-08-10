@@ -1,19 +1,21 @@
 #!/usr/bin/env bash
 #
-# Deploy and initialize the BLKFNDR contract set.
+# Deploy the BLKFNDR contract set.
 #
-# Initialization order is not obvious and getting it wrong is not recoverable
-# for a given deployment, because every initialize is once-only:
+# Every contract configures itself in its constructor, which runs inside its
+# deploy transaction — there is no deployed-but-unconfigured window for anyone
+# to seize (audit H-03). That makes deploy ORDER the thing to get right:
 #
-#   * the attestation registry must be bound to the factory's address, and
-#   * the factory must be configured with the attestation registry's address.
-#
-# Neither can be initialized before the other exists, so all four contracts are
-# deployed first and initialized afterwards. Deployment and initialization are
-# separate operations, which is what makes the cycle resolvable at all.
+#   * the factory takes the identity and attestation registry addresses in its
+#     constructor, so both must be deployed before it, and
+#   * the attestation registry no longer takes the factory at construction —
+#     that is what breaks the old factory<->attestation cycle. It is deployed
+#     first and told to trust the factory with a single post-deploy add_factory,
+#     the one wiring step that cannot be folded into a constructor.
 #
 # The vault is not deployed here. It is uploaded as wasm and the factory
-# instantiates one per project from that hash.
+# instantiates one per project from that hash; each vault is configured
+# atomically inside create_vault, so it has no such window either.
 #
 # Usage:
 #   scripts/deploy-contracts.sh --network testnet --source my-key
@@ -90,10 +92,12 @@ echo "  done"
 echo
 
 deploy() {
+  local wasm="$1"; shift
   stellar contract deploy \
-    --wasm "${OUT}/$1.wasm" \
+    --wasm "${OUT}/${wasm}.wasm" \
     --source "${SOURCE}" \
-    --network "${NETWORK}" 2>/dev/null | tail -1
+    --network "${NETWORK}" \
+    -- "$@" 2>/dev/null | tail -1
 }
 
 invoke() {
@@ -117,35 +121,26 @@ VAULT_WASM_HASH=$(stellar contract upload \
   --network "${NETWORK}" 2>/dev/null | tail -1)
 echo "  hash ${VAULT_WASM_HASH}"
 
-# ── Deploy, all before any initialize ──────────────────────────────────────
-
-echo
-echo "Deploying contracts..."
-IDENTITY_ID=$(deploy blkfndr_identity);     echo "  identity    ${IDENTITY_ID}"
-ADMIN_ID=$(deploy blkfndr_admin);           echo "  admin       ${ADMIN_ID}"
-FACTORY_ID=$(deploy blkfndr_factory);       echo "  factory     ${FACTORY_ID}"
-ATTESTATION_ID=$(deploy blkfndr_attestation); echo "  attestation ${ATTESTATION_ID}"
-
-# ── Initialize ─────────────────────────────────────────────────────────────
+# ── Deploy — each contract configured atomically by its constructor ─────────
 #
-# The attestation registry is bound to the factory, and the factory is told
-# where the attestation registry lives. Both addresses exist by now, so the
-# order within this block does not matter — only that it comes after every
-# deploy.
+# Order matters: identity and attestation must exist before the factory, which
+# takes their addresses in its constructor. The attestation registry is
+# deployed first and takes no factory (the cycle-breaker); the factory is
+# deployed last, with both registry addresses.
 
 echo
-echo "Initializing..."
+echo "Deploying contracts (configured at deploy via constructors)..."
 
-invoke "${IDENTITY_ID}" initialize --admin "${ADMIN}"
-echo "  identity registry bound to admin"
+IDENTITY_ID=$(deploy blkfndr_identity --admin "${ADMIN}")
+echo "  identity    ${IDENTITY_ID}"
 
-invoke "${ADMIN_ID}" initialize --owner "${ADMIN}"
-echo "  admin roster bound to owner"
+ADMIN_ID=$(deploy blkfndr_admin --owner "${ADMIN}")
+echo "  admin       ${ADMIN_ID}"
 
-invoke "${ATTESTATION_ID}" initialize --admin "${ADMIN}" --factory "${FACTORY_ID}"
-echo "  attestation registry bound to factory"
+ATTESTATION_ID=$(deploy blkfndr_attestation --admin "${ADMIN}")
+echo "  attestation ${ATTESTATION_ID}"
 
-invoke "${FACTORY_ID}" initialize \
+FACTORY_ID=$(deploy blkfndr_factory \
   --admin "${ADMIN}" \
   --vault_wasm_hash "${VAULT_WASM_HASH}" \
   --fee_wallet "${FEE_WALLET}" \
@@ -153,8 +148,19 @@ invoke "${FACTORY_ID}" initialize \
   --identity_registry "${IDENTITY_ID}" \
   --attestation_registry "${ATTESTATION_ID}" \
   --voting_window_secs "${VOTING_WINDOW}" \
-  --min_contribution "${MIN_CONTRIBUTION}"
-echo "  factory configured"
+  --min_contribution "${MIN_CONTRIBUTION}")
+echo "  factory     ${FACTORY_ID}"
+
+# ── Wire the one edge a constructor cannot: attestation trusts the factory ──
+#
+# The factory did not exist when the attestation registry was deployed, so this
+# is the single post-deploy step. It is admin-gated (add_factory calls
+# admin.require_auth), so it is not itself a front-runnable window.
+
+echo
+echo "Granting the factory attestation-write trust..."
+invoke "${ATTESTATION_ID}" add_factory --factory "${FACTORY_ID}"
+echo "  attestation registry now trusts the factory"
 
 # ── Verify ─────────────────────────────────────────────────────────────────
 #

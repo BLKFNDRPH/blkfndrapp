@@ -24,7 +24,8 @@ use soroban_sdk::{
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
 pub enum Error {
-    AlreadyInitialized = 1,
+    // 1 was AlreadyInitialized; the constructor makes re-init impossible, so
+    // the guard and its code are gone. Reserved gap for ABI stability.
     NotInitialized     = 2,
     NotAVault          = 3,
     AlreadyAttested    = 4,
@@ -135,26 +136,27 @@ pub struct AttestationRegistry;
 
 #[contractimpl]
 impl AttestationRegistry {
-    /// Bind the registry to the factory whose vaults may write records.
+    /// Bind the registry to its admin, atomically at deploy.
     ///
-    /// `admin` must authorize, so the binding cannot be front-run by whoever
-    /// notices the deployed-but-uninitialized contract first.
-    pub fn initialize(env: Env, admin: Address, factory: Address) {
-        if env.storage().instance().has(&DataKey::Admin) {
-            panic_with_error!(&env, Error::AlreadyInitialized);
-        }
+    /// A constructor runs inside the deploy transaction, so the registry is
+    /// never deployed-but-unconfigured for a first caller to seize. It trusts
+    /// no factory yet: the deployer wires that in immediately afterwards with
+    /// `add_factory`, an admin-gated call. Splitting the factory out of
+    /// construction is also what breaks the factory<->attestation cycle — the
+    /// factory takes this registry's address in its own constructor, so this
+    /// one cannot in turn demand the factory's at deploy. `admin` must
+    /// authorise the deploy.
+    pub fn __constructor(env: Env, admin: Address) {
         admin.require_auth();
 
-        let mut factories = Vec::new(&env);
-        factories.push_back(factory.clone());
-
+        let factories: Vec<Address> = Vec::new(&env);
         env.storage().instance().set(&DataKey::Admin, &admin);
         env.storage().instance().set(&DataKey::Factories, &factories);
         extend_instance_ttl(&env);
 
         env.events().publish(
             (symbol_short!("ATTEST"), symbol_short!("INIT")),
-            factory,
+            admin,
         );
     }
 

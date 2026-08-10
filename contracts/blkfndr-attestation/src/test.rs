@@ -53,9 +53,12 @@ fn setup() -> Setup {
     vaults.push_back(vault.clone());
     MockFactoryClient::new(&env, &factory_id).set_vaults(&vaults);
 
-    let registry_id = env.register(AttestationRegistry, ());
+    // Construct trusting no factory, then grant trust — the same two steps the
+    // deploy runs, and what lets the factory take this registry's address in its
+    // own constructor without a cycle.
+    let registry_id = env.register(AttestationRegistry, (admin.clone(),));
     let registry = AttestationRegistryClient::new(&env, &registry_id);
-    registry.initialize(&admin, &factory_id);
+    registry.add_factory(&factory_id);
 
     Setup { env, registry, vault, builder, factory_id, admin }
 }
@@ -181,14 +184,15 @@ fn rejects_incoherent_records() {
     assert!(negative.is_err());
 }
 
+/// Construction is a `__constructor` now: it runs inside the deploy
+/// transaction, so there is no deployed-but-unconfigured window and no second
+/// `initialize` to re-bind the registry with. What must still hold is that
+/// construction demands the admin's signature.
 #[test]
-fn cannot_be_initialized_twice() {
-    let s = setup();
-    let hijacker = Address::generate(&s.env);
-    let other_factory = Address::generate(&s.env);
-
-    let result = s.registry.try_initialize(&hijacker, &other_factory);
-    assert!(result.is_err(), "re-binding the factory must fail");
+#[should_panic] // admin.require_auth() fails without the admin's signature
+fn construction_requires_the_admins_signature() {
+    let env = Env::default(); // deliberately no mock_all_auths
+    env.register(AttestationRegistry, (Address::generate(&env),));
 }
 
 #[test]

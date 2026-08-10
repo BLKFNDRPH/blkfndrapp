@@ -29,16 +29,21 @@ fn setup() -> Setup {
     let attestation = Address::generate(&env);
     let fee_wallet = Address::generate(&env);
 
-    let factory = BlkfndrFactoryClient::new(&env, &env.register(BlkfndrFactory, ()));
-    factory.initialize(
-        &admin,
-        &BytesN::random(&env),
-        &fee_wallet,
-        &PLATFORM_FEE,
-        &identity,
-        &attestation,
-        &VOTING_WINDOW,
-        &MIN_CONTRIBUTION,
+    let factory = BlkfndrFactoryClient::new(
+        &env,
+        &env.register(
+            BlkfndrFactory,
+            (
+                admin.clone(),
+                BytesN::<32>::random(&env),
+                fee_wallet.clone(),
+                PLATFORM_FEE,
+                identity.clone(),
+                attestation.clone(),
+                VOTING_WINDOW,
+                MIN_CONTRIBUTION,
+            ),
+        ),
     );
 
     Setup { env, factory, admin, identity, attestation, fee_wallet }
@@ -58,39 +63,47 @@ fn stores_the_platform_configuration() {
     assert_eq!(s.factory.get_project_count(), 0);
 }
 
+/// Construction is a `__constructor` now: it runs inside the deploy
+/// transaction, so there is no deployed-but-unconfigured window and no second
+/// `initialize` to seize the factory with. What must still hold is that
+/// construction demands the admin's signature.
 #[test]
-fn cannot_be_initialized_twice() {
-    let s = setup();
-    let result = s.factory.try_initialize(
-        &Address::generate(&s.env),
-        &BytesN::random(&s.env),
-        &Address::generate(&s.env),
-        &PLATFORM_FEE,
-        &Address::generate(&s.env),
-        &Address::generate(&s.env),
-        &VOTING_WINDOW,
-        &MIN_CONTRIBUTION,
+#[should_panic] // admin.require_auth() fails without the admin's signature
+fn construction_requires_the_admins_signature() {
+    let env = Env::default(); // deliberately no mock_all_auths
+    env.register(
+        BlkfndrFactory,
+        (
+            Address::generate(&env),
+            BytesN::<32>::random(&env),
+            Address::generate(&env),
+            PLATFORM_FEE,
+            Address::generate(&env),
+            Address::generate(&env),
+            VOTING_WINDOW,
+            MIN_CONTRIBUTION,
+        ),
     );
-    assert!(result.is_err());
 }
 
 #[test]
+#[should_panic] // a platform fee above the ceiling fails validation in the constructor
 fn rejects_a_platform_fee_above_the_ceiling() {
     let env = Env::default();
     env.mock_all_auths();
-    let factory = BlkfndrFactoryClient::new(&env, &env.register(BlkfndrFactory, ()));
-
-    let result = factory.try_initialize(
-        &Address::generate(&env),
-        &BytesN::random(&env),
-        &Address::generate(&env),
-        &(1_000_000 * UNIT),
-        &Address::generate(&env),
-        &Address::generate(&env),
-        &VOTING_WINDOW,
-        &MIN_CONTRIBUTION,
+    env.register(
+        BlkfndrFactory,
+        (
+            Address::generate(&env),
+            BytesN::<32>::random(&env),
+            Address::generate(&env),
+            1_000_000 * UNIT,
+            Address::generate(&env),
+            Address::generate(&env),
+            VOTING_WINDOW,
+            MIN_CONTRIBUTION,
+        ),
     );
-    assert!(result.is_err());
 }
 
 #[test]
@@ -215,24 +228,30 @@ mod deployment {
         let identity_id = env.register(MockIdentity, ());
         MockIdentityClient::new(&env, &identity_id).set_approved(&builder, &true);
 
-        let factory_id = env.register(BlkfndrFactory, ());
-        let registry_id = env.register(AttestationRegistry, ());
+        // Mirror the real deploy order. The attestation registry is constructed
+        // first, trusting no factory — which is what lets the factory take its
+        // address in its own constructor without a cycle. The factory is then
+        // constructed, and the registry is told to trust it.
+        let registry_id = env.register(AttestationRegistry, (admin.clone(),));
         let registry = AttestationRegistryClient::new(&env, &registry_id);
-        registry.initialize(&admin, &factory_id);
 
         let wasm_hash = env.deployer().upload_contract_wasm(vault_wasm::WASM);
 
-        let factory = BlkfndrFactoryClient::new(&env, &factory_id);
-        factory.initialize(
-            &admin,
-            &wasm_hash,
-            &fee_wallet,
-            &PLATFORM_FEE,
-            &identity_id,
-            &registry_id,
-            &VOTING_WINDOW,
-            &MIN_CONTRIBUTION,
+        let factory_id = env.register(
+            BlkfndrFactory,
+            (
+                admin.clone(),
+                wasm_hash.clone(),
+                fee_wallet.clone(),
+                PLATFORM_FEE,
+                identity_id.clone(),
+                registry_id.clone(),
+                VOTING_WINDOW,
+                MIN_CONTRIBUTION,
+            ),
         );
+        let factory = BlkfndrFactoryClient::new(&env, &factory_id);
+        registry.add_factory(&factory_id);
 
         DeploySetup { env, factory, registry, token, builder, asset: asset.address() }
     }

@@ -16,9 +16,9 @@ mod tests {
         let env = Env::default();
         env.mock_all_auths();
 
-        let contract_id = env.register(IdentityRegistry, ());
-        let client = IdentityRegistryClient::new(&env, &contract_id);
         let admin = Address::generate(&env);
+        let contract_id = env.register(IdentityRegistry, (admin.clone(),));
+        let client = IdentityRegistryClient::new(&env, &contract_id);
 
         Setup { env, client, admin }
     }
@@ -33,29 +33,23 @@ mod tests {
         ])
     }
 
-    // INITIALIZATION
+    // CONSTRUCTION
+    //
+    // Configuration is a `__constructor`: it runs inside the deploy
+    // transaction, so there is no deployed-but-unconfigured window to seize and
+    // no separate `initialize` to re-run. What remains to prove is that the
+    // constructor still demands the admin's signature.
     #[test]
-    fn test_initialize() {
-        let s = setup();
-        s.client.initialize(&s.admin);
-        // No panic = success
-    }
-
-    #[test]
-    fn test_reinitialize_guard() {
-        let s = setup();
-        s.client.initialize(&s.admin);
-
-        let admin2 = Address::generate(&s.env);
-        let result = s.client.try_initialize(&admin2);
-        assert!(result.is_err());
+    #[should_panic] // admin.require_auth() fails without the admin's signature
+    fn construction_requires_the_admins_signature() {
+        let env = Env::default(); // deliberately no mock_all_auths
+        env.register(IdentityRegistry, (Address::generate(&env),));
     }
 
     // ATTESTATION
     #[test]
     fn test_attest_and_query() {
         let s = setup();
-        s.client.initialize(&s.admin);
 
         let user = Address::generate(&s.env);
         let hash = mock_kyc_hash(&s.env);
@@ -71,7 +65,6 @@ mod tests {
     #[test]
     fn test_attest_duplicate_rejected() {
         let s = setup();
-        s.client.initialize(&s.admin);
 
         let user = Address::generate(&s.env);
         let hash = mock_kyc_hash(&s.env);
@@ -86,7 +79,6 @@ mod tests {
     #[test]
     fn test_query_unattested_address() {
         let s = setup();
-        s.client.initialize(&s.admin);
 
         let stranger = Address::generate(&s.env);
         assert!(!s.client.is_kyc_approved(&stranger));
@@ -95,7 +87,6 @@ mod tests {
     #[test]
     fn test_get_attestation_unattested_panics() {
         let s = setup();
-        s.client.initialize(&s.admin);
 
         let stranger = Address::generate(&s.env);
         let result = s.client.try_get_attestation(&stranger);
@@ -106,7 +97,6 @@ mod tests {
     #[test]
     fn test_revoke() {
         let s = setup();
-        s.client.initialize(&s.admin);
 
         let user = Address::generate(&s.env);
         let hash = mock_kyc_hash(&s.env);
@@ -121,7 +111,6 @@ mod tests {
     #[test]
     fn test_revoke_unattested_fails() {
         let s = setup();
-        s.client.initialize(&s.admin);
 
         let stranger = Address::generate(&s.env);
         let result = s.client.try_revoke(&s.admin, &stranger);
@@ -131,7 +120,6 @@ mod tests {
     #[test]
     fn test_revoke_then_reattest() {
         let s = setup();
-        s.client.initialize(&s.admin);
 
         let user = Address::generate(&s.env);
         let hash = mock_kyc_hash(&s.env);
@@ -154,7 +142,6 @@ mod tests {
     #[test]
     fn test_multiple_users() {
         let s = setup();
-        s.client.initialize(&s.admin);
 
         let user1 = Address::generate(&s.env);
         let user2 = Address::generate(&s.env);
@@ -185,9 +172,8 @@ mod tests {
         let reviewer = Address::generate(&env);
         let applicant = Address::generate(&env);
 
-        let id = env.register(IdentityRegistry, ());
+        let id = env.register(IdentityRegistry, (admin.clone(),));
         let c = IdentityRegistryClient::new(&env, &id);
-        c.initialize(&admin);
 
         c.add_attestor(&reviewer);
         assert!(c.is_attestor(&reviewer));
@@ -217,9 +203,8 @@ mod tests {
         let stranger = Address::generate(&env);
         let applicant = Address::generate(&env);
 
-        let id = env.register(IdentityRegistry, ());
+        let id = env.register(IdentityRegistry, (admin.clone(),));
         let c = IdentityRegistryClient::new(&env, &id);
-        c.initialize(&admin);
 
         assert!(
             c.try_attest(&stranger, &applicant, &BytesN::from_array(&env, &[1u8; 32]))
@@ -239,9 +224,8 @@ mod tests {
         let admin = Address::generate(&env);
         let applicant = Address::generate(&env);
 
-        let id = env.register(IdentityRegistry, ());
+        let id = env.register(IdentityRegistry, (admin.clone(),));
         let c = IdentityRegistryClient::new(&env, &id);
-        c.initialize(&admin);
 
         c.attest(&admin, &applicant, &BytesN::from_array(&env, &[2u8; 32]));
         assert!(c.is_kyc_approved(&applicant));
@@ -258,9 +242,8 @@ mod tests {
         let reviewer = Address::generate(&env);
         let applicant = Address::generate(&env);
 
-        let id = env.register(IdentityRegistry, ());
+        let id = env.register(IdentityRegistry, (admin.clone(),));
         let c = IdentityRegistryClient::new(&env, &id);
-        c.initialize(&admin);
 
         c.add_attestor(&reviewer);
         c.attest(&reviewer, &applicant, &BytesN::from_array(&env, &[3u8; 32]));
@@ -285,7 +268,6 @@ mod tests {
     #[test]
     fn bump_kyc_extends_present_and_rejects_absent() {
         let s = setup();
-        s.client.initialize(&s.admin);
 
         let user = Address::generate(&s.env);
         s.client.attest(&s.admin, &user, &mock_kyc_hash(&s.env));
@@ -303,7 +285,6 @@ mod tests {
     #[test]
     fn bump_attestor_extends_present_and_rejects_absent() {
         let s = setup();
-        s.client.initialize(&s.admin);
 
         let reviewer = Address::generate(&s.env);
         s.client.add_attestor(&reviewer);

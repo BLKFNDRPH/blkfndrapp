@@ -34,7 +34,6 @@ if (typeof window !== "undefined") {
 
 
 export const Errors = {
-  1: {message:"AlreadyInitialized"},
   2: {message:"NotInitialized"},
   3: {message:"NotAVault"},
   4: {message:"AlreadyAttested"},
@@ -74,15 +73,6 @@ export interface Attestation {
 export type DataKey = {tag: "Admin", values: void} | {tag: "Factories", values: void} | {tag: "Record", values: readonly [string]} | {tag: "BuilderVaults", values: readonly [string]};
 
 export interface Client {
-  /**
-   * Construct and simulate a initialize transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
-   * Bind the registry to the factory whose vaults may write records.
-   * 
-   * `admin` must authorize, so the binding cannot be front-run by whoever
-   * notices the deployed-but-uninitialized contract first.
-   */
-  initialize: ({admin, factory}: {admin: string, factory: string}, options?: MethodOptions) => Promise<AssembledTransaction<null>>
-
   /**
    * Construct and simulate a add_factory transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
    * Trust an additional factory, so a platform upgrade keeps writing into
@@ -170,6 +160,8 @@ export interface Client {
 }
 export class Client extends ContractClient {
   static async deploy<T = Client>(
+        /** Constructor/Initialization Args for the contract's `__constructor` method */
+        {admin}: {admin: string},
     /** Options for initializing a Client as well as for calling a method, with extras specific to deploying. */
     options: MethodOptions &
       Omit<ContractClientOptions, "contractId"> & {
@@ -181,15 +173,15 @@ export class Client extends ContractClient {
         format?: "hex" | "base64";
       }
   ): Promise<AssembledTransaction<T>> {
-    return ContractClient.deploy(null, options)
+    return ContractClient.deploy({admin}, options)
   }
   constructor(public readonly options: ContractClientOptions) {
     super(
-      new ContractSpec([ "AAAABAAAAAAAAAAAAAAABUVycm9yAAAAAAAACgAAAAAAAAASQWxyZWFkeUluaXRpYWxpemVkAAAAAAABAAAAAAAAAA5Ob3RJbml0aWFsaXplZAAAAAAAAgAAAAAAAAAJTm90QVZhdWx0AAAAAAAAAwAAAAAAAAAPQWxyZWFkeUF0dGVzdGVkAAAAAAQAAAAAAAAADlJlY29yZE5vdEZvdW5kAAAAAAAFAAAAAAAAAA1JbnZhbGlkUmVjb3JkAAAAAAAABgAAAAAAAAAQVW50cnVzdGVkRmFjdG9yeQAAAAcAAAAAAAAAFUZhY3RvcnlBbHJlYWR5VHJ1c3RlZAAAAAAAAAgAAAAAAAAAEFRvb01hbnlGYWN0b3JpZXMAAAAJAAAAAAAAABFGYWN0b3J5Tm90VHJ1c3RlZAAAAAAAAAo=",
+      new ContractSpec([ "AAAABAAAAAAAAAAAAAAABUVycm9yAAAAAAAACQAAAAAAAAAOTm90SW5pdGlhbGl6ZWQAAAAAAAIAAAAAAAAACU5vdEFWYXVsdAAAAAAAAAMAAAAAAAAAD0FscmVhZHlBdHRlc3RlZAAAAAAEAAAAAAAAAA5SZWNvcmROb3RGb3VuZAAAAAAABQAAAAAAAAANSW52YWxpZFJlY29yZAAAAAAAAAYAAAAAAAAAEFVudHJ1c3RlZEZhY3RvcnkAAAAHAAAAAAAAABVGYWN0b3J5QWxyZWFkeVRydXN0ZWQAAAAAAAAIAAAAAAAAABBUb29NYW55RmFjdG9yaWVzAAAACQAAAAAAAAARRmFjdG9yeU5vdFRydXN0ZWQAAAAAAAAK",
         "AAAAAwAAABRIb3cgYSBwcm9qZWN0IGVuZGVkLgAAAAAAAAAHT3V0Y29tZQAAAAADAAAAOkV2ZXJ5IG1pbGVzdG9uZSB3YXMgYXBwcm92ZWQgYnkgY29udHJpYnV0b3JzIGFuZCByZWxlYXNlZC4AAAAAAAlDb21wbGV0ZWQAAAAAAAAAAAAAR0EgbWlsZXN0b25lIGZhaWxlZDsgdGhlIHBlcmZvcm1hbmNlIGJvbmQgd2FzIGZvcmZlaXRlZCB0byBjb250cmlidXRvcnMuAAAAABRGYWlsZWRXaXRoRm9yZmVpdHVyZQAAAAEAAACJVGhlIGZ1bmRpbmcgZ29hbCB3YXMgbmV2ZXIgbWV0OyBjb250cmlidXRpb25zIHdlcmUgcmV0dXJuZWQgYW5kIHRoZSBib25kCndlbnQgYmFjayB0byB0aGUgYnVpbGRlci4gTm8gZmF1bHQgYXR0YWNoZXMgdG8gdGhlIGJ1aWxkZXIgaGVyZS4AAAAAAAAMRmFpbGVkVG9GdW5kAAAAAg==",
         "AAAAAQAAAC5UaGUgcGVybWFuZW50IHJlY29yZCBvZiBvbmUgcHJvamVjdCdzIG91dGNvbWUuAAAAAAAAAAAAC0F0dGVzdGF0aW9uAAAAAAkAAAAAAAAAC2JvbmRfcG9zdGVkAAAAAAsAAAAAAAAAB2J1aWxkZXIAAAAAEwAAAAAAAAAJY2xvc2VkX2F0AAAAAAAABgAAAAAAAAATbWlsZXN0b25lc19hcHByb3ZlZAAAAAAEAAAAAAAAABBtaWxlc3RvbmVzX3RvdGFsAAAABAAAAAAAAAAHb3V0Y29tZQAAAAfQAAAAB091dGNvbWUAAAAAAAAAAApwcm9qZWN0X2lkAAAAAAAGAAAAAAAAAAx0b3RhbF9yYWlzZWQAAAALAAAAAAAAAAV2YXVsdAAAAAAAABM=",
         "AAAAAgAAAAAAAAAAAAAAB0RhdGFLZXkAAAAABAAAAAAAAAAmTWF5IGFkZCBhbmQgZGlzYWJsZSB0cnVzdGVkIGZhY3Rvcmllcy4AAAAAAAVBZG1pbgAAAAAAAAAAAAE/RmFjdG9yaWVzIHdob3NlIHZhdWx0cyBhcmUgcGVybWl0dGVkIHRvIHdyaXRlLgoKQSBzZXQgcmF0aGVyIHRoYW4gYSBzaW5nbGUgYWRkcmVzcyBzbyB0aGF0IGEgZmFjdG9yeSB1cGdyYWRlIGRvZXMgbm90Cm9ycGhhbiB0aGUgaGlzdG9yeTogbmV3IHZhdWx0cyBjb21lIGZyb20gYSBuZXcgZmFjdG9yeSwgYW5kIGlmIHRoaXMKcmVnaXN0cnkgY291bGQgb25seSBldmVyIHRydXN0IHRoZSBvcmlnaW5hbCBvbmUsIGEgc2Vjb25kIHJlZ2lzdHJ5IHdvdWxkCmJlIG5lZWRlZCBhbmQgYSBidWlsZGVyJ3MgcmVjb3JkIHdvdWxkIHNwbGl0IGFjcm9zcyB0aGUgdHdvLgAAAAAJRmFjdG9yaWVzAAAAAAAAAQAAAXNBdHRlc3RhdGlvbiBmb3IgYSBnaXZlbiB2YXVsdC4KCktleWVkIGJ5IHRoZSB2YXVsdCdzIGFkZHJlc3Mg4oCUIGdsb2JhbGx5IHVuaXF1ZSDigJQgcmF0aGVyIHRoYW4gYnkgcHJvamVjdAppZC4gUHJvamVjdCBpZHMgcmVzdGFydCBhdCAxIGluIGV2ZXJ5IGZhY3RvcnksIHNvIGtleWluZyByZWNvcmRzIGJ5IHRoZW0KY29sbGlkZXMgdGhlIG1vbWVudCBhIHNlY29uZCBmYWN0b3J5IGlzIHRydXN0ZWQ6IHRoZSBuZXcgZmFjdG9yeSdzCnByb2plY3QgMSB3b3VsZCBjbGFzaCB3aXRoIHRoZSBvcmlnaW5hbCdzLCBhbmQgdGhlIGNvbGxpZGluZyB2YXVsdCBjb3VsZApuZXZlciB3cml0ZSBpdHMgcmVjb3JkLCBhbmQgc28gY291bGQgbmV2ZXIgc2V0dGxlLgAAAAAGUmVjb3JkAAAAAAABAAAAEwAAAAEAAACCRXZlcnkgdmF1bHQgYSBidWlsZGVyIGhhcyBjbG9zZWQuIFZhdWx0cywgbm90IHByb2plY3QgaWRzLCBmb3IgdGhlIHNhbWUKdW5pcXVlbmVzcyByZWFzb247IGVhY2ggcmVjb3JkIGNhcnJpZXMgaXRzIG93biBwcm9qZWN0IGlkLgAAAAAADUJ1aWxkZXJWYXVsdHMAAAAAAAABAAAAEw==",
-        "AAAAAAAAAL5CaW5kIHRoZSByZWdpc3RyeSB0byB0aGUgZmFjdG9yeSB3aG9zZSB2YXVsdHMgbWF5IHdyaXRlIHJlY29yZHMuCgpgYWRtaW5gIG11c3QgYXV0aG9yaXplLCBzbyB0aGUgYmluZGluZyBjYW5ub3QgYmUgZnJvbnQtcnVuIGJ5IHdob2V2ZXIKbm90aWNlcyB0aGUgZGVwbG95ZWQtYnV0LXVuaW5pdGlhbGl6ZWQgY29udHJhY3QgZmlyc3QuAAAAAAAKaW5pdGlhbGl6ZQAAAAAAAgAAAAAAAAAFYWRtaW4AAAAAAAATAAAAAAAAAAdmYWN0b3J5AAAAABMAAAAA",
+        "AAAAAAAAAi9CaW5kIHRoZSByZWdpc3RyeSB0byBpdHMgYWRtaW4sIGF0b21pY2FsbHkgYXQgZGVwbG95LgoKQSBjb25zdHJ1Y3RvciBydW5zIGluc2lkZSB0aGUgZGVwbG95IHRyYW5zYWN0aW9uLCBzbyB0aGUgcmVnaXN0cnkgaXMKbmV2ZXIgZGVwbG95ZWQtYnV0LXVuY29uZmlndXJlZCBmb3IgYSBmaXJzdCBjYWxsZXIgdG8gc2VpemUuIEl0IHRydXN0cwpubyBmYWN0b3J5IHlldDogdGhlIGRlcGxveWVyIHdpcmVzIHRoYXQgaW4gaW1tZWRpYXRlbHkgYWZ0ZXJ3YXJkcyB3aXRoCmBhZGRfZmFjdG9yeWAsIGFuIGFkbWluLWdhdGVkIGNhbGwuIFNwbGl0dGluZyB0aGUgZmFjdG9yeSBvdXQgb2YKY29uc3RydWN0aW9uIGlzIGFsc28gd2hhdCBicmVha3MgdGhlIGZhY3Rvcnk8LT5hdHRlc3RhdGlvbiBjeWNsZSDigJQgdGhlCmZhY3RvcnkgdGFrZXMgdGhpcyByZWdpc3RyeSdzIGFkZHJlc3MgaW4gaXRzIG93biBjb25zdHJ1Y3Rvciwgc28gdGhpcwpvbmUgY2Fubm90IGluIHR1cm4gZGVtYW5kIHRoZSBmYWN0b3J5J3MgYXQgZGVwbG95LiBgYWRtaW5gIG11c3QKYXV0aG9yaXNlIHRoZSBkZXBsb3kuAAAAAA1fX2NvbnN0cnVjdG9yAAAAAAAAAQAAAAAAAAAFYWRtaW4AAAAAAAATAAAAAA==",
         "AAAAAAAAAHhUcnVzdCBhbiBhZGRpdGlvbmFsIGZhY3RvcnksIHNvIGEgcGxhdGZvcm0gdXBncmFkZSBrZWVwcyB3cml0aW5nIGludG8KdGhlIHNhbWUgaGlzdG9yeS4gUmV2ZXJzaWJsZSB3aXRoIGRpc2FibGVfZmFjdG9yeS4AAAALYWRkX2ZhY3RvcnkAAAAAAQAAAAAAAAAHZmFjdG9yeQAAAAATAAAAAA==",
         "AAAAAAAAAeNTdG9wIHRydXN0aW5nIGEgZmFjdG9yeTogaXRzIHZhdWx0cyBtYXkgbm8gbG9uZ2VyIHdyaXRlIG5ldyByZWNvcmRzLgoKU2FmZSwgYW5kIGhlcmUgZm9yIGNvbnRhaW5tZW50LiBObyByZWFkIHBhdGggY29uc3VsdHMgdGhlIHRydXN0ZWQgc2V0IOKAlApnZXRfcmVjb3JkLCBoYXNfcmVjb3JkIGFuZCB0aGUgYnVpbGRlciBoaXN0b3J5IGFsbCByZWFkIHJlY29yZHMgZGlyZWN0bHkK4oCUIHNvIGRpc2FibGluZyBhIGZhY3Rvcnkgc3RvcHMgb25seSBpdHMgZnV0dXJlIHdyaXRlczsgZXZlcnkgcmVjb3JkIGl0cwp2YXVsdHMgYWxyZWFkeSB3cm90ZSBzdGF5cyBpbnRhY3QgYW5kIHJlYWRhYmxlLiBXaXRob3V0IHRoaXMgYSBjb21wcm9taXNlZApmYWN0b3J5IGtleSAod2hpY2ggY2FuIHBvaW50IG5ldyB2YXVsdHMgYXQgbWFsaWNpb3VzIHdhc20pIGNvdWxkIG1pbnQKZmFsc2UgcmVjb3JkcyBmb3JldmVyIHdpdGggbm8gd2F5IHRvIHJldm9rZSBpdC4AAAAAD2Rpc2FibGVfZmFjdG9yeQAAAAABAAAAAAAAAAdmYWN0b3J5AAAAABMAAAAA",
         "AAAAAAAAAAAAAAAOdHJhbnNmZXJfYWRtaW4AAAAAAAEAAAAAAAAACW5ld19hZG1pbgAAAAAAABMAAAAA",
@@ -206,8 +198,7 @@ export class Client extends ContractClient {
     )
   }
   public readonly fromJSON = {
-    initialize: this.txFromJSON<null>,
-        add_factory: this.txFromJSON<null>,
+    add_factory: this.txFromJSON<null>,
         disable_factory: this.txFromJSON<null>,
         transfer_admin: this.txFromJSON<null>,
         attest: this.txFromJSON<null>,

@@ -29,7 +29,8 @@ use soroban_sdk::{
 #[repr(u32)]
 pub enum Error {
     NotAuthorized      = 1,
-    AlreadyInitialized = 10,
+    // 10 was AlreadyInitialized; the constructor makes re-init impossible, so
+    // the guard and its code are gone. Reserved gap for ABI stability.
     NotInitialized     = 11,
     AlreadyAnAdmin     = 12,
     NotAnAdmin         = 13,
@@ -83,14 +84,13 @@ pub struct AdminRegistry;
 
 #[contractimpl]
 impl AdminRegistry {
-    /// Bind the roster to an owner, who becomes its first admin.
+    /// Bind the roster to an owner, who becomes its first admin — atomically at
+    /// deploy.
     ///
-    /// `owner` must authorise, so a deployed-but-unconfigured registry cannot
-    /// be claimed by whoever notices it first.
-    pub fn initialize(env: Env, owner: Address) {
-        if env.storage().instance().has(&DataKey::Owner) {
-            panic_with_error!(&env, Error::AlreadyInitialized);
-        }
+    /// A constructor runs inside the deploy transaction, so a
+    /// deployed-but-unconfigured registry can never be claimed by whoever
+    /// notices it first. `owner` must authorise the deploy.
+    pub fn __constructor(env: Env, owner: Address) {
         owner.require_auth();
 
         let mut admins = Vec::new(&env);
