@@ -27,7 +27,8 @@ use soroban_sdk::{
 #[repr(u32)]
 pub enum Error {
     NotAuthorized        = 1,
-    AlreadyInitialized   = 10,
+    // 10 was AlreadyInitialized; the constructor makes re-init impossible, so
+    // the guard and its code are gone. Reserved gap for ABI stability.
     NotInitialized       = 11,
     BondBelowMinimum     = 12,
     InvalidConfiguration = 13,
@@ -148,9 +149,16 @@ pub struct BlkfndrFactory;
 
 #[contractimpl]
 impl BlkfndrFactory {
-    /// Configure the factory. `admin` must authorise, so a deployed but
-    /// unconfigured factory cannot be claimed by whoever spots it first.
-    pub fn initialize(
+    /// Configure the factory, atomically at deploy.
+    ///
+    /// A constructor runs inside the deploy transaction, so a
+    /// deployed-but-unconfigured factory can never be claimed by whoever spots
+    /// it first and named with its own admin, fee wallet and trusted
+    /// registries. It takes the identity and attestation registry addresses
+    /// here, which is why both must be deployed first; the attestation registry
+    /// is then told to trust this factory with a post-deploy `add_factory`.
+    /// `admin` must authorise the deploy.
+    pub fn __constructor(
         env:                  Env,
         admin:                Address,
         vault_wasm_hash:      BytesN<32>,
@@ -161,9 +169,6 @@ impl BlkfndrFactory {
         voting_window_secs:   u64,
         min_contribution:     i128,
     ) {
-        if env.storage().instance().has(&DataKey::Admin) {
-            panic_with_error!(&env, Error::AlreadyInitialized);
-        }
         admin.require_auth();
 
         if !(0..=MAX_PLATFORM_FEE).contains(&platform_fee)

@@ -13,8 +13,8 @@ fn setup() -> Setup {
     env.mock_all_auths();
 
     let owner = Address::generate(&env);
-    let registry = AdminRegistryClient::new(&env, &env.register(AdminRegistry, ()));
-    registry.initialize(&owner);
+    let registry =
+        AdminRegistryClient::new(&env, &env.register(AdminRegistry, (owner.clone(),)));
 
     Setup { env, registry, owner }
 }
@@ -83,12 +83,15 @@ fn a_stranger_is_not_an_admin() {
     assert!(!s.registry.is_admin(&Address::generate(&s.env)));
 }
 
+/// Construction is a `__constructor` now: it runs inside the deploy
+/// transaction, so there is no deployed-but-unconfigured window and no second
+/// `initialize` to claim the roster with. What must still hold is that
+/// construction demands the owner's signature.
 #[test]
-fn cannot_be_initialized_twice() {
-    let s = setup();
-    let hijacker = Address::generate(&s.env);
-    assert!(s.registry.try_initialize(&hijacker).is_err());
-    assert_eq!(s.registry.get_owner(), s.owner);
+#[should_panic] // owner.require_auth() fails without the owner's signature
+fn construction_requires_the_owners_signature() {
+    let env = Env::default(); // deliberately no mock_all_auths
+    env.register(AdminRegistry, (Address::generate(&env),));
 }
 
 /// The point of this contract's existence: it holds nothing and gates nothing

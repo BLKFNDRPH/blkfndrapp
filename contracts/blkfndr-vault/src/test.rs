@@ -113,9 +113,9 @@ fn setup_with(goal: i128, bond: i128, platform_fee: i128) -> Setup {
     vaults.push_back(vault_address.clone());
     MockFactoryClient::new(&env, &factory_id).set_vaults(&vaults);
 
-    let registry_id = env.register(AttestationRegistry, ());
+    let registry_id = env.register(AttestationRegistry, (admin.clone(),));
     let registry = AttestationRegistryClient::new(&env, &registry_id);
-    registry.initialize(&admin, &factory_id);
+    registry.add_factory(&factory_id);
 
     let vault = BlkfndrVaultClient::new(&env, &vault_address);
 

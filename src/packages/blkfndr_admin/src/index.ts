@@ -35,7 +35,6 @@ if (typeof window !== "undefined") {
 
 export const Errors = {
   1: {message:"NotAuthorized"},
-  10: {message:"AlreadyInitialized"},
   11: {message:"NotInitialized"},
   12: {message:"AlreadyAnAdmin"},
   13: {message:"NotAnAdmin"},
@@ -49,15 +48,6 @@ export const Errors = {
 export type DataKey = {tag: "Owner", values: void} | {tag: "Admins", values: void};
 
 export interface Client {
-  /**
-   * Construct and simulate a initialize transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
-   * Bind the roster to an owner, who becomes its first admin.
-   * 
-   * `owner` must authorise, so a deployed-but-unconfigured registry cannot
-   * be claimed by whoever notices it first.
-   */
-  initialize: ({owner}: {owner: string}, options?: MethodOptions) => Promise<AssembledTransaction<null>>
-
   /**
    * Construct and simulate a add_admin transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
    */
@@ -97,6 +87,8 @@ export interface Client {
 }
 export class Client extends ContractClient {
   static async deploy<T = Client>(
+        /** Constructor/Initialization Args for the contract's `__constructor` method */
+        {owner}: {owner: string},
     /** Options for initializing a Client as well as for calling a method, with extras specific to deploying. */
     options: MethodOptions &
       Omit<ContractClientOptions, "contractId"> & {
@@ -108,13 +100,13 @@ export class Client extends ContractClient {
         format?: "hex" | "base64";
       }
   ): Promise<AssembledTransaction<T>> {
-    return ContractClient.deploy(null, options)
+    return ContractClient.deploy({owner}, options)
   }
   constructor(public readonly options: ContractClientOptions) {
     super(
-      new ContractSpec([ "AAAABAAAAAAAAAAAAAAABUVycm9yAAAAAAAABgAAAAAAAAANTm90QXV0aG9yaXplZAAAAAAAAAEAAAAAAAAAEkFscmVhZHlJbml0aWFsaXplZAAAAAAACgAAAAAAAAAOTm90SW5pdGlhbGl6ZWQAAAAAAAsAAAAAAAAADkFscmVhZHlBbkFkbWluAAAAAAAMAAAAAAAAAApOb3RBbkFkbWluAAAAAAANAAAAYFRoZSBvd25lciBtYXkgbm90IHJlbW92ZSB0aGVtc2VsdmVzLCB3aGljaCB3b3VsZCBsZWF2ZSB0aGUgcm9zdGVyIHdpdGgKbm9ib2R5IGFibGUgdG8gY2hhbmdlIGl0LgAAABFXb3VsZE9ycGhhblJvc3RlcgAAAAAAAA4=",
+      new ContractSpec([ "AAAABAAAAAAAAAAAAAAABUVycm9yAAAAAAAABQAAAAAAAAANTm90QXV0aG9yaXplZAAAAAAAAAEAAAAAAAAADk5vdEluaXRpYWxpemVkAAAAAAALAAAAAAAAAA5BbHJlYWR5QW5BZG1pbgAAAAAADAAAAAAAAAAKTm90QW5BZG1pbgAAAAAADQAAAGBUaGUgb3duZXIgbWF5IG5vdCByZW1vdmUgdGhlbXNlbHZlcywgd2hpY2ggd291bGQgbGVhdmUgdGhlIHJvc3RlciB3aXRoCm5vYm9keSBhYmxlIHRvIGNoYW5nZSBpdC4AAAARV291bGRPcnBoYW5Sb3N0ZXIAAAAAAAAO",
         "AAAAAgAAAAAAAAAAAAAAB0RhdGFLZXkAAAAAAgAAAAAAAAArVGhlIGFjY291bnQgdGhhdCBtYXkgYWRkIGFuZCByZW1vdmUgYWRtaW5zLgAAAAAFT3duZXIAAAAAAAAAAAAAAAAAAAZBZG1pbnMAAA==",
-        "AAAAAAAAAKlCaW5kIHRoZSByb3N0ZXIgdG8gYW4gb3duZXIsIHdobyBiZWNvbWVzIGl0cyBmaXJzdCBhZG1pbi4KCmBvd25lcmAgbXVzdCBhdXRob3Jpc2UsIHNvIGEgZGVwbG95ZWQtYnV0LXVuY29uZmlndXJlZCByZWdpc3RyeSBjYW5ub3QKYmUgY2xhaW1lZCBieSB3aG9ldmVyIG5vdGljZXMgaXQgZmlyc3QuAAAAAAAACmluaXRpYWxpemUAAAAAAAEAAAAAAAAABW93bmVyAAAAAAAAEwAAAAA=",
+        "AAAAAAAAAQJCaW5kIHRoZSByb3N0ZXIgdG8gYW4gb3duZXIsIHdobyBiZWNvbWVzIGl0cyBmaXJzdCBhZG1pbiDigJQgYXRvbWljYWxseSBhdApkZXBsb3kuCgpBIGNvbnN0cnVjdG9yIHJ1bnMgaW5zaWRlIHRoZSBkZXBsb3kgdHJhbnNhY3Rpb24sIHNvIGEKZGVwbG95ZWQtYnV0LXVuY29uZmlndXJlZCByZWdpc3RyeSBjYW4gbmV2ZXIgYmUgY2xhaW1lZCBieSB3aG9ldmVyCm5vdGljZXMgaXQgZmlyc3QuIGBvd25lcmAgbXVzdCBhdXRob3Jpc2UgdGhlIGRlcGxveS4AAAAAAA1fX2NvbnN0cnVjdG9yAAAAAAAAAQAAAAAAAAAFb3duZXIAAAAAAAATAAAAAA==",
         "AAAAAAAAAAAAAAAJYWRkX2FkbWluAAAAAAAAAQAAAAAAAAAHYWNjb3VudAAAAAATAAAAAA==",
         "AAAAAAAAAAAAAAAMcmVtb3ZlX2FkbWluAAAAAQAAAAAAAAAHYWNjb3VudAAAAAATAAAAAA==",
         "AAAAAAAAAEhIYW5kIHRoZSByb3N0ZXIgdG8gYSBuZXcgb3duZXIsIHdobyBpcyBhZGRlZCBhcyBhbiBhZG1pbiBpZiBub3QgYWxyZWFkeS4AAAASdHJhbnNmZXJfb3duZXJzaGlwAAAAAAABAAAAAAAAAAluZXdfb3duZXIAAAAAAAATAAAAAA==",
@@ -126,8 +118,7 @@ export class Client extends ContractClient {
     )
   }
   public readonly fromJSON = {
-    initialize: this.txFromJSON<null>,
-        add_admin: this.txFromJSON<null>,
+    add_admin: this.txFromJSON<null>,
         remove_admin: this.txFromJSON<null>,
         transfer_ownership: this.txFromJSON<null>,
         is_admin: this.txFromJSON<boolean>,

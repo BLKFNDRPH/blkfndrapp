@@ -10,7 +10,8 @@ use soroban_sdk::{
 #[repr(u32)]
 pub enum Error {
     NotAuthorized      = 1,
-    AlreadyInitialized = 10,
+    // 10 was AlreadyInitialized; the constructor makes re-init impossible, so
+    // the guard and its code are gone. Reserved gap for ABI stability.
     NotInitialized     = 11,
     AlreadyAttested    = 12,
     NotAttested        = 13,
@@ -82,15 +83,13 @@ impl IdentityRegistry {
 
     // SETUP
 
-    /// Initialize the registry with an admin address.
+    /// Bind the registry to its admin, atomically at deploy.
     ///
-    /// `admin` must authorise: without it, a deployed-but-unconfigured registry
-    /// belongs to whoever calls this first, and whoever holds it decides who
-    /// counts as KYC-approved.
-    pub fn initialize(env: Env, admin: Address) {
-        if env.storage().instance().has(&DataKey::Admin) {
-            panic_with_error!(&env, Error::AlreadyInitialized);
-        }
+    /// A constructor runs inside the deploy transaction, so the registry is
+    /// never deployed-but-unconfigured: the window in which whoever called
+    /// `initialize` first could seize it — and so decide who counts as
+    /// KYC-approved — is gone. `admin` must authorise the deploy.
+    pub fn __constructor(env: Env, admin: Address) {
         admin.require_auth();
 
         env.storage().instance().set(&DataKey::Admin, &admin);

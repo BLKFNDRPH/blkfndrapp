@@ -108,7 +108,7 @@ Deploys vaults and is the single place that decides what code a vault runs and w
 
 | Function | Who | Effect |
 |---|---|---|
-| `initialize(...)` | Deployer, once | Sets admin, fee wallet, fee, bond %, identity + attestation registries, voting window, min contribution, vault wasm hash |
+| `__constructor(...)` | Deployer, at deploy | Sets admin, fee wallet, fee, bond %, identity + attestation registries, voting window, min contribution, vault wasm hash — atomically in the deploy transaction, so there is no unconfigured window to seize |
 | `create_vault(config)` | Builder | Instantiates a vault from the pinned wasm hash and pins the trusted addresses into it |
 | `update_wasm_hash / update_fee_wallet / update_platform_fee / update_bond_percentage / update_identity_registry / update_voting_window / update_min_contribution` | Admin | Policy for **future** vaults; existing vaults keep what they were created with |
 | `transfer_admin(new_admin)` | Admin | Hands factory admin over — this is how admin is handed to the treasury for vote-gated governance |
@@ -125,7 +125,7 @@ An append-only record of every project a builder has closed. There is **no updat
 
 | Function | Who | Effect |
 |---|---|---|
-| `initialize(admin, factory)` | Deployer | Sets admin and the first trusted factory |
+| `__constructor(admin)` | Deployer, at deploy | Sets admin. Trusts **no** factory yet — the deployer grants that immediately afterwards with `add_factory`, which is what lets the factory take this registry's address in its own constructor without a deadlock |
 | `add_factory(factory)` | Admin | Trusts another factory's vaults to write; cannot be undone |
 | `attest(...)` | A trusted factory's vault | Writes `builder, project, outcome, raise, bond, milestones_approved, timestamp` |
 | `transfer_admin(new_admin)` | Admin | — |
@@ -140,7 +140,7 @@ The KYC gate. Named attestors write approvals; the vault checks them before acce
 
 | Function | Who | Effect |
 |---|---|---|
-| `initialize(admin)` | Deployer | — |
+| `__constructor(admin)` | Deployer, at deploy | Sets admin, atomically in the deploy transaction |
 | `add_attestor(account)` / `remove_attestor(account)` | Admin (owner Freighter) | Appoints / removes a KYC attestor. Kept owner-signed on purpose: the registry admin key also carries `set_admin` power |
 | `attest(attestor, address, kyc_hash)` | Attestor | Records an approval (hash of the off-chain KYC record) |
 | `revoke(attestor, address)` | Attestor | Withdraws an approval |
@@ -156,7 +156,7 @@ The platform-administrator roster, and nothing more. It is **not** in the path t
 
 | Function | Who | Effect |
 |---|---|---|
-| `initialize(owner)` | Deployer | — |
+| `__constructor(owner)` | Deployer, at deploy | Sets owner, atomically in the deploy transaction |
 | `add_admin(account)` / `remove_admin(account)` | Owner | Roster edits |
 | `transfer_ownership(new_owner)` | Owner | — |
 
