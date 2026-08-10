@@ -35,7 +35,6 @@ if (typeof window !== "undefined") {
 
 export const Errors = {
   1: {message:"NotAuthorized"},
-  10: {message:"AlreadyInitialized"},
   11: {message:"NotInitialized"},
   20: {message:"NotAShareholder"},
   21: {message:"SharesMustTotalBps"},
@@ -137,20 +136,6 @@ bps: u32;
 export type DataKey = {tag: "Factory", values: void} | {tag: "Shareholders", values: void} | {tag: "VoteWindow", values: void} | {tag: "NextCycleId", values: void} | {tag: "Cycle", values: readonly [u32]} | {tag: "OpenCycleId", values: void} | {tag: "Reserved", values: readonly [string]} | {tag: "ClaimCount", values: readonly [u32]} | {tag: "LastReleaseAt", values: void} | {tag: "CycleVote", values: readonly [u32, string]} | {tag: "Claimed", values: readonly [u32, string]} | {tag: "Proposal", values: void} | {tag: "NextProposalId", values: void} | {tag: "ProposalVote", values: readonly [u32, string]} | {tag: "OpsFunding", values: void} | {tag: "LastOpsFundingAt", values: void};
 
 export interface Client {
-  /**
-   * Construct and simulate a initialize transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
-   * Configure the treasury. `factory` is the contract whose fee this
-   * treasury may change; it must set this contract as its admin for that to
-   * work, which is a separate deliberate act.
-   * 
-   * `deployer` must sign. Without that signature this is a land grab: a
-   * treasury sitting deployed and unconfigured for even one ledger can be
-   * claimed by whoever calls this first, naming themselves the entire
-   * register. Deploy and initialize are separate transactions, so that
-   * window is real rather than theoretical.
-   */
-  initialize: ({deployer, factory, shareholders}: {deployer: string, factory: string, shareholders: Array<Shareholder>}, options?: MethodOptions) => Promise<AssembledTransaction<null>>
-
   /**
    * Construct and simulate a open_cycle transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
    * Open a cycle over the treasury's *unreserved* balance of `token`.
@@ -320,6 +305,8 @@ export interface Client {
 }
 export class Client extends ContractClient {
   static async deploy<T = Client>(
+        /** Constructor/Initialization Args for the contract's `__constructor` method */
+        {deployer, factory, shareholders}: {deployer: string, factory: string, shareholders: Array<Shareholder>},
     /** Options for initializing a Client as well as for calling a method, with extras specific to deploying. */
     options: MethodOptions &
       Omit<ContractClientOptions, "contractId"> & {
@@ -331,11 +318,11 @@ export class Client extends ContractClient {
         format?: "hex" | "base64";
       }
   ): Promise<AssembledTransaction<T>> {
-    return ContractClient.deploy(null, options)
+    return ContractClient.deploy({deployer, factory, shareholders}, options)
   }
   constructor(public readonly options: ContractClientOptions) {
     super(
-      new ContractSpec([ "AAAABAAAAAAAAAAAAAAABUVycm9yAAAAAAAAFgAAAAAAAAANTm90QXV0aG9yaXplZAAAAAAAAAEAAAAAAAAAEkFscmVhZHlJbml0aWFsaXplZAAAAAAACgAAAAAAAAAOTm90SW5pdGlhbGl6ZWQAAAAAAAsAAAAAAAAAD05vdEFTaGFyZWhvbGRlcgAAAAAUAAAAAAAAABJTaGFyZXNNdXN0VG90YWxCcHMAAAAAABUAAAAAAAAAE1Rvb01hbnlTaGFyZWhvbGRlcnMAAAAAFgAAAAAAAAAURHVwbGljYXRlU2hhcmVob2xkZXIAAAAXAAAAAAAAAAlaZXJvU2hhcmUAAAAAAAAYAAAAAAAAAAtOb0N5Y2xlT3BlbgAAAAAeAAAAAAAAABBDeWNsZUFscmVhZHlPcGVuAAAAHwAAAAAAAAAQTm90aGluZ1RvUmVsZWFzZQAAACAAAAAAAAAADEFscmVhZHlWb3RlZAAAACEAAAAAAAAADFZvdGluZ0Nsb3NlZAAAACIAAAAAAAAAD1RocmVzaG9sZE5vdE1ldAAAAAAjAAAAAAAAABNUaHJlc2hvbGRBbHJlYWR5TWV0AAAAACQAAAAAAAAACk5vdFBheWFibGUAAAAAACUAAAAAAAAADkFscmVhZHlDbGFpbWVkAAAAAAAmAAAAAAAAAA5SZWxlYXNlVG9vU29vbgAAAAAAJwAAAAAAAAAOTm9Qcm9wb3NhbE9wZW4AAAAAACgAAAAAAAAAE1Byb3Bvc2FsQWxyZWFkeU9wZW4AAAAAKQAAAAAAAAANRmVlT3V0T2ZSYW5nZQAAAAAAACoAAAAAAAAAEE9wc0Z1bmRpbmdOb3RTZXQAAAAr",
+      new ContractSpec([ "AAAABAAAAAAAAAAAAAAABUVycm9yAAAAAAAAFQAAAAAAAAANTm90QXV0aG9yaXplZAAAAAAAAAEAAAAAAAAADk5vdEluaXRpYWxpemVkAAAAAAALAAAAAAAAAA9Ob3RBU2hhcmVob2xkZXIAAAAAFAAAAAAAAAASU2hhcmVzTXVzdFRvdGFsQnBzAAAAAAAVAAAAAAAAABNUb29NYW55U2hhcmVob2xkZXJzAAAAABYAAAAAAAAAFER1cGxpY2F0ZVNoYXJlaG9sZGVyAAAAFwAAAAAAAAAJWmVyb1NoYXJlAAAAAAAAGAAAAAAAAAALTm9DeWNsZU9wZW4AAAAAHgAAAAAAAAAQQ3ljbGVBbHJlYWR5T3BlbgAAAB8AAAAAAAAAEE5vdGhpbmdUb1JlbGVhc2UAAAAgAAAAAAAAAAxBbHJlYWR5Vm90ZWQAAAAhAAAAAAAAAAxWb3RpbmdDbG9zZWQAAAAiAAAAAAAAAA9UaHJlc2hvbGROb3RNZXQAAAAAIwAAAAAAAAATVGhyZXNob2xkQWxyZWFkeU1ldAAAAAAkAAAAAAAAAApOb3RQYXlhYmxlAAAAAAAlAAAAAAAAAA5BbHJlYWR5Q2xhaW1lZAAAAAAAJgAAAAAAAAAOUmVsZWFzZVRvb1Nvb24AAAAAACcAAAAAAAAADk5vUHJvcG9zYWxPcGVuAAAAAAAoAAAAAAAAABNQcm9wb3NhbEFscmVhZHlPcGVuAAAAACkAAAAAAAAADUZlZU91dE9mUmFuZ2UAAAAAAAAqAAAAAAAAABBPcHNGdW5kaW5nTm90U2V0AAAAKw==",
         "AAAAAQAAAAAAAAAAAAAAC1NoYXJlaG9sZGVyAAAAAAIAAAAAAAAAB2FkZHJlc3MAAAAAEwAAAERCYXNpcyBwb2ludHMgb2YgZXZlcnkgcmVsZWFzZS4gQWxsIHNoYXJlcyBtdXN0IHRvdGFsIGV4YWN0bHkgMTAgMDAwLgAAAAlzaGFyZV9icHMAAAAAAAAE",
         "AAAAAwAAAAAAAAAAAAAACkN5Y2xlU3RhdGUAAAAAAAMAAAAQT3BlbiBmb3Igdm90aW5nLgAAAAZWb3RpbmcAAAAAAAAAAAAqVGhyZXNob2xkIGNhcnJpZWQ7IHNoYXJlaG9sZGVycyBtYXkgY2xhaW0uAAAAAAAHUGF5YWJsZQAAAAABAAAAa1RoZSB3aW5kb3cgY2xvc2VkIHNob3J0LiBOb3RoaW5nIGlzIHBhaWQ7IHRoZSBiYWxhbmNlIHJvbGxzIGludG8gdGhlCm5leHQgY3ljbGUgcmF0aGVyIHRoYW4gYmVpbmcgc3RyYW5kZWQuAAAAAAZMYXBzZWQAAAAAAAI=",
         "AAAAAQAAAAAAAAAAAAAABUN5Y2xlAAAAAAAACAAAAKNUaGUgY29udHJhY3QncyBiYWxhbmNlIG9mIGB0b2tlbmAgd2hlbiB0aGUgY3ljbGUgb3BlbmVkLiBGZWVzIGFycml2aW5nCmFmdGVyd2FyZHMgYmVsb25nIHRvIHRoZSBuZXh0IGN5Y2xlLCBzbyBhIHZvdGUgc2V0dGxlcyBhIGZpeGVkIHN1bQpyYXRoZXIgdGhhbiBhIG1vdmluZyBvbmUuAAAAAAZhbW91bnQAAAAAAAsAAACHSG93IG1hbnkgb3duZXJzIGhhdmUgYXBwcm92ZWQuIFRoZSBydWxlIGlzIHR3by10by1vbmUgYnkgaGVhZGNvdW50LCBzbwp0aGlzIGlzIHRoZSBudW1iZXIgdGhhdCBkZWNpZGVzLCBub3QgdGhlIHNoYXJlIHdlaWdodCBiZXNpZGUgaXQuAAAAAAlhcHByb3ZhbHMAAAAAAAAEAAAAAAAAAAljbG9zZXNfYXQAAAAAAAAGAAAAAAAAAAJpZAAAAAAABAAAAAAAAAAJb3BlbmVkX2F0AAAAAAAABgAAAHFUaGUgcmVnaXN0ZXIgYXMgaXQgc3Rvb2QgYXQgb3Blbi4gQSBjeWNsZSBwYXlzIHdoYXQgd2FzIGFncmVlZCB3aGVuIGl0CnN0YXJ0ZWQsIHdoYXRldmVyIHRoZSByZWdpc3RlciBkb2VzIGxhdGVyLgAAAAAAAAZyb3N0ZXIAAAAAA+oAAAfQAAAAC1NoYXJlaG9sZGVyAAAAAAAAAAAFc3RhdGUAAAAAAAfQAAAACkN5Y2xlU3RhdGUAAAAAAAAAAAAFdG9rZW4AAAAAAAAT",
@@ -343,7 +330,7 @@ export class Client extends ContractClient {
         "AAAAAQAAAAAAAAAAAAAACFByb3Bvc2FsAAAABgAAAAAAAAAGYWN0aW9uAAAAAAfQAAAADkdvdmVybmVkQWN0aW9uAAAAAAAAAAAACWFwcHJvdmFscwAAAAAAAAQAAAAAAAAACWNsb3Nlc19hdAAAAAAAAAYAAAAAAAAAAmlkAAAAAAAEAAAAAAAAAAlvcGVuZWRfYXQAAAAAAAAGAAAAAAAAAAZyb3N0ZXIAAAAAA+oAAAfQAAAAC1NoYXJlaG9sZGVyAA==",
         "AAAAAQAAAIxIb3cgdGhlIHRyZWFzdXJ5IGZ1bmRzIG9wZXJhdGlvbnMgZ2FzOiB3aGVyZSBpdCBnb2VzLCB3aGljaCBhc3NldCBpdCByb3V0ZXMKKHRoZSBuYXRpdmUgdG9rZW4g4oCUIFhMTSksIGFuZCB0aGUgbW9udGhseSBjdXQgaW4gYmFzaXMgcG9pbnRzLgAAAAAAAAAPT3BzRnVuZGluZ1Rlcm1zAAAAAAMAAABAQmFzaXMgcG9pbnRzIG9mIHRoZSB1bnJlc2VydmVkIGJhbGFuY2UsIG1vdmVkIGV2ZXJ5IHRoaXJ0eSBkYXlzLgAAAANicHMAAAAABAAAAAAAAAAFdG9rZW4AAAAAAAATAAAAAAAAAAV2YXVsdAAAAAAAABM=",
         "AAAAAgAAAAAAAAAAAAAAB0RhdGFLZXkAAAAAEAAAAAAAAAAAAAAAB0ZhY3RvcnkAAAAAAAAAAAAAAAAMU2hhcmVob2xkZXJzAAAAAAAAAAAAAAAKVm90ZVdpbmRvdwAAAAAAAAAAAAAAAAALTmV4dEN5Y2xlSWQAAAAAAQAAAI1jeWNsZV9pZCAtPiBDeWNsZS4gS2V5ZWQsIG5vdCBhIHNpbmdsZSBzbG90OiBhIHBheWFibGUgY3ljbGUgdGhhdCBzb21lCnNoYXJlaG9sZGVyIGhhcyBub3QgZ290IHJvdW5kIHRvIGNsYWltaW5nIG11c3Qgbm90IGJsb2NrIHRoZSBuZXh0IG9uZS4AAAAAAAAFQ3ljbGUAAAAAAAABAAAABAAAAAAAAABiVGhlIGN5Y2xlIGN1cnJlbnRseSBiZWluZyB2b3RlZCBvbiwgaWYgYW55LiBDbGVhcmVkIHRoZSBtb21lbnQgdm90aW5nCmVuZHMsIHdoaWNoZXZlciB3YXkgaXQgd2VudC4AAAAAAAtPcGVuQ3ljbGVJZAAAAAABAAAAyXRva2VuIC0+IHRoZSBzdW0gc3RpbGwgb3dlZCB0byBzaGFyZWhvbGRlcnMgb2YgcGF5YWJsZSBjeWNsZXMuIEEgbmV3CmN5Y2xlIG1heSBvbmx5IHRha2UgdGhlIGJhbGFuY2UgKmFib3ZlKiB0aGlzLCBzbyBub2JvZHkncyB1bmNsYWltZWQKc2hhcmUgY2FuIGJlIHN3ZXB0IGludG8gYSBsYXRlciBjeWNsZSBhbmQgcGFpZCB0byBzb21lYm9keSBlbHNlLgAAAAAAAAhSZXNlcnZlZAAAAAEAAAATAAAAAQAAAC9jeWNsZV9pZCAtPiBob3cgbWFueSBzaGFyZWhvbGRlcnMgaGF2ZSBjbGFpbWVkLgAAAAAKQ2xhaW1Db3VudAAAAAAAAQAAAAQAAAAAAAAAR1doZW4gYSBjeWNsZSBsYXN0IGNhcnJpZWQuIFJlbGVhc2VzIGFyZSBtb250aGx5LCBhbmQgdGhpcyBpcyB0aGUgY2xvY2suAAAAAA1MYXN0UmVsZWFzZUF0AAAAAAAAAQAAABooY3ljbGVfaWQsIHZvdGVyKSAtPiB2b3RlZAAAAAAACUN5Y2xlVm90ZQAAAAAAAAIAAAAEAAAAEwAAAAEAAAAiKGN5Y2xlX2lkLCBzaGFyZWhvbGRlcikgLT4gY2xhaW1lZAAAAAAAB0NsYWltZWQAAAAAAgAAAAQAAAATAAAAAAAAAAAAAAAIUHJvcG9zYWwAAAAAAAAAAAAAAA5OZXh0UHJvcG9zYWxJZAAAAAAAAQAAAB0ocHJvcG9zYWxfaWQsIHZvdGVyKSAtPiB2b3RlZAAAAAAAAAxQcm9wb3NhbFZvdGUAAAACAAAABAAAABMAAAAAAAAAQVRoZSBPcGVyYXRpb25zIFZhdWx0IGZ1bmRpbmcgdGVybXMg4oCUIHZhdWx0LCBhc3NldCwgbW9udGhseSBicHMuAAAAAAAACk9wc0Z1bmRpbmcAAAAAAAAAAACOV2hlbiBvcGVyYXRpb25zIGZ1bmRpbmcgbGFzdCByYW4uIE1vbnRobHksIGFuZCB0aGlzIGlzIGl0cyBjbG9jayDigJQKc2VwYXJhdGUgZnJvbSBMYXN0UmVsZWFzZUF0IHNvIGdhcyB0b3AtdXBzIGFuZCBkaXZpZGVuZHMgbmV2ZXIgc2hhcmUgb25lLgAAAAAAEExhc3RPcHNGdW5kaW5nQXQ=",
-        "AAAAAAAAAepDb25maWd1cmUgdGhlIHRyZWFzdXJ5LiBgZmFjdG9yeWAgaXMgdGhlIGNvbnRyYWN0IHdob3NlIGZlZSB0aGlzCnRyZWFzdXJ5IG1heSBjaGFuZ2U7IGl0IG11c3Qgc2V0IHRoaXMgY29udHJhY3QgYXMgaXRzIGFkbWluIGZvciB0aGF0IHRvCndvcmssIHdoaWNoIGlzIGEgc2VwYXJhdGUgZGVsaWJlcmF0ZSBhY3QuCgpgZGVwbG95ZXJgIG11c3Qgc2lnbi4gV2l0aG91dCB0aGF0IHNpZ25hdHVyZSB0aGlzIGlzIGEgbGFuZCBncmFiOiBhCnRyZWFzdXJ5IHNpdHRpbmcgZGVwbG95ZWQgYW5kIHVuY29uZmlndXJlZCBmb3IgZXZlbiBvbmUgbGVkZ2VyIGNhbiBiZQpjbGFpbWVkIGJ5IHdob2V2ZXIgY2FsbHMgdGhpcyBmaXJzdCwgbmFtaW5nIHRoZW1zZWx2ZXMgdGhlIGVudGlyZQpyZWdpc3Rlci4gRGVwbG95IGFuZCBpbml0aWFsaXplIGFyZSBzZXBhcmF0ZSB0cmFuc2FjdGlvbnMsIHNvIHRoYXQKd2luZG93IGlzIHJlYWwgcmF0aGVyIHRoYW4gdGhlb3JldGljYWwuAAAAAAAKaW5pdGlhbGl6ZQAAAAAAAwAAAAAAAAAIZGVwbG95ZXIAAAATAAAAAAAAAAdmYWN0b3J5AAAAABMAAAAAAAAADHNoYXJlaG9sZGVycwAAA+oAAAfQAAAAC1NoYXJlaG9sZGVyAAAAAAA=",
+        "AAAAAAAAAd9Db25maWd1cmUgdGhlIHRyZWFzdXJ5LiBgZmFjdG9yeWAgaXMgdGhlIGNvbnRyYWN0IHdob3NlIGZlZSB0aGlzCnRyZWFzdXJ5IG1heSBjaGFuZ2U7IGl0IG11c3Qgc2V0IHRoaXMgY29udHJhY3QgYXMgaXRzIGFkbWluIGZvciB0aGF0IHRvCndvcmssIHdoaWNoIGlzIGEgc2VwYXJhdGUgZGVsaWJlcmF0ZSBhY3QuCgpBIGNvbnN0cnVjdG9yOiBpdCBydW5zIGluc2lkZSB0aGUgZGVwbG95IHRyYW5zYWN0aW9uLCBzbyB0aGUgdHJlYXN1cnkgaXMKbmV2ZXIgZGVwbG95ZWQtYnV0LXVuY29uZmlndXJlZCBmb3IgZXZlbiBvbmUgbGVkZ2VyIOKAlCBjbG9zaW5nIHRoZSB3aW5kb3cgYQpzZXBhcmF0ZSBgaW5pdGlhbGl6ZWAgbGVmdCBvcGVuLCBpbiB3aGljaCB3aG9ldmVyIGNhbGxlZCBpdCBmaXJzdCBjb3VsZApuYW1lIHRoZW1zZWx2ZXMgdGhlIGVudGlyZSBzaGFyZWhvbGRlciByZWdpc3Rlci4gYGRlcGxveWVyYCBzaWducyB0aGUKZGVwbG95LgAAAAANX19jb25zdHJ1Y3RvcgAAAAAAAAMAAAAAAAAACGRlcGxveWVyAAAAEwAAAAAAAAAHZmFjdG9yeQAAAAATAAAAAAAAAAxzaGFyZWhvbGRlcnMAAAPqAAAH0AAAAAtTaGFyZWhvbGRlcgAAAAAA",
         "AAAAAAAAAoZPcGVuIGEgY3ljbGUgb3ZlciB0aGUgdHJlYXN1cnkncyAqdW5yZXNlcnZlZCogYmFsYW5jZSBvZiBgdG9rZW5gLgoKQW55IHNoYXJlaG9sZGVyIG1heSBvcGVuIG9uZS4gVGhlcmUgaXMgbm8gcHJpdmlsZWdlZCBwcm9wb3NlciwgYmVjYXVzZSBhCnByb3Bvc2VyIHdobyBjb3VsZCByZWZ1c2UgdG8gYWN0IHdvdWxkIGJlIGFibGUgdG8gd2l0aGhvbGQgZXZlcnlvbmUKZWxzZSdzIGVhcm5pbmdzIGluZGVmaW5pdGVseS4KCk9ubHkgYSBjeWNsZSBzdGlsbCBiZWluZyB2b3RlZCBvbiBibG9ja3MgYSBuZXcgb25lLiBBIHBheWFibGUgY3ljbGUgZG9lcwpub3Q6IGl0cyBtb25leSBpcyByZXNlcnZlZCwgc28gYSBsYXRlciBjeWNsZSBjYW5ub3QgcmVhY2ggaXQsIGFuZCB0aGVyZQppcyBubyByZWFzb24gdG8gbWFrZSBldmVyeW9uZSB3YWl0IGZvciB0aGUgbGFzdCBzaGFyZWhvbGRlciB0byBnZXQgcm91bmQKdG8gY2xhaW1pbmcuIEFuIGVhcmxpZXIgZGVzaWduIGJsb2NrZWQgb24gcGF5YWJsZSBhbmQgZGVhZGxvY2tlZCB0aGUKY29udHJhY3QgdGhlIG1vbWVudCBhIGN5Y2xlIHdhcyBmdWxseSBjbGFpbWVkIOKAlCB0aGUgc3RhdGUgc3RheWVkIHBheWFibGUKZm9yZXZlciBhbmQgbm8gZnVydGhlciBjeWNsZSBjb3VsZCBldmVyIG9wZW4uAAAAAAAKb3Blbl9jeWNsZQAAAAAAAgAAAAAAAAAGb3BlbmVyAAAAAAATAAAAAAAAAAV0b2tlbgAAAAAAABMAAAAA",
         "AAAAAAAAAERBcHByb3ZlIHRoZSBvcGVuIGN5Y2xlLiBPbmUgdm90ZSBwZXIgc2hhcmVob2xkZXIsIHdlaWdodGVkIGJ5IHNoYXJlLgAAAA1hcHByb3ZlX2N5Y2xlAAAAAAAAAQAAAAAAAAAFdm90ZXIAAAAAAAATAAAAAA==",
         "AAAAAAAAAPFNYXJrIGEgY3ljbGUgdGhhdCBjbG9zZWQgYmVsb3cgdGhyZXNob2xkIGFzIGxhcHNlZC4KClBlcm1pc3Npb25sZXNzLCBhbmQgaXQgcGF5cyBub2JvZHkuIE5vdGhpbmcgd2FzIHJlc2VydmVkLCBzbyB0aGUgYmFsYW5jZQpzaW1wbHkgc3RheXMgaGVyZSBhbmQgaXMgcGlja2VkIHVwIGJ5IHRoZSBuZXh0IGN5Y2xlOiBhbiB1bmZpbmlzaGVkIHZvdGUKZGVsYXlzIGEgcGF5b3V0IHJhdGhlciB0aGFuIGRlc3Ryb3lpbmcgaXQuAAAAAAAAE3NldHRsZV9sYXBzZWRfY3ljbGUAAAAAAAAAAAA=",
@@ -369,8 +356,7 @@ export class Client extends ContractClient {
     )
   }
   public readonly fromJSON = {
-    initialize: this.txFromJSON<null>,
-        open_cycle: this.txFromJSON<null>,
+    open_cycle: this.txFromJSON<null>,
         approve_cycle: this.txFromJSON<null>,
         settle_lapsed_cycle: this.txFromJSON<null>,
         claim: this.txFromJSON<null>,

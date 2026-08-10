@@ -60,7 +60,8 @@ const LEDGER_LIFETIME: u32 = 17_280;
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
 pub enum Error {
-    AlreadyInitialized = 10,
+    // 10 was AlreadyInitialized; the constructor makes re-init impossible, so the
+    // guard and its error code are gone. Left as a reserved gap for ABI stability.
     NotInitialized = 11,
 
     NotAnOwner = 20,
@@ -190,16 +191,12 @@ pub struct Operations;
 impl Operations {
     /// Configure the vault with its owners — the voters.
     ///
-    /// `deployer` must sign, for the same reason the fee treasury demands it: a
-    /// vault sitting deployed and unconfigured for even one ledger could be
-    /// claimed by whoever calls this first, naming themselves the only owner.
-    /// Deploy and initialize are separate transactions, so that window is real.
-    pub fn initialize(env: Env, deployer: Address, owners: Vec<Address>) {
+    /// A constructor: it runs inside the deploy transaction, so the vault is
+    /// never deployed-but-unconfigured for even one ledger. That closes the
+    /// window a separate `initialize` left open, in which whoever called it first
+    /// could name themselves the only owner. `deployer` signs the deploy.
+    pub fn __constructor(env: Env, deployer: Address, owners: Vec<Address>) {
         deployer.require_auth();
-
-        if env.storage().instance().has(&DataKey::Owners) {
-            panic_with_error!(&env, Error::AlreadyInitialized);
-        }
         validate_owners(&env, &owners);
 
         env.storage().instance().set(&DataKey::Owners, &owners);

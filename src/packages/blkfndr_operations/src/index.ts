@@ -34,7 +34,6 @@ if (typeof window !== "undefined") {
 
 
 export const Errors = {
-  10: {message:"AlreadyInitialized"},
   11: {message:"NotInitialized"},
   20: {message:"NotAnOwner"},
   21: {message:"TooManyOwners"},
@@ -84,17 +83,6 @@ owners: Array<string>;
 export type DataKey = {tag: "Owners", values: void} | {tag: "VoteWindow", values: void} | {tag: "Proposal", values: void} | {tag: "NextProposalId", values: void} | {tag: "ProposalVote", values: readonly [u32, string]};
 
 export interface Client {
-  /**
-   * Construct and simulate a initialize transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
-   * Configure the vault with its owners — the voters.
-   * 
-   * `deployer` must sign, for the same reason the fee treasury demands it: a
-   * vault sitting deployed and unconfigured for even one ledger could be
-   * claimed by whoever calls this first, naming themselves the only owner.
-   * Deploy and initialize are separate transactions, so that window is real.
-   */
-  initialize: ({deployer, owners}: {deployer: string, owners: Array<string>}, options?: MethodOptions) => Promise<AssembledTransaction<null>>
-
   /**
    * Construct and simulate a propose transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
    * Propose a governed action: a release, a change of owners, or a change of
@@ -148,6 +136,8 @@ export interface Client {
 }
 export class Client extends ContractClient {
   static async deploy<T = Client>(
+        /** Constructor/Initialization Args for the contract's `__constructor` method */
+        {deployer, owners}: {deployer: string, owners: Array<string>},
     /** Options for initializing a Client as well as for calling a method, with extras specific to deploying. */
     options: MethodOptions &
       Omit<ContractClientOptions, "contractId"> & {
@@ -159,16 +149,16 @@ export class Client extends ContractClient {
         format?: "hex" | "base64";
       }
   ): Promise<AssembledTransaction<T>> {
-    return ContractClient.deploy(null, options)
+    return ContractClient.deploy({deployer, owners}, options)
   }
   constructor(public readonly options: ContractClientOptions) {
     super(
-      new ContractSpec([ "AAAABAAAAAAAAAAAAAAABUVycm9yAAAAAAAADwAAAAAAAAASQWxyZWFkeUluaXRpYWxpemVkAAAAAAAKAAAAAAAAAA5Ob3RJbml0aWFsaXplZAAAAAAACwAAAAAAAAAKTm90QW5Pd25lcgAAAAAAFAAAAAAAAAANVG9vTWFueU93bmVycwAAAAAAABUAAAAAAAAADkR1cGxpY2F0ZU93bmVyAAAAAAAWAAAAAAAAAAhOb093bmVycwAAABcAAAAAAAAADk5vUHJvcG9zYWxPcGVuAAAAAAAoAAAAAAAAABNQcm9wb3NhbEFscmVhZHlPcGVuAAAAACkAAAAAAAAADEFscmVhZHlWb3RlZAAAACoAAAAAAAAADFZvdGluZ0Nsb3NlZAAAACsAAAAAAAAAD1RocmVzaG9sZE5vdE1ldAAAAAAsAAAAAAAAABNUaHJlc2hvbGRBbHJlYWR5TWV0AAAAAC0AAAAAAAAADUludmFsaWRBbW91bnQAAAAAAAAyAAAAAAAAABFJbnN1ZmZpY2llbnRGdW5kcwAAAAAAADMAAAAAAAAADEludmFsaWRCYXRjaAAAADQ=",
+      new ContractSpec([ "AAAABAAAAAAAAAAAAAAABUVycm9yAAAAAAAADgAAAAAAAAAOTm90SW5pdGlhbGl6ZWQAAAAAAAsAAAAAAAAACk5vdEFuT3duZXIAAAAAABQAAAAAAAAADVRvb01hbnlPd25lcnMAAAAAAAAVAAAAAAAAAA5EdXBsaWNhdGVPd25lcgAAAAAAFgAAAAAAAAAITm9Pd25lcnMAAAAXAAAAAAAAAA5Ob1Byb3Bvc2FsT3BlbgAAAAAAKAAAAAAAAAATUHJvcG9zYWxBbHJlYWR5T3BlbgAAAAApAAAAAAAAAAxBbHJlYWR5Vm90ZWQAAAAqAAAAAAAAAAxWb3RpbmdDbG9zZWQAAAArAAAAAAAAAA9UaHJlc2hvbGROb3RNZXQAAAAALAAAAAAAAAATVGhyZXNob2xkQWxyZWFkeU1ldAAAAAAtAAAAAAAAAA1JbnZhbGlkQW1vdW50AAAAAAAAMgAAAAAAAAARSW5zdWZmaWNpZW50RnVuZHMAAAAAAAAzAAAAAAAAAAxJbnZhbGlkQmF0Y2gAAAA0",
         "AAAAAQAAADlUaGUgdGVybXMgb2YgYSBzcGVuZDogaG93IG11Y2ggb2Ygd2hpY2ggdG9rZW4gZ29lcyB3aGVyZS4AAAAAAAAAAAAADFJlbGVhc2VUZXJtcwAAAAMAAAAAAAAABmFtb3VudAAAAAAACwAAAAAAAAACdG8AAAAAABMAAAAAAAAABXRva2VuAAAAAAAAEw==",
         "AAAAAgAAAB1XaGF0IGEgY2FycmllZCBwcm9wb3NhbCBkb2VzLgAAAAAAAAAAAAAOR292ZXJuZWRBY3Rpb24AAAAAAAQAAAABAAAAOVBheSBvcGVyYXRpbmcgZnVuZHMgb3V0IHRvIGEgZGVzdGluYXRpb24gdGhlIG93bmVycyBuYW1lLgAAAAAAAAdSZWxlYXNlAAAAAAEAAAfQAAAADFJlbGVhc2VUZXJtcwAAAAEAAAEkUGF5IHNldmVyYWwgZGVzdGluYXRpb25zIGluIG9uZSBjYXJyaWVkIHZvdGUg4oCUIHRoZSBtb250aGx5IGdhcyB0b3AtdXAgdG8KZXZlcnkgYWN0aXZlIGN1c3RvZGlhbCB3YWxsZXQgYXQgb25jZSwgcmF0aGVyIHRoYW4gYSB2b3RlIHBlciB3YWxsZXQuIEl0CmlzIGFsbC1vci1ub3RoaW5nOiBpZiBhbnkgc2luZ2xlIHRyYW5zZmVyIGNhbm5vdCBiZSBjb3ZlcmVkIHRoZSB3aG9sZQpleGVjdXRpb24gcmV2ZXJ0cywgc28gYSBiYXRjaCBuZXZlciBmdW5kcyBzb21lIHdhbGxldHMgYW5kIHN0cmFuZHMgb3RoZXJzLgAAAAtSZWxlYXNlTWFueQAAAAABAAAD6gAAB9AAAAAMUmVsZWFzZVRlcm1zAAAAAQAAAJNSZXBsYWNlIHRoZSBvd25lciBzZXQg4oCUIHRoZSB2b3RlcnMuIFRoZSBvbmx5IHdheSB0byBhZGQgb3IgcmVtb3ZlIG9uZSwgc28KdGhlIGJvZHkgdGhhdCBkZWNpZGVzIGhvdyBtb25leSBtb3ZlcyBpcyBjaGFuZ2VkIHRoZSBzYW1lIHdheSBtb25leSBpcy4AAAAACVNldE93bmVycwAAAAAAAAEAAAPqAAAAEwAAAAEAAAAiQ2hhbmdlIGhvdyBsb25nIGEgdm90ZSBzdGF5cyBvcGVuLgAAAAAAD1NldFZvdGluZ1dpbmRvdwAAAAABAAAABg==",
         "AAAAAQAAAAAAAAAAAAAACFByb3Bvc2FsAAAABgAAAAAAAAAGYWN0aW9uAAAAAAfQAAAADkdvdmVybmVkQWN0aW9uAAAAAAAAAAAACWFwcHJvdmFscwAAAAAAAAQAAAAAAAAACWNsb3Nlc19hdAAAAAAAAAYAAAAAAAAAAmlkAAAAAAAEAAAAAAAAAAlvcGVuZWRfYXQAAAAAAAAGAAAAxVRoZSBvd25lciBzZXQgYXMgaXQgc3Rvb2Qgd2hlbiB0aGUgcHJvcG9zYWwgb3BlbmVkLiBBIHZvdGUgaXMgZGVjaWRlZAphZ2FpbnN0IHRoaXMgc25hcHNob3QsIHNvIGNoYW5naW5nIHRoZSBvd25lcnMgbWlkLXZvdGUgY2Fubm90IG1vdmUgdGhlCnRocmVzaG9sZCBvciB0aGUgZWxlY3RvcmF0ZSB1bmRlciBhbiBpbi1mbGlnaHQgcHJvcG9zYWwuAAAAAAAABm93bmVycwAAAAAD6gAAABM=",
         "AAAAAgAAAAAAAAAAAAAAB0RhdGFLZXkAAAAABQAAAAAAAAAAAAAABk93bmVycwAAAAAAAAAAAAAAAAAKVm90ZVdpbmRvdwAAAAAAAAAAAAAAAAAIUHJvcG9zYWwAAAAAAAAAAAAAAA5OZXh0UHJvcG9zYWxJZAAAAAAAAQAAAB0ocHJvcG9zYWxfaWQsIHZvdGVyKSAtPiB2b3RlZAAAAAAAAAxQcm9wb3NhbFZvdGUAAAACAAAABAAAABM=",
-        "AAAAAAAAAVJDb25maWd1cmUgdGhlIHZhdWx0IHdpdGggaXRzIG93bmVycyDigJQgdGhlIHZvdGVycy4KCmBkZXBsb3llcmAgbXVzdCBzaWduLCBmb3IgdGhlIHNhbWUgcmVhc29uIHRoZSBmZWUgdHJlYXN1cnkgZGVtYW5kcyBpdDogYQp2YXVsdCBzaXR0aW5nIGRlcGxveWVkIGFuZCB1bmNvbmZpZ3VyZWQgZm9yIGV2ZW4gb25lIGxlZGdlciBjb3VsZCBiZQpjbGFpbWVkIGJ5IHdob2V2ZXIgY2FsbHMgdGhpcyBmaXJzdCwgbmFtaW5nIHRoZW1zZWx2ZXMgdGhlIG9ubHkgb3duZXIuCkRlcGxveSBhbmQgaW5pdGlhbGl6ZSBhcmUgc2VwYXJhdGUgdHJhbnNhY3Rpb25zLCBzbyB0aGF0IHdpbmRvdyBpcyByZWFsLgAAAAAACmluaXRpYWxpemUAAAAAAAIAAAAAAAAACGRlcGxveWVyAAAAEwAAAAAAAAAGb3duZXJzAAAAAAPqAAAAEwAAAAA=",
+        "AAAAAAAAAU1Db25maWd1cmUgdGhlIHZhdWx0IHdpdGggaXRzIG93bmVycyDigJQgdGhlIHZvdGVycy4KCkEgY29uc3RydWN0b3I6IGl0IHJ1bnMgaW5zaWRlIHRoZSBkZXBsb3kgdHJhbnNhY3Rpb24sIHNvIHRoZSB2YXVsdCBpcwpuZXZlciBkZXBsb3llZC1idXQtdW5jb25maWd1cmVkIGZvciBldmVuIG9uZSBsZWRnZXIuIFRoYXQgY2xvc2VzIHRoZQp3aW5kb3cgYSBzZXBhcmF0ZSBgaW5pdGlhbGl6ZWAgbGVmdCBvcGVuLCBpbiB3aGljaCB3aG9ldmVyIGNhbGxlZCBpdCBmaXJzdApjb3VsZCBuYW1lIHRoZW1zZWx2ZXMgdGhlIG9ubHkgb3duZXIuIGBkZXBsb3llcmAgc2lnbnMgdGhlIGRlcGxveS4AAAAAAAANX19jb25zdHJ1Y3RvcgAAAAAAAAIAAAAAAAAACGRlcGxveWVyAAAAEwAAAAAAAAAGb3duZXJzAAAAAAPqAAAAEwAAAAA=",
         "AAAAAAAAAHpQcm9wb3NlIGEgZ292ZXJuZWQgYWN0aW9uOiBhIHJlbGVhc2UsIGEgY2hhbmdlIG9mIG93bmVycywgb3IgYSBjaGFuZ2Ugb2YKdGhlIHZvdGluZyB3aW5kb3cuIFRoZSBwcm9wb3NlciBtdXN0IGJlIGFuIG93bmVyLgAAAAAAB3Byb3Bvc2UAAAAAAgAAAAAAAAAIcHJvcG9zZXIAAAATAAAAAAAAAAZhY3Rpb24AAAAAB9AAAAAOR292ZXJuZWRBY3Rpb24AAAAAAAA=",
         "AAAAAAAAAHNBcHByb3ZlIHRoZSBvcGVuIHByb3Bvc2FsLiBPbmUgdm90ZSBwZXIgb3duZXIsIGRlY2lkZWQgYWdhaW5zdCB0aGUgb3duZXIKc25hcHNob3QgdGhlIHByb3Bvc2FsIHRvb2sgd2hlbiBpdCBvcGVuZWQuAAAAAAdhcHByb3ZlAAAAAAEAAAAAAAAABXZvdGVyAAAAAAAAEwAAAAA=",
         "AAAAAAAAASVBcHBseSBhIGNhcnJpZWQgcHJvcG9zYWwuCgpQZXJtaXNzaW9ubGVzcyBvbmNlIHRoZSB2b3RlIGhhcyBjYXJyaWVkOiBleGVjdXRpbmcgaXQgc2hvdWxkIG5vdCBkZXBlbmQgb24KdGhlIGdvb2R3aWxsIG9mIHdob2V2ZXIgcHJvcG9zZWQgaXQuIEEgcmVsZWFzZSBtb3ZlcyB0aGUgdmF1bHQncyBvd24KYmFsYW5jZSwgd2hpY2ggdGhlIGNvbnRyYWN0IGF1dGhvcmlzZXMgZm9yIGl0c2VsZiDigJQgbm8gb3duZXIga2V5IHNpZ25zIHRoZQp0cmFuc2ZlciwgdGhlIGNhcnJpZWQgdm90ZSBpcyB0aGUgYXV0aG9yaXR5LgAAAAAAAAdleGVjdXRlAAAAAAAAAAAA",
@@ -181,8 +171,7 @@ export class Client extends ContractClient {
     )
   }
   public readonly fromJSON = {
-    initialize: this.txFromJSON<null>,
-        propose: this.txFromJSON<null>,
+    propose: this.txFromJSON<null>,
         approve: this.txFromJSON<null>,
         execute: this.txFromJSON<null>,
         get_owners: this.txFromJSON<Array<string>>,

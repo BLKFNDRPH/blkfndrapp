@@ -89,7 +89,8 @@ const LEDGER_LIFETIME: u32 = 17_280;
 #[repr(u32)]
 pub enum Error {
     NotAuthorized       = 1,
-    AlreadyInitialized  = 10,
+    // 10 was AlreadyInitialized; the constructor makes re-init impossible, so the
+    // guard and its error code are gone. Left as a reserved gap for ABI stability.
     NotInitialized      = 11,
 
     NotAShareholder     = 20,
@@ -409,22 +410,18 @@ impl Treasury {
     /// treasury may change; it must set this contract as its admin for that to
     /// work, which is a separate deliberate act.
     ///
-    /// `deployer` must sign. Without that signature this is a land grab: a
-    /// treasury sitting deployed and unconfigured for even one ledger can be
-    /// claimed by whoever calls this first, naming themselves the entire
-    /// register. Deploy and initialize are separate transactions, so that
-    /// window is real rather than theoretical.
-    pub fn initialize(
+    /// A constructor: it runs inside the deploy transaction, so the treasury is
+    /// never deployed-but-unconfigured for even one ledger — closing the window a
+    /// separate `initialize` left open, in which whoever called it first could
+    /// name themselves the entire shareholder register. `deployer` signs the
+    /// deploy.
+    pub fn __constructor(
         env: Env,
         deployer: Address,
         factory: Address,
         shareholders: Vec<Shareholder>,
     ) {
         deployer.require_auth();
-
-        if env.storage().instance().has(&DataKey::Shareholders) {
-            panic_with_error!(&env, Error::AlreadyInitialized);
-        }
         validate_roster(&env, &shareholders);
 
         env.storage().instance().set(&DataKey::Factory, &factory);

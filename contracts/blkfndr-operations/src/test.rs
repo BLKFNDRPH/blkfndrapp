@@ -35,13 +35,14 @@ fn setup() -> Fixture {
     ];
     let deployer = Address::generate(&env);
 
-    let ops_id = env.register(Operations, ());
-    let ops = OperationsClient::new(&env, &ops_id);
-
-    ops.initialize(
-        &deployer,
-        &vec![&env, owners[0].clone(), owners[1].clone(), owners[2].clone()],
+    let ops_id = env.register(
+        Operations,
+        (
+            deployer.clone(),
+            vec![&env, owners[0].clone(), owners[1].clone(), owners[2].clone()],
+        ),
     );
+    let ops = OperationsClient::new(&env, &ops_id);
 
     Fixture {
         token_admin: StellarAssetClient::new(&env, &token),
@@ -82,31 +83,30 @@ fn owners_are_recorded() {
     assert!(!f.ops.is_owner(&Address::generate(&f.env)));
 }
 
-#[test]
-#[should_panic(expected = "Error(Contract, #10)")] // AlreadyInitialized
-fn cannot_initialize_twice() {
-    let f = setup();
-    f.ops
-        .initialize(&Address::generate(&f.env), &vec![&f.env, f.owners[0].clone()]);
-}
+// A constructor cannot be invoked twice — the vault is configured inside the
+// deploy transaction and exposes no initialize entrypoint afterward — so the old
+// "cannot_initialize_twice" case is now guaranteed by construction, and its
+// validation happens at register (deploy) time.
 
 #[test]
 #[should_panic(expected = "Error(Contract, #22)")] // DuplicateOwner
-fn duplicate_owner_rejected_at_init() {
+fn duplicate_owner_rejected_at_construction() {
     let env = Env::default();
     env.mock_all_auths();
     let a = Address::generate(&env);
-    let ops = OperationsClient::new(&env, &env.register(Operations, ()));
-    ops.initialize(&Address::generate(&env), &vec![&env, a.clone(), a.clone()]);
+    env.register(
+        Operations,
+        (Address::generate(&env), vec![&env, a.clone(), a.clone()]),
+    );
 }
 
 #[test]
 #[should_panic(expected = "Error(Contract, #23)")] // NoOwners
-fn empty_owner_set_rejected_at_init() {
+fn empty_owner_set_rejected_at_construction() {
     let env = Env::default();
     env.mock_all_auths();
-    let ops = OperationsClient::new(&env, &env.register(Operations, ()));
-    ops.initialize(&Address::generate(&env), &vec![&env]);
+    let empty: soroban_sdk::Vec<Address> = vec![&env];
+    env.register(Operations, (Address::generate(&env), empty));
 }
 
 #[test]
@@ -322,16 +322,21 @@ fn two_of_four_does_not_carry_but_three_does() {
         Address::generate(&env),
         Address::generate(&env),
     ];
-    let ops = OperationsClient::new(&env, &env.register(Operations, ()));
-    ops.initialize(
-        &Address::generate(&env),
-        &vec![
-            &env,
-            owners[0].clone(),
-            owners[1].clone(),
-            owners[2].clone(),
-            owners[3].clone(),
-        ],
+    let ops = OperationsClient::new(
+        &env,
+        &env.register(
+            Operations,
+            (
+                Address::generate(&env),
+                vec![
+                    &env,
+                    owners[0].clone(),
+                    owners[1].clone(),
+                    owners[2].clone(),
+                    owners[3].clone(),
+                ],
+            ),
+        ),
     );
     token_admin.mint(&ops.address, &1_000);
     let dest = Address::generate(&env);

@@ -202,11 +202,11 @@ Reads: `get_shareholders`, `get_cycle`, `get_open_cycle`, `get_reserved`, `get_a
 
 ## blkfndr-operations
 
-The Operations Vault: a governed pot of XLM that pays the gas for moderation (KYC attestation, project approval). It holds **no project funds** — only the platform's own gas budget. Owners are plain voters with no shares; they vote **two-thirds by headcount** and execution is **permissionless** (the carried vote is the authority — no owner key signs the transfer). **26 tests.**
+The Operations Vault: a governed pot of XLM that pays the gas for moderation (KYC attestation, project approval). It holds **no project funds** — only the platform's own gas budget. Owners are plain voters with no shares; they vote **two-thirds by headcount** and execution is **permissionless** (the carried vote is the authority — no owner key signs the transfer). **25 tests.**
 
 | Function | Who | Effect |
 |---|---|---|
-| `initialize(deployer, owners)` | Deployer, once | Sets the owner set (bounded `MAX_OWNERS = 20`) |
+| `__constructor(deployer, owners)` | Deployer, at deploy | Sets the owner set (bounded `MAX_OWNERS = 20`) inside the deploy transaction — never a separate call |
 | `propose(proposer, action)` | Owner | Opens a proposal |
 | `approve(voter)` | Owner | Casts a vote |
 | `execute()` | **Anyone** | Runs a carried proposal |
@@ -238,6 +238,7 @@ Both value-governing contracts (treasury, operations) share the same spine, chos
 - **Permissionless execution.** A carried vote is the authority. Anyone can submit the execution transaction, so there is no appointed signer to chase and no one who can sit on a decision the owners already made.
 - **Bounded everything.** Owner sets, shareholder registers, batch releases and paged reads are all capped so iteration stays inside a single transaction's resource budget.
 - **Votes expire.** An unfinished vote (7-day default window) lapses and can be replaced, rather than pinning a balance forever.
+- **Configured at deploy, never after.** Both take their owner/shareholder set through a `__constructor` that runs inside the deploy transaction, so neither is ever deployed-but-unconfigured for even one ledger — closing the window in which a first caller could seize an unclaimed governance contract and name itself the entire register.
 
 ## Building and verifying
 
