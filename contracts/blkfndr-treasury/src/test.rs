@@ -38,19 +38,20 @@ fn setup() -> Fixture {
     let factory = Address::generate(&env);
     let deployer = Address::generate(&env);
 
-    let treasury_id = env.register(Treasury, ());
-    let treasury = TreasuryClient::new(&env, &treasury_id);
-
-    treasury.initialize(
-        &deployer,
-        &factory,
-        &vec![
-            &env,
-            Shareholder { address: holders[0].clone(), share_bps: 5_000 },
-            Shareholder { address: holders[1].clone(), share_bps: 3_000 },
-            Shareholder { address: holders[2].clone(), share_bps: 2_000 },
-        ],
+    let treasury_id = env.register(
+        Treasury,
+        (
+            deployer.clone(),
+            factory.clone(),
+            vec![
+                &env,
+                Shareholder { address: holders[0].clone(), share_bps: 5_000 },
+                Shareholder { address: holders[1].clone(), share_bps: 3_000 },
+                Shareholder { address: holders[2].clone(), share_bps: 2_000 },
+            ],
+        ),
     );
+    let treasury = TreasuryClient::new(&env, &treasury_id);
 
     Fixture {
         token_admin: StellarAssetClient::new(&env, &token),
@@ -360,25 +361,25 @@ fn a_slow_claimant_does_not_block_the_next_cycle() {
     assert_eq!(f.token_client.balance(&f.holders[1]), 300 + 150);
 }
 
-/// The land grab. `initialize` took no signature at all, so a treasury that sat
-/// deployed and unconfigured for even one ledger belonged to whoever called this
-/// first — and deploy and initialize are necessarily separate transactions.
+/// The land grab the constructor closes: a treasury used to sit deployed and
+/// unconfigured for a ledger between deploy and initialize, and whoever called
+/// initialize first owned it. A constructor runs inside the deploy transaction —
+/// no gap — and still demands the deployer's signature, which this proves.
 #[test]
-fn initialize_requires_the_deployers_signature() {
+#[should_panic] // deployer.require_auth() fails without the deployer's signature
+fn construction_requires_the_deployers_signature() {
     let env = Env::default(); // deliberately no mock_all_auths
-    let treasury = TreasuryClient::new(&env, &env.register(Treasury, ()));
-
-    let deployer = Address::generate(&env);
-    let result = treasury.try_initialize(
-        &deployer,
-        &Address::generate(&env),
-        &vec![
-            &env,
-            Shareholder { address: Address::generate(&env), share_bps: 10_000 },
-        ],
+    env.register(
+        Treasury,
+        (
+            Address::generate(&env),
+            Address::generate(&env),
+            vec![
+                &env,
+                Shareholder { address: Address::generate(&env), share_bps: 10_000 },
+            ],
+        ),
     );
-
-    assert!(result.is_err(), "initialize must not be a land grab");
 }
 
 #[test]
@@ -400,15 +401,17 @@ fn a_cycle_pays_the_snapshot_even_if_the_register_changes_after() {
 fn shares_must_total_exactly_ten_thousand() {
     let env = Env::default();
     env.mock_all_auths();
-    let treasury = TreasuryClient::new(&env, &env.register(Treasury, ()));
-    treasury.initialize(
-        &Address::generate(&env),
-        &Address::generate(&env),
-        &vec![
-            &env,
-            Shareholder { address: Address::generate(&env), share_bps: 6_000 },
-            Shareholder { address: Address::generate(&env), share_bps: 3_000 },
-        ],
+    env.register(
+        Treasury,
+        (
+            Address::generate(&env),
+            Address::generate(&env),
+            vec![
+                &env,
+                Shareholder { address: Address::generate(&env), share_bps: 6_000 },
+                Shareholder { address: Address::generate(&env), share_bps: 3_000 },
+            ],
+        ),
     );
 }
 
@@ -418,15 +421,17 @@ fn a_shareholder_cannot_be_listed_twice() {
     let env = Env::default();
     env.mock_all_auths();
     let who = Address::generate(&env);
-    let treasury = TreasuryClient::new(&env, &env.register(Treasury, ()));
-    treasury.initialize(
-        &Address::generate(&env),
-        &Address::generate(&env),
-        &vec![
-            &env,
-            Shareholder { address: who.clone(), share_bps: 5_000 },
-            Shareholder { address: who, share_bps: 5_000 },
-        ],
+    env.register(
+        Treasury,
+        (
+            Address::generate(&env),
+            Address::generate(&env),
+            vec![
+                &env,
+                Shareholder { address: who.clone(), share_bps: 5_000 },
+                Shareholder { address: who, share_bps: 5_000 },
+            ],
+        ),
     );
 }
 
