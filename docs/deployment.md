@@ -363,6 +363,23 @@ Almost always one of three things, in order of likelihood:
 `NEXT_PUBLIC_APP_URL` and the Supabase **Site URL** disagree. Both must be the
 public origin, and changing the former requires a rebuild.
 
+### Google sign-in succeeds, but the user comes back signed out
+
+`NEXT_PUBLIC_APP_URL` has the wrong **scheme**: `http://` on a site served over
+HTTPS. The app then asks Supabase to return to `http://…/auth/callback`, which
+does not match the `https://` entries in **Redirect URLs** — and a mismatch is
+not an error: Supabase returns the user to the Site URL with a one-time code
+that nothing ever exchanges for a session. Users see the home page, still signed
+out, and try again.
+
+How to recognise it: Supabase's auth logs show `/authorize` → `/callback` pairs
+with **no** following `/token` (`grant_type=pkce`), and the API gateway logs
+show `redirect_to=http%3A%2F%2F…` on `/auth/v1/authorize`. The app also logs
+`[auth] Public origin configured over plain http` at the first sign-in.
+
+Fix: set `NEXT_PUBLIC_APP_URL=https://…` (and no `http://` entries in
+`APP_URLS`), then **rebuild** — it is a build argument, not a runtime setting.
+
 ### Blockchain connection issues
 
 - Contract IDs correct and deployed to the network you are pointing at

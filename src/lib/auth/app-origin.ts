@@ -42,7 +42,34 @@ export function allowedOrigins(): string[] {
       console.warn(`[auth] Ignoring unparseable origin in configuration: ${entry}`);
     }
   }
+  warnInsecureOrigins(out);
   return out;
+}
+
+let warnedInsecure = false;
+
+/**
+ * A public origin on plain http cannot finish sign-in on a site served over
+ * https. Supabase compares the whole redirect URL, scheme included, against its
+ * allow-list, and a mismatch is not an error — it silently returns the user to
+ * the Site URL with a code nothing exchanges. In the browser that looks like
+ * "signed out again", so it is said here, once, where the logs will show it.
+ * Behavior is unchanged: configuration stays the source of truth.
+ */
+function warnInsecureOrigins(origins: string[]): void {
+  if (warnedInsecure || process.env.NODE_ENV !== "production") return;
+  const insecure = origins.filter((origin) => {
+    const { protocol, hostname } = new URL(origin);
+    return protocol === "http:" && hostname !== "localhost" && !hostname.startsWith("127.");
+  });
+  if (insecure.length === 0) return;
+  warnedInsecure = true;
+  console.error(
+    `[auth] Public origin configured over plain http: ${insecure.join(", ")}. ` +
+      `If the site is served over https, Supabase will not return users to ` +
+      `/auth/callback and sign-in will silently fail. Use https:// in ` +
+      `NEXT_PUBLIC_APP_URL / APP_URLS, then rebuild.`,
+  );
 }
 
 /**
