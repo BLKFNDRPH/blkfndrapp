@@ -106,11 +106,11 @@ const CONTRACTS = [
   },
   {
     label: "Treasury (fee destination + governance)",
-    id: "CCNID3UWTBEV67U7COG7LEWGTT63KYBM42M5XQ2OX6TWFLE3H3XGIGZS",
+    id: "CDA5XDY564RV2OSZNF2S6CXQYCABFASBOHUCXJEGII6M232VM44COAXU",
   },
   {
     label: "Operations Vault (governed gas budget)",
-    id: "CDZXCWKY7J4CEF7MFXMOHB377OREDLM3LESNIZIQ4LIVIR6Z3PDHJQAP",
+    id: "CCVXM3YPPEMWG4INHFTZ4NBJ3PQW3ZUNYIZMBJBNYQOMSNOENQG7FDSN",
   },
   {
     label: "Admin roster (not in the release path)",
@@ -310,7 +310,7 @@ export function SecuritySection() {
             <p className="mt-5 text-xs leading-relaxed text-muted-foreground">
               Deployed to Stellar testnet. The vault&apos;s release rules alone
               are pinned by 38 passing tests, with the treasury and operations
-              vault adding 45 and 26 more. Mainnet is planned and not yet
+              vault adding 45 and 25 more. Mainnet is planned and not yet
               deployed — treat anything on testnet as a live rehearsal, not a
               place to commit funds you need back.
             </p>
