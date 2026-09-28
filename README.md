@@ -27,7 +27,7 @@ Release authority is contribution-weighted rather than held by appointed signers
 | Bonded vault with contributor-weighted release | ✅ Deployed to testnet, 38 tests passing |
 | Builder attestation registry | ✅ Deployed to testnet |
 | Platform treasury + owner-voted governance (fee, bond, ops funding) | ✅ Deployed to testnet, 45 tests passing |
-| Operations Vault (governed gas budget) + managed KYC-attestor keys | ✅ Deployed to testnet, 26 tests passing |
+| Operations Vault (governed gas budget) + managed KYC-attestor keys | ✅ Deployed to testnet, 25 tests passing |
 | Four admin groups, user bans, platform health, KYC review | ✅ Live |
 | Supabase schema, RLS, and auth | ✅ Applied, verified, and the app runs on it |
 | MongoDB | ✅ Fully removed |
@@ -97,10 +97,10 @@ The rebuilt set, deployed with `scripts/deploy-contracts.sh` and wiring verified
 | Attestation registry | [`CDLL2A4R...JSNB2SO7`](https://stellar.expert/explorer/testnet/contract/CDLL2A4RBSQPKSPTEE3O4HNSDICSJEGCHAWIGUYVRPGOKVEPJSNB2SO7) |
 | Identity registry | [`CCDBWBFE...RWZT27TGW`](https://stellar.expert/explorer/testnet/contract/CCDBWBFEK3YVXD2CDTJ4NFDPO7DB3OLB4YVX7BZI22M7QM4RWZT27TGW) |
 | Admin roster | [`CAHAOAX5...AU6WAGOG`](https://stellar.expert/explorer/testnet/contract/CAHAOAX52JAQ75C3INJIDVKT7EITWDVPYP2K27NJTD4CPYZUAU6WAGOG) |
-| Treasury (fee destination + governance) | [`CCNID3UW...H3XGIGZS`](https://stellar.expert/explorer/testnet/contract/CCNID3UWTBEV67U7COG7LEWGTT63KYBM42M5XQ2OX6TWFLE3H3XGIGZS) |
-| Operations Vault (gas budget) | [`CDZXCWKY...Z3PDHJQAP`](https://stellar.expert/explorer/testnet/contract/CDZXCWKY7J4CEF7MFXMOHB377OREDLM3LESNIZIQ4LIVIR6Z3PDHJQAP) |
+| Treasury (fee destination + governance) | [`CDA5XDY5...M44COAXU`](https://stellar.expert/explorer/testnet/contract/CDA5XDY564RV2OSZNF2S6CXQYCABFASBOHUCXJEGII6M232VM44COAXU) |
+| Operations Vault (gas budget) | [`CCVXM3YP...NQG7FDSN`](https://stellar.expert/explorer/testnet/contract/CCVXM3YPPEMWG4INHFTZ4NBJ3PQW3ZUNYIZMBJBNYQOMSNOENQG7FDSN) |
 
-The treasury is the factory's fee wallet, so the app reads its address from the factory rather than from configuration. It was redeployed to add the operations-funding transfer; the previous treasury (`CC5SKZMP…`, empty) is superseded.
+The treasury is the factory's fee wallet, so the app reads its address from the factory rather than from configuration. The treasury and Operations Vault were redeployed on 2026-09-28 with their audit fixes: each is configured by a constructor inside its own deploy transaction (H-03), and both follow checks-effects-interactions (M-05/M-06). The previous instances are superseded: treasury `CCNID3UW…` (empty) and Operations Vault `CDZXCWKY…`, whose balance moves to the new vault by owner vote.
 
 The **vault is not deployed as a contract**. Its wasm is uploaded and the factory instantiates one instance per project from that hash:
 
