@@ -1,10 +1,7 @@
 "use client";
 
-import {
-  signAuthEntry as signAuthEntryWithFreighter,
-  signTransaction as signWithFreighter,
-} from "@stellar/freighter-api";
-import { NETWORK_PASSPHRASE, type Signer } from "@/lib/stellar-clients";
+import { type Signer } from "@/lib/stellar-clients";
+import { freighterSigner } from "@/lib/freighter-signer";
 
 /**
  * Signing for the treasury, which use-stellar-contract does not cover.
@@ -19,27 +16,10 @@ import { NETWORK_PASSPHRASE, type Signer } from "@/lib/stellar-clients";
  * the network passphrase wrong, and a transaction signed for the wrong network
  * fails in a way that looks like a rejected signature.
  */
-export const signerFor = (publicKey: string): Signer => ({
-  publicKey,
-  signTransaction: (xdr: string) =>
-    signWithFreighter(xdr, {
-      networkPassphrase: NETWORK_PASSPHRASE,
-      address: publicKey,
-    }),
-  signAuthEntry: async (xdr: string) => {
-    const res = await signAuthEntryWithFreighter(xdr, {
-      networkPassphrase: NETWORK_PASSPHRASE,
-      address: publicKey,
-    });
-    if (!res.signedAuthEntry) {
-      throw new Error("Freighter returned no signed auth entry.");
-    }
-    return {
-      signedAuthEntry: res.signedAuthEntry,
-      signerAddress: res.signerAddress,
-    };
-  },
-});
+// Signing goes through freighterSigner, which checks what the wallet actually
+// returned. Passing Freighter's raw result to the SDK meant a dismissed popup
+// surfaced as "Cannot read properties of undefined (reading 'switch')".
+export const signerFor = (publicKey: string): Signer => freighterSigner(publicKey);
 
 /** Submit an assembled transaction, refusing one that cannot be signed. */
 export async function send(assembled: { signAndSend?: () => Promise<unknown> }) {

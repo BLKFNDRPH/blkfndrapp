@@ -1,14 +1,9 @@
 "use client";
 
 import { useCallback } from "react";
-import {
-  signAuthEntry as signAuthEntryWithFreighter,
-  signTransaction as signWithFreighter,
-} from "@stellar/freighter-api";
 import type { AssembledTransaction } from "@stellar/stellar-sdk/contract";
 import { useFreighterWallet } from "@/context/FreighterWalletContext";
 import {
-  NETWORK_PASSPHRASE,
   factoryClient,
   vaultClient,
   attestationClient,
@@ -18,6 +13,7 @@ import {
   type Signer,
 } from "@/lib/stellar-clients";
 import { tokenAddressFor, type Currency } from "@/lib/currencies";
+import { freighterSigner } from "@/lib/freighter-signer";
 
 /**
  * Contract calls for the bonded vault model.
@@ -71,27 +67,10 @@ export interface ApproveMilestoneParams extends MilestoneParams {
   contributor?: string;
 }
 
-const signerFor = (publicKey: string): Signer => ({
-  publicKey,
-  signTransaction: (xdr: string) =>
-    signWithFreighter(xdr, {
-      networkPassphrase: NETWORK_PASSPHRASE,
-      address: publicKey,
-    }),
-  signAuthEntry: async (xdr: string) => {
-    const res = await signAuthEntryWithFreighter(xdr, {
-      networkPassphrase: NETWORK_PASSPHRASE,
-      address: publicKey,
-    });
-    if (!res.signedAuthEntry) {
-      throw new Error("Freighter returned no signed auth entry.");
-    }
-    return {
-      signedAuthEntry: res.signedAuthEntry,
-      signerAddress: res.signerAddress,
-    };
-  },
-});
+// Signing goes through freighterSigner, which checks what the wallet actually
+// returned. Passing Freighter's raw result to the SDK meant a dismissed popup
+// surfaced as "Cannot read properties of undefined (reading 'switch')".
+const signerFor = (publicKey: string): Signer => freighterSigner(publicKey);
 
 async function signAndSend<T>(assembled: AssembledTransaction<T>) {
   const tx = assembled as AssembledTransaction<T> & {

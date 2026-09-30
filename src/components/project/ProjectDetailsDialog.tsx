@@ -61,37 +61,21 @@ import { useFreighterWallet } from "@/context/FreighterWalletContext";
 import { getBalance } from "@/lib/stellar";
 import { getUserByCreatorId } from "@/lib/data.client";
 import { getClaimRequests, createClaimRequest } from "@/actions/claims";
-import { signTransaction, signAuthEntry } from "@stellar/freighter-api";
 import { Client as VaultClient } from "@/packages/blkfndr_vault/src";
 import { submitMilestoneProof } from "@/app/actions";
 import { getPinataClient, getIPFSGatewayUrl } from "@/lib/pinata-client";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { freighterSigner } from "@/lib/freighter-signer";
 
 const NETWORK_PASSPHRASE = "Test SDF Network ; September 2015";
 const SOROBAN_RPC_URL = "https://soroban-testnet.stellar.org";
 
-const getSignerOptions = (publicKey: string) => ({
-  signTransaction: (xdr: string) =>
-    signTransaction(xdr, {
-      networkPassphrase: NETWORK_PASSPHRASE,
-      address: publicKey,
-    }),
-  signAuthEntry: async (xdr: string) => {
-    const res = await signAuthEntry(xdr, {
-      networkPassphrase: NETWORK_PASSPHRASE,
-      address: publicKey,
-    });
-    if (!res.signedAuthEntry) {
-      throw new Error("Freighter signedAuthEntry returned null");
-    }
-    return {
-      signedAuthEntry: res.signedAuthEntry,
-      signerAddress: res.signerAddress,
-    };
-  },
-});
+// Signing goes through freighterSigner, which checks what the wallet actually
+// returned. Passing Freighter's raw result to the SDK meant a dismissed popup
+// surfaced as "Cannot read properties of undefined (reading 'switch')".
+const getSignerOptions = (publicKey: string) => freighterSigner(publicKey);
 
 export function ProjectDetailsDialog() {
   const {

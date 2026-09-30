@@ -50,7 +50,6 @@ import { useFreighterWallet } from "@/context/FreighterWalletContext";
 import { usePlatformInfo, useRefreshAfterTx } from "@/context/BlockchainContext";
 import { Client as FactoryClient } from "@/packages/blkfndr_factory/src";
 import { Client as IdentityClient } from "@/packages/blkfndr_identity/src";
-import { signTransaction, signAuthEntry } from "@stellar/freighter-api";
 import Link from "next/link";
 import { CubeSpinner } from "../ui/CubeSpinner";
 import { cn } from "@/lib/utils";
@@ -63,6 +62,7 @@ import {
 import { Combobox } from "../ui/combobox";
 import { projectCategories } from "@/lib/categories";
 import { getCategoriesAction } from "@/actions/categories";
+import { freighterSigner, FreighterDeclined } from "@/lib/freighter-signer";
 
 const MIN_DEADLINE_MS = () => Date.now() + 24 * 60 * 60 * 1000;
 const DEFAULT_DEADLINE_MS = () => Date.now() + 30 * 24 * 60 * 60 * 1000;
@@ -73,26 +73,10 @@ const SOROBAN_RPC_URL = "https://soroban-testnet.stellar.org";
 const FACTORY_ID = process.env.NEXT_PUBLIC_BLKFNDR_FACTORY_CONTRACT_ID || "";
 const IDENTITY_ID = process.env.NEXT_PUBLIC_BLKFNDR_IDENTITY_CONTRACT_ID || "";
 
-const getSignerOptions = (publicKey: string) => ({
-  signTransaction: (xdr: string) =>
-    signTransaction(xdr, {
-      networkPassphrase: NETWORK_PASSPHRASE,
-      address: publicKey,
-    }),
-  signAuthEntry: async (xdr: string) => {
-    const res = await signAuthEntry(xdr, {
-      networkPassphrase: NETWORK_PASSPHRASE,
-      address: publicKey,
-    });
-    if (!res.signedAuthEntry) {
-      throw new Error("Freighter signedAuthEntry returned null");
-    }
-    return {
-      signedAuthEntry: res.signedAuthEntry,
-      signerAddress: res.signerAddress,
-    };
-  },
-});
+// Signing goes through freighterSigner, which checks what the wallet actually
+// returned. Passing Freighter's raw result to the SDK meant a dismissed popup
+// surfaced as "Cannot read properties of undefined (reading 'switch')".
+const getSignerOptions = (publicKey: string) => freighterSigner(publicKey);
 
 const msToDatetimeLocal = (ms: number): string => {
   const d = new Date(ms);
@@ -672,7 +656,16 @@ export function ListingForm() {
         // host diagnostic. Matched on the host's own text, never on the bare
         // error number: #13 means TrustlineMissingError in the token contract
         // and MilestoneNotFound in ours, so the code alone says nothing.
-        if (looksLikeMissingTrustline(error)) {
+        // Declining in Freighter, or closing its window, is a decision rather
+        // than a fault. It used to reach here as an unreadable TypeError about
+        // reading 'switch', reported under "Vault Deployment Failed" as though
+        // something had broken.
+        if (error instanceof FreighterDeclined) {
+          toast({
+            title: "Signing cancelled",
+            description: error.message,
+          });
+        } else if (looksLikeMissingTrustline(error)) {
           setBondBlocker({
             ok: false,
             reason: "no-trustline",
