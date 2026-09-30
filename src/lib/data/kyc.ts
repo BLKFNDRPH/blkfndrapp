@@ -6,6 +6,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { requireCaller, requireKycReviewer, AuthError } from "@/lib/supabase/auth";
 import { isStellarAccount } from "@/lib/stellar-address";
 import { signAttestation, signRevocation } from "@/lib/managed-wallet";
+import { notify } from "@/lib/data/notifications";
 
 /**
  * KYC data access.
@@ -218,15 +219,36 @@ export async function decideSubmission(
   z.enum(["approved", "rejected"]).parse(decision);
 
   const admin = createAdminClient();
-  const { error } = await admin
+  const reason = decision === "rejected" ? rejectionReason.slice(0, 500) : "";
+
+  // Returning the row serves two purposes: it confirms the update actually hit
+  // a submission, and it yields the applicant to notify without a second read.
+  const { data, error } = await admin
     .from("kyc_requests")
-    .update({
-      status: decision,
-      rejection_reason: decision === "rejected" ? rejectionReason.slice(0, 500) : "",
-    })
-    .eq("id", submissionId);
+    .update({ status: decision, rejection_reason: reason })
+    .eq("id", submissionId)
+    .select("user_id")
+    .maybeSingle();
 
   if (error) throw new Error(`Could not record KYC decision: ${error.message}`);
+  if (!data) throw new Error("Could not record KYC decision: no such submission.");
+
+  // Tell the applicant. Without this the decision was visible only to someone
+  // who thought to revisit the verification page and read a step indicator --
+  // an approved creator had no way to learn they were cleared. notify()
+  // swallows its own failures, so a notification problem cannot undo a
+  // decision that is already recorded.
+  await notify({
+    userId: data.user_id,
+    title: decision === "approved" ? "Identity verified" : "Identity verification not accepted",
+    caption:
+      decision === "approved"
+        ? "Your identity has been verified on-chain. You can now create project vaults."
+        : reason
+          ? `Your submission was not accepted: ${reason}`
+          : "Your submission was not accepted. Open verification to submit again.",
+    url: "/profile/kyc-attestation",
+  });
 }
 
 /**
