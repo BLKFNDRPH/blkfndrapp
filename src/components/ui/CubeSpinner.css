@@ -10,7 +10,12 @@
 }
 
 .cube1, .cube2 {
-  background-color: hsl(var(--foreground));
+  /* currentColor, not --foreground: inside a button the text colour is the
+     one guaranteed to contrast with that button's background. --foreground
+     equals --primary in this theme, so the cubes were drawn in the primary
+     button's own background colour and could not be seen at all. In ordinary
+     content currentColor still resolves to the inherited text colour. */
+  background-color: currentColor;
   width: 37.5%; /* 15px of 40px base */
   height: 37.5%; /* 15px of 40px base */
   position: absolute;

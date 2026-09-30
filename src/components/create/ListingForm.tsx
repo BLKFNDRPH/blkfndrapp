@@ -52,7 +52,6 @@ import { Client as IdentityClient } from "@/packages/blkfndr_identity/src";
 import { signTransaction, signAuthEntry } from "@stellar/freighter-api";
 import Link from "next/link";
 import { CubeSpinner } from "../ui/CubeSpinner";
-import { SubmitLoader } from "./SubmitLoader";
 import { cn } from "@/lib/utils";
 import {
   Tooltip,
@@ -950,11 +949,21 @@ export function ListingForm() {
                   )}
                   AI Suggestions
                 </Button>
+                {/* The pending state swaps the icon and the word, never the
+                    button. SubmitLoader used to replace the whole label with a
+                    position:absolute element sitting 100px below the button, so
+                    it contributed no width or height at all: the button
+                    collapsed to its own padding and the animation played
+                    outside it, leaving a grey block and no sign of progress.
+                    min-w holds the resting width so nothing reflows. */}
                 <Button
                   type="submit"
                   disabled={isSubmitPending || isCooldown || isSubmittingRef.current || !isBondValid}
+                  aria-busy={isSubmitPending}
+                  className="gap-2 min-w-[168px]"
                 >
-                  {isSubmitPending ? <SubmitLoader /> : "Launch Campaign"}
+                  {isSubmitPending && <CubeSpinner size="small" />}
+                  {isSubmitPending ? "Launching..." : "Launch Campaign"}
                 </Button>
               </div>
             </form>
