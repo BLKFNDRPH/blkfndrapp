@@ -29,6 +29,12 @@ import {
   tokenAddressFor,
   type Currency,
 } from "@/lib/currencies";
+import {
+  checkBondReadiness,
+  looksLikeMissingTrustline,
+  type BondReadiness,
+} from "@/lib/bond-readiness";
+import { BondBlockerDialog } from "./BondBlockerDialog";
 import { useToast } from "@/hooks/use-toast";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
@@ -152,6 +158,11 @@ export function ListingForm() {
   const [imageDataUri, setImageDataUri] = useState<string | null>(null);
   const [aiResult, setAiResult] = useState<ImproveListingQualityOutput | null>(null);
   const [isAiDialogOpen, setAiDialogOpen] = useState(false);
+
+  // Set when the builder cannot post the bond. Holds the reason rather than a
+  // boolean, because "you have never held USDC", "you hold too little" and
+  // "this wallet was never funded" need different instructions.
+  const [bondBlocker, setBondBlocker] = useState<BondReadiness | null>(null);
   const [deadlineInputValue, setDeadlineInputValue] = useState<string>(
     msToDatetimeLocal(DEFAULT_DEADLINE_MS()),
   );
@@ -408,7 +419,30 @@ export function ListingForm() {
         return;
       }
 
-      // 2. Upload file & metadata to Pinata
+      // 2. Bond pre-flight.
+      //
+      // The vault pulls the bond in the same call that creates it, so a builder
+      // who cannot part with it has no vault. Until now they found that out from
+      // a raw host diagnostic after signing, with nothing to act on. Runs before
+      // the uploads below so a blocked builder does not pin files they cannot
+      // use, and fails open: a check that cannot reach the network must not be
+      // the thing standing between a builder and a vault they can deploy.
+      try {
+        const readiness = await checkBondReadiness(
+          activeAddress,
+          tokenAddressFor(values.currencyType),
+          numericBond,
+        );
+        if (!readiness.ok) {
+          setBondBlocker(readiness);
+          isSubmittingRef.current = false;
+          return;
+        }
+      } catch (preflightError) {
+        console.warn("[ListingForm] bond pre-flight skipped:", preflightError);
+      }
+
+      // 3. Upload file & metadata to Pinata
       try {
         const fileList = values.image as FileList;
         if (!fileList || fileList.length === 0) {
@@ -555,11 +589,26 @@ export function ListingForm() {
         router.push("/projects");
       } catch (error: any) {
         console.error("Vault deployment failed:", error);
-        toast({
-          title: "Vault Deployment Failed",
-          description: error.message || "Failed to submit transaction to the factory.",
-          variant: "destructive",
-        });
+
+        // The pre-flight above catches this before signing in the ordinary
+        // case, but it fails open — so if the chain refuses for want of a
+        // trustline anyway, say so in words rather than showing the builder a
+        // host diagnostic. Matched on the host's own text, never on the bare
+        // error number: #13 means TrustlineMissingError in the token contract
+        // and MilestoneNotFound in ours, so the code alone says nothing.
+        if (looksLikeMissingTrustline(error)) {
+          setBondBlocker({
+            ok: false,
+            reason: "no-trustline",
+            asset: { code: selectedCurrency, issuer: null, isNative: false },
+          });
+        } else {
+          toast({
+            title: "Vault Deployment Failed",
+            description: error.message || "Failed to submit transaction to the factory.",
+            variant: "destructive",
+          });
+        }
       } finally {
         isSubmittingRef.current = false;
       }
@@ -919,6 +968,8 @@ export function ListingForm() {
           result={aiResult}
         />
       )}
+
+      <BondBlockerDialog blocker={bondBlocker} onClose={() => setBondBlocker(null)} />
     </>
   );
 }
