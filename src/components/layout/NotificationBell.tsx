@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useAuth } from '@/context/AuthContext';
+import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -42,6 +43,12 @@ export function NotificationBell() {
   const [isReasonDialogOpen, setIsReasonDialogOpen] = useState(false);
   const [selectedNotification, setSelectedNotification] = useState<Notification | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const { toast } = useToast();
+
+  // Ids already accounted for. Null until the first response, which seeds it:
+  // arriving to a backlog of unread items should raise the badge, not fire a
+  // burst of toasts for things that happened while away.
+  const seenIds = useRef<Set<string> | null>(null);
 
   const fetchNotifications = useCallback(async () => {
     if (!user) return;
@@ -51,10 +58,34 @@ export function NotificationBell() {
       const data: Notification[] = await res.json();
       setNotifications(data);
       setUnreadCount(data.filter(n => !n.isRead).length);
+
+      // Anything unread that appeared since the last poll is surfaced, so a
+      // decision taken while the user sits on another page reaches them there
+      // rather than waiting for them to open the panel. Deliberately generic:
+      // every notification type gets this, not just identity verification.
+      if (seenIds.current === null) {
+        seenIds.current = new Set(data.map(n => n.id));
+      } else {
+        const seen = seenIds.current;
+        for (const n of data) {
+          if (seen.has(n.id)) continue;
+          seen.add(n.id);
+          if (!n.isRead) {
+            toast({ title: n.title, description: n.caption || undefined });
+          }
+        }
+      }
     } catch (err) {
       console.error('Failed to fetch notifications:', err);
     }
-  }, [user]);
+  }, [user, toast]);
+
+  // A change of session starts from a clean slate, so one account's seen set
+  // cannot suppress the next one's first toast. Declared before the fetch
+  // effect so the reset lands before any refetch it triggers resolves.
+  useEffect(() => {
+    seenIds.current = null;
+  }, [user?.uid]);
 
   // Initial fetch + polling every 60s
   useEffect(() => {
