@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useTransition, useRef, useEffect } from "react";
-import { useForm } from "react-hook-form";
+import { useState, useTransition, useRef, useEffect, useCallback } from "react";
+import { useForm, type FieldErrors } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { Button } from "@/components/ui/button";
@@ -35,6 +35,7 @@ import {
   type BondReadiness,
 } from "@/lib/bond-readiness";
 import { BondBlockerDialog } from "./BondBlockerDialog";
+import { LaunchBlockedDialog } from "./LaunchBlockedDialog";
 import { useToast } from "@/hooks/use-toast";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
@@ -236,6 +237,27 @@ export function ListingForm() {
   ]);
   const [performanceBond, setPerformanceBond] = useState<number | string>(0);
 
+  /**
+   * Problems with the milestone rows, keyed by milestone id.
+   *
+   * The rows are plain state rather than form fields, so react-hook-form knows
+   * nothing about them and cannot show their errors. They carried the native
+   * `required` attribute instead, which meant the browser refused the submit
+   * before React ever saw it -- no submit event, so no toast, no validation
+   * message, no request. Pressing Launch Campaign simply did nothing.
+   */
+  type MilestoneProblem = { title?: string; amount?: string; description?: string };
+  const [milestoneErrors, setMilestoneErrors] = useState<Record<number, MilestoneProblem>>({});
+
+  /**
+   * Everything standing between the builder and a launch, for the dialog.
+   *
+   * A dialog rather than a toast, to match BondBlockerDialog: both answer the
+   * same question -- why did pressing Launch Campaign not launch anything --
+   * and a toast slides away while the builder is still reading the form.
+   */
+  const [launchProblems, setLaunchProblems] = useState<string[] | null>(null);
+
   const { platformInfo } = usePlatformInfo();
   const bondPct = platformInfo?.bondPercentage !== undefined ? platformInfo.bondPercentage / 10000 : 0.05;
 
@@ -277,7 +299,62 @@ export function ListingForm() {
     setMilestones((prev) =>
       prev.map((m) => (m.id === id ? { ...m, [field]: value } : m))
     );
+    // Clear this field's complaint as it is addressed, rather than leaving the
+    // row red until the next submit.
+    setMilestoneErrors((prev) => {
+      const key = field as keyof MilestoneProblem;
+      if (!prev[id]?.[key]) return prev;
+      const rest: MilestoneProblem = { ...prev[id] };
+      delete rest[key];
+      const next = { ...prev };
+      if (Object.keys(rest).length === 0) delete next[id];
+      else next[id] = rest;
+      return next;
+    });
   };
+
+  /**
+   * Check the milestone rows, mark the offending fields, and describe what is
+   * wrong in words the dialog can list.
+   *
+   * An amount of zero is rejected here rather than only through the derived
+   * funding goal, which has no control of its own and so had nowhere to show a
+   * message of its own.
+   */
+  const collectMilestoneProblems = useCallback(() => {
+    const byId: Record<number, MilestoneProblem> = {};
+    const described: string[] = [];
+
+    milestones.forEach((m, index) => {
+      const problem: MilestoneProblem = {};
+      const missing: string[] = [];
+
+      if (!m.title.trim()) {
+        problem.title = "Give this milestone a title.";
+        missing.push("a title");
+      }
+      if (!(Number(m.amount) > 0)) {
+        problem.amount = "Enter an amount greater than zero.";
+        missing.push("an amount above zero");
+      }
+      if (!m.description.trim()) {
+        problem.description = "Describe what this milestone delivers.";
+        missing.push("a description");
+      }
+
+      if (missing.length > 0) {
+        byId[m.id] = problem;
+        const list =
+          missing.length === 1
+            ? missing[0]
+            : `${missing.slice(0, -1).join(", ")} and ${missing[missing.length - 1]}`;
+        described.push(`Milestone ${index + 1} needs ${list}.`);
+      }
+    });
+
+    setMilestoneErrors(byId);
+    return described;
+  }, [milestones]);
 
   const isBondValid = numericBond >= minBondRequired;
 
@@ -614,7 +691,41 @@ export function ListingForm() {
     });
   };
 
+  /**
+   * A submit that failed validation.
+   *
+   * Every path that stops a launch now ends somewhere the builder can see.
+   * The funding goal is the case that needed this most: it is derived from the
+   * milestone amounts, has no control of its own and renders no message, so a
+   * goal below the minimum rejected the submit with nothing on screen at all.
+   */
+  const onInvalid = (errors: FieldErrors<FormSchema>) => {
+    const milestoneProblems = collectMilestoneProblems();
+
+    const fieldMessages = Object.values(errors)
+      .map((e) => (e as { message?: unknown } | undefined)?.message)
+      .filter((m): m is string => typeof m === "string");
+
+    setLaunchProblems([...fieldMessages, ...milestoneProblems]);
+
+    // Take them to the problem rather than leaving them to hunt for it.
+    document
+      .querySelector('[aria-invalid="true"], [data-milestone-error="true"]')
+      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+  };
+
   async function onSubmit(values: FormSchema) {
+    // The milestone rows are not form fields, so zod passing says nothing about
+    // them. Checked here, where a failure can still be shown.
+    const milestoneProblems = collectMilestoneProblems();
+    if (milestoneProblems.length > 0) {
+      setLaunchProblems(milestoneProblems);
+      document
+        .querySelector('[data-milestone-error="true"]')
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
+
     if (!user) {
       toast({
         title: "Please log in to create a project.",
@@ -644,7 +755,17 @@ export function ListingForm() {
       <Card>
         <CardContent className="pt-6 relative">
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
+            {/* noValidate hands validation to zod and the checks below, so it
+                has one owner. With the browser's own validation left on, an
+                empty milestone row stopped the submit before React saw it: no
+                submit event, so handleSubmit never ran and the page did
+                nothing at all. onInvalid guarantees a blocked submit always
+                says why. */}
+            <form
+              noValidate
+              onSubmit={form.handleSubmit(onSubmit, onInvalid)}
+              className="space-y-8"
+            >
               <FormField
                 control={form.control}
                 name="title"
@@ -884,7 +1005,14 @@ export function ListingForm() {
                             value={milestone.title}
                             onChange={(e) => handleUpdateMilestone(milestone.id, "title", e.target.value)}
                             required
+                            aria-invalid={!!milestoneErrors[milestone.id]?.title}
+                            data-milestone-error={!!milestoneErrors[milestone.id]?.title}
                           />
+                          {milestoneErrors[milestone.id]?.title && (
+                            <p className="text-xs font-medium text-destructive">
+                              {milestoneErrors[milestone.id]?.title}
+                            </p>
+                          )}
                         </div>
                         <div className="space-y-1">
                           <Input
@@ -894,7 +1022,14 @@ export function ListingForm() {
                             onChange={(e) => handleUpdateMilestone(milestone.id, "amount", parseFloat(e.target.value) || 0)}
                             required
                             step="any"
+                            aria-invalid={!!milestoneErrors[milestone.id]?.amount}
+                            data-milestone-error={!!milestoneErrors[milestone.id]?.amount}
                           />
+                          {milestoneErrors[milestone.id]?.amount && (
+                            <p className="text-xs font-medium text-destructive">
+                              {milestoneErrors[milestone.id]?.amount}
+                            </p>
+                          )}
                         </div>
                       </div>
 
@@ -904,7 +1039,14 @@ export function ListingForm() {
                         onChange={(e) => handleUpdateMilestone(milestone.id, "description", e.target.value)}
                         rows={2}
                         required
+                        aria-invalid={!!milestoneErrors[milestone.id]?.description}
+                        data-milestone-error={!!milestoneErrors[milestone.id]?.description}
                       />
+                      {milestoneErrors[milestone.id]?.description && (
+                        <p className="text-xs font-medium text-destructive">
+                          {milestoneErrors[milestone.id]?.description}
+                        </p>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -914,10 +1056,23 @@ export function ListingForm() {
                 {/* Milestone Sum Validation Status */}
                 <div className="flex justify-between items-center p-3 rounded-xl border bg-muted/40 text-xs">
                   <span className="font-medium">Total Milestone Allocation (Funding Goal):</span>
-                  <span className="font-bold text-primary">
+                  <span
+                    className={cn(
+                      "font-bold",
+                      // The goal is derived, so it has no field of its own to
+                      // carry a message. Saying it here is the only place a
+                      // builder can see that it is the thing blocking them.
+                      milestoneSum > 0 ? "text-primary" : "text-destructive",
+                    )}
+                  >
                     {milestoneSum.toLocaleString(undefined, { maximumFractionDigits: 2 })} {selectedCurrency}
                   </span>
                 </div>
+                {milestoneSum <= 0 && (
+                  <p className="px-1 pt-1 text-xs font-medium text-destructive">
+                    The funding goal is the sum of your milestone amounts, so it has to be above zero.
+                  </p>
+                )}
               </div>
 
               <FormField
@@ -979,6 +1134,7 @@ export function ListingForm() {
       )}
 
       <BondBlockerDialog blocker={bondBlocker} onClose={() => setBondBlocker(null)} />
+      <LaunchBlockedDialog problems={launchProblems} onClose={() => setLaunchProblems(null)} />
     </>
   );
 }
