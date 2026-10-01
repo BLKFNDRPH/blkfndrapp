@@ -25,6 +25,10 @@ import {
   Cog,
   UserX,
   Activity,
+  Eye,
+  EyeOff,
+  Lock,
+  LockOpen,
 } from "lucide-react";
 import { IdentityRegistryPanel } from "./IdentityRegistryPanel";
 import { Badge } from "../ui/badge";
@@ -55,8 +59,15 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { RestrictionBadges } from "@/components/project/RestrictionNotice";
+import {
+  ProjectRestrictionDialog,
+  type RestrictionChange,
+} from "./ProjectRestrictionDialog";
+import { canRestrictProjects } from "@/lib/admin-roles";
 import { ProjectsByStatusChart } from "./ProjectsByStatusChart";
 import { AnimatePresence, motion } from "framer-motion";
 import { CubeSpinner } from "../ui/CubeSpinner";
@@ -210,6 +221,14 @@ export function AdminDashboard() {
   const visibleViews = myRole ? VIEWS_BY_ROLE[myRole] : [];
   const canSee = (v: typeof adminView) => visibleViews.includes(v);
 
+  // Hide and lock. Offered to the roles can_restrict_projects() accepts — the
+  // database checks again on every change, so this only decides what shows.
+  const canRestrict = canRestrictProjects(myRole);
+  const [restrictionTarget, setRestrictionTarget] = useState<{
+    project: Project;
+    change: RestrictionChange;
+  } | null>(null);
+
   useEffect(() => {
     getMyRoleAction().then((r) => setMyRole(r.role));
   }, []);
@@ -357,6 +376,21 @@ export function AdminDashboard() {
   );
 
   const recentProjects = allRecentProjects.slice(0, visibleRecentCount);
+
+  // Every hidden or locked project, whatever its status — the recent table
+  // leaves pending ones out and pages the rest, and a restriction is exactly the
+  // kind of thing that should not be lost in either.
+  const restrictedProjects = useMemo(
+    () =>
+      projects
+        .filter((p) => p.restriction?.hidden || p.restriction?.locked)
+        .sort((a, b) => {
+          const at = a.restriction?.lockedAt ?? a.restriction?.hiddenAt ?? "";
+          const bt = b.restriction?.lockedAt ?? b.restriction?.hiddenAt ?? "";
+          return bt.localeCompare(at);
+        }),
+    [projects],
+  );
 
   // Admin approval of a project no longer exists on chain. A vault is live
   // the moment the factory deploys it, with the builder bonded. Hiding a
@@ -751,6 +785,95 @@ export function AdminDashboard() {
                 </Card>
               </div>
 
+              {canRestrict && (
+                <Card className="border-neutral-800 bg-card/80 backdrop-blur-sm">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <EyeOff className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
+                      Hidden &amp; Locked
+                    </CardTitle>
+                    <CardDescription>
+                      Platform-level controls. Hiding takes a listing off the
+                      public site; locking pauses new stakes and the builder&apos;s
+                      milestone actions. Neither touches the vault — refunds and
+                      stakeholder votes always stay open. Apply them from a
+                      project&apos;s menu below or from its detail view.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {restrictedProjects.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">
+                        No project is hidden or locked.
+                      </p>
+                    ) : (
+                      <ul className="divide-y rounded-lg border border-neutral-800">
+                        {restrictedProjects.map((project) => (
+                          <li
+                            key={project.id}
+                            className="flex flex-wrap items-start justify-between gap-3 px-3 py-3"
+                          >
+                            <div className="min-w-0 flex-1 space-y-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => openProjectDetails(project)}
+                                  className="truncate text-left text-sm font-semibold hover:underline max-w-[260px]"
+                                >
+                                  {project.title}
+                                </button>
+                                <RestrictionBadges restriction={project.restriction} />
+                              </div>
+                              {project.restriction?.locked && project.restriction.lockedReason && (
+                                <p className="break-words text-xs text-muted-foreground">
+                                  Locked{" "}
+                                  {project.restriction.lockedAt
+                                    ? new Date(project.restriction.lockedAt).toLocaleDateString()
+                                    : ""}
+                                  {" — "}
+                                  {project.restriction.lockedReason}
+                                </p>
+                              )}
+                              {project.restriction?.hidden && project.restriction.hiddenReason && (
+                                <p className="break-words text-xs text-muted-foreground">
+                                  Hidden{" "}
+                                  {project.restriction.hiddenAt
+                                    ? new Date(project.restriction.hiddenAt).toLocaleDateString()
+                                    : ""}
+                                  {" — "}
+                                  {project.restriction.hiddenReason}
+                                </p>
+                              )}
+                            </div>
+                            <div className="flex shrink-0 gap-2">
+                              {project.restriction?.hidden && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => setRestrictionTarget({ project, change: "unhide" })}
+                                >
+                                  <Eye className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
+                                  Unhide
+                                </Button>
+                              )}
+                              {project.restriction?.locked && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => setRestrictionTarget({ project, change: "unlock" })}
+                                >
+                                  <LockOpen className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
+                                  Unlock
+                                </Button>
+                              )}
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+
               {/* Enhanced Recent Projects Grid */}
               <Card className="border-neutral-800 bg-card/80 backdrop-blur-sm">
                 <CardHeader>
@@ -798,19 +921,22 @@ export function AdminDashboard() {
                               </div>
                             </TableCell>
                             <TableCell>
-                              <Badge
-                                variant={
-                                  project.status === "approved" ||
-                                    project.status === "completed" ||
-                                    project.status === "funded"
-                                    ? "default"
-                                    : project.status === "pending"
-                                      ? "secondary"
-                                      : "destructive"
-                                }
-                              >
-                                {project.status}
-                              </Badge>
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <Badge
+                                  variant={
+                                    project.status === "approved" ||
+                                      project.status === "completed" ||
+                                      project.status === "funded"
+                                      ? "default"
+                                      : project.status === "pending"
+                                        ? "secondary"
+                                        : "destructive"
+                                  }
+                                >
+                                  {project.status}
+                                </Badge>
+                                <RestrictionBadges restriction={project.restriction} />
+                              </div>
                             </TableCell>
                             <TableCell>
                               {(() => {
@@ -864,6 +990,41 @@ export function AdminDashboard() {
                                   >
                                     View Vault
                                   </DropdownMenuItem>
+                                  {canRestrict && project.vaultAddress && (
+                                    <>
+                                      <DropdownMenuSeparator />
+                                      <DropdownMenuItem
+                                        onClick={() =>
+                                          setRestrictionTarget({
+                                            project,
+                                            change: project.restriction?.hidden ? "unhide" : "hide",
+                                          })
+                                        }
+                                      >
+                                        {project.restriction?.hidden ? (
+                                          <Eye className="mr-2 h-4 w-4" aria-hidden="true" />
+                                        ) : (
+                                          <EyeOff className="mr-2 h-4 w-4" aria-hidden="true" />
+                                        )}
+                                        {project.restriction?.hidden ? "Unhide" : "Hide"}
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem
+                                        onClick={() =>
+                                          setRestrictionTarget({
+                                            project,
+                                            change: project.restriction?.locked ? "unlock" : "lock",
+                                          })
+                                        }
+                                      >
+                                        {project.restriction?.locked ? (
+                                          <LockOpen className="mr-2 h-4 w-4" aria-hidden="true" />
+                                        ) : (
+                                          <Lock className="mr-2 h-4 w-4" aria-hidden="true" />
+                                        )}
+                                        {project.restriction?.locked ? "Unlock" : "Lock"}
+                                      </DropdownMenuItem>
+                                    </>
+                                  )}
                                 </DropdownMenuContent>
                               </DropdownMenu>
                             </TableCell>
@@ -1000,6 +1161,13 @@ export function AdminDashboard() {
           )}
         </AnimatePresence>
       </div>
+
+      <ProjectRestrictionDialog
+        project={restrictionTarget?.project ?? null}
+        change={restrictionTarget?.change ?? null}
+        onClose={() => setRestrictionTarget(null)}
+        onDone={() => refreshProjects()}
+      />
 
       {/* Vault Configuration Dialog */}
       <Dialog

@@ -35,7 +35,15 @@ export function HeaderSearch({ isMobileOpen, setMobileOpen }: HeaderSearchProps)
     async function loadProjects() {
       const res = await fetch('/api/projects');
       const allProjects = await res.json();
-      setProjects(allProjects.filter((p: Project) => p.status !== 'rejected' && p.status !== 'hidden'));
+      // Search is a public surface. A platform-hidden listing arrives only for a
+      // viewer entitled to it (admin, builder, stakeholder), and is still not
+      // something search should offer.
+      setProjects(
+        allProjects.filter(
+          (p: Project) =>
+            p.status !== 'rejected' && p.status !== 'hidden' && !p.restriction?.hidden,
+        ),
+      );
     }
     loadProjects();
   }, []);

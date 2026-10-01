@@ -614,6 +614,39 @@ export type Database = {
         }
         Relationships: []
       }
+      project_restrictions: {
+        Row: {
+          hidden_at: string | null
+          hidden_by: string | null
+          hidden_reason: string
+          locked_at: string | null
+          locked_by: string | null
+          locked_reason: string
+          updated_at: string
+          vault_address: string
+        }
+        Insert: {
+          hidden_at?: string | null
+          hidden_by?: string | null
+          hidden_reason?: string
+          locked_at?: string | null
+          locked_by?: string | null
+          locked_reason?: string
+          updated_at?: string
+          vault_address: string
+        }
+        Update: {
+          hidden_at?: string | null
+          hidden_by?: string | null
+          hidden_reason?: string
+          locked_at?: string | null
+          locked_by?: string | null
+          locked_reason?: string
+          updated_at?: string
+          vault_address?: string
+        }
+        Relationships: []
+      }
       projects: {
         Row: {
           bond_amount: number | null
@@ -727,6 +760,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      can_restrict_projects: { Args: never; Returns: boolean }
       creator_is_banned: { Args: { addr: string }; Returns: boolean }
       delete_managed_key: { Args: { key_ref: string }; Returns: undefined }
       feature_request_consensus: {
@@ -745,6 +779,7 @@ export type Database = {
         Args: { wanted: Database["public"]["Enums"]["admin_role"] }
         Returns: boolean
       }
+      holds_stake_in: { Args: { vault: string }; Returns: boolean }
       is_admin: { Args: never; Returns: boolean }
       is_admin_wallet: { Args: { addr: string }; Returns: boolean }
       is_banned: { Args: { uid: string }; Returns: boolean }
@@ -775,6 +810,8 @@ export type Database = {
           rejections: number
         }[]
       }
+      project_is_hidden: { Args: { vault: string }; Returns: boolean }
+      project_is_locked: { Args: { vault: string }; Returns: boolean }
       purge_expired_auth_challenges: { Args: never; Returns: undefined }
       set_managed_key: {
         Args: { key_ref: string; secret_value: string }
@@ -782,6 +819,14 @@ export type Database = {
       }
       set_platform_secret: {
         Args: { secret_name: string; secret_value: string }
+        Returns: undefined
+      }
+      set_project_hidden: {
+        Args: { hide: boolean; reason?: string; vault: string }
+        Returns: undefined
+      }
+      set_project_locked: {
+        Args: { lock: boolean; reason?: string; vault: string }
         Returns: undefined
       }
       stroops_to_units: { Args: { raw: number }; Returns: number }

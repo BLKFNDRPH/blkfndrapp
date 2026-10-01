@@ -44,15 +44,18 @@ export default function Home() {
   useEffect(() => {
     if (isLoading) return;
 
+    // A hidden listing is only here for an admin, its builder or a stakeholder,
+    // and the home page is the public face of the platform.
     const approvedProjects = projects.filter(
       (p) =>
-        p.status === "funded" ||
-        p.status === "completed" ||
-        p.status === "featured" ||
-        p.status === "raising" ||
-        p.status === "active" ||
-        p.status === "failed" ||
-        p.status === "refunding",
+        !p.restriction?.hidden &&
+        (p.status === "funded" ||
+          p.status === "completed" ||
+          p.status === "featured" ||
+          p.status === "raising" ||
+          p.status === "active" ||
+          p.status === "failed" ||
+          p.status === "refunding"),
     );
 
     const sorted = [...approvedProjects].sort((a, b) => {

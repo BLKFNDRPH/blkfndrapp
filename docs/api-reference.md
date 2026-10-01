@@ -55,6 +55,7 @@ Every exported async function in a `"use server"` file is a public HTTP endpoint
 | `src/actions/admins.ts` | `getAdminsAction`, `getMyRoleAction`, `grantAdminAction`, `revokeAdminAction`, `setAdminWalletAction`, `recognizeWalletAction`, `getAdminAuditLogAction` | Owner / platform-admin. `grantAdminAction` also provisions a managed attestor wallet (rolled back on failure); `revokeAdminAction` sweeps and deletes it |
 | `src/actions/moderation.ts` | `getUsersAction`, `banUserAction`, `unbanUserAction`, `getHealthAction` | Platform administrator |
 | `src/actions/project-moderation.ts` | `flagProjectAction`, `voteOnProjectAction`, `clearModerationAction`, `getModerationAction`, `getPendingReviewsAction` | Project administrator |
+| `src/actions/project-restrictions.ts` | `setProjectHiddenAction`, `setProjectLockedAction`, `checkVaultLockAction` | Hide/lock: owner, platform administrator or project administrator, enforced by `set_project_hidden` / `set_project_locked` in Postgres (reason required, audit-logged). `checkVaultLockAction` is public |
 | `src/actions/secrets.ts` | `getSecretStatusAction`, `setPlatformSecretAction` | Platform administrator; writes to Supabase Vault |
 | `src/actions/claims.ts` | `createClaimRequest`, `getClaimRequests`, `deleteClaimRequest` | Session |
 | `src/actions/feature-requests.ts` | `getFeatureRequestsAction`, `submitFeatureRequestAction`, `toggleUpvoteAction`, `decideFeatureRequestAction`, `respondToFeatureRequestAction` | Session; decide/respond are admin |

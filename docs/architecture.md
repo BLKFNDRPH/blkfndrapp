@@ -127,6 +127,17 @@ Roles are read from `app_metadata` (which a user cannot edit), never `user_metad
 
 The distinction between owners and platform administrators is load-bearing: **owning the platform and running it are different jobs.** Staff who need console access are `platform_admin` and never appear in the treasury's owner set; adding an owner is a financial decision (it dilutes the others) and only happens through a `SetOwners` vote.
 
+### Hiding and locking a project
+
+Owners, Platform Administrators and Project Administrators can each **hide** or **lock** a project on their own, with a required reason recorded in the admin audit log. Both are platform-level controls kept in `project_restrictions` (keyed by vault address, so an indexer resync cannot revert them) — **neither touches the vault**, which has no pause switch:
+
+| | What changes | What does not |
+|---|---|---|
+| **Hidden** | Leaves explore, search, the home page and direct links (RLS on `projects`) | Its builder, anyone holding a stake in it and the console still see it, so a stakeholder can always reach their vault |
+| **Locked** | The platform stops building new stakes and the builder's opening of milestone votes, and refuses milestone proof (a trigger, which the service role does not bypass) | Refunds, stakeholder votes in an open window, and executing a carried release |
+
+A lock binds the platform's own interface and server, not someone calling the contract directly. A funded vault that stays locked for 90 days without a milestone vote becomes eligible for `settle_stalled`, which returns stakes and forfeits the bond.
+
 ## Managed moderator wallets
 
 Hiring non-web3 moderators means they cannot be expected to hold or sign for a wallet. So each KYC attestor gets a **platform-generated, gas-only wallet**:

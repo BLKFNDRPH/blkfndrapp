@@ -34,7 +34,7 @@ import {
 import Link from "next/link";
 import { CubeSpinner } from "../ui/CubeSpinner";
 import { useRouter } from "next/navigation";
-import { useStellarContract } from "@/hooks/use-stellar-contract";
+import { useStellarContract, PlatformLockError } from "@/hooks/use-stellar-contract";
 import { useFreighterWallet } from "@/context/FreighterWalletContext";
 import { getBalance } from "@/lib/stellar";
 
@@ -234,6 +234,9 @@ export function FundDialog({
   const isProjectExpired =
     project.status === "expired" ||
     fundingDeadlinePassed;
+  // A platform lock pauses new stakes. The vault would still accept one, so
+  // this is the platform declining to build it, not the contract refusing.
+  const isLocked = project.restriction?.locked === true;
 
   const canSetPublic = false;
 
@@ -241,6 +244,7 @@ export function FundDialog({
     `${val.toLocaleString(undefined, { maximumFractionDigits: COIN_DECIMALS[currency] > 6 ? 4 : 2 })} ${currency}`;
 
   const canFund = (() => {
+    if (isLocked) return false;
     if (!freighterWalletAddress) return true;
     if (!isProjectApproved || isProjectExpired || fundAmount <= 0)
       return false;
@@ -360,6 +364,13 @@ export function FundDialog({
         await refreshAfterTx(freighterWalletAddress ?? undefined);
         closeProjectDetails();
       } catch (error: any) {
+        // Locked since the listing loaded. Say so, and reload it so the notice
+        // and the disabled button catch up with what the platform just said.
+        if (error instanceof PlatformLockError) {
+          toast({ title: "Project locked", description: error.message, variant: "destructive" });
+          refreshProject(project.id);
+          return;
+        }
         console.error("Transaction error: Funding transaction failed.");
         toast({
           title: "Contribution Failed",
@@ -383,6 +394,14 @@ export function FundDialog({
       toast({
         title: "Invalid Amount",
         description: "Please enter a valid amount.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (isLocked) {
+      toast({
+        title: "Project locked",
+        description: "The platform has paused new stakes in this project.",
         variant: "destructive",
       });
       return;
@@ -429,6 +448,7 @@ export function FundDialog({
     if (project.status === "completed") return "Completed";
     if (project.status === "funded" || isProjectFunded) return "Fully Funded";
     if (isProjectExpired) return "Funding Ended";
+    if (isLocked) return "Locked";
     if (isProjectPending) return "Pending Approval";
     return `Fund with ${projectCurrency}`;
   };
@@ -441,6 +461,7 @@ export function FundDialog({
         anyPending ||
         isProjectFunded ||
         isProjectExpired ||
+        isLocked ||
         isProjectPending
       }
       className={`w-full sm:w-auto whitespace-nowrap shrink-0 ${isProjectFunded ? "" : "bg-primary hover:bg-primary/90 text-primary-foreground"}`}

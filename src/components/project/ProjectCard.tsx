@@ -23,6 +23,7 @@ import {
   Info,
   Lock,
   Clock,
+  EyeOff,
 } from "lucide-react";
 import { cn, shortenAddress } from "@/lib/utils";
 import { getIPFSGatewayUrl } from "@/lib/pinata-client";
@@ -209,6 +210,24 @@ export function ProjectCard({
       <Card className="project-card flex flex-col overflow-hidden h-full transition-transform transform hover:shadow-xl cursor-pointer gap-2 w-full">
         <CardHeader className="p-0 relative shrink-0 w-full">
           {shouldShowStatus && <StatusBadge status={project.status} />}
+          {/* Opposite corner from the status, so a locked listing on explore is
+              recognisable before anyone opens it to stake. */}
+          {(project.restriction?.locked || project.restriction?.hidden) && (
+            <div className="absolute top-3 left-3 z-10 flex items-center gap-1.5 rounded-full border border-amber-500/40 bg-background/90 px-2 py-1 text-xs font-semibold text-amber-600 dark:text-amber-400">
+              {project.restriction?.locked ? (
+                <Lock className="h-3 w-3" aria-hidden="true" />
+              ) : (
+                <EyeOff className="h-3 w-3" aria-hidden="true" />
+              )}
+              <span>
+                {project.restriction?.locked && project.restriction?.hidden
+                  ? "Hidden · Locked"
+                  : project.restriction?.locked
+                    ? "Locked"
+                    : "Hidden"}
+              </span>
+            </div>
+          )}
           <div className="relative h-40 w-full">
             <ImageWithFallback
               src={imageSrc || ""}
