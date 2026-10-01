@@ -6,7 +6,7 @@ blkfndr exposes four interaction surfaces. Which one you reach for depends on wh
 |---|---|---|
 | **Contract calls** (Soroban RPC) | Anything that holds or moves value: staking, voting, releases, governance | Signed by the user's own wallet (Freighter) or a carried vote; no server in the path |
 | **Server Actions** (`"use server"`) | Privileged reads/writes over Supabase: moderation, admin, KYC review, settings | Every export re-authenticates and re-authorizes; arguments treated as hostile |
-| **REST API routes** (`/api/*`) | Client data fetching, auth/session, uploads, and machine-to-machine triggers | Session cookie, or a bearer secret for the two machine endpoints |
+| **REST API routes** (`/api/*`) | Client data fetching, auth/session, uploads, and machine-to-machine triggers | Session cookie, or a bearer secret for the machine endpoints |
 | **Horizon** | Account balances, transaction history, asset metadata | Read-only, public |
 
 The rule of thumb: **the money path never goes through the server.** A stake, a milestone vote, a release, a governance proposal — all are contract calls the user (or a permissionless executor) submits directly. The server exists for identity, moderation, and convenience reads.
@@ -71,7 +71,7 @@ The AI listing review is a Genkit flow, not a plain action: `src/ai/flows/improv
 
 ## 3. REST API routes
 
-All under `/api`. Session routes require the Supabase auth cookie; the two machine routes require a bearer token.
+All under `/api`. Session routes require the Supabase auth cookie; the machine routes require a bearer token.
 
 ### Auth & session
 | Method | Route | Purpose |
@@ -112,8 +112,10 @@ All under `/api`. Session routes require the Supabase auth cookie; the two machi
 |---|---|---|
 | `GET`·`POST` | `/api/indexer` | Reconcile on-chain state into Supabase |
 | `POST` | `/api/ops-funding` | Fire the monthly `fund_operations()` transfer when configured and due |
+| `POST` | `/api/settle-stalled` | Reclaim funded vaults abandoned past their stall window (`settle_stalled`) |
+| `POST` | `/api/keep-alive` | Restore any archived shared contract entry and top up any with under 21 days of TTL to 60. `{"dryRun": true}` reports what is due and its simulated cost without sending |
 
-`Authorization: Bearer <INDEXER_SECRET>` is required on both machine routes; the ops-funding transfer is additionally signed by `OPS_FUNDING_SUBMITTER_SECRET`, a funded gas-payer with **no** owner authority (the call itself is permissionless). Both cleanly no-op when their secrets are unset. Schedule `POST /api/ops-funding` on any cadence — the 30-day gate lives in the contract, so extra calls simply skip.
+`Authorization: Bearer <INDEXER_SECRET>` is required on every machine route. The three that transact are signed by `OPS_FUNDING_SUBMITTER_SECRET`, a funded gas-payer with **no** owner authority (every call is permissionless). They cleanly no-op when that secret is unset. Schedule them on any cadence: the gates live in the contracts or in the TTLs, so extra calls simply skip.
 
 Exact request and response bodies are defined at each route's source under `src/app/api/`. Validate against the source rather than against this table.
 

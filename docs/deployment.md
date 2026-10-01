@@ -118,11 +118,13 @@ docker compose logs -f blkfndr-app
 | `PINATA_JWT` | Project creation fails without it. **Not** `NEXT_PUBLIC_PINATA_JWT` |
 | `PINATA_GATEWAY_URL` | |
 | `PINATA_GROUP_BLKDFNDR` | |
-| `INDEXER_SECRET` | Bearer token for `POST /api/indexer` and `POST /api/ops-funding`. Invent a long random value |
-| `OPS_FUNDING_SUBMITTER_SECRET` | Optional. Funded account that pays the fee for the monthly operations-funding transfer. Holds no authority — the transfer is authorised by the owners' `SetOpsFunding` vote. Unset means the transfer cleanly skips |
+| `INDEXER_SECRET` | Bearer token for the machine routes (`/api/indexer`, `/api/ops-funding`, `/api/settle-stalled`, `/api/keep-alive`). Invent a long random value |
+| `OPS_FUNDING_SUBMITTER_SECRET` | Optional. Funded account that pays the fees for the monthly operations-funding transfer, stalled-vault reclaims, and keeping shared contract storage alive. Holds no authority — every call it pays for is permissionless. Unset means those jobs cleanly skip. Keep it funded: on testnet, restoring and extending the shared contracts can cost a few hundred XLM in one pass |
 | `GEMINI_API_KEY` | Optional, AI listing review. The Genkit plugin reads `GEMINI_API_KEY`, `GOOGLE_API_KEY` or `GOOGLE_GENAI_API_KEY` — not `GOOGLE_GENERATIVEAI_API_KEY` |
 | `INDEX_INTERVAL_SECONDS` | Optional, defaults to 60 |
 | `OPS_FUNDING_INTERVAL_SECONDS` | Optional, defaults to 86400 (daily). How often the ops-funding-cron polls `/api/ops-funding`; the on-chain 30-day gate means it moves money at most once a month |
+| `SETTLE_STALLED_INTERVAL_SECONDS` | Optional, defaults to 86400 (daily). How often settle-stalled-cron polls `/api/settle-stalled` |
+| `KEEP_ALIVE_INTERVAL_SECONDS` | Optional, defaults to 86400 (daily). How often keep-alive-cron polls `/api/keep-alive`; a run with nothing due sends nothing |
 | `APP_PORT` | Optional, defaults to 8788. Host port to publish on |
 
 ### Token contract addresses
@@ -173,10 +175,16 @@ is usually the better trade.
 
 ## The indexer service
 
-The stack runs three services. The second, `indexer-cron`, calls
-`POST /api/indexer` on a loop. The third, `ops-funding-cron`, calls
+The stack runs the app plus four cron services. `indexer-cron` calls
+`POST /api/indexer` on a loop. `ops-funding-cron` calls
 `POST /api/ops-funding` daily to run the monthly gas top-up — it no-ops until
 owners vote `SetOpsFunding` and `OPS_FUNDING_SUBMITTER_SECRET` is set.
+`settle-stalled-cron` reclaims abandoned funded vaults daily, and
+`keep-alive-cron` keeps the shared contract storage (factory, registries,
+admin roster, treasury, Operations Vault, and the vault code every new project
+is deployed from) from expiring. Soroban archives any entry whose rent lapses,
+and the next caller pays to restore it — a lapsed vault code once added ~60
+XLM to every project launch.
 
 This is not optional housekeeping. The ledger is the source of truth but the
 site reads Postgres, and nothing in the app self-triggers — without it a newly

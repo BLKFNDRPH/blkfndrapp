@@ -103,7 +103,7 @@ Draft listing (title, description, goal, media) → Genkit flow → Gemini 2.5 F
 App Router, TailwindCSS, shadcn/ui. React Context providers for auth, blockchain data and currency. Freighter is used for wallet linking, for staking, and for owners to sign governance proposals. Generated contract bindings live in `src/packages/`.
 
 ### Server — actions and API routes
-Every exported async function in a `"use server"` file is a public HTTP endpoint, so each one **re-authenticates, re-authorizes, and validates its arguments** — the argument list is treated as hostile. The server-only data-access layer under `src/lib/data/` is the only place the service-role key is used, and it is unreachable from the browser. REST routes include `POST /api/indexer` and `POST /api/ops-funding`, both bearer-gated by `INDEXER_SECRET`.
+Every exported async function in a `"use server"` file is a public HTTP endpoint, so each one **re-authenticates, re-authorizes, and validates its arguments** — the argument list is treated as hostile. The server-only data-access layer under `src/lib/data/` is the only place the service-role key is used, and it is unreachable from the browser. REST routes include the machine jobs `POST /api/indexer`, `/api/ops-funding`, `/api/settle-stalled` and `/api/keep-alive`, all bearer-gated by `INDEXER_SECRET`.
 
 ### Data — Supabase (Postgres + RLS)
 Authorization is enforced by the database, not only by application code. Every table carries Row Level Security. The identity columns on `kyc_requests` are granted to **no browser-facing role at all**, so `select *` on your own row fails with a publishable key; those columns are reachable only with the service-role key, from `server-only` modules, after an explicit admin check. Identity documents live in a **private Storage bucket** behind short-lived signed URLs minted server-side. Managed attestor keys live in **Supabase Vault** behind service-role-only functions. (MongoDB is being removed collection by collection as each call site moves to Postgres.)
@@ -159,6 +159,12 @@ There is no cron on Soroban, so the "monthly" transfers are **permissionless, ti
 4. Ops-vault owners vote `ReleaseMany` to top up **every active managed attestor wallet** in one carried vote.
 
 No owner key ever signs a transfer: a carried vote is the authority, and execution is permissionless.
+
+### Keeping shared contract storage alive
+
+Soroban charges rent, and an entry whose rent lapses is archived: the next transaction that touches it must restore it and pays for doing so. Our contracts extend their own entries by ~30 days whenever they are called, which keeps a busy contract alive and lets an idle one lapse. The vault code is the example that bit. Unused after its upload, it expired, and every project launch then paid to restore 48 KB of code and extend it 30 days, ~60 XLM of an 84 XLM launch.
+
+So the platform pays for the shared entries rather than whichever builder or owner touches them first after a lapse. `keep-alive-cron` → `POST /api/keep-alive` (`src/lib/ttl-keeper.ts`) runs daily and covers the instance and code of the factory, both registries, the admin roster, the treasury and the Operations Vault, plus the vault code the factory deploys from. It restores anything archived and tops up anything with under 21 days left to 60. The fee is paid by the same gas-only key as the other machine jobs, and on mainnet that comes from the Operations Vault's budget. Each project vault's own instance stays its project's rent, extended by its own calls.
 
 ## Security model
 

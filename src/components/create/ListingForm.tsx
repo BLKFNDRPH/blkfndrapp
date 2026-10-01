@@ -36,6 +36,9 @@ import {
 } from "@/lib/bond-readiness";
 import { BondBlockerDialog } from "./BondBlockerDialog";
 import { LaunchBlockedDialog } from "./LaunchBlockedDialog";
+import { LaunchReviewDialog, type LaunchReview } from "./LaunchReviewDialog";
+import { findDeployedVault, resolveSubmittedLaunch } from "@/lib/vault-deploy-guard";
+import { factoryClient as factoryReader, simulate } from "@/lib/stellar-clients";
 import { useToast } from "@/hooks/use-toast";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
@@ -123,6 +126,40 @@ const formSchema = z.object({
 });
 
 type FormSchema = z.infer<typeof formSchema>;
+
+/**
+ * Where a launch is.
+ *
+ * The button keeps one shape and one word while it is busy -- QA BUG-005 was a
+ * launch button that reflowed -- so the stage is spelt out on a line beneath
+ * it instead. The stage that matters most is "signing": Freighter's window
+ * opens wherever the browser puts it and drops a request left open for about
+ * five minutes, and QA Trial #3 found the page reporting failure while that
+ * window still sat open. So the page says, while it waits, what it is waiting
+ * on and for how long it can.
+ */
+type LaunchStage =
+  | "idle"
+  | "verifying"
+  | "uploading"
+  | "deduping"
+  | "preparing"
+  | "review"
+  | "signing"
+  | "submitting"
+  | "confirming";
+
+const LAUNCH_STATUS: Record<LaunchStage, string> = {
+  idle: "",
+  verifying: "Checking your identity verification and bond…",
+  uploading: "Uploading the image and project details to IPFS…",
+  deduping: "Making sure this project isn't already on-chain…",
+  preparing: "Preparing the transaction and estimating its network fee…",
+  review: "Review the launch, then sign in Freighter.",
+  signing: "Waiting for you to approve in Freighter. Requests expire after about 5 minutes.",
+  submitting: "Signed. Sending it to the network…",
+  confirming: "Sent. Waiting for the network to confirm it — don't close this page.",
+};
 
 const CURRENCY_LABELS: Record<Currency, string> = {
   XLM: "XLM",
@@ -396,6 +433,55 @@ export function ListingForm() {
     });
   };
 
+  // ── Launching ─────────────────────────────────────────────────────────────
+
+  const [launchStage, setLaunchStage] = useState<LaunchStage>("idle");
+  const [launchReview, setLaunchReview] = useState<LaunchReview | null>(null);
+  const reviewDecisionRef = useRef<((approved: boolean) => void) | null>(null);
+
+  /**
+   * This draft's uploads, kept for a retry.
+   *
+   * Pinata pins by content, so uploading the same image and metadata again
+   * would return the same CIDs anyway; keeping them skips the wait and the
+   * upload cooldown. The metadata CID is also what the duplicate check matches
+   * an earlier vault on.
+   */
+  const uploadCacheRef = useRef<{
+    imageKey?: string;
+    imageCid?: string;
+    metadataJson?: string;
+    metadataCid?: string;
+  }>({});
+
+  /** Open the review dialog and wait for the builder's answer. */
+  const askForReview = (review: LaunchReview) =>
+    new Promise<boolean>((resolve) => {
+      reviewDecisionRef.current = resolve;
+      setLaunchReview(review);
+    });
+
+  const decideReview = (approved: boolean) => {
+    const resolve = reviewDecisionRef.current;
+    reviewDecisionRef.current = null;
+    setLaunchReview(null);
+    resolve?.(approved);
+  };
+
+  const announceLaunched = (vaultAddr: string, activeAddress: string) => {
+    toast({
+      title: "Vault Deployed Successfully!",
+      description: `Spawned funding vault at ${vaultAddr.slice(0, 6)}...${vaultAddr.slice(-4)} on-chain.`,
+    });
+
+    // Nothing is written to the database here. The indexer picks the
+    // project up from the FACTORY/DEPLOY event and resolves this metadata
+    // from IPFS — letting the browser write it would mean the client
+    // deciding what a listing says about an on-chain project.
+    refreshAfterTx(activeAddress);
+    router.push("/projects");
+  };
+
   const handleOnChainSubmit = (values: FormSchema, verifiedAddress?: string) => {
     if (isSubmittingRef.current) return;
 
@@ -408,8 +494,6 @@ export function ListingForm() {
       });
       return;
     }
-
-
 
     if (!isBondValid) {
       toast({
@@ -434,186 +518,254 @@ export function ListingForm() {
     setTimeout(() => setIsCooldown(false), 5000);
 
     startSubmitTransition(async () => {
-      // 1. KYC validation check
       try {
-        const identityClient = new IdentityClient({
-          contractId: IDENTITY_ID,
-          rpcUrl: SOROBAN_RPC_URL,
-          networkPassphrase: NETWORK_PASSPHRASE,
-          // No publicKey. This is a read-only simulation, and the SDK resolves
-          // the source as `options.publicKey ? getAccount(publicKey) :
-          // NULL_ACCOUNT` — so omitting it uses the null account and never
-          // touches the network for an account lookup. src/lib/vault-state.ts
-          // already does this.
-          //
-          // It used to pass NEXT_PUBLIC_STELLAR_FALLBACK_ADDRESS, which is
-          // FILL_ME on this deployment. That is truthy but not a strkey, so it
-          // reached getAccount and threw "invalid encoded string", and the
-          // catch below reported a registry failure that never happened.
-          //
-          // Passing the connected wallet instead would fix that case and break
-          // another: getAccount throws "Account not found" for a wallet that
-          // has never been created on the ledger, which is exactly the person
-          // about to start verification with a fresh Freighter account.
-        });
-        const tx = await identityClient.is_kyc_approved({ address: activeAddress });
-        const result = await tx.simulate();
-        if (!result.result) {
-          toast({
-            title: "Identity Verification Required",
-            description: "You must complete Identity Verification on your profile page before you can deploy a project vault.",
-            variant: "destructive",
-          });
-          isSubmittingRef.current = false;
-          router.push("/profile/kyc-attestation");
-          return;
-        }
-      } catch (err: any) {
-        console.error("[ListingForm] KYC verification check failed:", err);
+        await launch(values, activeAddress);
+      } finally {
+        // Every way out -- launched, refused, cancelled, failed -- ends here,
+        // so the page can never be left saying it is waiting on Freighter.
+        isSubmittingRef.current = false;
+        setLaunchStage("idle");
+      }
+    });
+  };
+
+  /**
+   * One launch, in order: identity, bond, uploads, the duplicate check,
+   * simulation, the builder's review, Freighter, the network.
+   */
+  const launch = async (values: FormSchema, activeAddress: string) => {
+    // 1. KYC validation check
+    setLaunchStage("verifying");
+    try {
+      const identityClient = new IdentityClient({
+        contractId: IDENTITY_ID,
+        rpcUrl: SOROBAN_RPC_URL,
+        networkPassphrase: NETWORK_PASSPHRASE,
+        // No publicKey. This is a read-only simulation, and the SDK resolves
+        // the source as `options.publicKey ? getAccount(publicKey) :
+        // NULL_ACCOUNT` — so omitting it uses the null account and never
+        // touches the network for an account lookup. src/lib/vault-state.ts
+        // already does this.
+        //
+        // It used to pass NEXT_PUBLIC_STELLAR_FALLBACK_ADDRESS, which is
+        // FILL_ME on this deployment. That is truthy but not a strkey, so it
+        // reached getAccount and threw "invalid encoded string", and the
+        // catch below reported a registry failure that never happened.
+        //
+        // Passing the connected wallet instead would fix that case and break
+        // another: getAccount throws "Account not found" for a wallet that
+        // has never been created on the ledger, which is exactly the person
+        // about to start verification with a fresh Freighter account.
+      });
+      const tx = await identityClient.is_kyc_approved({ address: activeAddress });
+      const result = await tx.simulate();
+      if (!result.result) {
         toast({
-          title: "Identity Verification Check Failed",
-          description: "Could not query on-chain identity registry. Please try again.",
+          title: "Identity Verification Required",
+          description: "You must complete Identity Verification on your profile page before you can deploy a project vault.",
           variant: "destructive",
         });
-        isSubmittingRef.current = false;
+        router.push("/profile/kyc-attestation");
         return;
       }
+    } catch (err: any) {
+      console.error("[ListingForm] KYC verification check failed:", err);
+      toast({
+        title: "Identity Verification Check Failed",
+        description: "Could not query on-chain identity registry. Please try again.",
+        variant: "destructive",
+      });
+      return;
+    }
 
-      // 2. Bond pre-flight.
-      //
-      // The vault pulls the bond in the same call that creates it, so a builder
-      // who cannot part with it has no vault. Until now they found that out from
-      // a raw host diagnostic after signing, with nothing to act on. Runs before
-      // the uploads below so a blocked builder does not pin files they cannot
-      // use, and fails open: a check that cannot reach the network must not be
-      // the thing standing between a builder and a vault they can deploy.
-      try {
-        const readiness = await checkBondReadiness(
-          activeAddress,
-          tokenAddressFor(values.currencyType),
-          numericBond,
-        );
-        if (!readiness.ok) {
-          setBondBlocker(readiness);
-          isSubmittingRef.current = false;
-          return;
-        }
-      } catch (preflightError) {
-        console.warn("[ListingForm] bond pre-flight skipped:", preflightError);
+    // 2. Bond pre-flight.
+    //
+    // The vault pulls the bond in the same call that creates it, so a builder
+    // who cannot part with it has no vault. Until now they found that out from
+    // a raw host diagnostic after signing, with nothing to act on. Runs before
+    // the uploads below so a blocked builder does not pin files they cannot
+    // use, and fails open: a check that cannot reach the network must not be
+    // the thing standing between a builder and a vault they can deploy.
+    try {
+      const readiness = await checkBondReadiness(
+        activeAddress,
+        tokenAddressFor(values.currencyType),
+        numericBond,
+      );
+      if (!readiness.ok) {
+        setBondBlocker(readiness);
+        return;
       }
+    } catch (preflightError) {
+      console.warn("[ListingForm] bond pre-flight skipped:", preflightError);
+    }
 
-      // 3. Upload file & metadata to Pinata
+    // 3. Upload file & metadata to Pinata, reusing this draft's earlier uploads.
+    const fileList = values.image as FileList;
+    if (!fileList || fileList.length === 0) {
+      toast({ title: "Please select an image.", variant: "destructive" });
+      return;
+    }
+    const file = fileList[0];
+
+    setLaunchStage("uploading");
+    const imageKey = `${file.name}:${file.size}:${file.lastModified}`;
+    let blobId =
+      uploadCacheRef.current.imageKey === imageKey ? uploadCacheRef.current.imageCid : undefined;
+    if (!blobId) {
       try {
-        const fileList = values.image as FileList;
-        if (!fileList || fileList.length === 0) {
-          toast({ title: "Please select an image.", variant: "destructive" });
-          isSubmittingRef.current = false;
-          return;
-        }
-        const file = fileList[0];
-
-        let blobId: string;
-        try {
-          const pinata = getPinataClient();
-          blobId = await pinata.uploadFile(file);
-        } catch (error: any) {
-          console.error("Pinata upload failed:", error);
-          toast({
-            title: "Image Upload Failed",
-            description: error.message || "Unknown error",
-            variant: "destructive",
-          });
-          isSubmittingRef.current = false;
-          return;
-        }
-
-        const goalStroops = BigInt(Math.floor(values.fundingGoal * 10_000_000));
-        const bondStroops = BigInt(Math.floor(numericBond * 10_000_000));
-        const deadlineTimestamp = BigInt(Math.floor(values.fundingDeadline / 1000));
-
-        const formattedMilestones = milestones.map((m, idx) => {
-          let amount: bigint;
-          if (idx === milestones.length - 1) {
-            const previousSum = milestones.slice(0, idx).reduce((sum, item) => sum + BigInt(Math.floor(item.amount * 10_000_000)), BigInt(0));
-            amount = goalStroops - previousSum;
-          } else {
-            amount = BigInt(Math.floor(m.amount * 10_000_000));
-          }
-          return {
-            id: m.id,
-            amount,
-            released: false,
-          };
+        blobId = await getPinataClient().uploadFile(file);
+        // A new image means new metadata too, so the old metadata CID goes.
+        uploadCacheRef.current = { imageKey, imageCid: blobId };
+      } catch (error: any) {
+        console.error("Pinata upload failed:", error);
+        toast({
+          title: "Image Upload Failed",
+          description: error.message || "Unknown error",
+          variant: "destructive",
         });
+        return;
+      }
+    }
 
-        // Upload metadata JSON to IPFS via Pinata
-        const metadata = {
-          title: values.title,
-          tagline: values.tagline,
-          description: values.description,
-          category: values.category,
-          location: values.location ?? "",
-          imageUrl: getIPFSGatewayUrl(blobId),
-          creator: activeAddress,
-          fundingDeadline: values.fundingDeadline,
-          fundingGoal: values.fundingGoal,
-          fundingGoalRaw: goalStroops.toString(),
-          currencyType: values.currencyType,
-          bondAmount: numericBond,
-          milestones: milestones.map((m, idx) => {
-            let amount: number;
-            if (idx === milestones.length - 1) {
-              amount = values.fundingGoal - milestones.slice(0, idx).reduce((s, prev) => s + Number(prev.amount), 0);
-            } else {
-              amount = m.amount;
-            }
-            return {
-              id: m.id,
-              amount,
-              title: m.title || `Milestone ${m.id}`,
-              description: m.description || "",
-            };
-          }),
+    const goalStroops = BigInt(Math.floor(values.fundingGoal * 10_000_000));
+    const bondStroops = BigInt(Math.floor(numericBond * 10_000_000));
+    const deadlineTimestamp = BigInt(Math.floor(values.fundingDeadline / 1000));
+
+    const formattedMilestones = milestones.map((m, idx) => {
+      let amount: bigint;
+      if (idx === milestones.length - 1) {
+        const previousSum = milestones.slice(0, idx).reduce((sum, item) => sum + BigInt(Math.floor(item.amount * 10_000_000)), BigInt(0));
+        amount = goalStroops - previousSum;
+      } else {
+        amount = BigInt(Math.floor(m.amount * 10_000_000));
+      }
+      return {
+        id: m.id,
+        amount,
+        released: false,
+      };
+    });
+
+    // Upload metadata JSON to IPFS via Pinata
+    const metadata = {
+      title: values.title,
+      tagline: values.tagline,
+      description: values.description,
+      category: values.category,
+      location: values.location ?? "",
+      imageUrl: getIPFSGatewayUrl(blobId),
+      creator: activeAddress,
+      fundingDeadline: values.fundingDeadline,
+      fundingGoal: values.fundingGoal,
+      fundingGoalRaw: goalStroops.toString(),
+      currencyType: values.currencyType,
+      bondAmount: numericBond,
+      milestones: milestones.map((m, idx) => {
+        let amount: number;
+        if (idx === milestones.length - 1) {
+          amount = values.fundingGoal - milestones.slice(0, idx).reduce((s, prev) => s + Number(prev.amount), 0);
+        } else {
+          amount = m.amount;
+        }
+        return {
+          id: m.id,
+          amount,
+          title: m.title || `Milestone ${m.id}`,
+          description: m.description || "",
         };
+      }),
+    };
 
-        let metadataCid = "";
-        try {
-          const pinata = getPinataClient();
-          const metadataFile = new File(
-            [JSON.stringify(metadata, null, 2)],
-            "metadata.json",
-            { type: "application/json" }
-          );
-          metadataCid = await pinata.uploadFile(metadataFile);
-        } catch (uploadErr: any) {
-          console.error("Pinata metadata upload failed:", uploadErr);
-          toast({
-            title: "Metadata Upload Failed",
-            description: "Failed to upload project specification details to IPFS.",
-            variant: "destructive",
-          });
-          isSubmittingRef.current = false;
-          return;
-        }
-
-        // 3. Submit transaction via Factory Client
-        const factoryClient = new FactoryClient({
-          contractId: FACTORY_ID,
-          rpcUrl: SOROBAN_RPC_URL,
-          networkPassphrase: NETWORK_PASSPHRASE,
-          publicKey: activeAddress,
-          ...getSignerOptions(activeAddress),
+    const metadataJson = JSON.stringify(metadata, null, 2);
+    let metadataCid =
+      uploadCacheRef.current.metadataJson === metadataJson
+        ? uploadCacheRef.current.metadataCid
+        : undefined;
+    if (!metadataCid) {
+      try {
+        const metadataFile = new File([metadataJson], "metadata.json", {
+          type: "application/json",
         });
+        metadataCid = await getPinataClient().uploadFile(metadataFile);
+        uploadCacheRef.current = { ...uploadCacheRef.current, metadataJson, metadataCid };
+      } catch (uploadErr: any) {
+        console.error("Pinata metadata upload failed:", uploadErr);
+        toast({
+          title: "Metadata Upload Failed",
+          description: "Failed to upload project specification details to IPFS.",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
 
-        // The vault is fixed to this token for its whole life, so it must be the
-        // currency the builder actually chose. This read `USDC_ID` regardless of
-        // the selection, which made the dropdown decorative: a project listed in
-        // XLM escrowed USDC. tokenAddressFor throws on an unconfigured currency
-        // rather than passing an empty string to create_vault, which is what the
-        // old `|| ""` fallback would have deployed.
-        const tokenAddress = tokenAddressFor(values.currencyType);
+    // 4. Already on-chain?
+    //
+    // A launch whose confirmation failed may still have landed, and pressing
+    // Launch Campaign again would then deploy a second vault and pull a second
+    // bond. An unchanged draft has the same metadata CID, so an earlier vault
+    // for it can be found and shown instead. Fails closed: if the factory
+    // cannot be read, a duplicate cannot be ruled out, and nothing is sent.
+    setLaunchStage("deduping");
+    try {
+      const existing = await findDeployedVault(activeAddress, metadataCid);
+      if (existing) {
+        toast({
+          title: "This project is already on-chain",
+          description: `An earlier launch of this draft went through: project #${existing.projectId}, vault ${existing.vaultAddress.slice(0, 6)}...${existing.vaultAddress.slice(-4)}. Nothing new was signed.`,
+        });
+        refreshAfterTx(activeAddress);
+        router.push("/projects");
+        return;
+      }
+    } catch (guardError) {
+      console.error("[ListingForm] duplicate check failed:", guardError);
+      toast({
+        title: "Could not check for an earlier launch",
+        description:
+          "The network could not be read to confirm this project is not already on-chain, so nothing was sent. Try again in a moment.",
+        variant: "destructive",
+      });
+      return;
+    }
 
-        const tx = await factoryClient.create_vault({
+    // 5. Simulate, 6. let the builder review it, 7. sign and send.
+    setLaunchStage("preparing");
+    // An object rather than a variable, so the watcher can set it from inside
+    // the SDK's callback and the catch below still sees the write.
+    const sent: { hash: string | null; expiresAtMs: number | null } = {
+      hash: null,
+      expiresAtMs: null,
+    };
+    try {
+      const freighter = getSignerOptions(activeAddress);
+      const factoryClient = new FactoryClient({
+        contractId: FACTORY_ID,
+        rpcUrl: SOROBAN_RPC_URL,
+        networkPassphrase: NETWORK_PASSPHRASE,
+        publicKey: activeAddress,
+        ...freighter,
+        // The stage follows the signature: until Freighter answers, the wait
+        // is the builder's; after it, the network's.
+        signTransaction: async (xdr: string) => {
+          setLaunchStage("signing");
+          const signed = await freighter.signTransaction(xdr);
+          setLaunchStage("submitting");
+          return signed;
+        },
+      });
+
+      // The vault is fixed to this token for its whole life, so it must be the
+      // currency the builder actually chose. This read `USDC_ID` regardless of
+      // the selection, which made the dropdown decorative: a project listed in
+      // XLM escrowed USDC. tokenAddressFor throws on an unconfigured currency
+      // rather than passing an empty string to create_vault, which is what the
+      // old `|| ""` fallback would have deployed.
+      const tokenAddress = tokenAddressFor(values.currencyType);
+
+      const [tx, platformFeeStroops] = await Promise.all([
+        factoryClient.create_vault({
           config: {
             creator: activeAddress,
             token: tokenAddress,
@@ -623,65 +775,126 @@ export function ListingForm() {
             milestones: formattedMilestones,
             metadata_cid: metadataCid,
           },
-        });
+        }),
+        simulate(() => factoryReader().get_platform_fee(), "get_platform_fee"),
+      ]);
 
-        const response = await tx.signAndSend();
-        const vaultAddr = response.result;
-
-        if (!vaultAddr) {
-          throw new Error("Factory transaction completed but did not return a vault address.");
-        }
-
+      // The network fee is the simulated one -- the same figure Freighter is
+      // about to show. QA Trial #3 met it for the first time inside Freighter.
+      setLaunchStage("review");
+      const approved = await askForReview({
+        title: values.title,
+        currency: values.currencyType,
+        goal: values.fundingGoal,
+        bond: numericBond,
+        platformFee: Number(platformFeeStroops ?? platformInfo?.feePercentage ?? 0) / 10_000_000,
+        networkFeeXlm: Number(tx.built?.fee ?? 0) / 10_000_000,
+      });
+      if (!approved) {
         toast({
-          title: "Vault Deployed Successfully!",
-          description: `Spawned funding vault at ${vaultAddr.slice(0, 6)}...${vaultAddr.slice(-4)} on-chain.`,
+          title: "Launch cancelled",
+          description: "Nothing was signed or sent to the network.",
         });
+        return;
+      }
 
-        const txHash = response.sendTransactionResponse?.hash;
-        const txUrl = txHash ? `https://stellar.expert/explorer/testnet/tx/${txHash}` : null;
+      const response = await tx.signAndSend({
+        watcher: {
+          onSubmitted: (submitted) => {
+            sent.hash = submitted?.hash ?? null;
+            const maxTime = Number(tx.signed?.timeBounds?.maxTime ?? 0);
+            sent.expiresAtMs = maxTime > 0 ? maxTime * 1000 : null;
+            setLaunchStage("confirming");
+          },
+        },
+      });
+      const vaultAddr = response.result;
 
-        // Nothing is written to the database here. The indexer picks the
-        // project up from the FACTORY/DEPLOY event and resolves this metadata
-        // from IPFS — letting the browser write it would mean the client
-        // deciding what a listing says about an on-chain project.
+      if (!vaultAddr) {
+        throw new Error("Factory transaction completed but did not return a vault address.");
+      }
 
-        refreshAfterTx(activeAddress);
-        router.push("/projects");
-      } catch (error: any) {
-        console.error("Vault deployment failed:", error);
+      announceLaunched(vaultAddr, activeAddress);
+    } catch (error: any) {
+      console.error("Vault deployment failed:", error);
 
-        // The pre-flight above catches this before signing in the ordinary
-        // case, but it fails open — so if the chain refuses for want of a
-        // trustline anyway, say so in words rather than showing the builder a
-        // host diagnostic. Matched on the host's own text, never on the bare
-        // error number: #13 means TrustlineMissingError in the token contract
-        // and MilestoneNotFound in ours, so the code alone says nothing.
-        // Declining in Freighter, or closing its window, is a decision rather
-        // than a fault. It used to reach here as an unreadable TypeError about
-        // reading 'switch', reported under "Vault Deployment Failed" as though
-        // something had broken.
-        if (error instanceof FreighterDeclined) {
+      // Sent, but its confirmation went wrong. Ask the network what became of
+      // it before calling this a failure: the builder's next move is to press
+      // Launch again, and if the first one landed that is a second vault and a
+      // second bond. The button stays busy until there is an answer.
+      if (sent.hash) {
+        setLaunchStage("confirming");
+        const outcome = await resolveSubmittedLaunch(sent.hash, sent.expiresAtMs);
+        const txUrl = `https://stellar.expert/explorer/testnet/tx/${sent.hash}`;
+
+        if (outcome.status === "SUCCESS") {
+          if (outcome.vaultAddress) {
+            announceLaunched(outcome.vaultAddress, activeAddress);
+          } else {
+            toast({ title: "Vault Deployed Successfully!", description: "The launch went through." });
+            refreshAfterTx(activeAddress);
+            router.push("/projects");
+          }
+          return;
+        }
+        if (outcome.status === "EXPIRED") {
           toast({
-            title: "Signing cancelled",
-            description: error.message,
-          });
-        } else if (looksLikeMissingTrustline(error)) {
-          setBondBlocker({
-            ok: false,
-            reason: "no-trustline",
-            asset: { code: selectedCurrency, issuer: null, isNative: false },
-          });
-        } else {
-          toast({
-            title: "Vault Deployment Failed",
-            description: error.message || "Failed to submit transaction to the factory.",
+            title: "Launch expired before it was confirmed",
+            description:
+              "The network never applied it, so no vault was created and nothing was charged. You can launch again.",
             variant: "destructive",
           });
+          return;
         }
-      } finally {
-        isSubmittingRef.current = false;
+        if (outcome.status === "UNKNOWN") {
+          toast({
+            title: "Launch sent, not confirmed",
+            description: (
+              <span>
+                The network could not be reached to confirm it.{" "}
+                <a href={txUrl} target="_blank" rel="noopener noreferrer" className="underline">
+                  Check the transaction
+                </a>{" "}
+                before trying again — Launch Campaign looks for an earlier launch of
+                this draft first, so it will not create a second vault.
+              </span>
+            ),
+            variant: "destructive",
+          });
+          return;
+        }
+        // FAILED: the network refused it. Reported like any other failure.
       }
-    });
+
+      // The pre-flight above catches this before signing in the ordinary
+      // case, but it fails open — so if the chain refuses for want of a
+      // trustline anyway, say so in words rather than showing the builder a
+      // host diagnostic. Matched on the host's own text, never on the bare
+      // error number: #13 means TrustlineMissingError in the token contract
+      // and MilestoneNotFound in ours, so the code alone says nothing.
+      // Declining in Freighter, or closing its window, is a decision rather
+      // than a fault. It used to reach here as an unreadable TypeError about
+      // reading 'switch', reported under "Vault Deployment Failed" as though
+      // something had broken.
+      if (error instanceof FreighterDeclined) {
+        toast({
+          title: "Signing cancelled",
+          description: error.message,
+        });
+      } else if (looksLikeMissingTrustline(error)) {
+        setBondBlocker({
+          ok: false,
+          reason: "no-trustline",
+          asset: { code: selectedCurrency, issuer: null, isNative: false },
+        });
+      } else {
+        toast({
+          title: "Vault Deployment Failed",
+          description: error.message || "Failed to submit transaction to the factory.",
+          variant: "destructive",
+        });
+      }
+    }
   };
 
   /**
@@ -1082,37 +1295,49 @@ export function ListingForm() {
                 )}
               />
 
-              <div className="flex flex-col sm:flex-row justify-end gap-4">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={onAiAnalyze}
-                  disabled={isAiPending}
-                  className="gap-2"
-                >
-                  {isAiPending ? (
-                    <CubeSpinner size="small" />
-                  ) : (
-                    <Wand2 className="h-4 w-4 text-orange-500" />
-                  )}
-                  AI Suggestions
-                </Button>
-                {/* The pending state swaps the icon and the word, never the
-                    button. SubmitLoader used to replace the whole label with a
-                    position:absolute element sitting 100px below the button, so
-                    it contributed no width or height at all: the button
-                    collapsed to its own padding and the animation played
-                    outside it, leaving a grey block and no sign of progress.
-                    min-w holds the resting width so nothing reflows. */}
-                <Button
-                  type="submit"
-                  disabled={isSubmitPending || isCooldown || isSubmittingRef.current || !isBondValid}
-                  aria-busy={isSubmitPending}
-                  className="gap-2 min-w-[168px]"
-                >
-                  {isSubmitPending && <CubeSpinner size="small" />}
-                  {isSubmitPending ? "Launching..." : "Launch Campaign"}
-                </Button>
+              <div className="space-y-2">
+                <div className="flex flex-col sm:flex-row justify-end gap-4">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={onAiAnalyze}
+                    disabled={isAiPending}
+                    className="gap-2"
+                  >
+                    {isAiPending ? (
+                      <CubeSpinner size="small" />
+                    ) : (
+                      <Wand2 className="h-4 w-4 text-orange-500" />
+                    )}
+                    AI Suggestions
+                  </Button>
+                  {/* The pending state swaps the icon and the word, never the
+                      button. SubmitLoader used to replace the whole label with a
+                      position:absolute element sitting 100px below the button, so
+                      it contributed no width or height at all: the button
+                      collapsed to its own padding and the animation played
+                      outside it, leaving a grey block and no sign of progress.
+                      min-w holds the resting width so nothing reflows. */}
+                  <Button
+                    type="submit"
+                    disabled={isSubmitPending || isCooldown || isSubmittingRef.current || !isBondValid}
+                    aria-busy={isSubmitPending}
+                    className="gap-2 min-w-[168px]"
+                  >
+                    {isSubmitPending && <CubeSpinner size="small" />}
+                    {isSubmitPending ? "Launching..." : "Launch Campaign"}
+                  </Button>
+                </div>
+                {/* What the launch is doing, so the button never has to say it. */}
+                {isSubmitPending && launchStage !== "idle" && (
+                  <p
+                    role="status"
+                    aria-live="polite"
+                    className="text-sm text-muted-foreground sm:text-right"
+                  >
+                    {LAUNCH_STATUS[launchStage]}
+                  </p>
+                )}
               </div>
             </form>
           </Form>
@@ -1128,6 +1353,7 @@ export function ListingForm() {
 
       <BondBlockerDialog blocker={bondBlocker} onClose={() => setBondBlocker(null)} />
       <LaunchBlockedDialog problems={launchProblems} onClose={() => setLaunchProblems(null)} />
+      <LaunchReviewDialog review={launchReview} onDecide={decideReview} />
     </>
   );
 }
