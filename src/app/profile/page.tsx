@@ -2,7 +2,11 @@
 
 import { useAuth } from "@/context/AuthContext";
 import { useFreighterWallet } from "@/context/FreighterWalletContext";
-import { getBalance } from "@/lib/stellar";
+import {
+  getBalance,
+  getRecentAccountOperations,
+  type StellarAccountActivityItem,
+} from "@/lib/stellar";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { WalletButton } from "@/components/auth/WalletButton";
@@ -600,83 +604,56 @@ function StellarWalletDetailsCard({ address }: { address: string }) {
 // ─── Stellar Recent Activity Card ────────────────────────────────────────────
 
 function StellarRecentActivityCard({ address }: { address: string }) {
-  const [payments, setPayments] = useState<any[]>([]);
+  const [activity, setActivity] = useState<StellarAccountActivityItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [triggerRefresh, setTriggerRefresh] = useState(0);
 
   useEffect(() => {
     if (!address) return;
     let active = true;
-    async function fetchPayments() {
+    async function fetchActivity() {
       setIsLoading(true);
       setError(null);
       try {
-        const res = await fetch(
-          `https://horizon-testnet.stellar.org/accounts/${address}/payments?limit=5&order=desc`,
-        );
-        if (res.status === 404) {
-          if (active) {
-            setPayments([]);
-          }
-          return;
-        }
-        if (!res.ok) {
-          if (active) {
-            setError("Failed to fetch payments");
-          }
-          return;
-        }
-        const data = await res.json();
-        if (!active) return;
-
-        const records = data._embedded?.records || [];
-        const mapped = records.map((r: any) => {
-          const type = r.type;
-          let asset = "XLM";
-          const amount = r.amount || "0";
-          const success = r.transaction_successful !== false;
-
-          if (r.asset_code) {
-            asset = r.asset_code;
-          }
-
-          return {
-            id: r.id,
-            txHash: r.transaction_hash,
-            type: type.replace(/_/g, " "),
-            amount: parseFloat(amount).toFixed(2),
-            asset,
-            success,
-            time: r.created_at ? new Date(r.created_at) : new Date(),
-          };
-        });
-        setPayments(mapped);
+        const records = await getRecentAccountOperations(address, 10);
+        if (active) setActivity(records);
       } catch (err) {
-        console.error("Failed to fetch payments:", err);
-        if (active) {
-          setError("Failed to fetch transactions");
-        }
+        console.error("Failed to fetch account activity:", err);
+        if (active) setError("Failed to fetch transactions");
       } finally {
         if (active) setIsLoading(false);
       }
     }
-    fetchPayments();
+    fetchActivity();
     return () => {
       active = false;
     };
-  }, [address]);
+  }, [address, triggerRefresh]);
 
   return (
     <Card className="border border-border/40 bg-card/40 backdrop-blur-md overflow-hidden rounded-2xl shadow-lg mt-6">
       <CardHeader>
-        <div>
-          <CardTitle className="text-xl font-bold flex items-center gap-2">
-            <RefreshCw className="h-5 w-5 text-accent" />
-            Recent Payments
-          </CardTitle>
-          <CardDescription>
-            Your last 5 payment transactions on the testnet.
-          </CardDescription>
+        <div className="flex justify-between items-center gap-4">
+          <div>
+            <CardTitle className="text-xl font-bold flex items-center gap-2">
+              <ArrowUpDown className="h-5 w-5 text-accent" />
+              Recent Activity
+            </CardTitle>
+            <CardDescription>
+              Your last 10 transactions on the testnet — funding, votes,
+              refunds and payments.
+            </CardDescription>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setTriggerRefresh((n) => n + 1)}
+            disabled={isLoading}
+            aria-label="Refresh activity"
+          >
+            <RefreshCw className={cn("h-4 w-4", isLoading && "animate-spin")} />
+          </Button>
         </div>
       </CardHeader>
       <CardContent>
@@ -702,45 +679,68 @@ function StellarRecentActivityCard({ address }: { address: string }) {
                   colSpan={4}
                   className="text-center text-muted-foreground py-6"
                 >
-                  No transaction history found. Fund your wallet or make a
-                  transaction to see records.
+                  Couldn&apos;t load your transaction history. Try refreshing.
                 </TableCell>
               </TableRow>
-            ) : payments.length === 0 ? (
+            ) : activity.length === 0 ? (
               <TableRow>
                 <TableCell
                   colSpan={4}
                   className="text-center py-6 text-muted-foreground"
                 >
-                  No transaction history found.
+                  No transaction history found. Fund your wallet or make a
+                  transaction to see records.
                 </TableCell>
               </TableRow>
             ) : (
-              payments.map((p) => (
-                <TableRow key={p.id}>
+              activity.map((item) => (
+                <TableRow key={item.id}>
                   <TableCell>
                     <a
-                      href={`https://stellar.expert/explorer/testnet/tx/${p.txHash}`}
+                      href={`https://stellar.expert/explorer/testnet/tx/${item.transaction_hash}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="font-mono text-sm text-accent hover:text-[#D62828] hover:underline truncate block max-w-[200px]"
                     >
-                      {p.txHash.slice(0, 8)}...{p.txHash.slice(-8)}
+                      {item.transaction_hash.slice(0, 8)}...
+                      {item.transaction_hash.slice(-8)}
                     </a>
                   </TableCell>
                   <TableCell>
                     <Badge
-                      variant={p.success ? "default" : "destructive"}
-                      className="capitalize"
+                      variant={item.successful ? "default" : "destructive"}
+                      className="whitespace-nowrap"
                     >
-                      {p.type}
+                      {item.successful ? item.label : `${item.label} (failed)`}
                     </Badge>
                   </TableCell>
                   <TableCell className="font-semibold">
-                    {p.amount} {p.asset}
+                    {item.changes.length === 0 ? (
+                      <span className="text-muted-foreground">—</span>
+                    ) : (
+                      item.changes.map((c) => (
+                        <div
+                          key={c.asset}
+                          className={
+                            c.amount.startsWith("-")
+                              ? "text-foreground"
+                              : "text-green-500"
+                          }
+                        >
+                          {c.amount.charAt(0)}
+                          {parseFloat(c.amount.slice(1)).toLocaleString(
+                            undefined,
+                            { minimumFractionDigits: 2, maximumFractionDigits: 2 },
+                          )}{" "}
+                          {c.asset}
+                        </div>
+                      ))
+                    )}
                   </TableCell>
                   <TableCell className="text-right text-muted-foreground">
-                    {formatDistanceToNow(p.time, { addSuffix: true })}
+                    {formatDistanceToNow(new Date(item.created_at), {
+                      addSuffix: true,
+                    })}
                   </TableCell>
                 </TableRow>
               ))
