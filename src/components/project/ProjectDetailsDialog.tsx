@@ -54,6 +54,32 @@ const SOROBAN_RPC_URL = "https://soroban-testnet.stellar.org";
 // surfaced as "Cannot read properties of undefined (reading 'switch')".
 const getSignerOptions = (publicKey: string) => freighterSigner(publicKey);
 
+// A proof is JSON {description, imageUrl} since images could be attached, and
+// plain text before that. The builder writes it, so neither field is trusted
+// to be a string: an object here would crash the dialog when rendered.
+function parseProof(raw: string): { description: string; imageUrl: string } {
+  if (raw.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(raw);
+      return {
+        description: typeof parsed.description === "string" ? parsed.description : "",
+        imageUrl: typeof parsed.imageUrl === "string" ? parsed.imageUrl : "",
+      };
+    } catch { }
+  }
+  return { description: raw, imageUrl: "" };
+}
+
+// Only https images are shown or linked; anything else the builder typed in is
+// dropped rather than handed to an href.
+function proofImageUrl(url: string): string | null {
+  try {
+    return new URL(url).protocol === "https:" ? url : null;
+  } catch {
+    return null;
+  }
+}
+
 export function ProjectDetailsDialog() {
   const {
     project,
@@ -118,6 +144,12 @@ export function ProjectDetailsDialog() {
   const activeMilestone = project?.milestones?.find((m) => !m.released);
   const activeMilestoneIndex = project?.milestones?.findIndex((m) => !m.released) ?? -1;
 
+  // Backers vote on a release, and the admin console's "Verify" opens this
+  // dialog, so whoever is deciding needs to see what the builder submitted.
+  const provenMilestones = (project?.milestones ?? [])
+    .filter((m) => m.proof?.trim())
+    .map((m) => ({ milestone: m, proof: parseProof(m.proof!) }));
+
   const handleOpenSubmitProofModal = () => {
     if (!user) {
       toast({
@@ -130,20 +162,9 @@ export function ProjectDetailsDialog() {
     }
     if (!project || !activeMilestone) return;
 
-    let initialDesc = "";
-    if (activeMilestone.proof) {
-      if (activeMilestone.proof.startsWith("{")) {
-        try {
-          const parsed = JSON.parse(activeMilestone.proof);
-          initialDesc = parsed.description || "";
-        } catch {
-          initialDesc = activeMilestone.proof;
-        }
-      } else {
-        initialDesc = activeMilestone.proof;
-      }
-    }
-    setDetailedProof(initialDesc);
+    setDetailedProof(
+      activeMilestone.proof ? parseProof(activeMilestone.proof).description : "",
+    );
     setAttachedFile(null);
     setIsSubmitModalOpen(true);
   };
@@ -178,13 +199,8 @@ export function ProjectDetailsDialog() {
         return;
       }
       setIsUploadingImage(false);
-    } else {
-      if (activeMilestone.proof && activeMilestone.proof.startsWith("{")) {
-        try {
-          const parsed = JSON.parse(activeMilestone.proof);
-          imageUrl = parsed.imageUrl || "";
-        } catch { }
-      }
+    } else if (activeMilestone.proof) {
+      imageUrl = parseProof(activeMilestone.proof).imageUrl;
     }
 
     const payload = JSON.stringify({
@@ -581,6 +597,67 @@ export function ProjectDetailsDialog() {
                   </div>
                 </div>
 
+                {provenMilestones.length > 0 && (
+                  <div className="border-t pt-4">
+                    <h4 className="font-semibold mb-2">Delivery Proof</h4>
+                    <div className="space-y-3">
+                      {provenMilestones.map(({ milestone, proof }) => {
+                        const imageUrl = proofImageUrl(proof.imageUrl);
+                        return (
+                          <div key={milestone.id} className="rounded-lg border p-3 space-y-2">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <span className="text-sm font-semibold break-words min-w-0">
+                                Milestone {milestone.id}: {milestone.title || "Untitled"}
+                              </span>
+                              <Badge variant={milestone.released ? "secondary" : "outline"}>
+                                {milestone.released ? "Released" : "Not released"}
+                              </Badge>
+                            </div>
+                            {proof.description && (
+                              <p className="text-sm text-muted-foreground whitespace-pre-wrap break-words">
+                                {proof.description}
+                              </p>
+                            )}
+                            {imageUrl && (
+                              <a
+                                href={imageUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="block w-fit"
+                              >
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={imageUrl}
+                                  alt={`Proof for milestone ${milestone.id}`}
+                                  loading="lazy"
+                                  className="max-h-64 rounded-md border object-contain"
+                                />
+                              </a>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Milestones sat in the footer, which does not scroll. With a
+                    vote open they filled a 768px-high window and left the body
+                    above, proof included, zero pixels tall. */}
+                {project.vaultAddress &&
+                  ["funded", "active", "completed", "refunding"].includes(project.status) && (
+                    <div className="border-t pt-4">
+                      <h4 className="font-semibold mb-2">Milestones</h4>
+                      <MilestoneVoting
+                        vaultAddress={project.vaultAddress}
+                        currency={project.currencyType ?? "USDC"}
+                        creatorAddress={project.creatorAddress ?? project.creator}
+                        platformLocked={isLocked}
+                        onChange={() => refreshProject(project.id)}
+                      />
+                    </div>
+                  )}
+
                 {(project.location || project.locationLat != null) && (
                   <div className="border-t pt-4">
                     <h4 className="font-semibold mb-2">Location</h4>
@@ -683,20 +760,6 @@ export function ProjectDetailsDialog() {
               )}
 
 
-
-              {project?.vaultAddress &&
-                ["funded", "active", "completed", "refunding"].includes(project.status) && (
-                  <div className="w-full space-y-3 pt-2">
-                    <h3 className="text-sm font-semibold">Milestones</h3>
-                    <MilestoneVoting
-                      vaultAddress={project.vaultAddress}
-                      currency={project.currencyType ?? "USDC"}
-                      creatorAddress={project.creatorAddress ?? project.creator}
-                      platformLocked={isLocked}
-                      onChange={() => refreshProject(project.id)}
-                    />
-                  </div>
-                )}
 
               <FundDialog
                 project={project!}
