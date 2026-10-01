@@ -17,10 +17,8 @@ import {
   Menu,
   LayoutGrid,
   Shield,
-  TestTube,
   ChevronsRight,
   Heart,
-  BanknoteArrowDown,
 } from "lucide-react";
 import React, { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
@@ -104,7 +102,6 @@ export default function Header() {
   const projectsIsActive = pathname === "/projects";
   const adminIsActive = pathname === "/admin";
   const createIsActive = pathname === "/create-listing";
-  const testingIsActive = pathname === "/testing/stellar";
   const latestProjects = userProjects.slice(0, 3);
   const latestFunded = fundedProjects.slice(0, 3);
 
@@ -237,38 +234,10 @@ export default function Header() {
                           )}
                           <span className="ripple-span"></span>
                         </Link>
-                        <Link
-                          href="/admin/withdrawals"
-                          onClick={() => setIsSheetOpen(false)}
-                          className={cn(
-                            "flex items-center gap-4 p-3 rounded-md text-lg h-12 menu-item-ripple",
-                            adminIsActive ? "active" : "",
-                          )}
-                          onMouseMove={handleRippleEffect}
-                        >
-                          <BanknoteArrowDown className="h-5 w-5" />
-                          <span>Withdrawal Proposals</span>
-                          {adminIsActive && (
-                            <span className="ripple-active-background"></span>
-                          )}
-                          <span className="ripple-span"></span>
-                        </Link>
-                        <Link
-                          href="/testing/stellar"
-                          onClick={() => setIsSheetOpen(false)}
-                          className={cn(
-                            "flex items-center gap-4 p-3 rounded-md text-lg h-12 menu-item-ripple",
-                            testingIsActive ? "active" : "",
-                          )}
-                          onMouseMove={handleRippleEffect}
-                        >
-                          <TestTube className="h-5 w-5" />
-                          <span>Testing</span>
-                          {testingIsActive && (
-                            <span className="ripple-active-background"></span>
-                          )}
-                          <span className="ripple-span"></span>
-                        </Link>
+                        {/* "Withdrawal Proposals" and "Testing" linked here to
+                            /admin/withdrawals and /testing/stellar. Both pages
+                            went with the move to the vault model, where backers
+                            release funds by vote, so both links were 404s. */}
                       </>
                     )}
                   </nav>
