@@ -35,9 +35,26 @@ const rpcServer = new rpc.Server(SOROBAN_RPC_URL);
 
 /** How far back to start when there is no cursor. */
 const COLD_START_LEDGERS = 10_000;
-/** RPC will not serve events older than roughly this. */
-const MAX_LOOKBACK_LEDGERS = 30_000;
 const PAGE_SIZE = 200;
+/** Enough empty scan windows to cross the RPC's whole retention (~120k ledgers). */
+const MAX_PAGES = 60;
+
+/**
+ * The last ledger a getEvents cursor has fully scanned.
+ *
+ * A cursor is a TOID: the ledger sits in the high 32 bits. The RPC scans a
+ * bounded window per request (10,000 ledgers on testnet) and, when that window
+ * is empty, returns no events and a cursor at its end. Knowing where the cursor
+ * stands is the only way to tell "nothing more" from "nothing in this window".
+ */
+function cursorLedger(cursor: string): number {
+  const [toid] = cursor.split("-");
+  const id = BigInt(toid);
+  const ledger = Number(id >> 32n);
+  // Low bits all set mean the whole ledger was scanned; otherwise it stopped
+  // partway through and only the ledger before is complete.
+  return (id & 0xffffffffn) === 0xffffffffn ? ledger : ledger - 1;
+}
 
 const VAULT_STATUS: Record<number, Enums<"project_status">> = {
   0: "raising",
@@ -48,7 +65,7 @@ const VAULT_STATUS: Record<number, Enums<"project_status">> = {
   5: "completed",
 };
 
-async function fetchMetadata(cid: string): Promise<any> {
+export async function fetchMetadata(cid: string): Promise<any> {
   if (!cid || cid.trim() === "" || cid === "test_cid") return null;
 
   // Strict CID resolution only. The value arrives from an on-chain event any
@@ -59,15 +76,14 @@ async function fetchMetadata(cid: string): Promise<any> {
     return null;
   }
 
+  // Each gateway is tried in turn. A refusal used to end the lookup silently,
+  // which is how every project came to be listed as "Project #N".
   for (const url of urls) {
+    const host = new URL(url).host;
     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 8000);
-      const response = await fetch(url, { signal: controller.signal });
-      clearTimeout(timeout);
-
+      const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
       if (!response.ok) {
-        console.warn(`[Indexer] ${url} answered ${response.status}`);
+        console.warn(`[Indexer] ${host} answered ${response.status} for metadata ${cid}`);
         continue;
       }
 
@@ -79,150 +95,10 @@ async function fetchMetadata(cid: string): Promise<any> {
 
       return JSON.parse(body);
     } catch (err) {
-      console.warn(`[Indexer] Could not fetch metadata from ${url}:`, err);
+      console.warn(`[Indexer] Could not fetch metadata ${cid} from ${host}:`, err);
     }
   }
   return null;
-}
-
-/** The listing fields a project's pinned metadata supplies. */
-function listingFields(metadata: any) {
-  return {
-    title: metadata.title ? String(metadata.title) : undefined,
-    tagline: String(metadata.tagline ?? ""),
-    description: String(metadata.description ?? ""),
-    category: String(metadata.category ?? "General"),
-    imageUrl: String(metadata.imageUrl ?? ""),
-    // Creator-supplied and never verified, so it is bounded here rather than
-    // trusted: the column takes whatever IPFS returns, and IPFS returns
-    // whatever the creator pinned.
-    location: String(metadata.location ?? "").slice(0, 160),
-  };
-}
-
-/**
- * Name and avatar of the profiles linked to these wallets, keyed by address.
- *
- * The chain only knows the creator's address, so without this every listing
- * named its creator by a 56-character key.
- */
-async function creatorProfiles(addresses: string[]) {
-  const byAddress = new Map<string, { display: string; avatar: string }>();
-  const wanted = Array.from(new Set(addresses.filter(Boolean)));
-  if (wanted.length === 0) return byAddress;
-
-  const admin = createAdminClient();
-  const { data, error } = await admin
-    .from("profiles")
-    .select("stellar_public_key, display_name, avatar_url")
-    .in("stellar_public_key", wanted);
-  if (error) {
-    console.error("[Indexer] Could not read creator profiles:", error.message);
-    return byAddress;
-  }
-
-  for (const p of data ?? []) {
-    if (!p.stellar_public_key || !p.display_name) continue;
-    byAddress.set(p.stellar_public_key, {
-      display: String(p.display_name),
-      avatar: String(p.avatar_url ?? ""),
-    });
-  }
-  return byAddress;
-}
-
-/**
- * Name the creator of any project indexed before their profile was linked —
- * or before this lookup existed.
- */
-async function enrichUnnamedCreators() {
-  const admin = createAdminClient();
-  const { data, error } = await admin
-    .from("projects")
-    .select("id, creator_address")
-    .eq("creator_display", "")
-    .limit(200);
-  if (error) {
-    console.error("[Indexer] Could not list unnamed creators:", error.message);
-    return 0;
-  }
-
-  const profiles = await creatorProfiles((data ?? []).map((r) => r.creator_address));
-  let named = 0;
-  for (const row of data ?? []) {
-    const profile = profiles.get(row.creator_address);
-    if (!profile) continue;
-    const { error: updateError } = await admin
-      .from("projects")
-      .update({ creator_display: profile.display, creator_avatar_url: profile.avatar })
-      .eq("id", row.id);
-    if (updateError) {
-      console.error(`[Indexer] Could not name creator of ${row.id}:`, updateError.message);
-      continue;
-    }
-    named++;
-  }
-  return named;
-}
-
-/**
- * Fill in projects whose metadata never resolved when DEPLOY was indexed.
- *
- * DEPLOY is handled once, so a gateway refusing the CID at that moment left the
- * project as "Project #N" with no image for good — nothing later re-read it.
- */
-async function enrichUnresolvedProjects() {
-  const admin = createAdminClient();
-  const { data, error } = await admin
-    .from("projects")
-    .select("id, project_id, title, metadata_cid")
-    .like("title", "Project #%")
-    .neq("metadata_cid", "")
-    .limit(20);
-  if (error) {
-    console.error("[Indexer] Could not list unresolved projects:", error.message);
-    return 0;
-  }
-
-  let enriched = 0;
-  for (const row of data ?? []) {
-    // Only rows still carrying the placeholder for their own id, so a creator
-    // who really titled a project "Project #2" is left alone.
-    if (!row.metadata_cid || row.title !== `Project #${row.project_id}`) continue;
-    const metadata = await fetchMetadata(row.metadata_cid);
-    if (!metadata) continue;
-
-    const fields = listingFields(metadata);
-    const { error: updateError } = await admin
-      .from("projects")
-      .update({
-        ...(fields.title ? { title: fields.title } : {}),
-        tagline: fields.tagline,
-        description: fields.description,
-        category: fields.category,
-        image_url: fields.imageUrl,
-        location: fields.location,
-      })
-      .eq("id", row.id);
-    if (updateError) {
-      console.error(`[Indexer] Could not enrich project ${row.project_id}:`, updateError.message);
-      continue;
-    }
-
-    for (const m of metadata.milestones ?? []) {
-      if (!m?.title && !m?.description) continue;
-      await admin
-        .from("project_milestones")
-        .update({
-          ...(m.title ? { title: String(m.title) } : {}),
-          ...(m.description ? { description: String(m.description) } : {}),
-        })
-        .eq("project_id", row.id)
-        .eq("milestone_id", Number(m.id));
-    }
-    enriched++;
-  }
-  return enriched;
 }
 
 /** Every vault address we have seen, so their events are watched too. */
@@ -304,6 +180,155 @@ async function syncVault(vaultAddress: string, ledger?: number) {
   );
 }
 
+/** The project copy a resolved metadata document supplies. */
+function metadataFields(metadata: any) {
+  return {
+    title: String(metadata.title ?? "").trim() || undefined,
+    tagline: String(metadata.tagline ?? ""),
+    description: String(metadata.description ?? ""),
+    category: String(metadata.category ?? "") || "General",
+    imageUrl: String(metadata.imageUrl ?? ""),
+    // Creator-supplied and never verified, so it is bounded here rather than
+    // trusted: the column takes whatever IPFS returns, and IPFS returns
+    // whatever the creator pinned.
+    location: String(metadata.location ?? "").slice(0, 160),
+  };
+}
+
+function milestoneCopy(metadata: any, milestoneId: number) {
+  const meta = (metadata?.milestones ?? []).find((x: any) => Number(x.id) === milestoneId);
+  return {
+    ...(meta?.title ? { title: String(meta.title) } : {}),
+    ...(meta?.description ? { description: String(meta.description) } : {}),
+  };
+}
+
+/**
+ * Name and avatar of the profiles linked to these wallets, keyed by address.
+ *
+ * The chain only knows the creator's address, so without this every listing
+ * card named its creator by a 56-character key.
+ */
+async function creatorProfiles(addresses: string[]) {
+  const byAddress = new Map<string, { display: string; avatar: string }>();
+  const wanted = Array.from(new Set(addresses.filter(Boolean)));
+  if (wanted.length === 0) return byAddress;
+
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("profiles")
+    .select("stellar_public_key, display_name, avatar_url")
+    .in("stellar_public_key", wanted);
+  if (error) {
+    console.warn("[Indexer] Could not read creator profiles:", error.message);
+    return byAddress;
+  }
+
+  for (const p of data ?? []) {
+    if (!p.stellar_public_key || !p.display_name) continue;
+    byAddress.set(p.stellar_public_key, {
+      display: String(p.display_name),
+      avatar: String(p.avatar_url ?? ""),
+    });
+  }
+  return byAddress;
+}
+
+/**
+ * Name the creator of any project indexed before their profile was linked, or
+ * before DEPLOY looked one up.
+ */
+export async function nameUnnamedCreators() {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("projects")
+    .select("id, creator_address")
+    .eq("creator_display", "")
+    .limit(200);
+  if (error) throw new Error(`Could not read unnamed creators: ${error.message}`);
+
+  const profiles = await creatorProfiles((data ?? []).map((r) => r.creator_address));
+  let named = 0;
+  for (const row of data ?? []) {
+    const profile = profiles.get(row.creator_address);
+    if (!profile) continue;
+    const { error: updateError } = await admin
+      .from("projects")
+      .update({ creator_display: profile.display, creator_avatar_url: profile.avatar })
+      .eq("id", row.id);
+    if (updateError) {
+      console.warn(`[Indexer] Could not name the creator of ${row.id}: ${updateError.message}`);
+      continue;
+    }
+    named++;
+  }
+  return named;
+}
+
+/** Projects still listed under the placeholder title, retried per run. */
+const METADATA_RETRIES_PER_RUN = 5;
+
+/**
+ * Fill in copy for projects whose metadata did not resolve when DEPLOY was
+ * handled. The event cursor moves on regardless, so without this a gateway
+ * that was down or rate-limiting for one run left a project as "Project #N"
+ * for good.
+ *
+ * A project still carrying `Project #<its id>` as its title is taken to be
+ * unresolved. The few that are tried per run keep a CID that never resolves —
+ * a test pin, say — from costing more than a handful of fetches each time.
+ */
+export async function resolvePendingMetadata() {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("projects")
+    .select("id, project_id, title, metadata_cid")
+    .like("title", "Project #%")
+    .neq("metadata_cid", "")
+    .order("created_on_chain_at", { ascending: false })
+    .limit(50);
+  if (error) throw new Error(`Could not read unresolved projects: ${error.message}`);
+
+  const pending = (data ?? [])
+    .filter((p) => p.title === `Project #${p.project_id}`)
+    .slice(0, METADATA_RETRIES_PER_RUN);
+
+  let resolved = 0;
+  for (const project of pending) {
+    const metadata = await fetchMetadata(project.metadata_cid);
+    if (!metadata) continue;
+
+    const fields = metadataFields(metadata);
+    const { error: updateError } = await admin
+      .from("projects")
+      .update({
+        ...(fields.title ? { title: fields.title } : {}),
+        tagline: fields.tagline,
+        description: fields.description,
+        category: fields.category,
+        image_url: fields.imageUrl,
+        location: fields.location,
+      })
+      .eq("id", project.id);
+    if (updateError) {
+      console.warn(`[Indexer] Could not store metadata for project ${project.project_id}: ${updateError.message}`);
+      continue;
+    }
+
+    for (const m of metadata.milestones ?? []) {
+      const copy = milestoneCopy(metadata, Number(m.id));
+      if (Object.keys(copy).length === 0) continue;
+      await admin
+        .from("project_milestones")
+        .update(copy)
+        .eq("project_id", project.id)
+        .eq("milestone_id", Number(m.id));
+    }
+    resolved++;
+  }
+  return { pending: pending.length, resolved };
+}
+
 async function handleEvent(topic1: string, topic2: string, payload: any[], contractId: string, ledger: number, closedAt?: string) {
   const key = `${topic1}/${topic2}`;
 
@@ -311,7 +336,7 @@ async function handleEvent(topic1: string, topic2: string, payload: any[], contr
     case "FACTORY/DEPLOY": {
       // [project_id, vault_address, creator, metadata_cid]
       const [projectId, vaultAddress, creator, metadataCid] = payload;
-      const metadata = (await fetchMetadata(String(metadataCid ?? ""))) ?? {};
+      const metadata = await fetchMetadata(String(metadataCid ?? ""));
       const creatorProfile = (await creatorProfiles([String(creator)])).get(String(creator));
 
       const state = await readVaultState(String(vaultAddress));
@@ -338,8 +363,10 @@ async function handleEvent(topic1: string, topic2: string, payload: any[], contr
         ...(creatorProfile
           ? { creatorDisplay: creatorProfile.display, creatorAvatarUrl: creatorProfile.avatar }
           : {}),
-        ...listingFields(metadata),
-        title: metadata.title ? String(metadata.title) : `Project #${projectId}`,
+        // Unresolved metadata writes nothing, so a replay that cannot reach IPFS
+        // does not overwrite copy an earlier run resolved. The row is listed as
+        // "Project #N" until resolvePendingMetadata fills it in.
+        ...(metadata ? metadataFields(metadata) : {}),
         metadataCid: String(metadataCid ?? ""),
         ...(currency ? { currency } : {}),
         fundingGoalRaw: state.fundingGoalRaw,
@@ -354,18 +381,12 @@ async function handleEvent(topic1: string, topic2: string, payload: any[], contr
 
       await upsertMilestones(
         projectRowId,
-        state.milestones.map((m) => {
-          const meta = (metadata.milestones ?? []).find(
-            (x: any) => Number(x.id) === m.id,
-          );
-          return {
-            milestoneId: m.id,
-            amountRaw: String(BigInt(Math.round(m.amount * 10_000_000))),
-            released: m.released,
-            ...(meta?.title ? { title: String(meta.title) } : {}),
-            ...(meta?.description ? { description: String(meta.description) } : {}),
-          };
-        }),
+        state.milestones.map((m) => ({
+          milestoneId: m.id,
+          amountRaw: String(BigInt(Math.round(m.amount * 10_000_000))),
+          released: m.released,
+          ...milestoneCopy(metadata, m.id),
+        })),
       );
       return;
     }
@@ -403,8 +424,11 @@ export async function runIndexer() {
   }
 
   let latestLedger = 0;
+  let oldestLedger = 1;
   try {
-    latestLedger = (await rpcServer.getLatestLedger()).sequence;
+    const health = await rpcServer.getHealth();
+    latestLedger = health.latestLedger;
+    oldestLedger = health.oldestLedger ?? 1;
   } catch (err) {
     return { success: false, error: `Could not reach RPC: ${String(err)}` };
   }
@@ -412,21 +436,28 @@ export async function runIndexer() {
   const stored = await getCursor();
   let startLedger = stored !== null ? stored + 1 : latestLedger - COLD_START_LEDGERS;
 
-  // RPC will not serve events older than its retention window.
-  if (startLedger < latestLedger - MAX_LOOKBACK_LEDGERS || startLedger > latestLedger) {
-    startLedger = Math.max(1, latestLedger - COLD_START_LEDGERS);
+  // RPC will not serve events older than its retention window. Start at its
+  // edge rather than skipping further ahead than the window forces us to.
+  if (startLedger < oldestLedger) startLedger = oldestLedger;
+  // Caught up: nothing has closed since the last run.
+  if (startLedger > latestLedger) {
+    return { success: true, count: 0, failed: 0, currentLedger: stored };
   }
 
   const contractIds = await watchedContracts();
   const events: any[] = [];
+  // The highest ledger every chunk has been scanned through. The cursor may move
+  // this far even when nothing happened — without that, a quiet stretch longer
+  // than one RPC scan window left every later run rescanning the same empty
+  // window, and new projects never reached the database.
+  let scannedThrough = latestLedger;
 
-  // Paginated. The previous version took the first 100 and advanced the cursor
-  // past everything, so anything beyond that page was lost permanently.
   for (let i = 0; i < contractIds.length; i += 5) {
     const chunk = contractIds.slice(i, i + 5);
     let cursor: string | undefined;
+    let chunkThrough = startLedger - 1;
 
-    for (let page = 0; page < 20; page++) {
+    for (let page = 0; page < MAX_PAGES; page++) {
       try {
         const response: any = await rpcServer.getEvents({
           ...(cursor ? { cursor } : { startLedger }),
@@ -437,14 +468,22 @@ export async function runIndexer() {
         const batch = response?.events ?? [];
         events.push(...batch);
 
-        if (batch.length < PAGE_SIZE) break;
-        cursor = response?.cursor ?? batch[batch.length - 1]?.pagingToken;
-        if (!cursor) break;
+        const next = response?.cursor ?? batch[batch.length - 1]?.pagingToken;
+        if (!next || next === cursor) break;
+        cursor = next;
+        chunkThrough = cursorLedger(next);
+
+        // A short page only means this scan window is exhausted, not the chain.
+        if (batch.length < PAGE_SIZE && chunkThrough >= (response?.latestLedger ?? latestLedger)) {
+          break;
+        }
       } catch (err) {
         console.error(`[Indexer] getEvents failed for ${chunk.join(", ")}:`, err);
         break;
       }
     }
+
+    scannedThrough = Math.min(scannedThrough, chunkThrough);
   }
 
   events.sort((a, b) => String(a.id).localeCompare(String(b.id)));
@@ -504,19 +543,41 @@ export async function runIndexer() {
     }
   }
 
-  if (safeLedger >= startLedger) {
-    await setCursor(safeLedger);
+  // With every event handled, the cursor moves to where the scan reached, quiet
+  // ledgers included. It never moves past a chunk that did not finish scanning.
+  const nextCursor = Math.min(
+    failed === 0 ? Math.max(safeLedger, scannedThrough) : safeLedger,
+    scannedThrough,
+  );
+  const advanced = nextCursor >= startLedger;
+  if (advanced) {
+    await setCursor(nextCursor);
   }
 
-  const enriched = await enrichUnresolvedProjects();
-  const creatorsNamed = await enrichUnnamedCreators();
+  // Best effort: copy is cosmetic, and a gateway outage must not fail the run
+  // that keeps balances and statuses current.
+  let metadata: { pending: number; resolved: number } | { error: string };
+  try {
+    metadata = await resolvePendingMetadata();
+  } catch (err) {
+    metadata = { error: String(err) };
+    console.warn("[Indexer] Metadata retry pass failed:", err);
+  }
+
+  let creatorsNamed: number | { error: string };
+  try {
+    creatorsNamed = await nameUnnamedCreators();
+  } catch (err) {
+    creatorsNamed = { error: String(err) };
+    console.warn("[Indexer] Creator naming pass failed:", err);
+  }
 
   return {
     success: failed === 0,
     count: processed,
     failed,
-    enriched,
+    currentLedger: advanced ? nextCursor : stored,
+    metadata,
     creatorsNamed,
-    currentLedger: safeLedger,
   };
 }
