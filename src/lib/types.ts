@@ -11,6 +11,8 @@ export type Project = {
   imageUrl: string;
   creator: string;
   creatorAddress?: string;
+  /** The linked profile's display name, or the address when none is linked. */
+  creatorName?: string;
   creatorAvatar: string;
   status:
     | "pending"

@@ -9,7 +9,7 @@ if (typeof window === "undefined") {
 }
 
 import { rpc, scValToNative } from "@stellar/stellar-sdk";
-import { getIPFSFetchUrl } from "./pinata-client";
+import { getIPFSFetchUrls } from "./pinata-client";
 import { SOROBAN_RPC_URL, FACTORY_ID } from "./stellar-clients";
 import { readVaultState } from "./vault-state";
 import { currencyForToken } from "./currencies";
@@ -53,31 +53,176 @@ async function fetchMetadata(cid: string): Promise<any> {
 
   // Strict CID resolution only. The value arrives from an on-chain event any
   // project creator controls, so an absolute URL here would be an SSRF.
-  const url = getIPFSFetchUrl(cid);
-  if (!url) {
+  const urls = getIPFSFetchUrls(cid);
+  if (urls.length === 0) {
     console.warn(`[Indexer] Ignoring non-CID metadata reference: ${cid}`);
     return null;
   }
 
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
-    const response = await fetch(url, { signal: controller.signal });
-    clearTimeout(timeout);
+  for (const url of urls) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
+      const response = await fetch(url, { signal: controller.signal });
+      clearTimeout(timeout);
 
-    if (!response.ok) return null;
+      if (!response.ok) {
+        console.warn(`[Indexer] ${url} answered ${response.status}`);
+        continue;
+      }
 
-    // Anyone can pin anything at a CID; cap what we parse.
-    const MAX_BYTES = 256 * 1024;
-    if (Number(response.headers.get("content-length") ?? 0) > MAX_BYTES) return null;
-    const body = await response.text();
-    if (body.length > MAX_BYTES) return null;
+      // Anyone can pin anything at a CID; cap what we parse.
+      const MAX_BYTES = 256 * 1024;
+      if (Number(response.headers.get("content-length") ?? 0) > MAX_BYTES) return null;
+      const body = await response.text();
+      if (body.length > MAX_BYTES) return null;
 
-    return JSON.parse(body);
-  } catch (err) {
-    console.warn(`[Indexer] Could not fetch metadata for ${cid}:`, err);
-    return null;
+      return JSON.parse(body);
+    } catch (err) {
+      console.warn(`[Indexer] Could not fetch metadata from ${url}:`, err);
+    }
   }
+  return null;
+}
+
+/** The listing fields a project's pinned metadata supplies. */
+function listingFields(metadata: any) {
+  return {
+    title: metadata.title ? String(metadata.title) : undefined,
+    tagline: String(metadata.tagline ?? ""),
+    description: String(metadata.description ?? ""),
+    category: String(metadata.category ?? "General"),
+    imageUrl: String(metadata.imageUrl ?? ""),
+    // Creator-supplied and never verified, so it is bounded here rather than
+    // trusted: the column takes whatever IPFS returns, and IPFS returns
+    // whatever the creator pinned.
+    location: String(metadata.location ?? "").slice(0, 160),
+  };
+}
+
+/**
+ * Name and avatar of the profiles linked to these wallets, keyed by address.
+ *
+ * The chain only knows the creator's address, so without this every listing
+ * named its creator by a 56-character key.
+ */
+async function creatorProfiles(addresses: string[]) {
+  const byAddress = new Map<string, { display: string; avatar: string }>();
+  const wanted = Array.from(new Set(addresses.filter(Boolean)));
+  if (wanted.length === 0) return byAddress;
+
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("profiles")
+    .select("stellar_public_key, display_name, avatar_url")
+    .in("stellar_public_key", wanted);
+  if (error) {
+    console.error("[Indexer] Could not read creator profiles:", error.message);
+    return byAddress;
+  }
+
+  for (const p of data ?? []) {
+    if (!p.stellar_public_key || !p.display_name) continue;
+    byAddress.set(p.stellar_public_key, {
+      display: String(p.display_name),
+      avatar: String(p.avatar_url ?? ""),
+    });
+  }
+  return byAddress;
+}
+
+/**
+ * Name the creator of any project indexed before their profile was linked —
+ * or before this lookup existed.
+ */
+async function enrichUnnamedCreators() {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("projects")
+    .select("id, creator_address")
+    .eq("creator_display", "")
+    .limit(200);
+  if (error) {
+    console.error("[Indexer] Could not list unnamed creators:", error.message);
+    return 0;
+  }
+
+  const profiles = await creatorProfiles((data ?? []).map((r) => r.creator_address));
+  let named = 0;
+  for (const row of data ?? []) {
+    const profile = profiles.get(row.creator_address);
+    if (!profile) continue;
+    const { error: updateError } = await admin
+      .from("projects")
+      .update({ creator_display: profile.display, creator_avatar_url: profile.avatar })
+      .eq("id", row.id);
+    if (updateError) {
+      console.error(`[Indexer] Could not name creator of ${row.id}:`, updateError.message);
+      continue;
+    }
+    named++;
+  }
+  return named;
+}
+
+/**
+ * Fill in projects whose metadata never resolved when DEPLOY was indexed.
+ *
+ * DEPLOY is handled once, so a gateway refusing the CID at that moment left the
+ * project as "Project #N" with no image for good — nothing later re-read it.
+ */
+async function enrichUnresolvedProjects() {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("projects")
+    .select("id, project_id, title, metadata_cid")
+    .like("title", "Project #%")
+    .neq("metadata_cid", "")
+    .limit(20);
+  if (error) {
+    console.error("[Indexer] Could not list unresolved projects:", error.message);
+    return 0;
+  }
+
+  let enriched = 0;
+  for (const row of data ?? []) {
+    // Only rows still carrying the placeholder for their own id, so a creator
+    // who really titled a project "Project #2" is left alone.
+    if (!row.metadata_cid || row.title !== `Project #${row.project_id}`) continue;
+    const metadata = await fetchMetadata(row.metadata_cid);
+    if (!metadata) continue;
+
+    const fields = listingFields(metadata);
+    const { error: updateError } = await admin
+      .from("projects")
+      .update({
+        ...(fields.title ? { title: fields.title } : {}),
+        tagline: fields.tagline,
+        description: fields.description,
+        category: fields.category,
+        image_url: fields.imageUrl,
+        location: fields.location,
+      })
+      .eq("id", row.id);
+    if (updateError) {
+      console.error(`[Indexer] Could not enrich project ${row.project_id}:`, updateError.message);
+      continue;
+    }
+
+    for (const m of metadata.milestones ?? []) {
+      if (!m?.title && !m?.description) continue;
+      await admin
+        .from("project_milestones")
+        .update({
+          ...(m.title ? { title: String(m.title) } : {}),
+          ...(m.description ? { description: String(m.description) } : {}),
+        })
+        .eq("project_id", row.id)
+        .eq("milestone_id", Number(m.id));
+    }
+    enriched++;
+  }
+  return enriched;
 }
 
 /** Every vault address we have seen, so their events are watched too. */
@@ -106,7 +251,7 @@ async function indexedRow(vaultAddress: string) {
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("projects")
-    .select("project_id, created_on_chain_at")
+    .select("project_id, title, created_on_chain_at")
     .eq("vault_address", vaultAddress)
     .maybeSingle();
 
@@ -131,6 +276,9 @@ async function syncVault(vaultAddress: string, ledger?: number) {
 
   const projectRowId = await upsertProjectFromChain({
     projectId: existing?.project_id ?? vaultAddress,
+    // The upsert writes a title either way — it falls back to "Project #<id>" —
+    // so leaving it out reset every listing's real title on its next deposit.
+    ...(existing?.title ? { title: existing.title } : {}),
     vaultAddress,
     creatorAddress: state.creator,
     fundingGoalRaw: state.fundingGoalRaw,
@@ -164,6 +312,7 @@ async function handleEvent(topic1: string, topic2: string, payload: any[], contr
       // [project_id, vault_address, creator, metadata_cid]
       const [projectId, vaultAddress, creator, metadataCid] = payload;
       const metadata = (await fetchMetadata(String(metadataCid ?? ""))) ?? {};
+      const creatorProfile = (await creatorProfiles([String(creator)])).get(String(creator));
 
       const state = await readVaultState(String(vaultAddress));
       if (!state) throw new Error(`Vault ${vaultAddress} is not readable`);
@@ -186,15 +335,11 @@ async function handleEvent(topic1: string, topic2: string, payload: any[], contr
         projectId: String(projectId),
         vaultAddress: String(vaultAddress),
         creatorAddress: String(creator),
-        title: metadata.title ?? `Project #${projectId}`,
-        tagline: metadata.tagline ?? "",
-        description: metadata.description ?? "",
-        category: metadata.category ?? "General",
-        imageUrl: metadata.imageUrl ?? "",
-        // Creator-supplied and never verified, so it is bounded here rather than
-        // trusted: the column takes whatever IPFS returns, and IPFS returns
-        // whatever the creator pinned.
-        location: String(metadata.location ?? "").slice(0, 160),
+        ...(creatorProfile
+          ? { creatorDisplay: creatorProfile.display, creatorAvatarUrl: creatorProfile.avatar }
+          : {}),
+        ...listingFields(metadata),
+        title: metadata.title ? String(metadata.title) : `Project #${projectId}`,
         metadataCid: String(metadataCid ?? ""),
         ...(currency ? { currency } : {}),
         fundingGoalRaw: state.fundingGoalRaw,
@@ -363,5 +508,15 @@ export async function runIndexer() {
     await setCursor(safeLedger);
   }
 
-  return { success: failed === 0, count: processed, failed, currentLedger: safeLedger };
+  const enriched = await enrichUnresolvedProjects();
+  const creatorsNamed = await enrichUnnamedCreators();
+
+  return {
+    success: failed === 0,
+    count: processed,
+    failed,
+    enriched,
+    creatorsNamed,
+    currentLedger: safeLedger,
+  };
 }

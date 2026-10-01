@@ -169,10 +169,9 @@ export function ProjectCard({
   const imageSrc = resolveImageSrc(project.imageUrl);
   const creatorAddress =
     project.creatorAddress ?? project.creatorId ?? project.creator;
-  const creatorName =
-    project.creator && !project.creator.startsWith("0x")
-      ? project.creator
-      : "Unknown Creator";
+  // `creator` is the wallet address; the name comes from the profile linked to
+  // it, and falls back to the address when no profile is linked.
+  const creatorName = project.creatorName || creatorAddress || "Unknown Creator";
 
   const getAiHint = (category: string) => {
     switch (category.toLowerCase()) {
@@ -254,8 +253,8 @@ export function ProjectCard({
         <CardFooter className="flex justify-between items-center p-4 pt-0 shrink-0 w-full gap-1">
           <div className="flex items-center gap-2 min-w-0">
             <Avatar className="h-8 w-8 shrink-0">
-              <AvatarImage src={project.creatorAvatar} alt={project.creator} />
-              <AvatarFallback>{project.creator.charAt(0)}</AvatarFallback>
+              <AvatarImage src={project.creatorAvatar} alt={creatorName} />
+              <AvatarFallback>{creatorName.charAt(0)}</AvatarFallback>
             </Avatar>
             <div className="min-w-0 leading-tight">
               <div

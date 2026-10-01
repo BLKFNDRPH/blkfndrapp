@@ -54,10 +54,15 @@ export function getPinataClient(): PinataClient {
  * indexer into a server-side request forgery gadget whose response body gets
  * written into the public project listing.
  *
- * Returns null if the value is not a plausible bare CID.
+ * Returns the URLs to try in order — the configured gateway, then the shared
+ * public one — or an empty list if the value is not a plausible bare CID.
+ *
+ * The fallback is not optional. A dedicated gateway in restricted mode answers
+ * 401 (ERR_ID:00024) for any CID it does not consider its own, and with only
+ * that one URL every project was indexed as "Project #N" with no image.
  */
-export function getIPFSFetchUrl(cid: string): string | null {
-  if (!cid) return null;
+export function getIPFSFetchUrls(cid: string): string[] {
+  if (!cid) return [];
 
   let value = cid.trim();
   if (value.startsWith("ipfs://")) {
@@ -69,9 +74,10 @@ export function getIPFSFetchUrl(cid: string): string | null {
   // character set also guarantees no path traversal or host injection.
   const isCidV0 = /^Qm[1-9A-HJ-NP-Za-km-z]{44}$/.test(value);
   const isCidV1 = /^b[a-z2-7]{50,}$/.test(value);
-  if (!isCidV0 && !isCidV1) return null;
+  if (!isCidV0 && !isCidV1) return [];
 
-  return `https://${resolveGatewayHost()}/ipfs/${value}`;
+  const hosts = Array.from(new Set([resolveGatewayHost(), "gateway.pinata.cloud"]));
+  return hosts.map((host) => `https://${host}/ipfs/${value}`);
 }
 
 /**
@@ -102,6 +108,8 @@ function resolveGatewayHost(): string {
  * Do not use this to build a URL the server will fetch — see getIPFSFetchUrl.
  */
 export function getIPFSGatewayUrl(cid: string): string {
+  // Kept on the public gateway: the dedicated one rejects content it does not
+  // consider its own (see getIPFSFetchUrls), and a browser cannot fall back.
   const value = cid.trim();
   if (!value) {
     return "";

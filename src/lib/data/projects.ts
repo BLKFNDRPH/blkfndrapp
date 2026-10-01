@@ -148,6 +148,8 @@ export async function upsertProjectFromChain(row: {
   projectId: string;
   vaultAddress: string;
   creatorAddress: string;
+  creatorDisplay?: string;
+  creatorAvatarUrl?: string;
   title?: string;
   tagline?: string;
   description?: string;
@@ -182,6 +184,8 @@ export async function upsertProjectFromChain(row: {
     title: row.title ?? `Project #${row.projectId}`,
   };
   if (row.title !== undefined) patch.title = row.title;
+  if (row.creatorDisplay !== undefined) patch.creator_display = row.creatorDisplay;
+  if (row.creatorAvatarUrl !== undefined) patch.creator_avatar_url = row.creatorAvatarUrl;
   if (row.tagline !== undefined) patch.tagline = row.tagline;
   if (row.description !== undefined) patch.description = row.description;
   if (row.category !== undefined) patch.category = row.category;
