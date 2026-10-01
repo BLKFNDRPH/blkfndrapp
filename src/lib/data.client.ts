@@ -7,6 +7,26 @@
 import type { User, Project } from "./types";
 
 /**
+ * The address lookups return profile rows (display_name, avatar_url), not
+ * Users. Reading `.name` off the raw row was always undefined, so every creator
+ * and backer was shown as their bare wallet address.
+ */
+function profileToUser(row: any): User | null {
+  if (!row || typeof row !== "object" || !row.id) return null;
+  const avatar = row.avatar_url ?? "";
+  return {
+    uid: row.id,
+    name: row.display_name ?? "",
+    email: "",
+    avatarUrl: avatar,
+    creatorAvatar: avatar,
+    role: "user",
+    wallet: row.wallet_status === "connected" ? "connected" : "disconnected",
+    stellarPublicKey: row.stellar_public_key ?? undefined,
+  };
+}
+
+/**
  * Look up a user by their wallet address or uid.
  * Safe to call from client components.
  *
@@ -26,7 +46,7 @@ export const getUserByCreatorId = async (
       `/api/user-by-address?address=${encodeURIComponent(address)}&field=${field}`,
     );
     if (!res.ok) return null;
-    return await res.json();
+    return profileToUser(await res.json());
   } catch (err) {
     console.error("getUserByCreatorId fetch error:", err);
     return null;
@@ -69,7 +89,13 @@ export const getUsersByAddresses = async (
       body: JSON.stringify({ addresses }),
     });
     if (!res.ok) return {};
-    return await res.json();
+    const rows: Record<string, unknown> = await res.json();
+    const out: Record<string, User> = {};
+    for (const [address, row] of Object.entries(rows)) {
+      const user = profileToUser(row);
+      if (user) out[address] = user;
+    }
+    return out;
   } catch (err) {
     console.error("getUsersByAddresses fetch error:", err);
     return {};

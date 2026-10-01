@@ -46,6 +46,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useTransition, useState, useMemo, useCallback } from "react";
 import Loading from "@/app/loading";
 import { formatCurrency } from "@/lib/formatters";
+import { getUsersByAddresses } from "@/lib/data.client";
 import {
   Tooltip,
   TooltipContent,
@@ -260,12 +261,7 @@ function ProjectInvestorsCard({
 
       setIsLoading(true);
       try {
-        const res = await fetch("/api/user-by-addresses", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ addresses: uniqueAddresses }),
-        });
-        const json = await res.json();
+        const json = await getUsersByAddresses(uniqueAddresses);
         if (cancelled) return;
 
         const normalizedProfiles: Record<
