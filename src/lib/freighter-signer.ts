@@ -34,6 +34,18 @@ interface FreighterError {
   ext?: string[];
 }
 
+/**
+ * What to say when Freighter hands back no signature at all.
+ *
+ * Exported so the launch flow can tell this case apart from an explicit
+ * decline: here a Freighter window may still be open, and the person needs to
+ * know that approving it now does nothing.
+ */
+export const NO_SIGNATURE_MESSAGE =
+  "Freighter didn't return a signature — the request was cancelled or expired (Freighter drops a request left open for about 5 minutes). " +
+  "If a Freighter window is still open, close it: it is no longer connected to this page, and approving it now sends nothing. " +
+  "Nothing has been sent to the network.";
+
 /** No signature came back, and the reason was the person at the keyboard. */
 export class FreighterDeclined extends Error {
   constructor(message: string) {
@@ -75,12 +87,18 @@ export function freighterSigner(publicKey: string) {
         throw error.code === -4 ? new FreighterDeclined(message) : new Error(message);
       }
 
-      // A dismissed or timed-out popup returns neither a signature nor an
-      // error. Left unchecked this is the undefined the SDK crashes on.
+      // Neither a signature nor an error. Left unchecked this is the undefined
+      // the SDK crashes on.
+      //
+      // The way it happens in practice (QA Trial #3): Freighter's background
+      // drops a request that is left open too long -- about five minutes -- and
+      // its content script then answers the page with a plain `error` string
+      // that freighter-api does not map, so the page gets nothing while the
+      // Freighter window stays on screen with Confirm still enabled. That window
+      // is orphaned: approving it signs into the void and sends nothing. The
+      // message says so, because the window is the first thing people try next.
       if (!res?.signedTxXdr) {
-        throw new FreighterDeclined(
-          "Freighter did not return a signed transaction — the request was dismissed or timed out. Nothing has been sent to the network.",
-        );
+        throw new FreighterDeclined(NO_SIGNATURE_MESSAGE);
       }
 
       return { signedTxXdr: res.signedTxXdr, signerAddress: res.signerAddress };
@@ -100,7 +118,8 @@ export function freighterSigner(publicKey: string) {
 
       if (!res?.signedAuthEntry) {
         throw new FreighterDeclined(
-          "Freighter did not return a signed authorisation — the request was dismissed or timed out.",
+          "Freighter didn't return a signed authorisation — the request was cancelled or expired. " +
+            "If a Freighter window is still open, close it: approving it now sends nothing.",
         );
       }
 
