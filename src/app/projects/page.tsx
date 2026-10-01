@@ -14,7 +14,16 @@ import { projectCategories } from "@/lib/categories";
 import { getCategoriesAction } from "@/actions/categories";
 
 function ProjectsContent() {
-  const { projects: allProjects, isLoadingProjects } = useProjects();
+  const { projects: visibleProjects, isLoadingProjects } = useProjects();
+
+  // Explore is the public catalogue. An admin, a builder or a stakeholder is
+  // also sent the hidden listings they may see, but they belong in the console
+  // and on the profile page — not here, where a hidden listing showing up for
+  // the admin who just hid it would read as the hide having failed.
+  const allProjects = useMemo(
+    () => visibleProjects.filter((p) => !p.restriction?.hidden),
+    [visibleProjects],
+  );
 
   // Mirrors the admin-managed list so a category added in settings shows up as
   // a filter here too. Falls back to the compiled-in list if the fetch fails.

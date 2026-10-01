@@ -14,6 +14,7 @@ import {
 } from "@/lib/stellar-clients";
 import { tokenAddressFor, type Currency } from "@/lib/currencies";
 import { freighterSigner } from "@/lib/freighter-signer";
+import { checkVaultLockAction } from "@/actions/project-restrictions";
 
 /**
  * Contract calls for the bonded vault model.
@@ -71,6 +72,32 @@ export interface ApproveMilestoneParams extends MilestoneParams {
 // returned. Passing Freighter's raw result to the SDK meant a dismissed popup
 // surfaced as "Cannot read properties of undefined (reading 'switch')".
 const signerFor = (publicKey: string): Signer => freighterSigner(publicKey);
+
+/** The platform declined to build a transaction because the project is locked. */
+export class PlatformLockError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PlatformLockError";
+  }
+}
+
+/**
+ * A platform lock, asked fresh before building a transaction it covers.
+ *
+ * The vault cannot refuse these — it has no pause switch — so this is where the
+ * platform declines to build them. Asked now rather than read off the listing,
+ * which can be minutes old. A lookup that fails does not block: the listing's
+ * own state already gated the button, and an unanswered question is not
+ * evidence of a lock.
+ */
+async function refuseIfLocked(vaultAddress: string, paused: string) {
+  const { locked } = await checkVaultLockAction(vaultAddress);
+  if (locked === true) {
+    throw new PlatformLockError(
+      `This project is locked by the platform. ${paused} until it is unlocked.`,
+    );
+  }
+}
 
 async function signAndSend<T>(assembled: AssembledTransaction<T>) {
   const tx = assembled as AssembledTransaction<T> & {
@@ -134,6 +161,7 @@ export function useStellarContract() {
   const contribute = useCallback(
     async ({ vaultAddress, amount, contributor }: ContributeParams) => {
       const address = requireWallet(contributor);
+      await refuseIfLocked(vaultAddress, "New stakes are paused");
       const vault = vaultClient(vaultAddress, signerFor(address));
       const tx = await vault.contribute({ contributor: address, amount });
       return signAndSend(tx);
@@ -157,6 +185,7 @@ export function useStellarContract() {
   const openMilestoneVote = useCallback(
     async ({ vaultAddress, milestoneId }: MilestoneParams) => {
       const address = requireWallet();
+      await refuseIfLocked(vaultAddress, "Opening milestone votes is paused");
       const vault = vaultClient(vaultAddress, signerFor(address));
       const tx = await vault.open_milestone_vote({ milestone_id: milestoneId });
       return signAndSend(tx);

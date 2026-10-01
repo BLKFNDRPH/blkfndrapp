@@ -3,7 +3,8 @@ import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireCaller } from "@/lib/supabase/auth";
-import type { Project } from "@/lib/types";
+import { getRestriction, getRestrictionMap } from "@/lib/data/project-restrictions";
+import type { Project, ProjectRestriction } from "@/lib/types";
 import type { Enums, TablesInsert } from "@/lib/supabase/database.types";
 
 /**
@@ -27,7 +28,7 @@ const PROJECT_COLUMNS = `
 
 type Row = Record<string, any>;
 
-function toProject(row: Row): Project {
+function toProject(row: Row, restriction: ProjectRestriction | null = null): Project {
   const milestones = (row.project_milestones ?? [])
     .map((m: Row) => ({
       id: Number(m.milestone_id),
@@ -71,22 +72,35 @@ function toProject(row: Row): Project {
     locationLat: row.location_lat,
     locationLng: row.location_lng,
     metadataCid: row.metadata_cid,
+    restriction,
   } as unknown as Project;
 }
 
-/** Public listings. Readable signed out — RLS filters to is_public. */
+/**
+ * Every listing the caller may see, each with its restriction if it has one.
+ *
+ * Readable signed out. RLS decides the set: the public gets public listings
+ * only, while an admin, a builder or a stakeholder also gets the hidden ones
+ * they are entitled to — marked `restriction.hidden`, so the public surfaces can
+ * leave them out without the reader having to know why they were sent.
+ */
 export async function getProjects(): Promise<Project[]> {
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("projects")
-    .select(PROJECT_COLUMNS)
-    .order("created_on_chain_at", { ascending: false });
+  const [{ data, error }, restrictions] = await Promise.all([
+    supabase
+      .from("projects")
+      .select(PROJECT_COLUMNS)
+      .order("created_on_chain_at", { ascending: false }),
+    getRestrictionMap(supabase),
+  ]);
 
   if (error) {
     console.error("Could not load projects:", error.message);
     return [];
   }
-  return (data ?? []).map(toProject);
+  return (data ?? []).map((row) =>
+    toProject(row, restrictions.get(row.vault_address) ?? null),
+  );
 }
 
 export async function getProjectById(projectId: string): Promise<Project | undefined> {
@@ -98,7 +112,7 @@ export async function getProjectById(projectId: string): Promise<Project | undef
     .maybeSingle();
 
   if (error || !data) return undefined;
-  return toProject(data);
+  return toProject(data, await getRestriction(data.vault_address, supabase));
 }
 
 export async function getProjectByVault(vaultAddress: string): Promise<Project | undefined> {
@@ -110,7 +124,7 @@ export async function getProjectByVault(vaultAddress: string): Promise<Project |
     .maybeSingle();
 
   if (error || !data) return undefined;
-  return toProject(data);
+  return toProject(data, await getRestriction(vaultAddress, supabase));
 }
 
 export async function resolveProjectIdByVault(vaultAddress: string): Promise<string | null> {
@@ -245,6 +259,11 @@ export async function setMilestoneProof(
     .eq("project_id", project.id)
     .eq("milestone_id", milestoneId);
 
-  if (error) throw new Error(`Could not save milestone proof: ${error.message}`);
+  if (error) {
+    // A platform lock refuses proof in a trigger, which the service role does
+    // not bypass. Its message is already the one to show the builder.
+    if (error.code === "23514") throw new Error(error.message);
+    throw new Error(`Could not save milestone proof: ${error.message}`);
+  }
   return true;
 }

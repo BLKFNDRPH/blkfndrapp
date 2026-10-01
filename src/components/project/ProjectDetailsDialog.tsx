@@ -28,6 +28,8 @@ import { Progress } from "../ui/progress";
 import { useProjectDetails } from "@/context/ProjectDetailsContext";
 import { MilestoneVoting } from "./MilestoneVoting";
 import { ProjectLocation } from "./ProjectLocation";
+import { RestrictionNotice } from "./RestrictionNotice";
+import { ProjectRestrictionControls } from "../admin/ProjectRestrictionControls";
 import { ScrollArea } from "../ui/scroll-area";
 import {
   TrendingUp,
@@ -275,6 +277,11 @@ export function ProjectDetailsDialog() {
     activeAddress === creatorAddress;
 
   const canEditOrDelete = false; // Stellar projects are immutable on-chain after creation
+
+  // A platform lock pauses the builder's actions here — proof, and opening a
+  // milestone vote — and new stakes in FundDialog. Everything a stakeholder
+  // does with money already in the vault is untouched.
+  const isLocked = project?.restriction?.locked === true;
 
   const [vaultContributorBalance, setVaultContributorBalance] = useState<number | null>(null);
   const [hasContributedHistorically, setHasContributedHistorically] = useState<boolean>(false);
@@ -644,6 +651,7 @@ export function ProjectDetailsDialog() {
           ) : (
             project && (
               <div className="space-y-4 p-6">
+                <RestrictionNotice restriction={project.restriction} />
                 <div className="relative h-60 w-full mb-4 rounded-md overflow-hidden">
                   <ImageWithFallback
                     src={project.imageUrl}
@@ -737,6 +745,14 @@ export function ProjectDetailsDialog() {
                     </div>
                   </div>
                 </div>
+
+                <ProjectRestrictionControls
+                  project={project}
+                  onChanged={() => {
+                    refreshProject(project.id);
+                    refreshProjects();
+                  }}
+                />
               </div>
             )
           )}
@@ -777,7 +793,7 @@ export function ProjectDetailsDialog() {
                 </Button>
               )}
 
-              {isCreator && (project?.status === "funded" || project?.status === "active") && activeMilestone && (
+              {isCreator && !isLocked && (project?.status === "funded" || project?.status === "active") && activeMilestone && (
                 <Button
                   onClick={handleOpenSubmitProofModal}
                   disabled={isUpdatingProof || isUploadingImage}
@@ -799,6 +815,7 @@ export function ProjectDetailsDialog() {
                       vaultAddress={project.vaultAddress}
                       currency={project.currencyType ?? "USDC"}
                       creatorAddress={project.creatorAddress ?? project.creator}
+                      platformLocked={isLocked}
                       onChange={() => refreshProject(project.id)}
                     />
                   </div>

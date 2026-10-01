@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/card";
 import { ProjectCard } from "@/components/project/ProjectCard";
 import { ConsensusBadge } from "@/components/project/ConsensusBadge";
+import { RestrictionNotice } from "@/components/project/RestrictionNotice";
 import {
   Copy,
   Wallet,
@@ -1495,6 +1496,9 @@ export default function ProfilePage() {
                       agreement would otherwise just see it missing from the
                       public site. */}
                   <ConsensusBadge projectId={p.id} />
+                  {/* Same reasoning for a platform hide or lock: the builder
+                      should read why here, not infer it from an absence. */}
+                  <RestrictionNotice restriction={p.restriction} />
                 </div>
               ))}
             </div>

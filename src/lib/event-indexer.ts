@@ -14,11 +14,7 @@ import { SOROBAN_RPC_URL, FACTORY_ID } from "./stellar-clients";
 import { readVaultState } from "./vault-state";
 import { currencyForToken } from "./currencies";
 import { getCursor, setCursor, recordEvent, markProcessed } from "./data/events";
-import {
-  upsertProjectFromChain,
-  upsertMilestones,
-  getProjectByVault,
-} from "./data/projects";
+import { upsertProjectFromChain, upsertMilestones } from "./data/projects";
 import { createAdminClient } from "./supabase/admin";
 import type { Enums } from "./supabase/database.types";
 
@@ -95,6 +91,29 @@ async function watchedContracts(): Promise<string[]> {
   return Array.from(new Set([FACTORY_ID, ...vaults]));
 }
 
+/**
+ * The row as the indexer owns it — read with the service role, never through a
+ * session.
+ *
+ * The scheduled run has no session, so a session read here ran as anon, and RLS
+ * hides every project that is not public: hidden, awaiting consensus, or by a
+ * banned builder. The row then looked absent, the fallback in syncVault
+ * re-keyed it to its vault address and stamped it created now, and every
+ * reference to its real project id — the consensus record, a stakeholder's
+ * receipts, the link from a notification — quietly stopped matching it.
+ */
+async function indexedRow(vaultAddress: string) {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("projects")
+    .select("project_id, created_on_chain_at")
+    .eq("vault_address", vaultAddress)
+    .maybeSingle();
+
+  if (error) throw new Error(`Could not read project ${vaultAddress}: ${error.message}`);
+  return data;
+}
+
 /** Refresh a project's figures from the ledger rather than from event payloads. */
 async function syncVault(vaultAddress: string, ledger?: number) {
   const state = await readVaultState(vaultAddress);
@@ -108,10 +127,10 @@ async function syncVault(vaultAddress: string, ledger?: number) {
     );
   }
 
-  const existing = await getProjectByVault(vaultAddress);
+  const existing = await indexedRow(vaultAddress);
 
   const projectRowId = await upsertProjectFromChain({
-    projectId: existing?.id ?? vaultAddress,
+    projectId: existing?.project_id ?? vaultAddress,
     vaultAddress,
     creatorAddress: state.creator,
     fundingGoalRaw: state.fundingGoalRaw,
@@ -121,7 +140,9 @@ async function syncVault(vaultAddress: string, ledger?: number) {
     status: (VAULT_STATUS[-1] ?? state.status) as Enums<"project_status">,
     bondPosted: state.bondPosted,
     fundingDeadline: new Date(state.fundingDeadline),
-    createdOnChainAt: existing?.createdAt ? new Date(existing.createdAt) : new Date(),
+    createdOnChainAt: existing?.created_on_chain_at
+      ? new Date(existing.created_on_chain_at)
+      : new Date(),
     ...(ledger !== undefined ? { lastUpdatedLedger: ledger } : {}),
   });
 

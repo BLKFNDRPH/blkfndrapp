@@ -48,6 +48,12 @@ interface Props {
   currency: string;
   /** The project's builder, who alone may open a window. */
   creatorAddress: string;
+  /**
+   * The platform has locked the project. Only the builder's opening of a new
+   * window is paused: voting in an open one, executing a carried release and
+   * settling a lapsed one stay with the stakeholders, lock or no lock.
+   */
+  platformLocked?: boolean;
   onChange?: () => void;
 }
 
@@ -94,6 +100,7 @@ export function MilestoneVoting({
   vaultAddress,
   currency: listedCurrency,
   creatorAddress,
+  platformLocked = false,
   onChange,
 }: Props) {
   const { toast } = useToast();
@@ -298,7 +305,15 @@ export function MilestoneVoting({
             )}
 
             <div className="mt-3 flex flex-wrap gap-2">
-              {phase === "locked" && isCreator && (
+              {phase === "locked" && isCreator && platformLocked && (
+                <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                  <Lock className="h-3.5 w-3.5" aria-hidden="true" />
+                  The platform has locked this project, so opening a vote is
+                  paused until it is unlocked.
+                </p>
+              )}
+
+              {phase === "locked" && isCreator && !platformLocked && (
                 <Button size="sm" disabled={busy} onClick={() =>
                   run(m.id, "Voting opened", () =>
                     openMilestoneVote({ vaultAddress, milestoneId: m.id }),

@@ -33,6 +33,21 @@ export const ASSIGNABLE_ROLES: AdminRole[] = [
   "project_approver",
 ];
 
+/**
+ * Who may hide and lock projects. Mirrors can_restrict_projects() in the
+ * database, which is the real gate — this only decides what the console offers,
+ * so a role missing here hides a button and a role added here unlocks nothing.
+ */
+export const PROJECT_RESTRICTOR_ROLES: readonly AdminRole[] = [
+  "owner",
+  "platform_admin",
+  "project_approver",
+];
+
+export function canRestrictProjects(role: AdminRole | null | undefined): boolean {
+  return role != null && PROJECT_RESTRICTOR_ROLES.includes(role);
+}
+
 /** Whether the platform manages this role's on-chain key rather than the person
  *  connecting their own. Only the KYC attestor signs on chain and has no wallet
  *  of their own here — the platform generates, funds and holds it. */

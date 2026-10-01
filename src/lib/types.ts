@@ -49,6 +49,31 @@ export type Project = {
   /** Present only as a pair, enforced by a check constraint on the table. */
   locationLat?: number | null;
   locationLng?: number | null;
+  /**
+   * A platform hide or lock, or null for the ordinary unrestricted project.
+   * Only ever present for a viewer who can see the project at all — RLS makes
+   * the restriction exactly as visible as the listing it restricts.
+   */
+  restriction?: ProjectRestriction | null;
+};
+
+/**
+ * Platform-level controls on a project. Neither touches the vault: the contract
+ * has no pause switch, so these govern what this platform lists and which
+ * transactions its interface will build.
+ *
+ *   hidden — off explore, search, the home page and direct links. Its builder,
+ *            its stakeholders and the console still see it.
+ *   locked — no new stakes, no opening milestone votes, no milestone proof.
+ *            Refunds, stakeholder votes and carried releases are untouched.
+ */
+export type ProjectRestriction = {
+  hidden: boolean;
+  hiddenAt: string | null;
+  hiddenReason: string;
+  locked: boolean;
+  lockedAt: string | null;
+  lockedReason: string;
 };
 
 export type User = {
