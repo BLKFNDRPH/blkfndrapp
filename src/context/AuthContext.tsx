@@ -172,7 +172,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const handleLogout = useCallback(async () => {
     try {
       sessionStorage.removeItem("userRole");
-      await disconnectFreighter();
+      // Signing out unlinks the wallet, as it always has. That now throws when
+      // the unlink fails, and a failure must not keep anyone signed in. The
+      // wallet just stays linked to the account until the next sign-in.
+      await disconnectFreighter().catch((err: unknown) => {
+        console.error("[Auth] Wallet not unlinked at sign-out:", err);
+      });
       setUser(null);
       await fetch("/api/auth/logout", { method: "POST" });
       window.location.href = "/";
