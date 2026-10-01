@@ -35,9 +35,26 @@ const rpcServer = new rpc.Server(SOROBAN_RPC_URL);
 
 /** How far back to start when there is no cursor. */
 const COLD_START_LEDGERS = 10_000;
-/** RPC will not serve events older than roughly this. */
-const MAX_LOOKBACK_LEDGERS = 30_000;
 const PAGE_SIZE = 200;
+/** Enough empty scan windows to cross the RPC's whole retention (~120k ledgers). */
+const MAX_PAGES = 60;
+
+/**
+ * The last ledger a getEvents cursor has fully scanned.
+ *
+ * A cursor is a TOID: the ledger sits in the high 32 bits. The RPC scans a
+ * bounded window per request (10,000 ledgers on testnet) and, when that window
+ * is empty, returns no events and a cursor at its end. Knowing where the cursor
+ * stands is the only way to tell "nothing more" from "nothing in this window".
+ */
+function cursorLedger(cursor: string): number {
+  const [toid] = cursor.split("-");
+  const id = BigInt(toid);
+  const ledger = Number(id >> 32n);
+  // Low bits all set mean the whole ledger was scanned; otherwise it stopped
+  // partway through and only the ledger before is complete.
+  return (id & 0xffffffffn) === 0xffffffffn ? ledger : ledger - 1;
+}
 
 const VAULT_STATUS: Record<number, Enums<"project_status">> = {
   0: "raising",
@@ -258,8 +275,11 @@ export async function runIndexer() {
   }
 
   let latestLedger = 0;
+  let oldestLedger = 1;
   try {
-    latestLedger = (await rpcServer.getLatestLedger()).sequence;
+    const health = await rpcServer.getHealth();
+    latestLedger = health.latestLedger;
+    oldestLedger = health.oldestLedger ?? 1;
   } catch (err) {
     return { success: false, error: `Could not reach RPC: ${String(err)}` };
   }
@@ -267,21 +287,28 @@ export async function runIndexer() {
   const stored = await getCursor();
   let startLedger = stored !== null ? stored + 1 : latestLedger - COLD_START_LEDGERS;
 
-  // RPC will not serve events older than its retention window.
-  if (startLedger < latestLedger - MAX_LOOKBACK_LEDGERS || startLedger > latestLedger) {
-    startLedger = Math.max(1, latestLedger - COLD_START_LEDGERS);
+  // RPC will not serve events older than its retention window. Start at its
+  // edge rather than skipping further ahead than the window forces us to.
+  if (startLedger < oldestLedger) startLedger = oldestLedger;
+  // Caught up: nothing has closed since the last run.
+  if (startLedger > latestLedger) {
+    return { success: true, count: 0, failed: 0, currentLedger: stored };
   }
 
   const contractIds = await watchedContracts();
   const events: any[] = [];
+  // The highest ledger every chunk has been scanned through. The cursor may move
+  // this far even when nothing happened — without that, a quiet stretch longer
+  // than one RPC scan window left every later run rescanning the same empty
+  // window, and new projects never reached the database.
+  let scannedThrough = latestLedger;
 
-  // Paginated. The previous version took the first 100 and advanced the cursor
-  // past everything, so anything beyond that page was lost permanently.
   for (let i = 0; i < contractIds.length; i += 5) {
     const chunk = contractIds.slice(i, i + 5);
     let cursor: string | undefined;
+    let chunkThrough = startLedger - 1;
 
-    for (let page = 0; page < 20; page++) {
+    for (let page = 0; page < MAX_PAGES; page++) {
       try {
         const response: any = await rpcServer.getEvents({
           ...(cursor ? { cursor } : { startLedger }),
@@ -292,14 +319,22 @@ export async function runIndexer() {
         const batch = response?.events ?? [];
         events.push(...batch);
 
-        if (batch.length < PAGE_SIZE) break;
-        cursor = response?.cursor ?? batch[batch.length - 1]?.pagingToken;
-        if (!cursor) break;
+        const next = response?.cursor ?? batch[batch.length - 1]?.pagingToken;
+        if (!next || next === cursor) break;
+        cursor = next;
+        chunkThrough = cursorLedger(next);
+
+        // A short page only means this scan window is exhausted, not the chain.
+        if (batch.length < PAGE_SIZE && chunkThrough >= (response?.latestLedger ?? latestLedger)) {
+          break;
+        }
       } catch (err) {
         console.error(`[Indexer] getEvents failed for ${chunk.join(", ")}:`, err);
         break;
       }
     }
+
+    scannedThrough = Math.min(scannedThrough, chunkThrough);
   }
 
   events.sort((a, b) => String(a.id).localeCompare(String(b.id)));
@@ -359,9 +394,21 @@ export async function runIndexer() {
     }
   }
 
-  if (safeLedger >= startLedger) {
-    await setCursor(safeLedger);
+  // With every event handled, the cursor moves to where the scan reached, quiet
+  // ledgers included. It never moves past a chunk that did not finish scanning.
+  const nextCursor = Math.min(
+    failed === 0 ? Math.max(safeLedger, scannedThrough) : safeLedger,
+    scannedThrough,
+  );
+  const advanced = nextCursor >= startLedger;
+  if (advanced) {
+    await setCursor(nextCursor);
   }
 
-  return { success: failed === 0, count: processed, failed, currentLedger: safeLedger };
+  return {
+    success: failed === 0,
+    count: processed,
+    failed,
+    currentLedger: advanced ? nextCursor : stored,
+  };
 }
