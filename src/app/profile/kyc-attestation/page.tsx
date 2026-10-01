@@ -15,10 +15,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { ArrowLeft, ShieldCheck, Loader2, AlertTriangle, FileText, Send, Shield } from "lucide-react";
+import { ArrowLeft, ShieldCheck, Loader2, AlertTriangle, FileText, Send, Shield, Wallet } from "lucide-react";
 import Link from "next/link";
 import { Client as IdentityClient } from "@/packages/blkfndr_identity/src";
-import { cn } from "@/lib/utils";
+import { cn, shortenAddress } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 
@@ -27,8 +27,8 @@ const SOROBAN_RPC_URL = "https://soroban-testnet.stellar.org";
 const IDENTITY_ID = process.env.NEXT_PUBLIC_BLKFNDR_IDENTITY_CONTRACT_ID || "";
 
 export default function KycAttestationPage() {
-  const { user, loading: authLoading } = useAuth();
-  const { freighterWalletAddress } = useFreighterWallet();
+  const { user, loading: authLoading, refreshUser } = useAuth();
+  const { freighterWalletAddress, login: connectFreighter } = useFreighterWallet();
   const { toast } = useToast();
   const router = useRouter();
 
@@ -65,14 +65,20 @@ export default function KycAttestationPage() {
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [isPendingSubmit, startSubmitTransition] = useTransition();
   const [isEditing, setIsEditing] = useState(false);
+  const [isLinking, setIsLinking] = useState(false);
 
-  const activeAddress = user?.stellarPublicKey || freighterWalletAddress || "";
+  // The account's linked wallet, which it proved control of by signing a
+  // challenge. An identity check can name no other: the server and the
+  // database both refuse it. Linking also makes it the wallet the app signs
+  // with, so it is the builder the vault constructor will check.
+  const activeAddress = user?.stellarPublicKey || "";
 
   const fetchKycStatus = async () => {
-    if (!activeAddress) return;
     setLoadingStatus(true);
     try {
-      // Fetch Database Status
+      // The submission belongs to the account, so it is read with or without a
+      // wallet. This used to return before loading anything when there was no
+      // wallet, which left the page on its loading spinner for good.
       const res = await getMyKycStatus();
       if (res.success && res.request) {
         // Status only. The identity fields are not granted to any
@@ -93,8 +99,12 @@ export default function KycAttestationPage() {
         }));
       }
 
-      // Fetch On-chain Status
-      if (IDENTITY_ID) {
+      // On-chain status, for the linked wallet, or for the address on file
+      // when none is linked.
+      const subject = activeAddress || (res.success ? res.request?.stellar_address : undefined);
+      if (!subject) {
+        setIsOnChainApproved(false);
+      } else if (IDENTITY_ID) {
         try {
           const client = new IdentityClient({
             contractId: IDENTITY_ID,
@@ -108,7 +118,7 @@ export default function KycAttestationPage() {
             // would throw "Account not found" for one not yet on the ledger,
             // which is precisely the person about to start verification.
           });
-          const checkTx = await client.is_kyc_approved({ address: activeAddress });
+          const checkTx = await client.is_kyc_approved({ address: subject });
           const checkSim = await checkTx.simulate();
           setIsOnChainApproved(Boolean(checkSim.result));
         } catch (simulateErr) {
@@ -171,12 +181,35 @@ export default function KycAttestationPage() {
     setStep(2);
   };
 
+  // Connects Freighter and links its selected account to this account through a
+  // signed challenge, as every other "connect" button does. Re-reading the user
+  // afterwards is what puts the new link into activeAddress.
+  const handleLinkWallet = async () => {
+    setIsLinking(true);
+    try {
+      await connectFreighter();
+      await refreshUser();
+      toast({
+        title: "Wallet Linked",
+        description: "Your Freighter wallet is linked to your account.",
+      });
+    } catch (err: any) {
+      toast({
+        title: "Could Not Link Wallet",
+        description: err?.message || "Freighter did not link a wallet.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLinking(false);
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeAddress) {
       toast({
-        title: "Wallet Not Connected",
-        description: "Connect your Freighter wallet to submit verification details.",
+        title: "Wallet Not Linked",
+        description: "Link your Freighter wallet to your account to submit verification details.",
         variant: "destructive",
       });
       return;
@@ -303,6 +336,11 @@ export default function KycAttestationPage() {
 
   const dbStatus = currentKycRequest?.status || "none";
   const showSubmittedDetails = dbStatus !== "none" && !isEditing;
+  // A new submission names the linked wallet, and a resubmission keeps the
+  // address already on file. Either way the form can only succeed once that
+  // wallet is linked, so ask for the link before the form, not after it.
+  const filedAddress = currentKycRequest?.stellar_address ?? "";
+  const linkNeeded = !activeAddress || (!!filedAddress && filedAddress !== activeAddress);
 
   return (
     <div className="container mx-auto max-w-2xl py-12 px-4">
@@ -528,6 +566,71 @@ export default function KycAttestationPage() {
                   Edit Submission
                 </Button>
               )}
+            </CardFooter>
+          </Card>
+        ) : linkNeeded ? (
+          <Card className="border border-border bg-card shadow-lg rounded-2xl overflow-hidden">
+            <CardHeader className="border-b bg-muted/20">
+              <CardTitle className="text-xl font-bold flex items-center gap-2">
+                <Wallet className="h-5 w-5 text-primary" />
+                Link Your Wallet
+              </CardTitle>
+              <CardDescription className="text-xs mt-1">
+                Identity checks are filed against the wallet linked to your account, and that
+                wallet signs as the builder when you launch a project. Linking asks Freighter to
+                sign a one-time message. It moves no funds.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="pt-6 text-sm text-muted-foreground">
+              {filedAddress && filedAddress !== activeAddress ? (
+                <p>
+                  Your identity check is filed against{" "}
+                  <span className="font-mono text-foreground break-all">{filedAddress}</span>.
+                  Select that account in Freighter, then link it to resubmit.
+                </p>
+              ) : freighterWalletAddress ? (
+                <p>
+                  Freighter is connected with{" "}
+                  <span className="font-mono text-foreground">
+                    {shortenAddress(freighterWalletAddress)}
+                  </span>
+                  , but that wallet is not linked to your account yet.
+                </p>
+              ) : (
+                <p>No wallet is linked to your account yet.</p>
+              )}
+            </CardContent>
+            <CardFooter className="bg-muted/10 p-6 flex justify-between border-t mt-4 gap-3">
+              <div>
+                {isEditing && (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => setIsEditing(false)}
+                    disabled={isLinking}
+                  >
+                    Cancel
+                  </Button>
+                )}
+              </div>
+              <Button
+                type="button"
+                onClick={handleLinkWallet}
+                disabled={isLinking}
+                className="bg-primary hover:bg-primary/95 text-primary-foreground font-semibold px-6 flex items-center gap-2"
+              >
+                {isLinking ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Linking...
+                  </>
+                ) : (
+                  <>
+                    <Wallet className="h-4 w-4" />
+                    Link Wallet
+                  </>
+                )}
+              </Button>
             </CardFooter>
           </Card>
         ) : (

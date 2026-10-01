@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, type ReactNode } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 import { signMessage } from "@stellar/freighter-api";
 import {
   connectFreighterWallet,
@@ -30,18 +30,14 @@ export const FreighterWalletProvider = ({
 }: {
   children: ReactNode;
 }) => {
+  // The address every transaction is built for and signed as. Only this
+  // provider sets it. On load it comes from the account's linked wallet, or
+  // Freighter's active account when none is linked. After that it changes only
+  // when the person connects, links or disconnects.
   const [freighterWalletAddress, setFreighterWalletAddress] = useState<
     string | null
   >(null);
   const [error, setError] = useState<string | null>(null);
-
-  const syncAddress = useCallback((address: string | null) => {
-    if (address && isStellarPublicKey(address)) {
-      setFreighterWalletAddress(address);
-    } else if (address === null) {
-      setFreighterWalletAddress(null);
-    }
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -81,14 +77,29 @@ export const FreighterWalletProvider = ({
     setFreighterWalletAddress(result.address);
   };
 
+  // Unlink from the account first, and forget the wallet here only once that
+  // has worked. This used to forget it first and never read the response, and
+  // fetch does not throw on a 401 or 500. So a failed unlink still looked like
+  // a disconnect, and the next page load restored the wallet from the account
+  // that still held it. Now a failed unlink changes nothing and says why.
   const disconnectWallet = async () => {
+    let res: Response;
+    try {
+      res = await fetch("/api/auth/freighter/disconnect", { method: "POST" });
+    } catch {
+      throw new Error(
+        "Could not reach the server, so your wallet is still connected and linked to your account. Try again.",
+      );
+    }
+    if (!res.ok) {
+      throw new Error(
+        res.status === 401
+          ? "Your session has ended, so your wallet could not be unlinked from your account. Sign in again, then disconnect it."
+          : "The server could not unlink your wallet, so it is still connected and linked to your account. Try again.",
+      );
+    }
     localStorage.setItem("freighterDisconnected", "true");
     setFreighterWalletAddress(null);
-    try {
-      await fetch("/api/auth/freighter/disconnect", { method: "POST" });
-    } catch (err) {
-      console.error("Failed to disconnect freighter wallet on backend:", err);
-    }
   };
 
   const login = async () => {
@@ -198,7 +209,6 @@ export const FreighterWalletProvider = ({
         connectWallet,
         disconnectWallet,
         login,
-        syncAddress,
       }}
     >
       {children}

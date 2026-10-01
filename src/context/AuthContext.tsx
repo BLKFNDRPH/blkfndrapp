@@ -15,6 +15,7 @@ import { LoginDialog } from "@/components/auth/LoginDialog";
 import Loading from "@/app/loading";
 
 import { useFreighterWallet } from "@/context/FreighterWalletContext";
+import { isStellarPublicKey } from "@/lib/freighter-connect";
 
 interface AuthContextType {
   user: AppUser | null;
@@ -68,8 +69,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const { toast } = useToast();
   const { data: session, status, refresh: refreshSession } = useAppSession();
   const loading = status === "loading";
-  const { freighterWalletAddress, syncAddress, disconnectWallet: disconnectFreighter } =
-    useFreighterWallet();
+  const { disconnectWallet: disconnectFreighter } = useFreighterWallet();
 
   useEffect(() => {
     if (loading) {
@@ -94,6 +94,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const uid = activeSession.user.uid;
       const avatar =
         activeSession.user.creatorAvatar || `https://i.pravatar.cc/150?u=${uid}`;
+      // Checked the way FreighterWalletProvider checks the same value when it
+      // restores an address on load, so the two agree on whether there is one.
+      const linkedKey = isStellarPublicKey(activeSession.user.stellarPublicKey)
+        ? activeSession.user.stellarPublicKey
+        : "";
 
       return {
         uid,
@@ -105,26 +110,22 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         // same answer the server enforces. Never the login dialog's role: which
         // button someone clicked says nothing about whether they are an admin.
         role: activeSession.user.role === "admin" ? "admin" : "user",
-        // Deliberately not from the session yet. These have been empty since the
-        // route that supplied them was deleted, and filling them in wakes the
-        // Freighter sync effect below — a wallet change of its own.
-        wallet: "disconnected",
-        stellarPublicKey: "",
+        // The wallet linked to this account, which it proved control of by
+        // signing a challenge. It is the account's record, not the wallet in
+        // use: that is freighterWalletAddress, which FreighterWalletProvider
+        // seeds from this same value on load and then leaves to the person.
+        // This context no longer pushes the key back into it. An effect did
+        // that whenever the two differed, which reverted any wallet the person
+        // had just connected or linked.
+        wallet:
+          linkedKey && activeSession.user.wallet === "connected"
+            ? "connected"
+            : "disconnected",
+        stellarPublicKey: linkedKey,
       };
     },
     [session],
   );
-
-  // Keep Freighter context in sync when app session has a Stellar public key
-  useEffect(() => {
-    const stellarKey = user?.stellarPublicKey;
-    if (stellarKey && stellarKey !== freighterWalletAddress) {
-      if (typeof window !== "undefined" && localStorage.getItem("freighterDisconnected") === "true") {
-        return;
-      }
-      syncAddress(stellarKey);
-    }
-  }, [user?.stellarPublicKey, freighterWalletAddress, syncAddress]);
 
   const refreshUser = useCallback(async () => {
     const freshSession = await refreshSession();
@@ -171,7 +172,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const handleLogout = useCallback(async () => {
     try {
       sessionStorage.removeItem("userRole");
-      await disconnectFreighter();
+      // Signing out unlinks the wallet, as it always has. That now throws when
+      // the unlink fails, and a failure must not keep anyone signed in. The
+      // wallet just stays linked to the account until the next sign-in.
+      await disconnectFreighter().catch((err: unknown) => {
+        console.error("[Auth] Wallet not unlinked at sign-out:", err);
+      });
       setUser(null);
       await fetch("/api/auth/logout", { method: "POST" });
       window.location.href = "/";
