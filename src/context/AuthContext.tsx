@@ -26,16 +26,6 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const fetchWithTimeout = async (url: string, ms = 8000): Promise<Response> => {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), ms);
-  try {
-    return await fetch(url, { signal: controller.signal });
-  } finally {
-    clearTimeout(timer);
-  }
-};
-
 function useAppSession() {
   const [session, setSession] = useState<{ user: AppUser } | null>(null);
   const [status, setStatus] = useState<
@@ -98,47 +88,28 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, [loading]);
 
   const buildUserFromSession = useCallback(
-    async (
-      role: "user" | "admin" = "user",
-      sessionOverride?: { user: AppUser } | null,
-    ): Promise<AppUser | null> => {
+    (sessionOverride?: { user: AppUser } | null): AppUser | null => {
       const activeSession = sessionOverride ?? session;
       if (!activeSession?.user) return null;
       const uid = activeSession.user.uid;
-
-      let dbUser: any = {};
-      try {
-        const res = await fetchWithTimeout(`/api/user/${uid}`, 8000);
-        if (res.ok) {
-          dbUser = await res.json();
-        } else if (res.status === 401) {
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-          const retry = await fetchWithTimeout(`/api/user/${uid}`, 8000);
-          if (retry.ok) dbUser = await retry.json();
-          else {
-            console.error(`[Auth] User fetch still 401 after retry — aborting`);
-            return null;
-          }
-        }
-      } catch (err) {
-        console.warn("User fetch timed out or failed:", err);
-      }
+      const avatar =
+        activeSession.user.creatorAvatar || `https://i.pravatar.cc/150?u=${uid}`;
 
       return {
         uid,
         email: activeSession.user.email || "",
-        name: dbUser.name || activeSession.user.name || "Anonymous",
-        avatarUrl:
-          dbUser.creatorAvatar ||
-          activeSession.user.creatorAvatar ||
-          `https://i.pravatar.cc/150?u=${uid}`,
-        creatorAvatar:
-          dbUser.creatorAvatar ||
-          activeSession.user.creatorAvatar ||
-          `https://i.pravatar.cc/150?u=${uid}`,
-        role: dbUser.role || role,
-        wallet: dbUser.wallet || "disconnected",
-        stellarPublicKey: dbUser.stellarPublicKey || "",
+        name: activeSession.user.name || "Anonymous",
+        avatarUrl: avatar,
+        creatorAvatar: avatar,
+        // From the platform_admins roster, read fresh by /api/auth/session — the
+        // same answer the server enforces. Never the login dialog's role: which
+        // button someone clicked says nothing about whether they are an admin.
+        role: activeSession.user.role === "admin" ? "admin" : "user",
+        // Deliberately not from the session yet. These have been empty since the
+        // route that supplied them was deleted, and filling them in wakes the
+        // Freighter sync effect below — a wallet change of its own.
+        wallet: "disconnected",
+        stellarPublicKey: "",
       };
     },
     [session],
@@ -157,27 +128,21 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const refreshUser = useCallback(async () => {
     const freshSession = await refreshSession();
-    const appUser = await buildUserFromSession(loginRole, freshSession);
+    const appUser = buildUserFromSession(freshSession);
     if (appUser) {
       setUser(appUser);
     } else {
       setUser(null);
     }
-  }, [refreshSession, buildUserFromSession, loginRole]);
+  }, [refreshSession, buildUserFromSession]);
 
   // Load user on session auth
   useEffect(() => {
     if (status !== "authenticated" || !session?.user) return;
-    (async () => {
-      try {
-        const appUser = await buildUserFromSession();
-        if (appUser) {
-          setUser(appUser);
-        }
-      } catch (err) {
-        console.error("Session init error:", err);
-      }
-    })();
+    const appUser = buildUserFromSession();
+    if (appUser) {
+      setUser(appUser);
+    }
   }, [status, session, buildUserFromSession]);
 
   // Reset on logout
@@ -196,7 +161,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     sessionStorage.setItem("userRole", loginRole);
     const freshSession = await refreshSession();
     if (freshSession?.user) {
-      const appUser = await buildUserFromSession(loginRole, freshSession);
+      const appUser = buildUserFromSession(freshSession);
       if (appUser) {
         setUser(appUser);
       }
