@@ -16,9 +16,12 @@ import type { Enums, TablesInsert } from "@/lib/supabase/database.types";
  * structural rather than a convention.
  */
 
+// toProject() reads an untyped row, so a column missing from this list is not a
+// type error: the field is silently undefined. Keep the two in step.
 const PROJECT_COLUMNS = `
   id, project_id, vault_address, title, tagline, description, category,
   image_url, metadata_cid, creator_address, creator_display, creator_avatar_url,
+  location, location_lat, location_lng,
   funding_goal_raw, current_funding_raw, bond_amount_raw, released_total_raw,
   funding_goal, current_funding, bond_amount, released_total,
   status, currency, bond_posted, featured, is_public,
