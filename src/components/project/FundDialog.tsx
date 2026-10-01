@@ -35,6 +35,7 @@ import Link from "next/link";
 import { CubeSpinner } from "../ui/CubeSpinner";
 import { useRouter } from "next/navigation";
 import { useStellarContract, PlatformLockError } from "@/hooks/use-stellar-contract";
+import { FreighterDeclined } from "@/lib/freighter-signer";
 import { useFreighterWallet } from "@/context/FreighterWalletContext";
 import { getBalance } from "@/lib/stellar";
 
@@ -371,10 +372,23 @@ export function FundDialog({
           refreshProject(project.id);
           return;
         }
-        console.error("Transaction error: Funding transaction failed.");
+        // Declining in Freighter, or letting its request expire, is a decision
+        // rather than a fault, and the signer's message already says so.
+        if (error instanceof FreighterDeclined) {
+          toast({ title: "Signing cancelled", description: error.message });
+          return;
+        }
+        // The reason used to be discarded here, so a wrong Freighter account, a
+        // network mismatch and a contract refusal all read as "check your
+        // wallet connection and balance", even with both visibly fine.
+        console.error("Contribution failed:", error);
+        const reason = String(error?.message ?? "").trim();
         toast({
           title: "Contribution Failed",
-          description: "Your contribution could not be processed. Please check your wallet connection and balance, and try again.",
+          description:
+            reason.length > 0
+              ? reason.slice(0, 400)
+              : "Your contribution could not be processed. Nothing was sent to the network.",
           variant: "destructive",
         });
       }

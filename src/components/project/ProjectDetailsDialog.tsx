@@ -491,7 +491,6 @@ export function ProjectDetailsDialog() {
         contractId: project.vaultAddress,
         rpcUrl: SOROBAN_RPC_URL,
         networkPassphrase: NETWORK_PASSPHRASE,
-        publicKey: activeAddress,
         ...getSignerOptions(activeAddress),
       });
 
@@ -542,7 +541,6 @@ export function ProjectDetailsDialog() {
         contractId: project.vaultAddress,
         rpcUrl: SOROBAN_RPC_URL,
         networkPassphrase: NETWORK_PASSPHRASE,
-        publicKey: activeAddress,
         ...getSignerOptions(activeAddress),
       });
 
