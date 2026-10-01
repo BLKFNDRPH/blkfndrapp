@@ -78,7 +78,8 @@ import {
 } from "@/context/BlockchainContext";
 import { useProjectDetails } from "@/context/ProjectDetailsContext";
 import { formatCurrency } from "@/lib/formatters";
-import { Client as VaultClient } from "@/packages/blkfndr_vault/src";
+import { Client as VaultClient, type ProjectInfo } from "@/packages/blkfndr_vault/src";
+import { StellarFormatter } from "@/lib/stellar-format";
 import { SOROBAN_RPC_URL, NETWORK_PASSPHRASE } from "@/lib/stellar";
 import {
   Dialog,
@@ -245,7 +246,12 @@ export function AdminDashboard() {
 
   // Vault inspector dialog state
   const [selectedVaultProject, setSelectedVaultProject] = useState<Project | null>(null);
-  const [selectedVaultInfo, setSelectedVaultInfo] = useState<any | null>(null);
+  // Typed against the generated binding so a field the contract drops fails the
+  // build. As `any` this kept reading `admin` and `fee_percentage` after the
+  // voting redesign removed both, and showed "Unknown" and "0.00%".
+  const [selectedVaultInfo, setSelectedVaultInfo] = useState<
+    ProjectInfo | { isLegacy: true } | null
+  >(null);
   const [isLoadingVaultInfo, setIsLoadingVaultInfo] = useState(false);
   const [vaultInfoError, setVaultInfoError] = useState<string | null>(null);
   const [liveBondAmounts, setLiveBondAmounts] = useState<Record<string, number>>({});
@@ -312,7 +318,7 @@ export function AdminDashboard() {
       });
       const infoTx = await vaultClient.get_info();
       const infoRes = await infoTx.simulate();
-      let parsedInfo = null;
+      let parsedInfo: ProjectInfo | { isLegacy: true } | null = null;
       try {
         parsedInfo = infoRes.result || null;
       } catch (parseErr) {
@@ -1131,7 +1137,7 @@ export function AdminDashboard() {
           <DialogHeader>
             <DialogTitle>Project Vault Configuration</DialogTitle>
             <DialogDescription>
-              On-chain administrative and fee configuration for the vault.
+              On-chain release authority and fee configuration for the vault.
             </DialogDescription>
           </DialogHeader>
 
@@ -1154,7 +1160,7 @@ export function AdminDashboard() {
                   {vaultInfoError}
                 </div>
               ) : selectedVaultInfo ? (
-                selectedVaultInfo.isLegacy ? (
+                "isLegacy" in selectedVaultInfo ? (
                   <div className="border border-amber-500/20 bg-amber-500/5 px-4 py-3 rounded-xl text-xs text-amber-500 flex flex-col gap-1">
                     <strong className="text-foreground font-semibold">Legacy Contract Instance</strong>
                     <span className="text-[11px] leading-relaxed text-muted-foreground">
@@ -1162,28 +1168,42 @@ export function AdminDashboard() {
                     </span>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-3 gap-4 pt-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                    {/* The vault has no admin key. Tranches move only on a
+                        contributor vote held inside the contract. */}
                     <div className="bg-muted/30 p-3.5 rounded-xl border border-muted text-xs flex flex-col gap-1.5">
-                      <span className="text-muted-foreground font-semibold uppercase tracking-wider text-[10px]">Vault Administrator</span>
-                      <span className="text-foreground font-mono text-[11px] font-semibold break-all select-all font-mono" title={selectedVaultInfo.admin}>
-                        {formatAddress(selectedVaultInfo.admin)}
+                      <span className="text-muted-foreground font-semibold uppercase tracking-wider text-[10px]">Release Authority</span>
+                      <span className="text-foreground text-[11px] font-semibold">
+                        Contributor vote, no admin key
+                      </span>
+                      <span className="text-muted-foreground text-[11px] leading-relaxed">
+                        Over 50% of the raise, 20% cap per wallet,{" "}
+                        {Number(selectedVaultInfo.voting_window_secs) / 86_400}-day window
+                      </span>
+                    </div>
+
+                    <div className="bg-muted/30 p-3.5 rounded-xl border border-muted text-xs flex flex-col gap-1.5">
+                      <span className="text-muted-foreground font-semibold uppercase tracking-wider text-[10px]">Builder</span>
+                      <span className="text-foreground font-mono text-[11px] font-semibold break-all select-all" title={selectedVaultInfo.creator}>
+                        {formatAddress(selectedVaultInfo.creator)}
                       </span>
                     </div>
 
                     <div className="bg-muted/30 p-3.5 rounded-xl border border-muted text-xs flex flex-col gap-1.5">
                       <span className="text-muted-foreground font-semibold uppercase tracking-wider text-[10px]">Fee Payout Wallet</span>
-                      <span className="text-foreground font-mono text-[11px] font-semibold break-all select-all font-mono" title={selectedVaultInfo.fee_wallet_address}>
+                      <span className="text-foreground font-mono text-[11px] font-semibold break-all select-all" title={selectedVaultInfo.fee_wallet_address}>
                         {formatAddress(selectedVaultInfo.fee_wallet_address)}
                       </span>
                     </div>
 
-                    <div className="bg-muted/30 p-3.5 rounded-xl border border-muted text-xs flex flex-col gap-1.5 justify-center">
-                      <span className="text-muted-foreground font-semibold uppercase tracking-wider text-[10px]">Fee Percentage</span>
-                      <span className="text-emerald-500 text-base font-bold flex items-baseline gap-1">
-                        {selectedVaultInfo.fee_percentage !== undefined ? `${(Number(selectedVaultInfo.fee_percentage) / 100).toFixed(2)}%` : "0.00%"}
-                        {selectedVaultInfo.fee_percentage !== undefined && (
-                          <span className="text-muted-foreground text-xs font-normal font-mono"> ({selectedVaultInfo.fee_percentage.toString()} bps)</span>
-                        )}
+                    <div className="bg-muted/30 p-3.5 rounded-xl border border-muted text-xs flex flex-col gap-1.5">
+                      <span className="text-muted-foreground font-semibold uppercase tracking-wider text-[10px]">Platform Fee</span>
+                      <span className="text-emerald-500 text-base font-bold">
+                        {StellarFormatter.toStellar(Number(selectedVaultInfo.platform_fee)).toLocaleString(undefined, { maximumFractionDigits: 7 })}{" "}
+                        {selectedVaultProject.currencyType ?? ""}
+                      </span>
+                      <span className="text-muted-foreground text-[11px] leading-relaxed">
+                        Flat, paid once by the builder at creation. Contributions are never charged.
                       </span>
                     </div>
                   </div>
