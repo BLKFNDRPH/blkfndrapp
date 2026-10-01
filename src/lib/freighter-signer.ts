@@ -103,6 +103,14 @@ function requireSignedBy(
 
 export function freighterSigner(publicKey: string) {
   return {
+    // The account the transaction is built from, not only the one it is signed
+    // with. The contract clients take their source account from this field;
+    // without it they simulate from the SDK's placeholder account and
+    // signAndSend refuses with "constructed using a default account". When this
+    // replaced the hand-written signers it dropped the field, and every
+    // contribution, vote, release and treasury action failed before Freighter
+    // was ever asked.
+    publicKey,
     signTransaction: async (xdr: string) => {
       const res = await freighterSignTransaction(xdr, {
         networkPassphrase: NETWORK_PASSPHRASE,

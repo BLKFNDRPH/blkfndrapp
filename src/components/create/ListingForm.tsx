@@ -744,7 +744,6 @@ export function ListingForm() {
         contractId: FACTORY_ID,
         rpcUrl: SOROBAN_RPC_URL,
         networkPassphrase: NETWORK_PASSPHRASE,
-        publicKey: activeAddress,
         ...freighter,
         // The stage follows the signature: until Freighter answers, the wait
         // is the builder's; after it, the network's.
