@@ -142,6 +142,7 @@ export function ProjectDetailsDialog() {
   const [isFinalizePending, setIsFinalizePending] = useState(false);
   const [isRefundClaimPending, setIsRefundClaimPending] = useState(false);
   const [creatorName, setCreatorName] = useState<string | null>(null);
+  const [creatorAvatar, setCreatorAvatar] = useState<string | null>(null);
   const [dbClaimRequested, setDbClaimRequested] = useState<boolean>(false);
 
   // Submit Proof Modal states
@@ -377,6 +378,7 @@ export function ProjectDetailsDialog() {
     let isActive = true;
 
     const resolveCreatorName = async () => {
+      setCreatorAvatar(null);
       if (!project) {
         setCreatorName(null);
         return;
@@ -399,7 +401,8 @@ export function ProjectDetailsDialog() {
       const user = await getUserByCreatorId(creatorAddress, "stellarPublicKey");
       if (!isActive) return;
 
-      setCreatorName(user?.name ?? project.creator ?? null);
+      setCreatorName(user?.name || project.creator || null);
+      setCreatorAvatar(user?.avatarUrl || null);
     };
 
     resolveCreatorName();
@@ -720,11 +723,11 @@ export function ProjectDetailsDialog() {
                   <div className="flex items-center gap-2 min-w-0">
                     <Avatar className="h-8 w-8 shrink-0">
                       <AvatarImage
-                        src={project.creatorAvatar}
-                        alt={project.creator}
+                        src={creatorAvatar ?? project.creatorAvatar}
+                        alt={creatorDisplayName}
                       />
                       <AvatarFallback>
-                        {project.creator.charAt(0)}
+                        {creatorDisplayName.charAt(0)}
                       </AvatarFallback>
                     </Avatar>
                     <div className="min-w-0">
