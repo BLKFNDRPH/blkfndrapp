@@ -127,7 +127,7 @@ async function indexedRow(vaultAddress: string) {
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("projects")
-    .select("project_id, created_on_chain_at")
+    .select("project_id, title, created_on_chain_at")
     .eq("vault_address", vaultAddress)
     .maybeSingle();
 
@@ -152,6 +152,9 @@ async function syncVault(vaultAddress: string, ledger?: number) {
 
   const projectRowId = await upsertProjectFromChain({
     projectId: existing?.project_id ?? vaultAddress,
+    // The upsert writes a title either way — it falls back to "Project #<id>" —
+    // so leaving it out reset every listing's real title on its next deposit.
+    ...(existing?.title ? { title: existing.title } : {}),
     vaultAddress,
     creatorAddress: state.creator,
     fundingGoalRaw: state.fundingGoalRaw,
@@ -198,6 +201,68 @@ function milestoneCopy(metadata: any, milestoneId: number) {
     ...(meta?.title ? { title: String(meta.title) } : {}),
     ...(meta?.description ? { description: String(meta.description) } : {}),
   };
+}
+
+/**
+ * Name and avatar of the profiles linked to these wallets, keyed by address.
+ *
+ * The chain only knows the creator's address, so without this every listing
+ * card named its creator by a 56-character key.
+ */
+async function creatorProfiles(addresses: string[]) {
+  const byAddress = new Map<string, { display: string; avatar: string }>();
+  const wanted = Array.from(new Set(addresses.filter(Boolean)));
+  if (wanted.length === 0) return byAddress;
+
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("profiles")
+    .select("stellar_public_key, display_name, avatar_url")
+    .in("stellar_public_key", wanted);
+  if (error) {
+    console.warn("[Indexer] Could not read creator profiles:", error.message);
+    return byAddress;
+  }
+
+  for (const p of data ?? []) {
+    if (!p.stellar_public_key || !p.display_name) continue;
+    byAddress.set(p.stellar_public_key, {
+      display: String(p.display_name),
+      avatar: String(p.avatar_url ?? ""),
+    });
+  }
+  return byAddress;
+}
+
+/**
+ * Name the creator of any project indexed before their profile was linked, or
+ * before DEPLOY looked one up.
+ */
+export async function nameUnnamedCreators() {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("projects")
+    .select("id, creator_address")
+    .eq("creator_display", "")
+    .limit(200);
+  if (error) throw new Error(`Could not read unnamed creators: ${error.message}`);
+
+  const profiles = await creatorProfiles((data ?? []).map((r) => r.creator_address));
+  let named = 0;
+  for (const row of data ?? []) {
+    const profile = profiles.get(row.creator_address);
+    if (!profile) continue;
+    const { error: updateError } = await admin
+      .from("projects")
+      .update({ creator_display: profile.display, creator_avatar_url: profile.avatar })
+      .eq("id", row.id);
+    if (updateError) {
+      console.warn(`[Indexer] Could not name the creator of ${row.id}: ${updateError.message}`);
+      continue;
+    }
+    named++;
+  }
+  return named;
 }
 
 /** Projects still listed under the placeholder title, retried per run. */
@@ -272,6 +337,7 @@ async function handleEvent(topic1: string, topic2: string, payload: any[], contr
       // [project_id, vault_address, creator, metadata_cid]
       const [projectId, vaultAddress, creator, metadataCid] = payload;
       const metadata = await fetchMetadata(String(metadataCid ?? ""));
+      const creatorProfile = (await creatorProfiles([String(creator)])).get(String(creator));
 
       const state = await readVaultState(String(vaultAddress));
       if (!state) throw new Error(`Vault ${vaultAddress} is not readable`);
@@ -294,6 +360,9 @@ async function handleEvent(topic1: string, topic2: string, payload: any[], contr
         projectId: String(projectId),
         vaultAddress: String(vaultAddress),
         creatorAddress: String(creator),
+        ...(creatorProfile
+          ? { creatorDisplay: creatorProfile.display, creatorAvatarUrl: creatorProfile.avatar }
+          : {}),
         // Unresolved metadata writes nothing, so a replay that cannot reach IPFS
         // does not overwrite copy an earlier run resolved. The row is listed as
         // "Project #N" until resolvePendingMetadata fills it in.
@@ -495,11 +564,20 @@ export async function runIndexer() {
     console.warn("[Indexer] Metadata retry pass failed:", err);
   }
 
+  let creatorsNamed: number | { error: string };
+  try {
+    creatorsNamed = await nameUnnamedCreators();
+  } catch (err) {
+    creatorsNamed = { error: String(err) };
+    console.warn("[Indexer] Creator naming pass failed:", err);
+  }
+
   return {
     success: failed === 0,
     count: processed,
     failed,
     currentLedger: advanced ? nextCursor : stored,
     metadata,
+    creatorsNamed,
   };
 }

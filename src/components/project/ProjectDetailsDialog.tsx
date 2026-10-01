@@ -384,6 +384,12 @@ export function ProjectDetailsDialog() {
         return;
       }
 
+      // Indexed from the creator's linked profile; no lookup needed.
+      if (project.creatorName && project.creatorName !== creatorAddress) {
+        setCreatorName(project.creatorName);
+        return;
+      }
+
       if (
         project.creator &&
         !project.creator.startsWith("0x") &&

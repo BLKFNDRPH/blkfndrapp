@@ -115,7 +115,7 @@ function resolveGatewayHost(): string {
 /**
  * Get the IPFS gateway URL for a CID, for rendering in the browser.
  * Passes absolute URLs through unchanged to support legacy stored records.
- * Do not use this to build a URL the server will fetch — see getIPFSFetchUrl.
+ * Do not use this to build a URL the server will fetch — see getIPFSFetchUrls.
  */
 export function getIPFSGatewayUrl(cid: string): string {
   const value = cid.trim();
