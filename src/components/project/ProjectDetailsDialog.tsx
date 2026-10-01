@@ -8,20 +8,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
-import type { Project } from "@/lib/types";
-import { formatCurrency } from "@/lib/formatters";
 import { Avatar, AvatarFallback, AvatarImage } from "../ui/avatar";
 import { FundDialog } from "./FundDialog";
 import { Progress } from "../ui/progress";
@@ -32,37 +19,25 @@ import { RestrictionNotice } from "./RestrictionNotice";
 import { ProjectRestrictionControls } from "../admin/ProjectRestrictionControls";
 import { ScrollArea } from "../ui/scroll-area";
 import {
-  TrendingUp,
-  Info,
-  PieChart,
-  CheckCircle,
   RefreshCw,
   ArrowDownCircle,
-  Zap,
-  Shield,
   AlertTriangle,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { Separator } from "../ui/separator";
 import { Button } from "../ui/button";
 import { useAuth } from "@/context/AuthContext";
 import { CubeSpinner } from "../ui/CubeSpinner";
 import { useToast } from "@/hooks/use-toast";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { ImageWithFallback } from "../ui/image-with-fallback";
 import { StellarFormatter } from "@/lib/stellar-format";
 import {
-  usePlatformInfo,
   useRefreshAfterTx,
   useBlockchain,
 } from "@/context/BlockchainContext";
 import { shortenAddress } from "@/lib/utils";
-import { useStellarContract } from "@/hooks/use-stellar-contract";
 import { useFreighterWallet } from "@/context/FreighterWalletContext";
-import { getBalance } from "@/lib/stellar";
 import { getUserByCreatorId } from "@/lib/data.client";
-import { getClaimRequests, createClaimRequest } from "@/actions/claims";
 import { Client as VaultClient } from "@/packages/blkfndr_vault/src";
 import { submitMilestoneProof } from "@/app/actions";
 import { getPinataClient, getIPFSGatewayUrl } from "@/lib/pinata-client";
@@ -92,15 +67,12 @@ export function ProjectDetailsDialog() {
   } = useProjectDetails();
 
   const { user, login, refreshUser } = useAuth();
-  const { platformInfo } = usePlatformInfo();
   const { toast } = useToast();
   const router = useRouter();
   const refreshAfterTx = useRefreshAfterTx();
   const { userFunds, refreshUserFunds, refreshProjects } = useBlockchain();
 
-
   const { freighterWalletAddress, login: connectFreighter } = useFreighterWallet();
-  const [isConnectingFreighter, setIsConnectingFreighter] = useState(false);
 
   const handleConnectFreighter = async (): Promise<string | null> => {
     if (!user) {
@@ -112,7 +84,6 @@ export function ProjectDetailsDialog() {
       login();
       return null;
     }
-    setIsConnectingFreighter(true);
     try {
       const address = await connectFreighter();
       await refreshUser();
@@ -129,21 +100,13 @@ export function ProjectDetailsDialog() {
         variant: "destructive",
       });
       return null;
-    } finally {
-      setIsConnectingFreighter(false);
     }
   };
 
-  const [balances, setBalances] = useState<any[]>([]);
-  const [isLoadingBalances, setIsLoadingBalances] = useState(false);
-
-  const [isClaimPending, setIsClaimPending] = useState(false);
-  const [isBondPendingState, setIsBondPendingState] = useState(false);
   const [isFinalizePending, setIsFinalizePending] = useState(false);
   const [isRefundClaimPending, setIsRefundClaimPending] = useState(false);
   const [creatorName, setCreatorName] = useState<string | null>(null);
   const [creatorAvatar, setCreatorAvatar] = useState<string | null>(null);
-  const [dbClaimRequested, setDbClaimRequested] = useState<boolean>(false);
 
   // Submit Proof Modal states
   const [isSubmitModalOpen, setIsSubmitModalOpen] = useState(false);
@@ -173,7 +136,7 @@ export function ProjectDetailsDialog() {
         try {
           const parsed = JSON.parse(activeMilestone.proof);
           initialDesc = parsed.description || "";
-        } catch (e) {
+        } catch {
           initialDesc = activeMilestone.proof;
         }
       } else {
@@ -220,7 +183,7 @@ export function ProjectDetailsDialog() {
         try {
           const parsed = JSON.parse(activeMilestone.proof);
           imageUrl = parsed.imageUrl || "";
-        } catch (e) { }
+        } catch { }
       }
     }
 
@@ -277,8 +240,6 @@ export function ProjectDetailsDialog() {
     creatorAddress !== "" &&
     activeAddress === creatorAddress;
 
-  const canEditOrDelete = false; // Stellar projects are immutable on-chain after creation
-
   // A platform lock pauses the builder's actions here — proof, and opening a
   // milestone vote — and new stakes in FundDialog. Everything a stakeholder
   // does with money already in the vault is untouched.
@@ -298,25 +259,8 @@ export function ProjectDetailsDialog() {
       ? vaultContributorBalance === 0
       : hasContributedHistorically && !userFunds.some((receipt) => receipt.project_id === project?.id));
 
-  const refreshBalances = useCallback(async () => {
-    if (!activeAddress) {
-      setBalances([]);
-      return;
-    }
-    setIsLoadingBalances(true);
-    try {
-      const walletBalances = await getBalance(activeAddress);
-      setBalances(walletBalances as any[]);
-    } catch (err) {
-      console.error("Failed to load freighter balances:", err);
-    } finally {
-      setIsLoadingBalances(false);
-    }
-  }, [activeAddress]);
-
   useEffect(() => {
     if (isOpen && activeAddress) {
-      refreshBalances();
       refreshUserFunds(activeAddress);
 
       if (project?.id) {
@@ -358,21 +302,7 @@ export function ProjectDetailsDialog() {
       setVaultContributorBalance(null);
       setHasContributedHistorically(false);
     }
-  }, [isOpen, activeAddress, project?.id, project?.vaultAddress, refreshBalances, refreshUserFunds]);
-
-  useEffect(() => {
-    if (project?.id && isOpen) {
-      getClaimRequests()
-        .then((rows) => {
-          // Admin-only; non-admins get an empty list. claim_requests keys on
-          // the project row id rather than the on-chain project id.
-          setDbClaimRequested(rows.length > 0);
-        })
-        .catch((err) => {
-          console.error("Failed to load claim request status:", err);
-        });
-    }
-  }, [project?.id, isOpen]);
+  }, [isOpen, activeAddress, project?.id, project?.vaultAddress, refreshUserFunds]);
 
   useEffect(() => {
     let isActive = true;
@@ -404,7 +334,7 @@ export function ProjectDetailsDialog() {
         return;
       }
 
-      const user = await getUserByCreatorId(creatorAddress, "stellarPublicKey");
+      const user = await getUserByCreatorId(creatorAddress);
       if (!isActive) return;
 
       setCreatorName(user?.name || project.creator || null);
@@ -417,55 +347,6 @@ export function ProjectDetailsDialog() {
       isActive = false;
     };
   }, [project, creatorAddress]);
-
-  const handleInitiateClaimRequest = async () => {
-    if (!project) return;
-
-    let activeAddress = freighterWalletAddress;
-    if (!activeAddress) {
-      toast({
-        title: "Wallet Connection Required",
-        description: "Connecting and verifying Freighter wallet...",
-      });
-      const connectedAddress = await handleConnectFreighter();
-      if (!connectedAddress) return;
-      activeAddress = connectedAddress;
-    }
-
-    setIsClaimPending(true);
-    try {
-      await createClaimRequest(project.id, activeAddress);
-      setDbClaimRequested(true);
-
-      toast({
-        title: "Claim Request Initiated",
-        description: `Your request to claim funds for campaign #${project.id} has been submitted to platform administrators.`,
-      });
-
-      if (platformInfo?.admin) {
-        try {
-          const uRes = await fetch(
-            `/api/user-by-address?field=stellarPublicKey&address=${platformInfo.admin}`,
-          );
-          const uData = uRes.ok ? await uRes.json() : null;
-          if (uData?.uid) {          }
-        } catch (e) {
-          console.error("Failed to notify platform admin:", e);
-        }
-      }
-
-      refreshProject(project.id);
-      await refreshAfterTx(activeAddress);
-    } catch (err: any) {
-      toast({
-        title: "Submission Failed",
-        description: err.message || String(err),
-        variant: "destructive",
-      });
-    } finally {
-      setIsClaimPending(false);
-    }
-  };
 
 
   // handlePostBond is gone: the bond is transferred during create_vault, so a
@@ -602,17 +483,6 @@ export function ProjectDetailsDialog() {
       )
     : 0;
 
-  const fundingDeadline = project?.fundingDeadline ?? 0;
-
-  const isUnderfundedAndExpired = project
-    ? project.status === "expired" ||
-    (project.status === "raising" &&
-      Date.now() > fundingDeadline &&
-      Number(project.currentFundingRaw ?? 0) <
-      Number(project.fundingGoalRaw ?? 0))
-    : false;
-
-  const isClaimRequested = dbClaimRequested;
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>

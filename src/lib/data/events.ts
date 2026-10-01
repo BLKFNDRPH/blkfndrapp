@@ -17,18 +17,6 @@ import { createAdminClient } from "@/lib/supabase/admin";
  *     marked processed that never was.
  */
 
-export interface ContractEvent {
-  event_id: string;
-  ledger: number;
-  ledger_closed_at: string | null;
-  contract_id: string;
-  topic1: string;
-  topic2: string;
-  payload: unknown;
-  processed_at: string | null;
-  error: string | null;
-}
-
 const CURSOR_KEY = "last_processed_ledger";
 
 export async function getCursor(): Promise<number | null> {
@@ -97,18 +85,6 @@ export async function markProcessed(eventId: string, error?: string) {
         : { processed_at: new Date().toISOString(), error: null },
     )
     .eq("event_id", eventId);
-}
-
-/** Events a handler failed on, so a failure is visible rather than silent. */
-export async function listUnprocessed(limit = 100) {
-  const admin = createAdminClient();
-  const { data } = await admin
-    .from("contract_events")
-    .select("*")
-    .is("processed_at", null)
-    .order("ledger", { ascending: true })
-    .limit(limit);
-  return (data ?? []) as ContractEvent[];
 }
 
 /**

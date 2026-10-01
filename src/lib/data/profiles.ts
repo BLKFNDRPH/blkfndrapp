@@ -4,7 +4,7 @@ import { z } from "zod";
 import type { TablesUpdate } from "@/lib/supabase/database.types";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { requireCaller, requireAdmin, AuthError } from "@/lib/supabase/auth";
+import { requireCaller, AuthError } from "@/lib/supabase/auth";
 import { isStellarAccount } from "@/lib/stellar-address";
 import { checkIsAdminOnChain } from "@/lib/stellar";
 
@@ -179,18 +179,4 @@ async function setAdminClaim(userId: string, isAdmin: boolean) {
   if (error) {
     console.error(`[profiles] Could not set admin claim for ${userId}:`, error.message);
   }
-}
-
-/** Admin-only: every profile, for the console. */
-export async function listProfiles(limit = 200) {
-  await requireAdmin();
-  const admin = createAdminClient();
-  const { data, error } = await admin
-    .from("profiles")
-    .select("*")
-    .order("created_at", { ascending: false })
-    .limit(limit);
-
-  if (error) throw new Error(`Could not list profiles: ${error.message}`);
-  return data ?? [];
 }

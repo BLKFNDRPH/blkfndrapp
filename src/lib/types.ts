@@ -94,11 +94,9 @@ export type User = {
 // vault is built against.
 export type { Currency } from "./currencies";
 
-export type WebState = "static" | "functional" | "on-chain";
-
 /**
- * InvestmentReceipt — Soulbound Token (SBT) minted on-chain when an investor
- * funds a project. Non-transferable; burnable only by the investor.
+ * One contribution to a vault, as served by /api/user/funds from the indexed
+ * `contribute` ledger event. Nothing is minted for it on-chain.
  */
 export type FundReceipt = {
   fund_id: string;
@@ -114,9 +112,6 @@ export type FundReceipt = {
   timestamp?: string;
   currency_type?: string;
 };
-
-export type InvestmentReceipt = FundReceipt;
-export type Investment = FundReceipt;
 
 export type Notification = {
   id: string;

@@ -1,7 +1,6 @@
 
 "use client";
 
-import React from "react";
 import { CurrencyIcon } from "@/components/layout/CurrencyIcon";
 
 // `currency` is a plain string rather than `Currency` because callers pass it

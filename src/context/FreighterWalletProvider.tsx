@@ -66,17 +66,6 @@ export const FreighterWalletProvider = ({
     };
   }, []);
 
-  const connectWallet = async () => {
-    setError(null);
-    const result = await connectFreighterWallet();
-    if (!result.ok) {
-      setError(result.message);
-      throw new Error(result.message);
-    }
-    localStorage.removeItem("freighterDisconnected");
-    setFreighterWalletAddress(result.address);
-  };
-
   // Unlink from the account first, and forget the wallet here only once that
   // has worked. This used to forget it first and never read the response, and
   // fetch does not throw on a 401 or 500. So a failed unlink still looked like
@@ -206,7 +195,6 @@ export const FreighterWalletProvider = ({
       value={{
         freighterWalletAddress,
         error,
-        connectWallet,
         disconnectWallet,
         login,
       }}

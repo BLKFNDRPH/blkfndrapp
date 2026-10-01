@@ -10,10 +10,10 @@ import "server-only";
  * Identity now comes from Supabase Auth rather than a hand-rolled JWT and a
  * Mongo lookup. Two consequences worth knowing:
  *
- *   * `requireAdmin` reads the role from `app_metadata`, which only the
- *     service-role key can write. The previous version read a `role` column
- *     from a document the application also wrote, so the check and the thing
- *     being checked shared a writer.
+ *   * `requireAdmin` asks the `platform_admins` roster through `my_role()`,
+ *     fresh on every call, not a claim baked into the token. The Mongo version
+ *     read a `role` column from a document the application also wrote, so the
+ *     check and the thing being checked shared a writer.
  *   * These guards are now the *second* line of defence. RLS confines each
  *     query to rows the caller may touch, so a forgotten guard no longer
  *     decides whether someone else's data comes back.
@@ -29,15 +29,6 @@ export {
 
 import { AuthError, requireCaller, requireAdmin } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
-
-/**
- * Require that the caller owns `userId`, or is an admin acting on their behalf.
- */
-export async function requireSelfOrAdmin(userId: string) {
-  const caller = await requireCaller();
-  if (caller.userId === userId) return caller;
-  return requireAdmin();
-}
 
 /**
  * Require that the caller has proven control of `stellarPublicKey`, or is an

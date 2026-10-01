@@ -4,7 +4,6 @@ import {
   listAdmins,
   grantAdmin,
   revokeAdmin,
-  setAdminWallet,
   recognizeWallet,
   listAuditLog,
   type AdminRole,
@@ -64,14 +63,6 @@ export async function grantAdminAction(
     };
   } catch (error) {
     return fail(error, "Could not add administrator.");
-  }
-}
-
-export async function setAdminWalletAction(email: string, walletAddress: string) {
-  try {
-    return { success: true as const, admins: await setAdminWallet(email, walletAddress) };
-  } catch (error) {
-    return fail(error, "Could not update the wallet address.");
   }
 }
 

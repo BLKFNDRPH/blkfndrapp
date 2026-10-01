@@ -31,6 +31,5 @@ export default defineConfig([
     // typescript`. Regenerated wholesale from the contract ABI, so hand-editing
     // them to satisfy lint rules would be undone by the next build.
     "src/packages/**",
-    "user-check.js",
   ]),
 ]);

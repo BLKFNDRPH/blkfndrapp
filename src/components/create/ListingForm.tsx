@@ -43,25 +43,17 @@ import { useToast } from "@/hooks/use-toast";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { Card, CardContent } from "../ui/card";
-import { runImproveListingQuality, getProjects } from "@/app/actions";
+import { runImproveListingQuality } from "@/app/actions";
 import type { ImproveListingQualityOutput } from "@/ai/flows/improve-listing-quality";
 import { AiAnalysisDialog } from "./AiAnalysisDialog";
-import { Wand2, Globe, Lock, Calendar, Plus, Trash2, Shield, MapPin } from "lucide-react";
+import { Wand2, Calendar, Plus, Trash2, Shield, MapPin } from "lucide-react";
 import { getPinataClient, getIPFSGatewayUrl } from "@/lib/pinata-client";
-import { useStellarContract } from "@/hooks/use-stellar-contract";
 import { useFreighterWallet } from "@/context/FreighterWalletContext";
 import { usePlatformInfo, useRefreshAfterTx } from "@/context/BlockchainContext";
 import { Client as FactoryClient } from "@/packages/blkfndr_factory/src";
 import { Client as IdentityClient } from "@/packages/blkfndr_identity/src";
-import Link from "next/link";
 import { CubeSpinner } from "../ui/CubeSpinner";
 import { cn } from "@/lib/utils";
-import {
-  Tooltip,
-  TooltipProvider,
-  TooltipTrigger,
-  TooltipContent,
-} from "@/components/ui/tooltip";
 import { Combobox } from "../ui/combobox";
 import { projectCategories } from "@/lib/categories";
 import { getCategoriesAction } from "@/actions/categories";
@@ -170,7 +162,6 @@ export function ListingForm() {
   const { toast } = useToast();
   const router = useRouter();
   const { user, login, refreshUser } = useAuth();
-  const { createProject } = useStellarContract();
   const { freighterWalletAddress, login: connectFreighter } = useFreighterWallet();
   const refreshAfterTx = useRefreshAfterTx();
 
@@ -193,11 +184,9 @@ export function ListingForm() {
   const [categories, setCategories] = useState<string[]>(projectCategories);
   const [isLoadingCategories, setIsLoadingCategories] = useState(true);
   const [isCooldown, setIsCooldown] = useState(false);
-  const [isConnectingFreighter, setIsConnectingFreighter] = useState(false);
   const isSubmittingRef = useRef(false);
 
   const handleConnectFreighter = async (): Promise<string | null> => {
-    setIsConnectingFreighter(true);
     try {
       const address = await connectFreighter();
       await refreshUser();
@@ -214,8 +203,6 @@ export function ListingForm() {
         variant: "destructive",
       });
       return null;
-    } finally {
-      setIsConnectingFreighter(false);
     }
   };
 
@@ -1101,7 +1088,7 @@ export function ListingForm() {
               <FormField
                 control={form.control}
                 name="fundingDeadline"
-                render={({ field }) => (
+                render={() => (
                   <FormItem>
                     <FormLabel className="flex items-center gap-2">
                       <Calendar className="h-4 w-4" />
@@ -1283,7 +1270,7 @@ export function ListingForm() {
               <FormField
                 control={form.control}
                 name="image"
-                render={({ field }) => (
+                render={() => (
                   <FormItem>
                     <FormLabel>Project Image</FormLabel>
                     <FormControl>

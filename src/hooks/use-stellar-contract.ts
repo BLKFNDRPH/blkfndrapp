@@ -6,13 +6,11 @@ import { useFreighterWallet } from "@/context/FreighterWalletContext";
 import {
   factoryClient,
   vaultClient,
-  attestationClient,
   identityClient,
   adminClient,
   simulate,
   type Signer,
 } from "@/lib/stellar-clients";
-import { tokenAddressFor, type Currency } from "@/lib/currencies";
 import { freighterSigner } from "@/lib/freighter-signer";
 import { checkVaultLockAction } from "@/actions/project-restrictions";
 
@@ -34,24 +32,6 @@ import { checkVaultLockAction } from "@/actions/project-restrictions";
  *       A vault takes its token at construction and keeps it. An admin who
  *       could repoint it mid-raise could make refunds pay a different asset.
  */
-
-export interface MilestoneInput {
-  id: number;
-  amount: bigint;
-}
-
-export interface CreateProjectParams {
-  creator: string;
-  currency: Currency;
-  /** Total raise, in stroops. */
-  goal: bigint;
-  /** Unix seconds. */
-  deadline: bigint;
-  /** Performance bond, in stroops. Must meet the factory's minimum. */
-  bondAmount: bigint;
-  milestones: MilestoneInput[];
-  metadataCid: string;
-}
 
 export interface ContributeParams {
   vaultAddress: string;
@@ -121,39 +101,6 @@ export function useStellarContract() {
       return address;
     },
     [freighterWalletAddress],
-  );
-
-  // ── Creating a project ───────────────────────────────────────────────────
-
-  /**
-   * Deploy a vault. The bond and the flat platform fee leave the builder's
-   * account in this same transaction, so a project never exists unbonded.
-   */
-  const createProject = useCallback(
-    async (params: CreateProjectParams) => {
-      const creator = requireWallet(params.creator);
-      const factory = factoryClient(signerFor(creator));
-
-      const tx = await factory.create_vault({
-        config: {
-          creator,
-          token: tokenAddressFor(params.currency),
-          goal: params.goal,
-          deadline: params.deadline,
-          bond_amount: params.bondAmount,
-          milestones: params.milestones.map((m) => ({
-            id: m.id,
-            amount: m.amount,
-          })),
-          metadata_cid: params.metadataCid,
-        },
-      });
-
-      await signAndSend(tx);
-      // create_vault returns the new vault's address.
-      return tx.result as unknown as string;
-    },
-    [requireWallet],
   );
 
   // ── Backing a project ────────────────────────────────────────────────────
@@ -259,21 +206,6 @@ export function useStellarContract() {
     [],
   );
 
-  const getVaultState = useCallback(
-    (vaultAddress: string) =>
-      simulate(() => vaultClient(vaultAddress).get_state(), `get_state(${vaultAddress})`),
-    [],
-  );
-
-  const getContribution = useCallback(
-    (vaultAddress: string, contributor: string) =>
-      simulate(
-        () => vaultClient(vaultAddress).get_balance({ contributor }),
-        `get_balance(${vaultAddress})`,
-      ),
-    [],
-  );
-
   /** What this wallet's vote is worth, after the 20% cap. */
   const getVotingWeight = useCallback(
     (vaultAddress: string, contributor: string) =>
@@ -293,31 +225,6 @@ export function useStellarContract() {
     [],
   );
 
-  /** Returns [weight so far, weight required, window still open]. */
-  const getMilestoneVote = useCallback(
-    (vaultAddress: string, milestoneId: number) =>
-      simulate(
-        () => vaultClient(vaultAddress).get_milestone_vote({ milestone_id: milestoneId }),
-        `get_milestone_vote(${vaultAddress})`,
-      ),
-    [],
-  );
-
-  const getContributors = useCallback(
-    (vaultAddress: string, offset = 0, limit = 100) =>
-      simulate(
-        () => vaultClient(vaultAddress).get_contributors({ offset, limit }),
-        `get_contributors(${vaultAddress})`,
-      ),
-    [],
-  );
-
-  const getVaultAddress = useCallback(
-    (projectId: bigint) =>
-      simulate(() => factoryClient().get_vault({ project_id: projectId }), "get_vault"),
-    [],
-  );
-
   const getPlatformTerms = useCallback(async () => {
     const factory = factoryClient();
     const [fee, minContribution, votingWindow, bondBps] = await Promise.all([
@@ -328,66 +235,6 @@ export function useStellarContract() {
     ]);
     return { fee, minContribution, votingWindow, bondBps };
   }, []);
-
-  // ── Builder track record ─────────────────────────────────────────────────
-
-  const getBuilderSummary = useCallback(
-    (builder: string) =>
-      simulate(
-        () => attestationClient().get_builder_summary({ builder }),
-        `get_builder_summary(${builder})`,
-      ),
-    [],
-  );
-
-  const getBuilderHistory = useCallback(
-    (builder: string, offset = 0, limit = 100) =>
-      simulate(
-        () => attestationClient().get_builder_history({ builder, offset, limit }),
-        `get_builder_history(${builder})`,
-      ),
-    [],
-  );
-
-  // ── Identity ─────────────────────────────────────────────────────────────
-
-  const isKycApproved = useCallback(
-    (address: string) =>
-      simulate(
-        () => identityClient().is_kyc_approved({ address }),
-        `is_kyc_approved(${address})`,
-      ),
-    [],
-  );
-
-  // The connected wallet is the attestor — the registry now names the caller so
-  // it can check them against its roster. It must be the admin or an authorised
-  // attestor, or the ledger rejects the write. The wallet signs and identifies
-  // itself in the same call.
-  const attestKyc = useCallback(
-    async ({ address, kycHash }: { address: string; kycHash: Buffer }) => {
-      const attestor = requireWallet();
-      const tx = await identityClient(signerFor(attestor)).attest({
-        attestor,
-        address,
-        kyc_hash: kycHash,
-      });
-      return signAndSend(tx);
-    },
-    [requireWallet],
-  );
-
-  const revokeKyc = useCallback(
-    async (address: string) => {
-      const attestor = requireWallet();
-      const tx = await identityClient(signerFor(attestor)).revoke({
-        attestor,
-        address,
-      });
-      return signAndSend(tx);
-    },
-    [requireWallet],
-  );
 
   // ── Attestor roster ──────────────────────────────────────────────────────
   //
@@ -426,31 +273,11 @@ export function useStellarContract() {
     [requireWallet],
   );
 
-  // ── Platform terms ───────────────────────────────────────────────────────
+  // ── Fee wallet ───────────────────────────────────────────────────────────
   //
-  // These change the terms for vaults created from here on. A vault's config is
-  // frozen at construction, so none of them alters a project a contributor has
-  // already backed.
-
-  const updatePlatformFee = useCallback(
-    async (newFee: bigint) => {
-      const admin = requireWallet();
-      const tx = await factoryClient(signerFor(admin)).update_platform_fee({ new_fee: newFee });
-      return signAndSend(tx);
-    },
-    [requireWallet],
-  );
-
-  const updateBondPercentage = useCallback(
-    async (bps: bigint) => {
-      const admin = requireWallet();
-      const tx = await factoryClient(signerFor(admin)).update_bond_percentage({
-        new_percentage: bps,
-      });
-      return signAndSend(tx);
-    },
-    [requireWallet],
-  );
+  // The factory's other terms (fee, bond, voting window, minimum contribution)
+  // change by treasury vote — SetFee, SetBondBps, SetVotingWindow,
+  // SetMinContribution — not through a wallet-signed setter here.
 
   const updateFeeWallet = useCallback(
     async (address: string) => {
@@ -463,35 +290,7 @@ export function useStellarContract() {
     [requireWallet],
   );
 
-  const updateVotingWindow = useCallback(
-    async (seconds: bigint) => {
-      const admin = requireWallet();
-      const tx = await factoryClient(signerFor(admin)).update_voting_window({
-        new_window_secs: seconds,
-      });
-      return signAndSend(tx);
-    },
-    [requireWallet],
-  );
-
-  const updateMinContribution = useCallback(
-    async (stroops: bigint) => {
-      const admin = requireWallet();
-      const tx = await factoryClient(signerFor(admin)).update_min_contribution({
-        new_minimum: stroops,
-      });
-      return signAndSend(tx);
-    },
-    [requireWallet],
-  );
-
   // ── Admin roster ─────────────────────────────────────────────────────────
-
-  const isPlatformAdmin = useCallback(
-    (account: string) =>
-      simulate(() => adminClient().is_admin({ account }), `is_admin(${account})`),
-    [],
-  );
 
   const getAdmins = useCallback(
     () => simulate(() => adminClient().get_admins(), "get_admins"),
@@ -525,63 +324,13 @@ export function useStellarContract() {
     [],
   );
 
-  /**
-   * Who may edit the on-chain roster.
-   *
-   * Worth reading separately from the roster itself: add_admin and remove_admin
-   * are owner-only, so an admin looking at the enrol button needs to know whose
-   * signature it will ask for. Without this the only way to discover that you
-   * are not the owner is to sign a transaction and watch the ledger reject it.
-   */
+  /** Who may edit the on-chain roster: add_admin and remove_admin are owner-only. */
   const getAdminOwner = useCallback(
     () => simulate(() => adminClient().get_owner(), "get_owner"),
     [],
   );
 
-  const addAdmin = useCallback(
-    async (account: string) => {
-      const owner = requireWallet();
-      const tx = await adminClient(signerFor(owner)).add_admin({ account });
-      return signAndSend(tx);
-    },
-    [requireWallet],
-  );
-
-  const removeAdmin = useCallback(
-    async (account: string) => {
-      const owner = requireWallet();
-      const tx = await adminClient(signerFor(owner)).remove_admin({ account });
-      return signAndSend(tx);
-    },
-    [requireWallet],
-  );
-
-  /**
-   * Hand the roster to a new owner, signed by the current one.
-   *
-   * Only reachable from the browser, and deliberately so: the owner's key lives
-   * in their wallet extension, not in a CLI keystore, so `stellar contract
-   * invoke` cannot sign this once ownership has moved off the deployer. Without
-   * a button here, transferring ownership a second time would need the owner to
-   * export a secret key — which is worse than any convenience it buys.
-   *
-   * The contract adds the new owner as an admin if they are not already one, so
-   * this cannot strand the roster with an owner who cannot use it.
-   */
-  const transferAdminOwnership = useCallback(
-    async (newOwner: string) => {
-      const owner = requireWallet();
-      const tx = await adminClient(signerFor(owner)).transfer_ownership({
-        new_owner: newOwner,
-      });
-      return signAndSend(tx);
-    },
-    [requireWallet],
-  );
-
   return {
-    // create
-    createProject,
     // back
     contribute,
     claimRefund,
@@ -594,39 +343,20 @@ export function useStellarContract() {
     returnBond,
     // read
     getVaultInfo,
-    getVaultState,
-    getContribution,
     getVotingWeight,
     hasVoted,
-    getMilestoneVote,
-    getContributors,
-    getVaultAddress,
     getPlatformTerms,
-    // record
-    getBuilderSummary,
-    getBuilderHistory,
-    // identity
-    isKycApproved,
-    attestKyc,
-    revokeKyc,
+    // attestor roster
     getIdentityAdmin,
     isAttestor,
     addAttestor,
     removeAttestor,
-    // platform terms
-    updatePlatformFee,
-    updateBondPercentage,
+    // fee wallet
     updateFeeWallet,
-    updateVotingWindow,
-    updateMinContribution,
     // admin
-    isPlatformAdmin,
     getAdmins,
     getFeeWallet,
     getFactoryAdmin,
     getAdminOwner,
-    addAdmin,
-    removeAdmin,
-    transferAdminOwnership,
   };
 }

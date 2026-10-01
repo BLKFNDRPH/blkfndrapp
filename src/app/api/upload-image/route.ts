@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { PinataSDK } from "pinata";
-import { requireCaller, AuthError } from "@/lib/supabase/auth";
+import { requireCaller } from "@/lib/supabase/auth";
 import { getSecret } from "@/lib/secrets";
 
 const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;

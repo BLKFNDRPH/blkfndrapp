@@ -9,7 +9,6 @@ import {
 } from '@/components/ui/select';
 import { Slider } from '@/components/ui/slider';
 import { Label } from '../ui/label';
-import { formatCurrency } from '@/lib/formatters';
 import { Card, CardContent } from '../ui/card';
 import { Button } from '../ui/button';
 import { Settings, AlertTriangle } from 'lucide-react';

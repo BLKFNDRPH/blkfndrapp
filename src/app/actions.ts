@@ -1,14 +1,12 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
 import {
   improveListingQuality,
   type ImproveListingQualityInput,
   type ImproveListingQualityOutput,
 } from "@/ai/flows/improve-listing-quality";
 import { requireCaller, requireAdmin, requireWalletOwnerOrAdmin, authFailure } from "@/lib/auth/guards";
-import { getProjects as listProjects, setMilestoneProof, getProjectByVault } from "@/lib/data/projects";
-import { dismissAll } from "@/lib/data/notifications";
+import { setMilestoneProof, getProjectByVault } from "@/lib/data/projects";
 import { notifyAdmins } from "@/lib/data/notifications";
 import {
   submitOwnKyc,
@@ -40,20 +38,6 @@ export async function runImproveListingQuality(
   } catch (error) {
     console.error("AI analysis failed:", error);
     return null;
-  }
-}
-
-export async function getProjects() {
-  return listProjects();
-}
-
-export async function clearNotificationsAction() {
-  try {
-    await dismissAll();
-    revalidatePath("/", "layout");
-    return { success: true as const };
-  } catch {
-    return { success: false };
   }
 }
 
@@ -217,6 +201,7 @@ export async function submitMilestoneProof(
   }
 }
 
-// `notify` is intentionally NOT re-exported as an action — see the note in
-// src/actions/notifications.ts. It is a no-auth service-role insert and must
-// stay internal to the server-only data layer.
+// `notify` is intentionally NOT re-exported as an action. It is a no-auth
+// service-role insert, so exposing it would let anyone send any user an
+// arbitrary notification (in-app phishing). It must stay internal to the
+// server-only data layer.

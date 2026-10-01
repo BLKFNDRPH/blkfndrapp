@@ -9,7 +9,6 @@ import {
 } from "@/lib/stellar";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { WalletButton } from "@/components/auth/WalletButton";
 import {
   Card,
   CardContent,
@@ -24,32 +23,20 @@ import {
   Copy,
   Wallet,
   Coins,
-  Replace,
   Cog,
   RefreshCw,
   ExternalLink,
   ChevronDown,
-  Check,
-  TrendingUp,
-  Lock,
-  AlertTriangle,
-  PieChart,
-  Plus,
   ArrowUpDown,
-  LinkIcon,
   Flame,
-  Zap,
-  Shield,
   ArrowDownCircle,
   Users,
-  Send,
 } from "lucide-react";
-import type { Project, WebState, FundReceipt } from "@/lib/types";
+import type { Project, FundReceipt } from "@/lib/types";
 import { useToast } from "@/hooks/use-toast";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useTransition, useState, useMemo, useCallback } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import Loading from "@/app/loading";
-import { formatCurrency } from "@/lib/formatters";
 import { getUsersByAddresses } from "@/lib/data.client";
 import {
   Tooltip,
@@ -70,16 +57,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatDistanceToNow } from "date-fns";
-import { Separator } from "@/components/ui/separator";
-import { useCurrency } from "@/context/CurrencyContext";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { CurrencyIcon } from "@/components/layout/CurrencyIcon";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { cn } from "@/lib/utils";
 import { CubeSpinner } from "@/components/ui/CubeSpinner";
 import {
@@ -89,7 +66,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useProjectDetails } from "@/context/ProjectDetailsContext";
 import {
   useProjects,
   usePlatformInfo,
@@ -115,29 +91,17 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
 import { ImageWithFallback } from "@/components/ui/image-with-fallback";
-import {
-  Carousel,
-  CarouselContent,
-  CarouselItem,
-  CarouselNext,
-  CarouselPrevious,
-} from "@/components/ui/carousel";
 
 
 
-import { getMyKycStatus, submitMilestoneProof } from "@/app/actions";
+import { getMyKycStatus } from "@/app/actions";
 import { Client as IdentityClient } from "@/packages/blkfndr_identity/src";
 import { ShieldCheck } from "lucide-react";
-
-type ProjectVisibilityFilter = "all" | "public" | "private";
 
 const FreighterIcon = (props: React.SVGProps<SVGSVGElement>) => (
   <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" {...props}>
@@ -168,13 +132,11 @@ const COIN_DECIMALS: Record<string, number> = {
 };
 
 // Global cache for investment receipts to prevent redundant network fetches across cards
-let receiptsCache: any[] | null = null;
 let receiptsCachePromise: Promise<any[]> | null = null;
 let lastFetchTime = 0;
 const CACHE_TTL = 30000; // 30 seconds cache TTL
 
 function clearReceiptsCache() {
-  receiptsCache = null;
   receiptsCachePromise = null;
   lastFetchTime = 0;
 }
@@ -187,10 +149,6 @@ async function getCachedFundReceipts(
   if (force || !receiptsCachePromise || now - lastFetchTime > CACHE_TTL) {
     lastFetchTime = now;
     receiptsCachePromise = fetchFn()
-      .then((res) => {
-        receiptsCache = res;
-        return res;
-      })
       .catch((err) => {
         receiptsCachePromise = null;
         lastFetchTime = 0;
@@ -499,7 +457,7 @@ function StellarWalletDetailsCard({ address }: { address: string }) {
       } else {
         throw new Error("Friendbot failed");
       }
-    } catch (err) {
+    } catch {
       toast({
         title: "Funding Failed",
         description: "Could not contact Friendbot. Please try again later.",
@@ -812,10 +770,6 @@ function ReceiptCard({
     (sum, r) => sum + Number(r.amount),
     0,
   );
-  const totalShares = groupReceipts.reduce(
-    (sum, r) => sum + Number(r.share_percentage),
-    0,
-  );
   const humanAmount = totalAmount / decimals;
   const latestDate = Math.max(
     ...groupReceipts.map((r) => r.fund_date ?? 0),
@@ -1068,7 +1022,7 @@ export default function ProfilePage() {
   const searchParams = useSearchParams();
 
   const { projects, isLoadingProjects } = useProjects();
-  const { platformInfo, isLoadingPlatform } = usePlatformInfo();
+  const { isLoadingPlatform } = usePlatformInfo();
   const [isConnectingFreighter, setIsConnectingFreighter] = useState(false);
 
   const handleConnectFreighter = async () => {
@@ -1101,7 +1055,6 @@ export default function ProfilePage() {
   const [kycStatus, setKycStatus] = useState<string>("none");
   const [isOnChainKycApproved, setIsOnChainKycApproved] = useState(false);
   const [isLoadingKyc, setIsLoadingKyc] = useState(false);
-  const [isUpdatingProof, setIsUpdatingProof] = useState(false);
 
   useEffect(() => {
     if (!activeStellarAddress) {
@@ -1224,9 +1177,6 @@ export default function ProfilePage() {
     return receipts.filter((r) => !burnedReceiptIds.includes(r.fund_id));
   }, [receipts, burnedReceiptIds]);
 
-  const [projectFilter, setProjectFilter] =
-    useState<ProjectVisibilityFilter>("all");
-
   const [fundedSort, setFundedSort] = useState<
     "date-desc" | "date-asc" | "amount-desc" | "amount-asc"
   >("date-desc");
@@ -1282,18 +1232,6 @@ export default function ProfilePage() {
       (p) =>
         p.creatorAddress === activeStellarAddress,
     );
-    let filtered = userOwned;
-    switch (projectFilter) {
-      case "public":
-        filtered = userOwned.filter((p) => p.isPublic === true);
-        break;
-      case "private":
-        filtered = userOwned.filter((p) => p.isPublic === false);
-        break;
-      default:
-        filtered = userOwned;
-        break;
-    }
 
     // Helper to get number of unique investors for a project ID
     const getInvestorsCount = (projectId: string) => {
@@ -1308,7 +1246,7 @@ export default function ProfilePage() {
       return uniqueInvestors.size;
     };
 
-    return [...filtered].sort((a, b) => {
+    return [...userOwned].sort((a, b) => {
       if (investorSort === "investors-desc") {
         return getInvestorsCount(b.id) - getInvestorsCount(a.id);
       }
@@ -1323,7 +1261,7 @@ export default function ProfilePage() {
       }
       return 0;
     });
-  }, [projects, user, projectFilter, activeStellarAddress, investorSort, allReceipts]);
+  }, [projects, user, activeStellarAddress, investorSort, allReceipts]);
 
   const isLoading = authLoading || isLoadingProjects || isLoadingPlatform;
 

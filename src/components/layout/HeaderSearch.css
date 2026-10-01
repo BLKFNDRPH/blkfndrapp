@@ -28,9 +28,6 @@
 
 /* On mobile, search input takes over */
 @media (max-width: 768px) {
-  .header-search-container.expanded {
-    flex-grow: 1;
-  }
   .search-input-wrapper {
     width: 100%;
   }
