@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, type ReactNode } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 import { signMessage } from "@stellar/freighter-api";
 import {
   connectFreighterWallet,
@@ -30,18 +30,14 @@ export const FreighterWalletProvider = ({
 }: {
   children: ReactNode;
 }) => {
+  // The address every transaction is built for and signed as. Only this
+  // provider sets it. On load it comes from the account's linked wallet, or
+  // Freighter's active account when none is linked. After that it changes only
+  // when the person connects, links or disconnects.
   const [freighterWalletAddress, setFreighterWalletAddress] = useState<
     string | null
   >(null);
   const [error, setError] = useState<string | null>(null);
-
-  const syncAddress = useCallback((address: string | null) => {
-    if (address && isStellarPublicKey(address)) {
-      setFreighterWalletAddress(address);
-    } else if (address === null) {
-      setFreighterWalletAddress(null);
-    }
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -198,7 +194,6 @@ export const FreighterWalletProvider = ({
         connectWallet,
         disconnectWallet,
         login,
-        syncAddress,
       }}
     >
       {children}

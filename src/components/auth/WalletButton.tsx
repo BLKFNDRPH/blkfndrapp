@@ -46,7 +46,10 @@ export function WalletButton() {
   const { toast } = useToast();
   const [isConnecting, setIsConnecting] = useState(false);
 
-  const activeStellarAddress = user?.stellarPublicKey || freighterWalletAddress || "";
+  // The wallet in use, never the account's linked one: this is where the app
+  // says a wallet is connected and offers to disconnect it, and with nothing
+  // connected every transaction asks to connect first.
+  const activeStellarAddress = freighterWalletAddress || "";
 
   const handleCopyAddress = () => {
     if (activeStellarAddress) {

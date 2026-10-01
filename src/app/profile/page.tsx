@@ -1095,8 +1095,12 @@ export default function ProfilePage() {
     }
   };
 
-  const activeStellarAddress =
-    user?.stellarPublicKey || freighterWalletAddress || "";
+  // The wallet in use, for everything that says a wallet is connected.
+  const connectedAddress = freighterWalletAddress || "";
+  // The account's own data (identity check, contributions, projects) follows
+  // the wallet in use, as ReceiptCard does, and falls back to the account's
+  // linked wallet when none is connected.
+  const activeStellarAddress = connectedAddress || user?.stellarPublicKey || "";
 
   const [kycStatus, setKycStatus] = useState<string>("none");
   const [isOnChainKycApproved, setIsOnChainKycApproved] = useState(false);
@@ -1403,7 +1407,7 @@ export default function ProfilePage() {
                 <p className="text-muted-foreground">
                   {user.email || "Freighter Authenticated"}
                 </p>
-                {activeStellarAddress ? (
+                {connectedAddress ? (
                   <span className="inline-flex items-center gap-1.5 mt-1.5 text-xs text-green-600 dark:text-green-400 font-semibold px-2.5 py-0.5 rounded-full bg-green-500/10 border border-green-500/20 shadow-sm">
                     <div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
                     Freighter Connected
@@ -1596,7 +1600,7 @@ export default function ProfilePage() {
 
         <TabsContent value="wallet" className="bg-card border rounded-lg p-6">
           <TabHeader title="Wallet Details" />
-          {!activeStellarAddress ? (
+          {!connectedAddress ? (
             <div className="flex flex-col items-center justify-center p-8 rounded-xl border border-dashed border-border bg-muted/20 text-center space-y-4 max-w-md mx-auto my-6 shadow-inner">
               <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center">
                 <Wallet className="h-6 w-6 text-primary" />
@@ -1650,7 +1654,7 @@ export default function ProfilePage() {
                   <div className="flex flex-col gap-2 min-w-0 md:max-w-md w-full md:w-auto">
                     <div className="flex items-center justify-between bg-black/10 dark:bg-black/20 rounded-xl px-4 py-3 border border-border">
                       <span className="font-mono text-sm truncate text-foreground select-all pr-4">
-                        {activeStellarAddress}
+                        {connectedAddress}
                       </span>
                       <div className="flex items-center gap-1.5 shrink-0">
                         <TooltipProvider>
@@ -1661,7 +1665,7 @@ export default function ProfilePage() {
                                 size="icon"
                                 className="h-8 w-8 hover:bg-muted"
                                 onClick={() =>
-                                  handleCopyAddress(activeStellarAddress)
+                                  handleCopyAddress(connectedAddress)
                                 }
                               >
                                 <Copy className="h-4 w-4" />
@@ -1675,7 +1679,7 @@ export default function ProfilePage() {
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <a
-                                href={`https://stellar.expert/explorer/testnet/account/${activeStellarAddress}`}
+                                href={`https://stellar.expert/explorer/testnet/account/${connectedAddress}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="inline-flex"
@@ -1700,8 +1704,8 @@ export default function ProfilePage() {
                 </div>
               </Card>
 
-              <StellarWalletDetailsCard address={activeStellarAddress} />
-              <StellarRecentActivityCard address={activeStellarAddress} />
+              <StellarWalletDetailsCard address={connectedAddress} />
+              <StellarRecentActivityCard address={connectedAddress} />
             </div>
           )}
         </TabsContent>

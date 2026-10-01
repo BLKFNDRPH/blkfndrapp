@@ -73,8 +73,9 @@ export function WalletSettings() {
     setIsMounted(true);
   }, []);
 
-  const activeStellarAddress =
-    user?.stellarPublicKey || freighterWalletAddress || "";
+  // The wallet in use, never the account's linked one, for the same reason as
+  // the header's WalletButton: this panel says "connected & active".
+  const activeStellarAddress = freighterWalletAddress || "";
 
   const handleCopyAddress = () => {
     if (activeStellarAddress) {
