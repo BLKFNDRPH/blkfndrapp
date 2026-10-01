@@ -289,6 +289,41 @@ services:
       - "app.name=blkfndr3-settle-stalled"
       - "app.description=Reclaims abandoned funded vaults for contributors"
 
+  # Keeps shared contract storage from expiring. Soroban archives any entry
+  # whose rent lapses, and the next caller pays to restore it: the vault code
+  # lapsed once and every launch then carried ~60 XLM of restore-and-extend in
+  # its own fee. This restores anything archived and tops up any shared
+  # instance or code entry with under 21 days left to 60, paid by the same
+  # OPS_FUNDING_SUBMITTER_SECRET gas payer; without it the endpoint skips.
+  # Daily is plenty -- a run with nothing due sends nothing.
+  keep-alive-cron:
+    image: curlimages/curl:8.11.1
+    restart: unless-stopped
+    depends_on:
+      blkfndr-app:
+        condition: service_healthy
+    environment:
+      - INDEXER_SECRET=${INDEXER_SECRET:-}
+      - KEEP_ALIVE_INTERVAL_SECONDS=${KEEP_ALIVE_INTERVAL_SECONDS:-86400}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "keep-alive-cron: polling every $${KEEP_ALIVE_INTERVAL_SECONDS}s"
+        while true; do
+          curl --silent --show-error --fail --max-time 600 \
+            -X POST http://blkfndr-app:3000/api/keep-alive \
+            -H "Authorization: Bearer $${INDEXER_SECRET}" \
+            -H "Content-Type: application/json" \
+            -d '{}' \
+            || echo "keep-alive-cron: run failed at $$(date -u +%FT%TZ)"
+          sleep "$${KEEP_ALIVE_INTERVAL_SECONDS}"
+        done
+    networks:
+      - blkfndr-network
+    labels:
+      - "app.name=blkfndr3-keep-alive"
+      - "app.description=Keeps shared contract storage from expiring"
+
 volumes:
   next-cache:
     driver: local
