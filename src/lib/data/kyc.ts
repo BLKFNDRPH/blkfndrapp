@@ -55,11 +55,44 @@ const SubmissionInput = z.object({
 export type SubmissionInput = z.infer<typeof SubmissionInput>;
 
 /**
+ * Refuse an identity check for any wallet but the caller's linked one.
+ *
+ * A check names the wallet it clears. Once approved, that wallet is attested
+ * on-chain and can launch vaults, so it has to be one the applicant has shown
+ * they control. That is the wallet linked to their account, which only
+ * linkWallet writes, after a signed challenge. Without this check, one person's
+ * documents could clear somebody else's wallet. The write policies refuse it
+ * too (20261001160000_kyc_filed_against_linked_wallet). Checking here first
+ * gives the applicant a message they can act on instead of an RLS error.
+ */
+async function requireLinkedWallet(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  address: string,
+) {
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("stellar_public_key")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (error) throw new Error(`Could not save KYC submission: ${error.message}`);
+  if (!data?.stellar_public_key || data.stellar_public_key !== address) {
+    throw new Error(
+      "Identity checks are filed against the wallet linked to your account, and this one is not linked. " +
+        "Link it on the verification page (Freighter asks you to sign a one-time message), then submit again.",
+    );
+  }
+}
+
+/**
  * File or resubmit the caller's own KYC.
  *
  * The row is written through the caller's own client, so RLS applies: the
- * insert policy pins user_id to the caller and forces status to pending. An
- * argument claiming to be someone else cannot get past the database.
+ * insert policy pins user_id to the caller, forces status to pending, and
+ * requires the address to be the caller's linked wallet. An argument claiming
+ * to be someone else, or naming someone else's wallet, cannot get past the
+ * database.
  *
  * Deliberately not an upsert. PostgREST compiles `.upsert()` into
  * INSERT ... ON CONFLICT DO UPDATE, and Postgres requires SELECT privilege on
@@ -101,6 +134,8 @@ export async function submitOwnKyc(input: unknown) {
   if (readError) throw new Error(`Could not save KYC submission: ${readError.message}`);
 
   if (!existing) {
+    await requireLinkedWallet(supabase, caller.userId, parsed.stellarAddress);
+
     const { error } = await supabase
       .from("kyc_requests")
       .insert({ user_id: caller.userId, stellar_address: parsed.stellarAddress, ...details });
@@ -128,6 +163,10 @@ export async function submitOwnKyc(input: unknown) {
       `This identity check is filed against ${existing.stellar_address}. Reconnect that wallet to resubmit, or contact support to change it.`,
     );
   }
+
+  // The address on file must still be linked: signing out unlinks it, so
+  // someone resubmitting after a new sign-in links it again first.
+  await requireLinkedWallet(supabase, caller.userId, parsed.stellarAddress);
 
   const { error } = await supabase
     .from("kyc_requests")
