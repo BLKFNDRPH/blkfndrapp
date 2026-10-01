@@ -84,8 +84,6 @@ services:
         # redirect allow-list configured in the Supabase dashboard, or Google
         # sign-in returns the user to the wrong host.
         - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-}
-        - NEXT_PUBLIC_STELLAR_ADMIN_ADDRESS=${NEXT_PUBLIC_STELLAR_ADMIN_ADDRESS:-}
-        - NEXT_PUBLIC_STELLAR_FALLBACK_ADDRESS=${NEXT_PUBLIC_STELLAR_FALLBACK_ADDRESS:-}
 
         # Optional. Unset renders project locations as a Google Maps link
         # instead of an embedded map — a supported mode, not a broken one.

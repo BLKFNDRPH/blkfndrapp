@@ -13,7 +13,7 @@ import {
   DropdownMenuLabel,
 } from '@/components/ui/dropdown-menu';
 import { Bell, ExternalLink, X, Briefcase, MessageSquareText } from 'lucide-react';
-import type { Notification, Project } from '@/lib/types';
+import type { Notification } from '@/lib/types';
 import { formatDistanceToNow } from 'date-fns';
 import { ScrollArea } from '../ui/scroll-area';
 import { cn } from '@/lib/utils';

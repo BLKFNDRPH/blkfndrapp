@@ -1,7 +1,7 @@
 "use client";
 
 import type { User as AppUser } from "@/lib/types";
-import React, {
+import {
   createContext,
   useContext,
   useState,

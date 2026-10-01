@@ -7,7 +7,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Badge } from '../ui/badge';
 import { CheckCircle, AlertTriangle, Star } from 'lucide-react';
 import { Progress } from '../ui/progress';
 import type { ImproveListingQualityOutput } from '@/ai/flows/improve-listing-quality';

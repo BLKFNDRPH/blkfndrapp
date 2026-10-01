@@ -1,6 +1,6 @@
 "use client";
 
-import React, {
+import {
   createContext,
   useContext,
   useState,
@@ -14,26 +14,19 @@ import { getProjectById } from "@/lib/data.client";
 import { Client as VaultClient } from "@/packages/blkfndr_vault/src";
 import { SOROBAN_RPC_URL, NETWORK_PASSPHRASE } from "@/lib/stellar";
 
-
 interface ProjectDetailsContextType {
   project: Project | null;
   isOpen: boolean;
   isLoading: boolean;
   error: string | null;
   isFundFlow: boolean;
-  isEditMode: boolean;
-  isSaveDisabled: boolean;
-  isSaving: boolean;
   openProjectDetails: (
     initialProject: Project,
     startFundFlow?: boolean,
   ) => void;
   closeProjectDetails: () => void;
   setIsFundFlow: (isFundFlow: boolean) => void;
-  setIsEditMode: (isEditMode: boolean) => void;
   refreshProject: (projectId: string) => void;
-  setIsSaveDisabled: (disabled: boolean) => void;
-  setIsSaving: (isSaving: boolean) => void;
 }
 
 const ProjectDetailsContext = createContext<
@@ -50,9 +43,6 @@ export const ProjectDetailsProvider = ({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isFundFlow, setIsFundFlow] = useState(false);
-  const [isEditMode, setIsEditMode] = useState(false);
-  const [isSaveDisabled, setIsSaveDisabled] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
 
   const fetchProject = useCallback(
     async (projectId: string, fallbackProject?: Project) => {
@@ -164,9 +154,6 @@ export const ProjectDetailsProvider = ({
     setIsOpen(true);
     setError(null);
     setIsFundFlow(startFundFlow);
-    setIsEditMode(false);
-    setIsSaveDisabled(true);
-    setIsSaving(false);
     fetchProject(initialProject.id, initialProject);
   };
 
@@ -175,9 +162,7 @@ export const ProjectDetailsProvider = ({
     setTimeout(() => {
       setProject(null);
       setIsFundFlow(false);
-      setIsEditMode(false);
       setError(null);
-      setIsSaving(false);
     }, 300);
   };
 
@@ -200,13 +185,7 @@ export const ProjectDetailsProvider = ({
         closeProjectDetails,
         isFundFlow,
         setIsFundFlow,
-        isEditMode,
-        setIsEditMode,
         refreshProject,
-        isSaveDisabled,
-        setIsSaveDisabled,
-        isSaving,
-        setIsSaving,
       }}
     >
       {children}

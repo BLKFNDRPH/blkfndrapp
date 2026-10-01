@@ -9,33 +9,9 @@ import React, {
   ReactNode,
 } from "react";
 import { useStellarContract } from "../hooks/use-stellar-contract";
-import { getIPFSGatewayUrl } from "../lib/pinata-client";
 import type { Project, FundReceipt } from "../lib/types";
-import { getUsersByAddresses } from "../lib/data.client";
 import { Client as VaultClient } from "@/packages/blkfndr_vault/src";
 import { SOROBAN_RPC_URL, NETWORK_PASSPHRASE } from "@/lib/stellar";
-
-
-const mapStatus = (status: number): Project["status"] => {
-  switch (status) {
-    case 0:
-      return "hidden";
-    case 1:
-      return "pending";
-    case 2:
-      return "rejected";
-    case 3:
-      return "approved";
-    case 4:
-      return "funded";
-    case 5:
-      return "completed";
-    case 6:
-      return "expired";
-    default:
-      return "pending";
-  }
-};
 
 interface PlatformInfo {
   /**
@@ -45,22 +21,9 @@ interface PlatformInfo {
    * to nobody.
    */
   admin: string;
-  /** The owner as read from the contract, or '' if it could not be read. */
-  owner: string;
   feeWalletAddress: string;
   feeWalletEmail: string;
-  totalFeesCollected: string;
-  totalDonationsReceived: string;
-  projectCounter: string;
   multiSigAdmins: string[];
-  multisigThreshold: number;
-  shareRules: {
-    minPercentage: number;
-    maxPercentage: number;
-    description: string;
-    minPercentageDisplay: number;
-    maxPercentageDisplay: number;
-  };
   feePercentage: number;
   bondPercentage?: number;
 }
@@ -68,18 +31,11 @@ interface PlatformInfo {
 interface BlockchainContextType {
   platformInfo: PlatformInfo | null;
   isLoadingPlatform: boolean;
-  platformError: string | null;
   projects: Project[];
   isLoadingProjects: boolean;
-  projectsError: string | null;
-  hasNextPage: boolean;
-  nextCursor: string | null;
   userFunds: FundReceipt[];
   isLoadingFunds: boolean;
-  fundsError: string | null;
-  refreshPlatform: () => Promise<void>;
   refreshProjects: () => Promise<void>;
-  loadMoreProjects: () => Promise<void>;
   refreshUserFunds: (address: string) => Promise<void>;
   refreshAfterTx: (userAddress?: string, delayMs?: number) => Promise<void>;
   getProjectById: (id: string) => Project | undefined;
@@ -102,22 +58,16 @@ export const BlockchainProvider: React.FC<BlockchainProviderProps> = ({
 
   const [platformInfo, setPlatformInfo] = useState<PlatformInfo | null>(null);
   const [isLoadingPlatform, setIsLoadingPlatform] = useState(true);
-  const [platformError, setPlatformError] = useState<string | null>(null);
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoadingProjects, setIsLoadingProjects] = useState(true);
-  const [projectsError, setProjectsError] = useState<string | null>(null);
-  const [hasNextPage] = useState(false);
-  const [nextCursor] = useState<string | null>(null);
 
   const [userFunds, setUserFunds] = useState<FundReceipt[]>([]);
   const [isLoadingFunds, setIsLoadingFunds] = useState(false);
-  const [fundsError, setFundsError] = useState<string | null>(null);
 
   const refreshPlatform = useCallback(async () => {
     try {
       setIsLoadingPlatform(true);
-      setPlatformError(null);
 
       // Platform terms live on the factory now, and the admin roster is its own
       // contract. The retired crowdfunding contract exposed all of it as one
@@ -153,32 +103,15 @@ export const BlockchainProvider: React.FC<BlockchainProviderProps> = ({
 
       setPlatformInfo({
         admin: (owner as string | null) ?? adminList[0] ?? '',
-        owner: (owner as string | null) ?? '',
         feeWalletAddress: (feeWallet as string | null) ?? '',
         feeWalletEmail: email,
-        totalFeesCollected: '0',
-        totalDonationsReceived: '0',
-        projectCounter: '0',
         multiSigAdmins: adminList,
-        // No approval threshold exists any more: milestone release is decided
-        // by contributors inside each vault, weighted by contribution.
-        multisigThreshold: 0,
-        shareRules: {
-          minPercentage: 500,
-          maxPercentage: 1500,
-          description: 'Balanced investor incentives',
-          minPercentageDisplay: 5,
-          maxPercentageDisplay: 15,
-        },
         // A flat amount in stroops, not a percentage.
         feePercentage: Number(terms.fee ?? 0),
         bondPercentage: Number(terms.bondBps ?? 500),
       });
     } catch (error) {
       console.warn("Error fetching platform info:", error);
-      setPlatformError(
-        error instanceof Error ? error.message : "Unknown error",
-      );
     } finally {
       setIsLoadingPlatform(false);
     }
@@ -286,7 +219,6 @@ export const BlockchainProvider: React.FC<BlockchainProviderProps> = ({
   const refreshProjects = useCallback(async () => {
     try {
       setIsLoadingProjects(true);
-      setProjectsError(null);
 
       const res = await fetch("/api/projects", {
         cache: "no-store",
@@ -305,17 +237,10 @@ export const BlockchainProvider: React.FC<BlockchainProviderProps> = ({
       });
     } catch (error) {
       console.warn("Error fetching projects:", error);
-      setProjectsError(
-        error instanceof Error ? error.message : "Unknown error",
-      );
     } finally {
       setIsLoadingProjects(false);
     }
   }, [reconcileStaleProjects]);
-
-  const loadMoreProjects = useCallback(async () => {
-    // No pagination implemented on contract yet, all projects are fetched
-  }, []);
 
   const refreshUserFunds = useCallback(
     async (address: string) => {
@@ -325,7 +250,6 @@ export const BlockchainProvider: React.FC<BlockchainProviderProps> = ({
       }
       try {
         setIsLoadingFunds(true);
-        setFundsError(null);
         // Contributions are per-vault now, so there is no single contract call
         // that returns a wallet's whole history. The indexer already
         // reconstructs it from DEPOSIT/CONTRIB events.
@@ -356,9 +280,6 @@ export const BlockchainProvider: React.FC<BlockchainProviderProps> = ({
         setUserFunds(mapped);
       } catch (error) {
         console.warn("Error fetching user contributions:", error);
-        setFundsError(
-          error instanceof Error ? error.message : "Unknown error",
-        );
       } finally {
         setIsLoadingFunds(false);
       }
@@ -420,18 +341,11 @@ export const BlockchainProvider: React.FC<BlockchainProviderProps> = ({
   const value: BlockchainContextType = {
     platformInfo,
     isLoadingPlatform,
-    platformError,
     projects,
     isLoadingProjects,
-    projectsError,
-    hasNextPage,
-    nextCursor,
     userFunds,
     isLoadingFunds,
-    fundsError,
-    refreshPlatform,
     refreshProjects,
-    loadMoreProjects,
     refreshUserFunds,
     refreshAfterTx,
     getProjectById,
@@ -455,39 +369,18 @@ export const useBlockchain = () => {
 };
 
 export const usePlatformInfo = () => {
-  const { platformInfo, isLoadingPlatform, platformError, refreshPlatform } =
-    useBlockchain();
-  return { platformInfo, isLoadingPlatform, platformError, refreshPlatform };
+  const { platformInfo, isLoadingPlatform } = useBlockchain();
+  return { platformInfo, isLoadingPlatform };
 };
 
 export const useProjects = () => {
-  const {
-    projects,
-    isLoadingProjects,
-    projectsError,
-    hasNextPage,
-    refreshProjects,
-    loadMoreProjects,
-    getProjectById,
-  } = useBlockchain();
-  return {
-    projects,
-    isLoadingProjects,
-    projectsError,
-    hasNextPage,
-    refreshProjects,
-    loadMoreProjects,
-    getProjectById,
-  };
+  const { projects, isLoadingProjects, refreshProjects, getProjectById } =
+    useBlockchain();
+  return { projects, isLoadingProjects, refreshProjects, getProjectById };
 };
 
 export const useUserFunds = (address?: string) => {
-  const {
-    userFunds,
-    isLoadingFunds,
-    fundsError,
-    refreshUserFunds,
-  } = useBlockchain();
+  const { userFunds, isLoadingFunds, refreshUserFunds } = useBlockchain();
 
   useEffect(() => {
     if (address) {
@@ -495,24 +388,12 @@ export const useUserFunds = (address?: string) => {
     }
   }, [address, refreshUserFunds]);
 
-  return {
-    userFunds,
-    isLoadingFunds,
-    fundsError,
-    refreshUserFunds,
-  };
+  return { userFunds, isLoadingFunds, refreshUserFunds };
 };
 
 export const useAdminStatus = (address?: string) => {
-  const { isAdmin, isMultiSigAdmin, platformInfo, isLoadingPlatform } =
-    useBlockchain();
-  return {
-    isAdmin: isAdmin(address),
-    isMultiSigAdmin: isMultiSigAdmin(address),
-    hasAdminAccess: isAdmin(address) || isMultiSigAdmin(address),
-    platformInfo,
-    isLoadingPlatform,
-  };
+  const { isAdmin, isMultiSigAdmin } = useBlockchain();
+  return { hasAdminAccess: isAdmin(address) || isMultiSigAdmin(address) };
 };
 
 export const useRefreshAfterTx = () => {

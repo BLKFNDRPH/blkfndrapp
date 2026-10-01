@@ -9,9 +9,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { Badge } from "@/components/ui/badge";
 import type { Project } from "@/lib/types";
-import { formatCurrency } from "@/lib/formatters";
 import { Avatar, AvatarFallback, AvatarImage } from "../ui/avatar";
 import { useProjectDetails } from "@/context/ProjectDetailsContext";
 import {
@@ -20,7 +18,6 @@ import {
   AlertTriangle,
   Star,
   TrendingUp,
-  Info,
   Lock,
   Clock,
   EyeOff,
@@ -28,13 +25,6 @@ import {
 import { cn, shortenAddress } from "@/lib/utils";
 import { getIPFSGatewayUrl } from "@/lib/pinata-client";
 import "./ProjectCard.css";
-import { Separator } from "../ui/separator";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "../ui/tooltip";
 import { ImageWithFallback } from "../ui/image-with-fallback";
 import { StellarFormatter } from "@/lib/stellar-format";
 

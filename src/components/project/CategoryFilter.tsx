@@ -9,7 +9,6 @@ import {
   CarouselPrevious,
 } from "@/components/ui/carousel";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 import {
   Leaf, Film, BrainCircuit, Network, Users, ShoppingCart, GraduationCap, Sprout,
   Shirt, Video, Utensils, Gamepad2, HardDrive, HeartPulse, Building, Music, Home,

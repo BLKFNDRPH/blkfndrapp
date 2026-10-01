@@ -16,4 +16,8 @@ bash scripts/build-contracts.sh
 stellar contract bindings typescript \
   --wasm target/wasm32-unknown-unknown/release/blkfndr_vault.wasm \
   --output-dir src/packages/blkfndr_vault --overwrite
+rm src/packages/blkfndr_vault/{package.json,tsconfig.json,README.md}
 ```
+
+The generator writes an npm package around `src/index.ts`. Delete its
+`package.json`, `tsconfig.json` and `README.md` afterwards, for the reason above.

@@ -53,14 +53,6 @@
     --chart-4: 0 0% 45%;
     --chart-5: 40 70% 48%;
     --radius: 0.5rem;
-    --sidebar-background: 0 0% 9%;
-    --sidebar-foreground: 0 0% 96%;
-    --sidebar-primary: 44 85% 58%;
-    --sidebar-primary-foreground: 0 0% 8%;
-    --sidebar-accent: 44 85% 58%;
-    --sidebar-accent-foreground: 0 0% 8%;
-    --sidebar-border: 0 0% 18%;
-    --sidebar-ring: 44 85% 58%;
     --close-button-bg-color: rgba(0, 0, 0, 0.05);
     --nav-button-bg: hsl(var(--primary));
     --nav-button-hover-bg: hsl(var(--primary) / 0.9);
@@ -91,14 +83,6 @@
     --chart-3: 0 0% 9%;
     --chart-4: 0 0% 55%;
     --chart-5: 40 70% 45%;
-    --sidebar-background: 0 0% 6%;
-    --sidebar-foreground: 0 0% 96%;
-    --sidebar-primary: 44 85% 58%;
-    --sidebar-primary-foreground: 0 0% 8%;
-    --sidebar-accent: 44 85% 58%;
-    --sidebar-accent-foreground: 0 0% 8%;
-    --sidebar-border: 0 0% 18%;
-    --sidebar-ring: 44 85% 58%;
     --close-button-bg-color: rgba(255, 255, 255, 0.1);
     --nav-button-bg: hsl(var(--primary));
     --nav-button-hover-bg: hsl(var(--primary) / 0.9);
@@ -138,40 +122,9 @@
   body {
     @apply bg-background text-foreground;
   }
-
-  .font-logo {
-    font-family: "Roboto Flex Variable", sans-serif;
-    font-weight: 700;
-    font-variation-settings:
-      "wght" 700,
-      "wdth" 62;
-  }
 }
 
 @layer components {
-  .dapp-kit-connect-button {
-    background-color: hsl(var(--primary)) !important;
-    color: hsl(var(--primary-foreground)) !important;
-  }
-
-  .dapp-kit-connect-button[data-connected="true"] div {
-    color: hsl(var(--primary-foreground)) !important;
-  }
-
-  /* Override dapp-kit connected account address color */
-  [data-dapp-kit] .AccountDropdownMenu_connectedAccount__div2ql0,
-  [data-dapp-kit] .AccountDropdownMenu_connectedAccount__div2ql0 * {
-    color: #000000 !important;
-  }
-
-  /* Ensure hover (and focus) also shows black text */
-  [data-dapp-kit] .AccountDropdownMenu_connectedAccount__div2ql0:hover,
-  [data-dapp-kit] .AccountDropdownMenu_connectedAccount__div2ql0:focus,
-  [data-dapp-kit] .AccountDropdownMenu_connectedAccount__div2ql0:hover *,
-  [data-dapp-kit] .AccountDropdownMenu_connectedAccount__div2ql0:focus * {
-    color: #000000 !important;
-  }
-
   .animated-close-button {
     width: 24px;
     height: 24px;

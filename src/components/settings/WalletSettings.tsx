@@ -63,7 +63,6 @@ export function WalletSettings() {
     freighterWalletAddress,
     login: connectFreighter,
     disconnectWallet,
-    error: freighterError,
   } = useFreighterWallet();
   const { toast } = useToast();
   const [isMounted, setIsMounted] = useState(false);

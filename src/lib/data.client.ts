@@ -1,7 +1,7 @@
 /**
  * Client-safe data fetching utilities.
- * These use fetch() to call API routes instead of importing Mongoose directly.
- * Import these in client components instead of lib/data.ts
+ * These call API routes with fetch(), so client components never import the
+ * server-only data layer in src/lib/data/.
  */
 
 import type { User, Project } from "./types";
@@ -27,23 +27,16 @@ function profileToUser(row: any): User | null {
 }
 
 /**
- * Look up a user by their wallet address or uid.
+ * Look up the platform user linked to a Stellar wallet address.
  * Safe to call from client components.
- *
- * field options:
- *   "stellarPublicKey"   — Stellar wallet public key (default)
- *   "uid"                — NextAuth session uid
  */
 export const getUserByCreatorId = async (
   address: string,
-  field:
-    | "stellarPublicKey"
-    | "uid" = "stellarPublicKey",
 ): Promise<User | null> => {
   if (!address) return null;
   try {
     const res = await fetch(
-      `/api/user-by-address?address=${encodeURIComponent(address)}&field=${field}`,
+      `/api/user-by-address?address=${encodeURIComponent(address)}`,
     );
     if (!res.ok) return null;
     return profileToUser(await res.json());

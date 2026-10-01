@@ -35,53 +35,6 @@ export const getBalance = async (publicKey: string) => {
   }
 };
 
-export interface StellarAccountActivityItem {
-  id: string;
-  type: string;
-  created_at: string;
-  transaction_hash?: string;
-  from?: string;
-  to?: string;
-  amount?: string;
-  asset_type?: string;
-  asset_code?: string;
-}
-
-export const getRecentAccountOperations = async (
-  publicKey: string,
-  limit = 20,
-): Promise<StellarAccountActivityItem[]> => {
-  try {
-    const response = await horizonClient
-      .operations()
-      .forAccount(publicKey)
-      .order("desc")
-      .limit(limit)
-      .call();
-
-    return response.records.map((record) => {
-      const operation = record as any;
-      return {
-        id: operation.id,
-        type: operation.type,
-        created_at: operation.created_at,
-        transaction_hash: operation.transaction_hash,
-        from: operation.from,
-        to: operation.to,
-        amount: operation.amount,
-        asset_type: operation.asset_type,
-        asset_code: operation.asset_code,
-      };
-    });
-  } catch (error: any) {
-    if (error.response?.status === 404) {
-      return [];
-    }
-    console.error("Error fetching account operations:", error);
-    return [];
-  }
-};
-
 /**
  * Whether an address is a platform admin, according to the chain.
  *

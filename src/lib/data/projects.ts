@@ -130,16 +130,6 @@ export async function getProjectByVault(vaultAddress: string): Promise<Project |
   return toProject(data, await getRestriction(vaultAddress, supabase));
 }
 
-export async function resolveProjectIdByVault(vaultAddress: string): Promise<string | null> {
-  const supabase = await createClient();
-  const { data } = await supabase
-    .from("projects")
-    .select("project_id")
-    .eq("vault_address", vaultAddress)
-    .maybeSingle();
-  return data?.project_id ?? null;
-}
-
 /**
  * Upsert a project from indexed on-chain state. Service-role only — every
  * field here is ledger-derived and must never originate in a browser.

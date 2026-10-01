@@ -96,8 +96,6 @@ docker compose logs -f blkfndr-app
 | `NEXT_PUBLIC_SOROBAN_RPC_URL` | **Defaults to testnet** — see below |
 | `NEXT_PUBLIC_HORIZON_URL` | **Defaults to testnet** — see below |
 | `NEXT_PUBLIC_APP_URL` | Public origin, e.g. `https://testnetv2.blkfndr.com`. Must match the Supabase Site URL |
-| `NEXT_PUBLIC_STELLAR_ADMIN_ADDRESS` | |
-| `NEXT_PUBLIC_STELLAR_FALLBACK_ADDRESS` | |
 | `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | Optional. Unset renders a Maps link instead of an embedded map |
 
 > **Both RPC URLs default to testnet.** A mainnet stack that leaves them blank

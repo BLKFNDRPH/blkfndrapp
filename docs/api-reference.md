@@ -48,19 +48,17 @@ Some writes take no authorizing caller — a carried vote is the authority, so a
 
 ## 2. Server Actions
 
-Every exported async function in a `"use server"` file is a public HTTP endpoint. Each one **re-authenticates the caller, re-authorizes against their role, and validates its arguments** — the argument list is treated as hostile, never trusted because it came from our own client. Roles are read from `app_metadata`; the service-role key is used only inside these server-only modules, never shipped to the browser.
+Every exported async function in a `"use server"` file is a public HTTP endpoint. Each one **re-authenticates the caller, re-authorizes against their role, and validates its arguments** — the argument list is treated as hostile, never trusted because it came from our own client. Roles are read from the `platform_admins` roster (`my_role()`), asked fresh on every call; the service-role key is used only inside these server-only modules, never shipped to the browser.
 
 | Module | Exports (selected) | Guard |
 |---|---|---|
-| `src/actions/admins.ts` | `getAdminsAction`, `getMyRoleAction`, `grantAdminAction`, `revokeAdminAction`, `setAdminWalletAction`, `recognizeWalletAction`, `getAdminAuditLogAction` | Owner / platform-admin. `grantAdminAction` also provisions a managed attestor wallet (rolled back on failure); `revokeAdminAction` sweeps and deletes it |
+| `src/actions/admins.ts` | `getAdminsAction`, `getMyRoleAction`, `grantAdminAction`, `revokeAdminAction`, `recognizeWalletAction`, `getAdminAuditLogAction` | Owner / platform-admin. `grantAdminAction` also provisions a managed attestor wallet (rolled back on failure); `revokeAdminAction` sweeps and deletes it |
 | `src/actions/moderation.ts` | `getUsersAction`, `banUserAction`, `unbanUserAction`, `getHealthAction` | Platform administrator |
 | `src/actions/project-moderation.ts` | `flagProjectAction`, `voteOnProjectAction`, `clearModerationAction`, `getModerationAction`, `getPendingReviewsAction` | Project administrator |
 | `src/actions/project-restrictions.ts` | `setProjectHiddenAction`, `setProjectLockedAction`, `checkVaultLockAction` | Hide/lock: owner, platform administrator or project administrator, enforced by `set_project_hidden` / `set_project_locked` in Postgres (reason required, audit-logged). `checkVaultLockAction` is public |
 | `src/actions/secrets.ts` | `getSecretStatusAction`, `setPlatformSecretAction` | Platform administrator; writes to Supabase Vault |
-| `src/actions/claims.ts` | `createClaimRequest`, `getClaimRequests`, `deleteClaimRequest` | Session |
 | `src/actions/feature-requests.ts` | `getFeatureRequestsAction`, `submitFeatureRequestAction`, `toggleUpvoteAction`, `decideFeatureRequestAction`, `respondToFeatureRequestAction` | Session; decide/respond are admin |
 | `src/actions/categories.ts` | `getCategoriesAction`, `addCategoryAction`, `removeCategoryAction` | Read public; writes admin |
-| `src/actions/notifications.ts` | `markNotificationsAsRead`, `dismissNotification`, `dismissAllNotifications` | Session, own rows only |
 | `src/app/actions.ts` | Listing/project creation and reads | Session |
 | `src/app/auth/actions.ts` | Sign-in / sign-up / OAuth start | Public (auth) |
 | `src/app/settings/actions.ts` | Profile and platform settings | Session |
@@ -87,7 +85,6 @@ All under `/api`. Session routes require the Supabase auth cookie; the machine r
 |---|---|---|
 | `GET` | `/api/projects` | List projects |
 | `GET` | `/api/projects/[id]` | One project |
-| `POST` | `/api/projects/resolve-id` | Resolve a listing to its on-chain project id |
 | `GET` | `/api/user/funds` | A user's funds view |
 | `GET` | `/api/user/contributions` | A user's stakes |
 | `GET` | `/api/user-by-address` | Resolve one wallet → public profile |
