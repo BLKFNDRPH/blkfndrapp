@@ -140,6 +140,7 @@ services:
       # ── Pinata / IPFS (required to create projects, SECRET) ──────────────
       - PINATA_JWT=${PINATA_JWT:-}
       - PINATA_GATEWAY_URL=${PINATA_GATEWAY_URL:-}
+      - PINATA_GATEWAY_KEY=${PINATA_GATEWAY_KEY:-}
       - PINATA_GROUP_BLKDFNDR=${PINATA_GROUP_BLKDFNDR:-}
 
       # ── Indexer auth (required, SECRET) ──────────────────────────────────

@@ -70,18 +70,18 @@ export async function fetchMetadata(cid: string): Promise<any> {
 
   // Strict CID resolution only. The value arrives from an on-chain event any
   // project creator controls, so an absolute URL here would be an SSRF.
-  const urls = getIPFSFetchUrls(cid);
-  if (urls.length === 0) {
+  const sources = getIPFSFetchUrls(cid);
+  if (sources.length === 0) {
     console.warn(`[Indexer] Ignoring non-CID metadata reference: ${cid}`);
     return null;
   }
 
   // Each gateway is tried in turn. A refusal used to end the lookup silently,
   // which is how every project came to be listed as "Project #N".
-  for (const url of urls) {
+  for (const { url, headers } of sources) {
     const host = new URL(url).host;
     try {
-      const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
+      const response = await fetch(url, { headers, signal: AbortSignal.timeout(8000) });
       if (!response.ok) {
         console.warn(`[Indexer] ${host} answered ${response.status} for metadata ${cid}`);
         continue;
