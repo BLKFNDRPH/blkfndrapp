@@ -4,6 +4,7 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireCaller } from "@/lib/supabase/auth";
+import { PROJECT_RESTRICTOR_ROLES } from "@/lib/admin-roles";
 
 /**
  * Notifications. Replaces the Mongo `notifications` collection.
@@ -99,19 +100,32 @@ export async function notify(input: {
   }
 }
 
-/** Notify every admin. Used for events that need human attention. */
+/**
+ * Notify the admins who look after projects — the roles that may hide and lock
+ * one (PROJECT_RESTRICTOR_ROLES). Used for project events that need human
+ * attention, which a KYC attestor or an accountant could not act on.
+ *
+ * Recipients come from the platform_admins roster — the one requireCaller()
+ * asks. This used to filter auth users on app_metadata.role, which is set only
+ * when a linked wallet is on the on-chain admin roster, so a console admin with
+ * no such wallet (a Project Administrator, say) was never told.
+ */
 export async function notifyAdmins(title: string, caption: string, projectId?: string) {
   const admin = createAdminClient();
 
-  const { data, error } = await admin.auth.admin.listUsers({ perPage: 200 });
+  // A row with no user_id is an invite whose holder has not signed in yet, so
+  // there is no account to notify.
+  const { data, error } = await admin
+    .from("platform_admins")
+    .select("user_id")
+    .in("role", PROJECT_RESTRICTOR_ROLES)
+    .not("user_id", "is", null);
   if (error) {
     console.error("[notifications] Could not list admins:", error.message);
     return;
   }
 
-  const adminIds = (data?.users ?? [])
-    .filter((u) => (u.app_metadata as { role?: string } | null)?.role === "admin")
-    .map((u) => u.id);
+  const adminIds = (data ?? []).flatMap((r) => (r.user_id ? [r.user_id] : []));
 
   if (adminIds.length === 0) return;
 
