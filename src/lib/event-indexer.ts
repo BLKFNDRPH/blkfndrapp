@@ -9,7 +9,7 @@ if (typeof window === "undefined") {
 }
 
 import { rpc, scValToNative } from "@stellar/stellar-sdk";
-import { getIPFSFetchUrl } from "./pinata-client";
+import { getIPFSFetchUrls } from "./pinata-client";
 import { SOROBAN_RPC_URL, FACTORY_ID } from "./stellar-clients";
 import { readVaultState } from "./vault-state";
 import { currencyForToken } from "./currencies";
@@ -65,36 +65,40 @@ const VAULT_STATUS: Record<number, Enums<"project_status">> = {
   5: "completed",
 };
 
-async function fetchMetadata(cid: string): Promise<any> {
+export async function fetchMetadata(cid: string): Promise<any> {
   if (!cid || cid.trim() === "" || cid === "test_cid") return null;
 
   // Strict CID resolution only. The value arrives from an on-chain event any
   // project creator controls, so an absolute URL here would be an SSRF.
-  const url = getIPFSFetchUrl(cid);
-  if (!url) {
+  const urls = getIPFSFetchUrls(cid);
+  if (urls.length === 0) {
     console.warn(`[Indexer] Ignoring non-CID metadata reference: ${cid}`);
     return null;
   }
 
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
-    const response = await fetch(url, { signal: controller.signal });
-    clearTimeout(timeout);
+  // Each gateway is tried in turn. A refusal used to end the lookup silently,
+  // which is how every project came to be listed as "Project #N".
+  for (const url of urls) {
+    const host = new URL(url).host;
+    try {
+      const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
+      if (!response.ok) {
+        console.warn(`[Indexer] ${host} answered ${response.status} for metadata ${cid}`);
+        continue;
+      }
 
-    if (!response.ok) return null;
+      // Anyone can pin anything at a CID; cap what we parse.
+      const MAX_BYTES = 256 * 1024;
+      if (Number(response.headers.get("content-length") ?? 0) > MAX_BYTES) return null;
+      const body = await response.text();
+      if (body.length > MAX_BYTES) return null;
 
-    // Anyone can pin anything at a CID; cap what we parse.
-    const MAX_BYTES = 256 * 1024;
-    if (Number(response.headers.get("content-length") ?? 0) > MAX_BYTES) return null;
-    const body = await response.text();
-    if (body.length > MAX_BYTES) return null;
-
-    return JSON.parse(body);
-  } catch (err) {
-    console.warn(`[Indexer] Could not fetch metadata for ${cid}:`, err);
-    return null;
+      return JSON.parse(body);
+    } catch (err) {
+      console.warn(`[Indexer] Could not fetch metadata ${cid} from ${host}:`, err);
+    }
   }
+  return null;
 }
 
 /** Every vault address we have seen, so their events are watched too. */
@@ -173,6 +177,93 @@ async function syncVault(vaultAddress: string, ledger?: number) {
   );
 }
 
+/** The project copy a resolved metadata document supplies. */
+function metadataFields(metadata: any) {
+  return {
+    title: String(metadata.title ?? "").trim() || undefined,
+    tagline: String(metadata.tagline ?? ""),
+    description: String(metadata.description ?? ""),
+    category: String(metadata.category ?? "") || "General",
+    imageUrl: String(metadata.imageUrl ?? ""),
+    // Creator-supplied and never verified, so it is bounded here rather than
+    // trusted: the column takes whatever IPFS returns, and IPFS returns
+    // whatever the creator pinned.
+    location: String(metadata.location ?? "").slice(0, 160),
+  };
+}
+
+function milestoneCopy(metadata: any, milestoneId: number) {
+  const meta = (metadata?.milestones ?? []).find((x: any) => Number(x.id) === milestoneId);
+  return {
+    ...(meta?.title ? { title: String(meta.title) } : {}),
+    ...(meta?.description ? { description: String(meta.description) } : {}),
+  };
+}
+
+/** Projects still listed under the placeholder title, retried per run. */
+const METADATA_RETRIES_PER_RUN = 5;
+
+/**
+ * Fill in copy for projects whose metadata did not resolve when DEPLOY was
+ * handled. The event cursor moves on regardless, so without this a gateway
+ * that was down or rate-limiting for one run left a project as "Project #N"
+ * for good.
+ *
+ * A project still carrying `Project #<its id>` as its title is taken to be
+ * unresolved. The few that are tried per run keep a CID that never resolves —
+ * a test pin, say — from costing more than a handful of fetches each time.
+ */
+export async function resolvePendingMetadata() {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("projects")
+    .select("id, project_id, title, metadata_cid")
+    .like("title", "Project #%")
+    .neq("metadata_cid", "")
+    .order("created_on_chain_at", { ascending: false })
+    .limit(50);
+  if (error) throw new Error(`Could not read unresolved projects: ${error.message}`);
+
+  const pending = (data ?? [])
+    .filter((p) => p.title === `Project #${p.project_id}`)
+    .slice(0, METADATA_RETRIES_PER_RUN);
+
+  let resolved = 0;
+  for (const project of pending) {
+    const metadata = await fetchMetadata(project.metadata_cid);
+    if (!metadata) continue;
+
+    const fields = metadataFields(metadata);
+    const { error: updateError } = await admin
+      .from("projects")
+      .update({
+        ...(fields.title ? { title: fields.title } : {}),
+        tagline: fields.tagline,
+        description: fields.description,
+        category: fields.category,
+        image_url: fields.imageUrl,
+        location: fields.location,
+      })
+      .eq("id", project.id);
+    if (updateError) {
+      console.warn(`[Indexer] Could not store metadata for project ${project.project_id}: ${updateError.message}`);
+      continue;
+    }
+
+    for (const m of metadata.milestones ?? []) {
+      const copy = milestoneCopy(metadata, Number(m.id));
+      if (Object.keys(copy).length === 0) continue;
+      await admin
+        .from("project_milestones")
+        .update(copy)
+        .eq("project_id", project.id)
+        .eq("milestone_id", Number(m.id));
+    }
+    resolved++;
+  }
+  return { pending: pending.length, resolved };
+}
+
 async function handleEvent(topic1: string, topic2: string, payload: any[], contractId: string, ledger: number, closedAt?: string) {
   const key = `${topic1}/${topic2}`;
 
@@ -180,7 +271,7 @@ async function handleEvent(topic1: string, topic2: string, payload: any[], contr
     case "FACTORY/DEPLOY": {
       // [project_id, vault_address, creator, metadata_cid]
       const [projectId, vaultAddress, creator, metadataCid] = payload;
-      const metadata = (await fetchMetadata(String(metadataCid ?? ""))) ?? {};
+      const metadata = await fetchMetadata(String(metadataCid ?? ""));
 
       const state = await readVaultState(String(vaultAddress));
       if (!state) throw new Error(`Vault ${vaultAddress} is not readable`);
@@ -203,15 +294,10 @@ async function handleEvent(topic1: string, topic2: string, payload: any[], contr
         projectId: String(projectId),
         vaultAddress: String(vaultAddress),
         creatorAddress: String(creator),
-        title: metadata.title ?? `Project #${projectId}`,
-        tagline: metadata.tagline ?? "",
-        description: metadata.description ?? "",
-        category: metadata.category ?? "General",
-        imageUrl: metadata.imageUrl ?? "",
-        // Creator-supplied and never verified, so it is bounded here rather than
-        // trusted: the column takes whatever IPFS returns, and IPFS returns
-        // whatever the creator pinned.
-        location: String(metadata.location ?? "").slice(0, 160),
+        // Unresolved metadata writes nothing, so a replay that cannot reach IPFS
+        // does not overwrite copy an earlier run resolved. The row is listed as
+        // "Project #N" until resolvePendingMetadata fills it in.
+        ...(metadata ? metadataFields(metadata) : {}),
         metadataCid: String(metadataCid ?? ""),
         ...(currency ? { currency } : {}),
         fundingGoalRaw: state.fundingGoalRaw,
@@ -226,18 +312,12 @@ async function handleEvent(topic1: string, topic2: string, payload: any[], contr
 
       await upsertMilestones(
         projectRowId,
-        state.milestones.map((m) => {
-          const meta = (metadata.milestones ?? []).find(
-            (x: any) => Number(x.id) === m.id,
-          );
-          return {
-            milestoneId: m.id,
-            amountRaw: String(BigInt(Math.round(m.amount * 10_000_000))),
-            released: m.released,
-            ...(meta?.title ? { title: String(meta.title) } : {}),
-            ...(meta?.description ? { description: String(meta.description) } : {}),
-          };
-        }),
+        state.milestones.map((m) => ({
+          milestoneId: m.id,
+          amountRaw: String(BigInt(Math.round(m.amount * 10_000_000))),
+          released: m.released,
+          ...milestoneCopy(metadata, m.id),
+        })),
       );
       return;
     }
@@ -405,10 +485,21 @@ export async function runIndexer() {
     await setCursor(nextCursor);
   }
 
+  // Best effort: copy is cosmetic, and a gateway outage must not fail the run
+  // that keeps balances and statuses current.
+  let metadata: { pending: number; resolved: number } | { error: string };
+  try {
+    metadata = await resolvePendingMetadata();
+  } catch (err) {
+    metadata = { error: String(err) };
+    console.warn("[Indexer] Metadata retry pass failed:", err);
+  }
+
   return {
     success: failed === 0,
     count: processed,
     failed,
     currentLedger: advanced ? nextCursor : stored,
+    metadata,
   };
 }
