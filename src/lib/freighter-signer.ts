@@ -5,6 +5,7 @@ import {
   signAuthEntry as freighterSignAuthEntry,
 } from "@stellar/freighter-api";
 import { NETWORK_PASSPHRASE } from "@/lib/stellar-clients";
+import { shortenAddress } from "@/lib/utils";
 
 /**
  * Freighter signing for the contract clients, with the wallet's answer checked.
@@ -73,6 +74,33 @@ export function describeFreighterError(error: FreighterError): string {
   }
 }
 
+/**
+ * Refuse a signature made by an account other than the one asked for.
+ *
+ * Every request names its account (`address`). Freighter signs as that account
+ * when it holds it, switching to it if another is selected. When it does not
+ * hold it, or the switch fails, it signs as whichever account is selected and
+ * reports that one as `signerAddress`. The SDK never reads `signerAddress`, so
+ * a transaction signed by the wrong account went to the network and was
+ * rejected for bad auth after the person had approved it. An auth entry failed
+ * inside the SDK as "signature doesn't match payload".
+ *
+ * Freighter builds that do not report a signer are let through, since there
+ * is nothing to compare.
+ */
+function requireSignedBy(
+  publicKey: string,
+  signerAddress: string | undefined,
+  what: "transaction" | "authorisation",
+) {
+  if (!signerAddress || signerAddress === publicKey) return;
+  throw new Error(
+    `Freighter signed with ${shortenAddress(signerAddress)}, but this ${what} is for ${shortenAddress(publicKey)}. ` +
+      "If that account is in Freighter, select it there and try again; otherwise connect the wallet you mean to use. " +
+      "Nothing has been sent to the network.",
+  );
+}
+
 export function freighterSigner(publicKey: string) {
   return {
     signTransaction: async (xdr: string) => {
@@ -100,6 +128,7 @@ export function freighterSigner(publicKey: string) {
       if (!res?.signedTxXdr) {
         throw new FreighterDeclined(NO_SIGNATURE_MESSAGE);
       }
+      requireSignedBy(publicKey, res.signerAddress, "transaction");
 
       return { signedTxXdr: res.signedTxXdr, signerAddress: res.signerAddress };
     },
@@ -122,6 +151,7 @@ export function freighterSigner(publicKey: string) {
             "If a Freighter window is still open, close it: approving it now sends nothing.",
         );
       }
+      requireSignedBy(publicKey, res.signerAddress, "authorisation");
 
       return { signedAuthEntry: res.signedAuthEntry, signerAddress: res.signerAddress };
     },
