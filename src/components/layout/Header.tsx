@@ -16,7 +16,6 @@ import { Button } from "@/components/ui/button";
 import {
   Menu,
   LayoutGrid,
-  PlusSquare,
   Shield,
   TestTube,
   ChevronsRight,
@@ -25,7 +24,6 @@ import {
 } from "lucide-react";
 import React, { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
-import type { Project, Investment } from "@/lib/types";
 import { PcbPattern } from "./PcbPattern";
 import { Avatar, AvatarImage, AvatarFallback } from "../ui/avatar";
 import { Separator } from "../ui/separator";

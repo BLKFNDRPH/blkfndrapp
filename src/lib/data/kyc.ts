@@ -52,8 +52,6 @@ const SubmissionInput = z.object({
   }),
 });
 
-export type SubmissionInput = z.infer<typeof SubmissionInput>;
-
 /**
  * Refuse an identity check for any wallet but the caller's linked one.
  *

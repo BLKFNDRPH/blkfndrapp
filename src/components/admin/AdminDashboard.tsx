@@ -1,19 +1,12 @@
 "use client";
 
-import { useState, useTransition, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import type { Project } from "@/lib/types";
 import { useAuth } from "@/context/AuthContext";
-import { useToast } from "@/hooks/use-toast";
 import {
   MoreHorizontal,
-  Star,
-  FileUp,
   Users,
-  PiggyBank,
   CheckCircle,
-  XCircle,
-  Settings,
-  Info,
   Plus,
   LayoutGrid,
   Shield,
@@ -32,10 +25,8 @@ import {
 } from "lucide-react";
 import { IdentityRegistryPanel } from "./IdentityRegistryPanel";
 import { Badge } from "../ui/badge";
-import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { useRouter } from "next/navigation";
 import useSWR from "swr";
 import { Progress } from "@/components/ui/progress";
 import { getKycRequests } from "@/app/actions";
@@ -70,7 +61,6 @@ import {
 import { canRestrictProjects } from "@/lib/admin-roles";
 import { ProjectsByStatusChart } from "./ProjectsByStatusChart";
 import { AnimatePresence, motion } from "framer-motion";
-import { CubeSpinner } from "../ui/CubeSpinner";
 import { CategoryManager } from "./CategoryManager";
 import { useFreighterWallet } from "@/context/FreighterWalletContext";
 import { AdminWalletBar } from "./AdminWalletBar";
@@ -78,7 +68,6 @@ import { AdminGroups } from "./AdminGroups";
 import { ConsensusReviewPanel } from "./ConsensusReviewPanel";
 import { PlatformVaultPanel } from "./PlatformVaultPanel";
 import { getMyRoleAction } from "@/actions/admins";
-import { TreasuryGovernancePanel } from "./TreasuryGovernancePanel";
 import { PlatformGovernanceView } from "./PlatformGovernanceView";
 import { SettingsView } from "./SettingsView";
 import { UsersView } from "./UsersView";
@@ -86,11 +75,9 @@ import { HealthView } from "./HealthView";
 import {
   useProjects,
   usePlatformInfo,
-  useRefreshAfterTx,
 } from "@/context/BlockchainContext";
 import { useProjectDetails } from "@/context/ProjectDetailsContext";
 import { formatCurrency } from "@/lib/formatters";
-import { useStellarContract } from "@/hooks/use-stellar-contract";
 import { Client as VaultClient } from "@/packages/blkfndr_vault/src";
 import { SOROBAN_RPC_URL, NETWORK_PASSPHRASE } from "@/lib/stellar";
 import {
@@ -161,10 +148,7 @@ function InteractiveStatCard({
 }
 
 export function AdminDashboard() {
-  const router = useRouter();
   const { user } = useAuth();
-  const { toast } = useToast();
-  const [isPending, startTransition] = useTransition();
   const {
     projects: contextProjects,
     refreshProjects,
@@ -172,7 +156,6 @@ export function AdminDashboard() {
   } = useProjects();
   const { platformInfo } = usePlatformInfo();
   const { freighterWalletAddress } = useFreighterWallet();
-  const refreshAfterTx = useRefreshAfterTx();
 
   // Signed-in admin != on-chain admin. The ledger checks a signature against
   // its own roster and does not care what this application believes, so these
@@ -191,12 +174,6 @@ export function AdminDashboard() {
   const { openProjectDetails } = useProjectDetails();
 
   const [projects, setProjects] = useState(contextProjects);
-  const [withdrawalCounts, setWithdrawalCounts] = useState<
-    Record<string, number>
-  >({});
-  const [withdrawalApprovals, setWithdrawalApprovals] = useState<
-    Record<string, string[]>
-  >({});
   const [visibleRecentCount, setVisibleRecentCount] = useState(5);
   const [adminView, setAdminView] = useState<
     "projects" | "admins" | "vault" | "governance" | "settings" | "identity" | "categories" | "users" | "health"
@@ -240,10 +217,7 @@ export function AdminDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [myRole]);
 
-  // KYC and withdrawals SWR Polling
-  const { data: withdrawalsData } = useSWR("/api/admin/withdrawals", fetcher, {
-    refreshInterval: 15000,
-  });
+  // Pending KYC count, polled.
   const { data: kycData } = useSWR("/api/admin/kyc-count", fetcher, {
     refreshInterval: 15000,
   });
@@ -392,33 +366,6 @@ export function AdminDashboard() {
     [projects],
   );
 
-  // Admin approval of a project no longer exists on chain. A vault is live
-  // the moment the factory deploys it, with the builder bonded. Hiding a
-  // listing is an off-chain moderation concern and is handled by the
-  // is_public flag on the project row, not by a contract call.
-  const handleUpdateStatus = (_id: string, _status: Project["status"]) => {
-    toast({
-      title: "No longer applicable",
-      description:
-        "Projects are live as soon as their vault is deployed. There is no on-chain approval step.",
-    });
-  };
-
-  // Client-side computed count of milestones awaiting signatures
-  const awaitingSignaturesCount = useMemo(() => {
-    let count = 0;
-    projects.forEach((p) => {
-      if (p.milestones) {
-        p.milestones.forEach((m) => {
-          if (m.proof && m.proof.trim() !== "" && !m.released) {
-            count++;
-          }
-        });
-      }
-    });
-    return count;
-  }, [projects]);
-
   // Aggregated "Action Required" feed items
   const actionRequiredItems = useMemo(() => {
     const items: {
@@ -480,7 +427,7 @@ export function AdminDashboard() {
               badgeText: "Proof Submitted",
               badgeVariant: "default",
               actionLabel: "Verify",
-              onAction: () => router.push("/admin/withdrawals"),
+              onAction: () => openProjectDetails(p),
               urgency: "high",
             });
           }
@@ -493,7 +440,7 @@ export function AdminDashboard() {
       const urgencyScore = { high: 3, medium: 2, low: 1 };
       return urgencyScore[b.urgency] - urgencyScore[a.urgency];
     });
-  }, [projects, kycRequests, openProjectDetails, router]);
+  }, [projects, kycRequests, openProjectDetails]);
 
   return (
     <>

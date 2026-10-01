@@ -90,11 +90,6 @@ async function deleteManagedSecret(keyRef: string): Promise<void> {
   if (error) throw new Error(`Could not delete the managed signing key: ${error.message}`);
 }
 
-/** Whether the platform already holds a key for this attestor. */
-export async function hasManagedWallet(keyRef: string): Promise<boolean> {
-  return (await getManagedSecret(keyRef)) !== null;
-}
-
 // ─── Signing ────────────────────────────────────────────────────────────────
 
 /**

@@ -13,27 +13,13 @@ import {
   useRefreshAfterTx,
 } from "@/context/BlockchainContext";
 import { AnimatePresence, motion } from "framer-motion";
-import { Separator } from "../ui/separator";
 import {
-  TrendingUp,
-  PieChart,
   Info,
   AlertCircle,
-  Upload,
-  Loader2,
-  RefreshCw,
-  Zap,
   Shield,
 } from "lucide-react";
-import {
-  Tooltip,
-  TooltipProvider,
-  TooltipTrigger,
-  TooltipContent,
-} from "../ui/tooltip";
 import Link from "next/link";
 import { CubeSpinner } from "../ui/CubeSpinner";
-import { useRouter } from "next/navigation";
 import { useStellarContract, PlatformLockError } from "@/hooks/use-stellar-contract";
 import { FreighterDeclined } from "@/lib/freighter-signer";
 import { useFreighterWallet } from "@/context/FreighterWalletContext";
@@ -73,13 +59,11 @@ export function FundDialog({
   const { platformInfo } = usePlatformInfo();
   const refreshAfterTx = useRefreshAfterTx();
   const [isSubmitPending, startSubmitTransition] = useTransition();
-  const router = useRouter();
 
   const { contribute } = useStellarContract();
   const { freighterWalletAddress, login: connectFreighter } = useFreighterWallet();
 
   const [balances, setBalances] = useState<any[]>([]);
-  const [isLoadingBalances, setIsLoadingBalances] = useState(false);
   const [usdRates, setUsdRates] = useState<Record<string, number>>(MOCK_USD_RATES);
   const [isConnectingFreighter, setIsConnectingFreighter] = useState(false);
 
@@ -162,14 +146,11 @@ export function FundDialog({
       setBalances([]);
       return;
     }
-    setIsLoadingBalances(true);
     try {
       const walletBalances = await getBalance(freighterWalletAddress);
       setBalances(walletBalances as any[]);
     } catch (error) {
       console.error("Failed to load freighter balances:", error);
-    } finally {
-      setIsLoadingBalances(false);
     }
   }, [freighterWalletAddress]);
 
@@ -206,7 +187,6 @@ export function FundDialog({
   const fundAmount = parseFloat(amount) || 0;
   const platformFeePercentage = platformInfo?.feePercentage ? platformInfo.feePercentage / 10000 : PLATFORM_FEE_PERCENTAGE;
   const platformFee = fundAmount * platformFeePercentage;
-  const netReceived = fundAmount; // In the addition model, project receives full base amount
 
   const targetAssetCode =
     projectCurrency === "XLM"
@@ -238,8 +218,6 @@ export function FundDialog({
   // A platform lock pauses new stakes. The vault would still accept one, so
   // this is the platform declining to build it, not the contract refusing.
   const isLocked = project.restriction?.locked === true;
-
-  const canSetPublic = false;
 
   const formatAmount = (val: number, currency: string) =>
     `${val.toLocaleString(undefined, { maximumFractionDigits: COIN_DECIMALS[currency] > 6 ? 4 : 2 })} ${currency}`;

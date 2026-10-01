@@ -6,7 +6,6 @@ import { Button } from '../ui/button';
 import { cn } from '@/lib/utils';
 import { usePathname } from 'next/navigation';
 import { PlusSquare } from 'lucide-react';
-import Link from 'next/link';
 
 export function CreateListingButton({ className, onAfterClick }: { className?: string; onAfterClick?: () => void; }) {
   const { user, login, loading } = useAuth();

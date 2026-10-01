@@ -34,10 +34,6 @@ const TOKEN_ADDRESSES: Record<Currency, string | undefined> = {
   USDC: process.env.NEXT_PUBLIC_STELLAR_USDC_TOKEN_ID,
 };
 
-export function isCurrency(value: unknown): value is Currency {
-  return typeof value === "string" && (CURRENCIES as readonly string[]).includes(value);
-}
-
 /**
  * Token contract address for a currency.
  * Throws rather than returning undefined: a project created against an empty
@@ -74,12 +70,6 @@ export function availableCurrencies(): Currency[] {
 export function currencyForToken(address: string | undefined): Currency | undefined {
   if (!address) return undefined;
   return CURRENCIES.find((c) => TOKEN_ADDRESSES[c] === address);
-}
-
-export function toStroops(amount: number | string): bigint {
-  const [whole, fraction = ""] = String(amount).split(".");
-  const padded = (fraction + "0000000").slice(0, 7);
-  return BigInt(whole || "0") * STROOPS_PER_UNIT + BigInt(padded || "0");
 }
 
 export function fromStroops(stroops: bigint | string | number): number {

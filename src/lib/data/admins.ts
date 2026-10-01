@@ -235,58 +235,6 @@ export async function grantAdmin(
   return listAdmins();
 }
 
-/**
- * Record or replace an existing admin's wallet address.
- *
- * Separate from grantAdmin because this is the common case: admins were invited
- * by email long before anyone thought to store a wallet, so most existing rows
- * need filling in rather than recreating. Passing an empty address clears it,
- * which is how a lost or rotated key is retired.
- */
-export async function setAdminWallet(
-  email: string,
-  walletAddress: string,
-): Promise<PlatformAdmin[]> {
-  const caller = await requireAdmin();
-  const parsed = EmailSchema.parse(email);
-  const wallet = walletAddress.trim() ? WalletSchema.parse(walletAddress) : null;
-
-  // The caller's own session rather than the service role, so RLS is a real
-  // second layer here instead of being bypassed. Nothing in this function needs
-  // privileges the caller lacks.
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("platform_admins")
-    .update({ wallet_address: wallet })
-    .eq("email", parsed)
-    .select("email");
-
-  if (error) {
-    if (error.code === "23505") {
-      throw new Error("That wallet address is already assigned to another administrator.");
-    }
-    if (error.code === "23514") {
-      throw new Error("That is not a valid Stellar address.");
-    }
-    throw new Error(`Could not update the wallet address: ${error.message}`);
-  }
-
-  // An update matching no row reports success either way — whether the email
-  // was mistyped or the policy declined it. Checked explicitly, so neither
-  // looks like it worked.
-  if (!data || data.length === 0) {
-    throw new Error(`${parsed} is not an administrator.`);
-  }
-
-  await record(
-    "admin.wallet",
-    caller.userId,
-    parsed,
-    wallet ? `set to ${wallet}` : "cleared",
-  );
-  return listAdmins();
-}
-
 export async function revokeAdmin(email: string): Promise<PlatformAdmin[]> {
   const caller = await requireAdmin();
 

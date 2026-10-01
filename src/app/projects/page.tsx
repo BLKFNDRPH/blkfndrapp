@@ -2,7 +2,6 @@
 
 import { FilteredProjectList } from "@/components/project/FilteredProjectList";
 import { useProjects } from "@/context/BlockchainContext";
-import type { Project } from "@/lib/types";
 import { useEffect, useState, useMemo, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";

@@ -8,7 +8,6 @@ import { Toaster } from "@/components/ui/toaster";
 import "./loading.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ProjectDetailsProvider } from "@/context/ProjectDetailsContext";
-import { CurrencyProvider } from "@/context/CurrencyContext";
 import { BlockchainProvider } from "@/context/BlockchainContext";
 import { FreighterWalletProvider } from "@/context/FreighterWalletProvider";
 
@@ -50,23 +49,23 @@ export default async function RootLayout({
           defaultTheme="dark"
           enableSystem
           disableTransitionOnChange
-        >            <FreighterWalletProvider>
-              <AuthProvider>
-                <CurrencyProvider>
-                  {/* Real-time updates via Stellar event subscription */}
-                  <BlockchainProvider>
-                    <ProjectDetailsProvider>
-                      <div className="relative flex min-h-dvh flex-col bg-background">
-                        <Header />
-                        <main className="flex-1">{children}</main>
-                        <Footer />
-                      </div>
-                      <Toaster />
-                    </ProjectDetailsProvider>
-                  </BlockchainProvider>
-                </CurrencyProvider>
-              </AuthProvider>
-            </FreighterWalletProvider>        </ThemeProvider>
+        >
+          <FreighterWalletProvider>
+            <AuthProvider>
+              {/* Real-time updates via Stellar event subscription */}
+              <BlockchainProvider>
+                <ProjectDetailsProvider>
+                  <div className="relative flex min-h-dvh flex-col bg-background">
+                    <Header />
+                    <main className="flex-1">{children}</main>
+                    <Footer />
+                  </div>
+                  <Toaster />
+                </ProjectDetailsProvider>
+              </BlockchainProvider>
+            </AuthProvider>
+          </FreighterWalletProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

@@ -3,39 +3,14 @@ import {
   isAllowed,
   isConnected,
   requestAccess,
-  setAllowed,
 } from "@stellar/freighter-api";
 
 const STELLAR_PUBLIC_KEY_RE = /^G[A-Z2-7]{55}$/;
-
-const EXTERNAL_MSG_REQUEST = "FREIGHTER_EXTERNAL_MSG_REQUEST";
-const EXTERNAL_MSG_RESPONSE = "FREIGHTER_EXTERNAL_MSG_RESPONSE";
 
 export function isStellarPublicKey(
   value: string | undefined | null,
 ): value is string {
   return !!value && STELLAR_PUBLIC_KEY_RE.test(value);
-}
-
-type FreighterApiError = { message?: string; code?: number };
-
-function errorMessage(
-  error: FreighterApiError | undefined,
-  fallback: string,
-): string {
-  if (error?.message?.trim()) return error.message;
-  return fallback;
-}
-
-/** Check if Freighter extension is installed and available. */
-export function isFreighterInstalled(): boolean {
-  if (typeof window === "undefined") return false;
-  const win = window as Window & {
-    freighter?: unknown;
-    freighterApi?: unknown;
-    stellar?: unknown;
-  };
-  return !!(win.freighter || win.freighterApi || win.stellar);
 }
 
 export async function getFreighterAddressIfAvailable(): Promise<string | null> {

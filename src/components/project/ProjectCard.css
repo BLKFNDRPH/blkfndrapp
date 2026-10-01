@@ -121,15 +121,3 @@
   white-space: pre-wrap;
   box-sizing: border-box;
 }
-
-/* Ensure tagline in the project details dialog doesn't overflow the dialog */
-.project-dialog-tagline {
-  display: block;
-  max-width: calc(100% - 4rem); /* account for top-right buttons */
-  box-sizing: border-box;
-  padding-right: 0.5rem; /* reduced right padding */
-  overflow-wrap: anywhere;
-  word-break: break-word;
-  white-space: normal;
-  text-overflow: ellipsis;
-}
