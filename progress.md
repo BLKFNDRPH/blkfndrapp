@@ -77,9 +77,15 @@ Redeploy factory, attestation, identity and admin with `scripts/deploy-contracts
 ### 5. M-01 — contributor Sybil resistance
 The 20% contribution cap binds **addresses, not people**. Open **policy decision**: gate contribution on the identity registry (one KYC'd human = one cap)? Needs a product call before implementation.
 
+### 6. Set `PINATA_GATEWAY_KEY` on the host
+The dedicated Pinata gateway (`PINATA_GATEWAY_URL`, `nft.blkfndr.com`) answers `401 ERR_ID:00024` unless a request carries its **Gateway Key**, which is separate from the API JWT. The fix (commit `900082d`) was pushed to #91's branch after that PR merged, so `main` sent no key and every server-side metadata read fell back to the shared `gateway.pinata.cloud`, which rate-limits (429). The commit is now cherry-picked onto `main`, with one addition: the indexer no longer follows redirects, because fetch carries custom headers across a cross-origin redirect.
+- The key is a **runtime, server-only** variable, sent as `x-pinata-gateway-token` to the dedicated gateway only.
+- **Host action:** add `PINATA_GATEWAY_KEY` to the Portainer stack environment and **Update the stack**. No rebuild is needed. See [deployment](docs/deployment.md#runtime--secret).
+- Verified 2026-10-03 against the live gateway: with the key, `nft.blkfndr.com` answers 200 for project #7's metadata. Without it, it answers 401 and the shared gateway answers 429.
+
 ---
 
 ## Suggested next step
-Finish the **Operations Vault cutover** (item 1: an owner vote, a host rebuild, another owner vote). Then schedule the **factory + registries redeploy** (item 2) together with the second treasury redeploy against the new factory. Everything else is blocked on a tool (M-09), a product decision (M-01), or a one-command DB push (#70).
+Finish the **Operations Vault cutover** (item 1: an owner vote, a host rebuild, another owner vote). Then schedule the **factory + registries redeploy** (item 2) together with the second treasury redeploy against the new factory. Everything else is blocked on a tool (M-09), a product decision (M-01), or a one-command DB push (#70). Setting `PINATA_GATEWAY_KEY` on the host (item 6) is a one-variable stack update that can go any time.
 
 _Per-finding detail is in the security-audit PDF; per-PR detail is in the commit/PR history (#67 onward)._

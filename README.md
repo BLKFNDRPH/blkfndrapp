@@ -185,6 +185,7 @@ cargo test --workspace
 | `NEXT_PUBLIC_STELLAR_XLM_TOKEN_ID` | Yes | XLM token contract ID (also `_USDC_`) |
 | `PINATA_JWT` | Yes | Pinata API JWT for IPFS uploads. Server-only |
 | `PINATA_GATEWAY_URL` | Recommended | Dedicated Pinata gateway hostname. The shared public one rate-limits |
+| `PINATA_GATEWAY_KEY` | With a dedicated gateway | That gateway's Gateway Key (not the JWT), sent only to it as `x-pinata-gateway-token`. Without it the dedicated gateway answers 401. Server-only, runtime |
 | `GEMINI_API_KEY` | Optional | Gemini API key for the AI listing review. Server-only. Without it that feature is simply off |
 | `INDEXER_SECRET` | Yes | Bearer token for `POST /api/indexer` and `POST /api/ops-funding`. Generate with `openssl rand -hex 32` |
 | `OPS_FUNDING_SUBMITTER_SECRET` | Optional | Funded account that pays the fee for the monthly operations-funding transfer. Server-only. Unset means the transfer cleanly skips |
