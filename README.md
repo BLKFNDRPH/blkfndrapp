@@ -24,7 +24,7 @@ Release authority is contribution-weighted rather than held by appointed signers
 
 | Area | State |
 |---|---|
-| Bonded vault with contributor-weighted release | ✅ Deployed to testnet, 38 tests passing |
+| Bonded vault with contributor-weighted release | ✅ Deployed to testnet, 47 tests passing (the capped-total release rule reaches new projects once the factory's vault wasm hash is updated) |
 | Builder attestation registry | ✅ Deployed to testnet |
 | Platform treasury + owner-voted governance (fee, bond, ops funding) | ✅ Deployed to testnet, 45 tests passing |
 | Operations Vault (governed gas budget) + managed KYC-attestor keys | ✅ Deployed to testnet, 25 tests passing |
@@ -44,22 +44,30 @@ See [the rebuild PR](https://github.com/BLKFNDRPH/blkfndrapp/pull/1) for what ch
 2. **Stakeholders take a position,** from $5 USDC upward. The stake held is the voting weight it carries, and it stays the stakeholder's to reclaim. No fee is deducted from a stake.
 3. **The goal closes the raise.** Reaching it moves the vault to `Funded`; missing it by the deadline returns every contribution in full and the bond to the builder.
 4. **The builder opens a milestone vote,** which runs for a fixed window set at project creation.
-5. **Contributors vote.** A release needs more than 50% of the total raise behind it, and no single wallet counts for more than 20% however much it put in — so a release always takes at least three distinct wallets.
+5. **Contributors vote.** No single wallet counts for more than 20% of the raise, however much it put in. A release needs more than half of the vault's capped total — every backer's weight after the cap — behind it, from at least three distinct wallets, or from every backer when there are fewer than three.
 6. **Release is permissionless.** Once the vote carries, anyone can execute it; nobody can withhold it.
 7. **A lapsed window fails the milestone.** Contributor silence returns money — it never releases it. Remaining funds and the forfeited bond become claimable pro-rata.
 8. **Close writes a permanent record** to the attestation registry: builder, project, outcome, raise, bond, milestones approved, timestamp.
 
 ### The 20% cap, concretely
 
-Three backers at 100 USDC each on a 300 USDC goal. The cap is 20% of the raise, so each counts for 60 regardless. A release needs more than 150:
+Three backers at 100 USDC each on a 300 USDC goal. The cap is 20% of the raise, so each counts for 60 regardless. Together they count for 180, so a release needs more than 90, from three wallets:
 
 | Approvers | Weight | Outcome |
 |---|---|---|
 | one | 60 | short |
-| two | 120 | short |
+| two | 120 | short — enough weight, but only two wallets |
 | three | 180 | releases |
 
-A backer holding two thirds of the raise still counts for 60 and still cannot release alone. This is covered by `a_majority_contributor_cannot_release_alone` and `release_requires_at_least_three_distinct_wallets`.
+The bar is half the capped total, not half the raise, because weight above the cap is weight nobody can cast. Measured against the raise, a sole backer would count for 20% and two backers for 40% at most: they could never release, even unanimously, and a builder who delivered would forfeit their bond.
+
+A backer holding two thirds of the raise still counts for 60 and still cannot release alone. Put 200 against two backers of 50: the capped total is 160, so the bar is more than 80. The large backer and one other reach 110 — enough weight, but two wallets, so nothing moves until the third approves. Covered by `a_majority_contributor_cannot_release_alone` and `release_requires_at_least_three_distinct_wallets`.
+
+With fewer than three backers, every backer must approve. A sole backer of the whole 300 counts for 60 of a capped total of 60, so their one vote releases. Covered by `a_sole_backer_releases_with_one_vote` and `two_backers_release_when_both_approve`.
+
+The trade-off: weight above the cap counts neither for nor against a release, so a release can carry with less than half of the money when another stake is capped. On a 1,000 raise, three wallets of 140 (42%) outvote two backers of 290, because each of those counts for only 200. The three-wallet floor bounds this by wallets, not people — contributions are not identity-gated.
+
+This rule applies to vaults the factory creates after its wasm hash was updated. Vaults are not upgradeable, so earlier vaults keep the old bar — more than half of the raw raise — under which a raise with one or two backers, or one concentrated in a single wallet, cannot release.
 
 ## Tech Stack
 

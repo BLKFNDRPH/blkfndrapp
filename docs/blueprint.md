@@ -6,7 +6,7 @@
 - Listing Moderation: Enable platform and project administrators to review, flag and clear listings through a dedicated console — off-chain, over Supabase with Row Level Security. Moderation never touches the vault.
 - Live Project View: Display projects in a card-based view, pulling indexed on-chain and off-chain data to reflect real-time state (raising, funded, active, refunding, completed).
 - Staking into a Vault: Let stakeholders back a project by contributing to its vault (from a $5 minimum). The stake is the voting weight it carries, capped at 20% per wallet, and stays the stakeholder's to reclaim.
-- Stakeholder-Voted Releases: Milestone tranches leave the vault only when more than 50% of the total stake votes to release them; once carried, anyone can execute the release. There is no admin claim and no key that can withhold or redirect funds.
+- Stakeholder-Voted Releases: Milestone tranches leave the vault only when stakeholders holding more than 50% of the capped voting weight (every stake after the 20% cap, summed) vote to release them, from at least three wallets, or every stakeholder when there are fewer than three; once carried, anyone can execute the release. There is no admin claim and no key that can withhold or redirect funds.
 - Secure Authentication with Wallet + Session: Support Supabase Auth sessions (email/password, Google) plus Freighter wallet linking for staking and governance signatures.
 - AI-Powered Listing Quality Tool: Use an AI-powered "listing quality tool" (Genkit + Gemini 2.5 Flash) that scans a draft listing to suggest improvements or flag issues before it goes live.
 

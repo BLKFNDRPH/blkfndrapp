@@ -19,7 +19,7 @@ const FEATURES = [
   {
     icon: Scale,
     title: "Stakeholder-weighted milestone voting",
-    body: "The stake you hold is the weight your vote carries. A tranche leaves the vault only when more than half of the total stake votes for it, inside a window fixed when the project was created.",
+    body: "The stake you hold is the weight your vote carries, capped at 20% of the raise per wallet. A tranche leaves the vault only when backers holding more than half of the capped voting weight approve it — from at least three wallets, or every backer if there are fewer — inside a window fixed when the project was created.",
   },
   {
     icon: Unlock,

@@ -104,31 +104,37 @@ This section is the protocol. Everything else is arrangement around it.
 
 ### **4.1 Contribution is voting weight**
 
-A contribution both funds the project and confers the right to decide when its funds move. There is no separate governance token to acquire, no snapshot to be present for, and no fee deducted on the way in — the entire deposit counts, and the entire deposit remains claimable by the contributor in the paths where money comes back.
+A contribution both funds the project and confers the right to decide when its funds move. There is no separate governance token to acquire, no snapshot to be present for, and no fee deducted on the way in — the entire deposit counts, up to the per-wallet cap in 4.3, and the entire deposit remains claimable by the contributor in the paths where money comes back.
 
 The minimum contribution is 5 units.
 
-### **4.2 A release needs a majority of the money**
+### **4.2 A release needs a majority of the voting weight**
 
-To release a tranche, approving weight must exceed **50% of the total raised** — not a majority of voters, but a majority of the capital actually contributed. In the contract this is `RELEASE_THRESHOLD_BPS = 5_000`, evaluated as a strict inequality, so an exact tie does not release.
+To release a tranche, approving weight must exceed **50% of the capped total**: the sum of every contributor's voting weight after the cap described in 4.3. It is a majority of capped weight, not of voters — and because weight above the cap counts neither for nor against a release, it is not always a majority of the money: with 230 from one backer and 10 from each of seven others on a 300 raise, the capped total is 130, and the seven small backers (70, under a quarter of the money) release over the large backer's objection. When no wallet is over the cap, the capped total is simply the total raised. In the contract this is `RELEASE_THRESHOLD_BPS = 5_000`, evaluated as a strict inequality, so an exact tie does not release.
+
+The bar is measured against the capped total rather than the raw raise because weight above the cap is weight nobody can cast. Against the raw raise, a sole contributor would count for 20% of the vote and two contributors for 40% at most, so a project with one or two backers, or one where a single wallet holds most of the raise, could never release anything, even with every contributor in favour. Every milestone would lapse and forfeit the bond of a builder who delivered.
 
 ### **4.3 No wallet counts for more than 20%**
 
-However much a single wallet contributed, its voting weight is capped at **20% of the raise** (`WEIGHT_CAP_BPS = 2_000`). This is the provision that makes the majority threshold meaningful. Without it, one wallet holding most of a raise would hold unilateral release authority — and the cheapest way to obtain that is for the builder to fund their own project.
+However much a single wallet contributed, its voting weight is capped at **20% of the raise** (`WEIGHT_CAP_BPS = 2_000`). This is the provision that makes the majority threshold meaningful. Without it, one wallet holding most of a raise would outweigh every other contributor combined — and the cheapest way to obtain that is for the builder to fund their own project.
 
-Clearing a threshold above 50% in increments of at most 20% requires **at least three distinct wallets**, always.
+The cap alone does not fix how many wallets a release takes: measured against the capped total, the bar drops whenever someone is capped, and one or two wallets could clear it. So the contract also counts approving wallets. A release needs **at least three distinct approving wallets** (`MIN_APPROVING_WALLETS = 3`), or every contributor when there are fewer than three. Two properties follow. No release is ever carried over a dissenting contributor by fewer than three wallets. And a vote every contributor approves always carries, so concentration can never deadlock a vault.
 
 #### Worked example
 
-Three backers contribute 100 USDC each toward a 300 USDC goal. The cap is 20% of the raise, so each counts for 60 regardless. A release needs more than 150:
+Three backers contribute 100 USDC each toward a 300 USDC goal. The cap is 20% of the raise, so each counts for 60 regardless. The capped total is 180, so a release needs more than 90, from three wallets:
 
 | Approvers | Weight | Outcome |
 |---|---|---|
 | one | 60 | short |
-| two | 120 | short |
+| two | 120 | short — enough weight, but only two wallets |
 | three | 180 | releases |
 
-A backer holding two thirds of the raise still counts for 60 and still cannot release alone. Both properties are pinned down by the contract test suite, in `a_majority_contributor_cannot_release_alone` and `release_requires_at_least_three_distinct_wallets`.
+A backer holding two thirds of the raise still counts for 60 and still cannot release alone. With 200 from one backer and 50 from each of two others, the capped total is 60 + 50 + 50 = 160 and the bar is more than 80. The large backer and one other reach 110, which clears the weight, but they are two wallets and the release waits for the third. Both properties are pinned down by the contract test suite, in `a_majority_contributor_cannot_release_alone` and `release_requires_at_least_three_distinct_wallets`.
+
+With fewer than three backers, every backer must approve. Had a single backer put in the whole 300, they would count for 60 of a capped total of 60, and their one approval would release the tranche (`a_sole_backer_releases_with_one_vote`). Two backers at 250 and 50 count for 60 and 50; the larger clears the bar of more than 55 alone, but the release waits for both (`two_backers_release_when_both_approve`).
+
+This rule applies to vaults the factory creates after its wasm hash was updated. Vaults are not upgradeable, so earlier vaults keep the old bar — more than half of the raw raise — under which a raise with one or two backers, or one concentrated in a single wallet, cannot release.
 
 ### **4.4 Execution is permissionless**
 
@@ -172,7 +178,7 @@ blkfndr charges a **flat fee per project**, paid by the builder at vault creatio
 
 This matters beyond pricing. A platform earning a percentage of every raise has an interest in raises completing, which is an interest in releases happening — exactly the incentive that ought not to sit near the release mechanism. A flat creation fee leaves the platform indifferent to whether any individual tranche is released, and that indifference is load-bearing.
 
-It also means a contributor's whole deposit is theirs both to reclaim and to vote with, with no discrepancy between the amount at risk and the weight it carries.
+It also means no fee stands between a contributor's deposit and the weight it carries: the whole deposit is theirs to reclaim and, up to the 20% cap, to vote with.
 
 ### **5.2 What the platform does not do**
 
@@ -199,7 +205,7 @@ Each of these changes the legal character of a contribution and none will ship a
 
 The properties in [Section 4](#4-release-authority) are enforced by contract logic, not by application code or platform policy. The admin roster contract exists for platform administration and is deliberately absent from the release path.
 
-The bonded-vault contract alone stands at **38 passing tests**, with the treasury and Operations Vault adding a further **45** and **26**, covering the threshold arithmetic, the weight cap, the distinct-wallet requirement, lapse handling, forfeiture, refund accounting, and the two-thirds governance model.
+The bonded-vault contract alone stands at **47 passing tests**, with the treasury and Operations Vault adding a further **45** and **25**, covering the threshold arithmetic, the weight cap, the capped total, the distinct-wallet requirement, lapse handling, forfeiture, refund accounting, and the two-thirds governance model.
 
 ### **6.2 Off-chain**
 
@@ -228,7 +234,7 @@ Any project's vault can be checked against that hash. Deployed contract addresse
 A protocol that claimed to eliminate risk would be lying, and the omissions are more useful to a reader than the guarantees.
 
 - **The oracle problem.** No contract can see a building. The chain enforces *who decides* a milestone was met; it cannot itself verify that concrete was poured. Contributors are the oracle, and their diligence is the protocol's real quality bound.
-- **Collusion.** The 20% cap forces a release to involve at least three distinct wallets. It cannot establish that those wallets are three distinct *people*. A builder who recruits or controls enough independent-looking backers to clear the threshold defeats the mechanism — the cap raises the cost and coordination burden of that attack rather than making it impossible.
+- **Collusion.** The three-wallet floor forces any release carried over a dissenting contributor to involve at least three distinct wallets. It cannot establish that those wallets are three distinct *people*. A builder who recruits or controls enough independent-looking backers to clear the threshold defeats the mechanism — the cap and the floor raise the cost and coordination burden of that attack rather than making it impossible. Measuring the bar against the capped total has a cost of its own: a large backer's weight above the cap counts neither for nor against a release, so where honest stake is concentrated a coordinated group can carry a release with less than half the money. On a 1,000 raise, three wallets of 140 (42%) outvote two honest backers of 290, because each of those counts for only 200. And because a vote every contributor approves always carries, a builder who funds their own project from a single wallet can release it to themselves. That moves only their own money, but it does earn a `Completed` record, so a record backed by one or two contributors says little about a builder.
 - **Contributor apathy has a price.** Timeouts resolve safely, toward refunds. But a project where nobody votes fails, which is a poor outcome for an honest builder who did the work.
 - **Off-chain and legal risk.** Nothing here guarantees a permit is genuine, a title is clean, or a jurisdiction will recognize a contributor's interest in a physical asset. On-chain funds are protected; a building is not an on-chain object.
 - **Smart contract risk.** The contracts are tested and the build is reproducible. They have not been through a third-party audit. Treat testnet as a live rehearsal, not a place to commit funds you need back.
@@ -244,9 +250,9 @@ A protocol that claimed to eliminate risk would be lying, and the omissions are 
 | Minimum contribution | 5 units |
 | Minimum bond | 5% of the funding goal |
 | Milestone voting window | 7 days |
-| Release threshold | > 50% of total raised (`RELEASE_THRESHOLD_BPS = 5_000`) |
+| Release threshold | > 50% of the capped total, the sum of every contributor's capped weight (`RELEASE_THRESHOLD_BPS = 5_000`) |
 | Per-wallet weight cap | 20% of total raised (`WEIGHT_CAP_BPS = 2_000`) |
-| Minimum wallets to release | 3 |
+| Minimum wallets to release | 3, or every contributor when there are fewer (`MIN_APPROVING_WALLETS = 3`) |
 
 ---
 

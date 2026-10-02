@@ -15,9 +15,12 @@
 //! no platform role anywhere in the path that moves money:
 //!
 //!   * one vote unit per unit contributed, recorded at deposit;
-//!   * a single wallet's effective weight is capped at 20% of the total raise,
-//!     so with a >50% release threshold no fewer than three distinct wallets
-//!     can ever carry a release;
+//!   * a single wallet's effective weight is capped at 20% of the total raise;
+//!   * a release needs more than half of all contributors' effective weight —
+//!     the capped total, so the bar can always be reached when everyone votes;
+//!   * and at least three distinct approving wallets, or every contributor when
+//!     there are fewer than three — so no wallet releases alone over anyone,
+//!     and a project with one or two backers can still release;
 //!   * each milestone opens a fixed voting window, set at project creation;
 //!   * a window that closes below threshold fails the milestone — contributor
 //!     silence returns money, it never releases it.
@@ -63,10 +66,19 @@ const LEDGERS_TO_LIVE: u32 = 518_400; // ~30 days
 
 /// Basis-point denominator.
 const BPS: i128 = 10_000;
-/// No single wallet may wield more than 20% of the vote, however much it put in.
+/// No single wallet may wield more than 20% of the raise, however much it put in.
 const WEIGHT_CAP_BPS: i128 = 2_000;
-/// A release needs more than 50% of the total raise behind it.
+/// A release needs more than 50% of the total effective (capped) weight.
 const RELEASE_THRESHOLD_BPS: i128 = 5_000;
+/// A release needs at least this many distinct approving wallets, or every
+/// contributor when there are fewer.
+const MIN_APPROVING_WALLETS: u32 = 3;
+/// How many of the largest balances the vault tracks to compute the capped
+/// total. Only a wallet holding more than the cap loses weight to it, and at
+/// most four can: five balances each above a fifth of the raise would sum to
+/// more than the raise. So the excess over the cap always lies within the
+/// four largest balances.
+const LARGEST_TRACKED: u32 = 4;
 /// Ceiling on any paged read, so a caller cannot ask for a page large enough
 /// to exceed the resource budget.
 const MAX_PAGE: u32 = 100;
@@ -179,6 +191,13 @@ pub enum DataKey {
     /// and on each release. `settle_stalled` measures the abandonment window
     /// against this.
     LastActivity,
+    /// The `LARGEST_TRACKED` largest contributor balances, unordered. Enough
+    /// to compute the capped total without walking every contributor.
+    Largest,
+    /// Number of distinct contributors.
+    ContributorCount,
+    /// Number of distinct contributors who have approved a given milestone.
+    Approvals(u32),
 }
 
 #[contractclient(name = "IdentityRegistryClient")]
@@ -250,10 +269,8 @@ fn extend_instance_ttl(env: &Env) {
 
 /// The most any one wallet may count for, whatever it contributed.
 ///
-/// Capping against the total raise rather than against the sum of already-capped
-/// weights is what makes the three-wallet floor hold: a sole contributor is
-/// capped at 20% of the raise and so can never reach the >50% threshold alone,
-/// however large their contribution.
+/// The cap is a fifth of the raise, not of the capped total, so it is fixed once
+/// the raise closes and a contributor's weight cannot shift under a vote.
 fn weight_cap(raised_amount: i128) -> i128 {
     raised_amount
         .checked_mul(WEIGHT_CAP_BPS)
@@ -271,13 +288,127 @@ fn effective_weight(contribution: i128, raised_amount: i128) -> i128 {
     }
 }
 
-/// True when the weight behind a milestone exceeds 50% of the total raise.
-fn threshold_met(approved_weight: i128, raised_amount: i128) -> bool {
-    if raised_amount <= 0 {
+/// Sum of every contributor's effective weight: what the whole vault would
+/// count for if everyone voted.
+///
+/// The release threshold is measured against this rather than against the raw
+/// raise. Measured against the raise, a capped wallet's excess is weight nobody
+/// can ever cast, so a concentrated raise could not clear >50% even with every
+/// vote in: a sole contributor counts for 20%, two for 40% at most. Every such
+/// milestone would lapse and forfeit the bond of a builder who delivered.
+///
+/// Only the tracked largest balances can exceed the cap (see
+/// `LARGEST_TRACKED`), so the capped total is the raise less their excess.
+fn total_weight(env: &Env, raised_amount: i128) -> i128 {
+    let cap = weight_cap(raised_amount);
+    let largest: Vec<(Address, i128)> = env
+        .storage()
+        .instance()
+        .get(&DataKey::Largest)
+        .unwrap_or_else(|| Vec::new(env));
+
+    let mut total = raised_amount;
+    for (_, balance) in largest.iter() {
+        if balance > cap {
+            total = total.checked_sub(balance.checked_sub(cap).unwrap()).unwrap();
+        }
+    }
+    total
+}
+
+/// True when the weight behind a milestone exceeds 50% of the capped total.
+fn threshold_met(approved_weight: i128, total_weight: i128) -> bool {
+    if total_weight <= 0 {
         return false;
     }
     approved_weight.checked_mul(BPS).unwrap()
-        > raised_amount.checked_mul(RELEASE_THRESHOLD_BPS).unwrap()
+        > total_weight.checked_mul(RELEASE_THRESHOLD_BPS).unwrap()
+}
+
+/// Smallest weight that clears `threshold_met`.
+fn required_weight(total_weight: i128) -> i128 {
+    total_weight
+        .checked_mul(RELEASE_THRESHOLD_BPS)
+        .unwrap()
+        .checked_div(BPS)
+        .unwrap()
+        .checked_add(1)
+        .unwrap()
+}
+
+/// Distinct approving wallets a release needs: three, or every contributor
+/// when there are fewer than three.
+///
+/// Measuring the threshold against the capped total lowers the bar whenever
+/// someone is capped, which on its own would let two wallets — or one holding
+/// most of the raise — outvote the rest. This floor keeps a release from ever
+/// being carried over a dissenting contributor by fewer than three wallets.
+fn required_wallets(env: &Env) -> u32 {
+    let contributors: u32 = env
+        .storage()
+        .instance()
+        .get(&DataKey::ContributorCount)
+        .unwrap_or(0);
+    if contributors < MIN_APPROVING_WALLETS {
+        contributors
+    } else {
+        MIN_APPROVING_WALLETS
+    }
+}
+
+fn approvals(env: &Env, milestone_id: u32) -> u32 {
+    env.storage()
+        .instance()
+        .get(&DataKey::Approvals(milestone_id))
+        .unwrap_or(0)
+}
+
+/// Whether a milestone's vote has carried: more than half the capped total
+/// behind it, from at least `required_wallets` distinct contributors.
+///
+/// Contributions close when the goal is met and refunds open only once the
+/// vault has left Funded/Active, so the raise, the balances and the capped
+/// total are all fixed while a vote runs.
+fn carried(env: &Env, milestone: &Milestone, raised_amount: i128) -> bool {
+    threshold_met(milestone.approved_weight, total_weight(env, raised_amount))
+        && approvals(env, milestone.id) >= required_wallets(env)
+}
+
+/// Keep `DataKey::Largest` holding the `LARGEST_TRACKED` largest balances after
+/// `contributor`'s balance rises to `balance`.
+///
+/// Balances only grow while the raise is open, and only the contributing
+/// wallet's changes, so it is the only one that can enter the set: update it
+/// in place, add it while there is room, or let it displace the smallest
+/// tracked balance it now exceeds.
+fn track_largest(env: &Env, contributor: &Address, balance: i128) {
+    let mut largest: Vec<(Address, i128)> = env
+        .storage()
+        .instance()
+        .get(&DataKey::Largest)
+        .unwrap_or_else(|| Vec::new(env));
+
+    let mut smallest = 0u32;
+    for i in 0..largest.len() {
+        let (holder, held) = largest.get(i).unwrap();
+        if holder == *contributor {
+            largest.set(i, (holder, balance));
+            env.storage().instance().set(&DataKey::Largest, &largest);
+            return;
+        }
+        if held < largest.get(smallest).unwrap().1 {
+            smallest = i;
+        }
+    }
+
+    if largest.len() < LARGEST_TRACKED {
+        largest.push_back((contributor.clone(), balance));
+    } else if balance > largest.get(smallest).unwrap().1 {
+        largest.set(smallest, (contributor.clone(), balance));
+    } else {
+        return;
+    }
+    env.storage().instance().set(&DataKey::Largest, &largest);
 }
 
 // ── LIFECYCLE ──────────────────────────────────────────────────────────────
@@ -532,7 +663,18 @@ impl BlkfndrVault {
             .persistent()
             .extend_ttl(&bal_key, LEDGERS_TO_LIVE, LEDGERS_TO_LIVE);
 
+        track_largest(&env, &contributor, updated);
+
         if current == 0 {
+            let count: u32 = env
+                .storage()
+                .instance()
+                .get(&DataKey::ContributorCount)
+                .unwrap_or(0);
+            env.storage()
+                .instance()
+                .set(&DataKey::ContributorCount, &(count + 1));
+
             let list_key = DataKey::Contributors;
             let mut list: Vec<Address> = env
                 .storage()
@@ -675,7 +817,8 @@ impl BlkfndrVault {
     }
 
     /// Vote to release a milestone. Weight is the amount contributed, capped at
-    /// 20% of the total raise.
+    /// 20% of the total raise, and each vote also counts toward the three-wallet
+    /// floor.
     pub fn approve_milestone(env: Env, contributor: Address, milestone_id: u32) {
         extend_instance_ttl(&env);
         let state = sync_state(&env);
@@ -725,6 +868,11 @@ impl BlkfndrVault {
         let weight = effective_weight(contribution, info.raised_amount);
         milestone.approved_weight = milestone.approved_weight.checked_add(weight).unwrap();
         let running = milestone.approved_weight;
+        // AlreadyVoted above makes this a count of distinct wallets.
+        env.storage().instance().set(
+            &DataKey::Approvals(milestone_id),
+            &(approvals(&env, milestone_id) + 1),
+        );
         info.milestones.set(index, milestone);
         save_info(&env, &info);
 
@@ -756,7 +904,7 @@ impl BlkfndrVault {
         if milestone.vote_opens_at == 0 {
             panic_with_error!(&env, Error::VotingNotOpen);
         }
-        if !threshold_met(milestone.approved_weight, info.raised_amount) {
+        if !carried(&env, &milestone, info.raised_amount) {
             panic_with_error!(&env, Error::ThresholdNotMet);
         }
 
@@ -847,9 +995,9 @@ impl BlkfndrVault {
         if env.ledger().timestamp() < milestone.vote_opens_at + info.voting_window_secs {
             panic_with_error!(&env, Error::VotingWindowNotElapsed);
         }
-        // A window that reached threshold is a release waiting to happen, not a
-        // failure — whoever wants it can still call release_milestone.
-        if threshold_met(milestone.approved_weight, info.raised_amount) {
+        // A window that carried is a release waiting to happen, not a failure —
+        // whoever wants it can still call release_milestone.
+        if carried(&env, &milestone, info.raised_amount) {
             panic_with_error!(&env, Error::ThresholdMet);
         }
 
@@ -1105,26 +1253,28 @@ impl BlkfndrVault {
     }
 
     /// Weight behind a milestone, the weight a release needs, and whether the
-    /// window is still open.
+    /// window is still open. A release also needs `get_milestone_wallets`'
+    /// distinct approvals.
     pub fn get_milestone_vote(env: Env, milestone_id: u32) -> (i128, i128, bool) {
         let info = load_info(&env);
         let index = Self::milestone_index(&env, &info, milestone_id);
         let milestone = info.milestones.get(index).unwrap();
 
-        // Smallest weight that clears "more than 50%".
-        let required = info
-            .raised_amount
-            .checked_mul(RELEASE_THRESHOLD_BPS)
-            .unwrap()
-            .checked_div(BPS)
-            .unwrap()
-            .checked_add(1)
-            .unwrap();
+        let required = required_weight(total_weight(&env, info.raised_amount));
 
         let open = milestone.vote_opens_at != 0
             && env.ledger().timestamp() < milestone.vote_opens_at + info.voting_window_secs;
 
         (milestone.approved_weight, required, open)
+    }
+
+    /// Distinct wallets that have approved a milestone, and how many a release
+    /// needs: three, or every contributor when there are fewer.
+    pub fn get_milestone_wallets(env: Env, milestone_id: u32) -> (u32, u32) {
+        let info = load_info(&env);
+        // Reject an unknown id rather than report zero approvals for it.
+        Self::milestone_index(&env, &info, milestone_id);
+        (approvals(&env, milestone_id), required_wallets(&env))
     }
 
     fn milestone_index(env: &Env, info: &ProjectInfo, milestone_id: u32) -> u32 {

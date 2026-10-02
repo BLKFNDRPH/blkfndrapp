@@ -79,6 +79,34 @@ async function refuseIfLocked(vaultAddress: string, paused: string) {
   }
 }
 
+/**
+ * A milestone's distinct approving wallets against the number a release needs.
+ *
+ * `supported: false` is a definite answer, not a failed read: the vault was
+ * deployed before the wallet floor existed and releases on weight alone. A
+ * read that failed for any other reason is `null` from the hook instead, so a
+ * flaky RPC can never make a vault that has the floor look like one without.
+ */
+export type MilestoneWallets =
+  | { supported: true; approvals: number; required: number }
+  | { supported: false };
+
+/**
+ * The simulation reached the contract and the contract has no such function.
+ *
+ * Soroban reports this as `Error(WasmVm, MissingValue)`, with a diagnostic
+ * event naming the "non-existent contract function". Network and RPC failures
+ * never get this far — they surface from the HTTP client — and a contract that
+ * has the function but panics reports a `Contract` error, so neither matches.
+ */
+export function isMissingFunction(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    message.includes("Error(WasmVm, MissingValue)") ||
+    message.includes("non-existent contract function")
+  );
+}
+
 async function signAndSend<T>(assembled: AssembledTransaction<T>) {
   const tx = assembled as AssembledTransaction<T> & {
     signAndSend?: () => Promise<unknown>;
@@ -140,7 +168,11 @@ export function useStellarContract() {
     [requireWallet],
   );
 
-  /** Contributor votes to release. Weight is their contribution, capped at 20%. */
+  /**
+   * Contributor votes to release. Weight is their contribution, capped at 20%
+   * of the raise; on current vaults a release also needs three approving
+   * wallets, or every contributor when there are fewer.
+   */
   const approveMilestone = useCallback(
     async ({ vaultAddress, milestoneId, contributor }: ApproveMilestoneParams) => {
       const address = requireWallet(contributor);
@@ -165,7 +197,7 @@ export function useStellarContract() {
     [requireWallet],
   );
 
-  /** Permissionless. Fails a milestone whose window closed below threshold. */
+  /** Permissionless. Fails a milestone whose window closed without carrying. */
   const settleLapsedMilestone = useCallback(
     async ({ vaultAddress, milestoneId }: MilestoneParams) => {
       const address = requireWallet();
@@ -222,6 +254,58 @@ export function useStellarContract() {
         () => vaultClient(vaultAddress).has_voted({ milestone_id: milestoneId, contributor }),
         `has_voted(${vaultAddress})`,
       ),
+    [],
+  );
+
+  /**
+   * Weight behind a milestone, the weight a release needs, and whether the
+   * window is open. The required weight is the contract's own: half the raise
+   * on vaults deployed before the wallet floor, half the capped total after.
+   * Null when the read fails, including a contract error such as an unknown id.
+   */
+  const getMilestoneVote = useCallback(
+    async (vaultAddress: string, milestoneId: number) => {
+      const result = await simulate(
+        () => vaultClient(vaultAddress).get_milestone_vote({ milestone_id: milestoneId }),
+        `get_milestone_vote(${vaultAddress}, ${milestoneId})`,
+      );
+      // A contract error comes back as an Err value rather than a throw.
+      if (!Array.isArray(result)) return null;
+      const [approved, required, open] = result;
+      return [BigInt(approved), BigInt(required), Boolean(open)] as const;
+    },
+    [],
+  );
+
+  /**
+   * Distinct wallets behind a milestone and how many a release needs. Not
+   * routed through `simulate`, which flattens every failure to null: this read
+   * has to tell a vault without the function apart from one that did not
+   * answer. Null means the answer is unknown.
+   */
+  const getMilestoneWallets = useCallback(
+    async (vaultAddress: string, milestoneId: number): Promise<MilestoneWallets | null> => {
+      const label = `get_milestone_wallets(${vaultAddress}, ${milestoneId})`;
+      try {
+        const tx = await vaultClient(vaultAddress).get_milestone_wallets({
+          milestone_id: milestoneId,
+        });
+        const result: unknown = tx.result;
+        if (!Array.isArray(result)) {
+          console.warn(`[stellar] ${label} returned`, result);
+          return null;
+        }
+        return {
+          supported: true,
+          approvals: Number(result[0]),
+          required: Number(result[1]),
+        };
+      } catch (error) {
+        if (isMissingFunction(error)) return { supported: false };
+        console.warn(`[stellar] ${label} failed:`, error);
+        return null;
+      }
+    },
     [],
   );
 
@@ -345,6 +429,8 @@ export function useStellarContract() {
     getVaultInfo,
     getVotingWeight,
     hasVoted,
+    getMilestoneVote,
+    getMilestoneWallets,
     getPlatformTerms,
     // attestor roster
     getIdentityAdmin,
