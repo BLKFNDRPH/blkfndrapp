@@ -773,7 +773,7 @@ export function ListingForm() {
         currency: values.currencyType,
         goal: values.fundingGoal,
         bond: numericBond,
-        platformFee: Number(platformFeeStroops ?? platformInfo?.feePercentage ?? 0) / 10_000_000,
+        platformFee: Number(platformFeeStroops ?? platformInfo?.platformFeeStroops ?? 0) / 10_000_000,
         networkFeeXlm: Number(tx.built?.fee ?? 0) / 10_000_000,
       });
       if (!approved) {

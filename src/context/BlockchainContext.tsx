@@ -24,7 +24,13 @@ interface PlatformInfo {
   feeWalletAddress: string;
   feeWalletEmail: string;
   multiSigAdmins: string[];
-  feePercentage: number;
+  /**
+   * The factory's flat listing fee, in stroops of the vault's token. It is
+   * charged to the builder once, inside the transaction that creates the
+   * vault. Stakes never pay it, so nothing in the stake flow reads this.
+   */
+  platformFeeStroops: number;
+  /** The builder's bond as basis points of the funding goal (500 = 5%). */
   bondPercentage?: number;
 }
 
@@ -106,8 +112,7 @@ export const BlockchainProvider: React.FC<BlockchainProviderProps> = ({
         feeWalletAddress: (feeWallet as string | null) ?? '',
         feeWalletEmail: email,
         multiSigAdmins: adminList,
-        // A flat amount in stroops, not a percentage.
-        feePercentage: Number(terms.fee ?? 0),
+        platformFeeStroops: Number(terms.fee ?? 0),
         bondPercentage: Number(terms.bondBps ?? 500),
       });
     } catch (error) {

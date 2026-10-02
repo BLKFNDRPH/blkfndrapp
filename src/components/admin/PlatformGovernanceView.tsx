@@ -62,9 +62,9 @@ export function PlatformGovernanceView() {
   );
   const handoverKnown = factoryAdmin !== null;
 
-  // feePercentage carries the flat fee in stroops despite its name; bond is
-  // basis points. Presented as what each actually is.
-  const feeXlm = platformInfo ? Number(platformInfo.feePercentage) / XLM : null;
+  // The fee is a flat amount in stroops; the bond is basis points. Presented
+  // as what each actually is.
+  const feeXlm = platformInfo ? Number(platformInfo.platformFeeStroops) / XLM : null;
   const bondPct =
     platformInfo?.bondPercentage != null
       ? Number(platformInfo.bondPercentage) / 100
