@@ -114,7 +114,8 @@ docker compose logs -f blkfndr-app
 |---|---|
 | `SUPABASE_SECRET_KEY` | Bypasses RLS. Without it the indexer writes nothing and **no project ever appears** |
 | `PINATA_JWT` | Project creation fails without it. **Not** `NEXT_PUBLIC_PINATA_JWT` |
-| `PINATA_GATEWAY_URL` | |
+| `PINATA_GATEWAY_URL` | Dedicated gateway host, e.g. `nft.blkfndr.com`. The indexer reads project metadata from it first, then from the shared `gateway.pinata.cloud`, which rate-limits (429) |
+| `PINATA_GATEWAY_KEY` | The dedicated gateway's Gateway Key (Pinata → Gateways → Access Controls → Gateway Keys), **not** the JWT. Sent as `x-pinata-gateway-token` to the dedicated gateway only, never to the shared one. Without it the dedicated gateway answers `401 ERR_ID:00024` and every read falls back to the rate-limited shared gateway. See below |
 | `PINATA_GROUP_BLKDFNDR` | |
 | `INDEXER_SECRET` | Bearer token for the machine routes (`/api/indexer`, `/api/ops-funding`, `/api/settle-stalled`, `/api/keep-alive`). Invent a long random value |
 | `OPS_FUNDING_SUBMITTER_SECRET` | Optional. Funded account that pays the fees for the monthly operations-funding transfer, stalled-vault reclaims, and keeping shared contract storage alive. Holds no authority — every call it pays for is permissionless. Unset means those jobs cleanly skip. Keep it funded: on testnet, restoring and extending the shared contracts can cost a few hundred XLM in one pass |
@@ -124,6 +125,14 @@ docker compose logs -f blkfndr-app
 | `SETTLE_STALLED_INTERVAL_SECONDS` | Optional, defaults to 86400 (daily). How often settle-stalled-cron polls `/api/settle-stalled` |
 | `KEEP_ALIVE_INTERVAL_SECONDS` | Optional, defaults to 86400 (daily). How often keep-alive-cron polls `/api/keep-alive`; a run with nothing due sends nothing |
 | `APP_PORT` | Optional, defaults to 8788. Host port to publish on |
+
+> **Setting `PINATA_GATEWAY_KEY` on a running stack.** It is a runtime variable,
+> so no rebuild is needed. Add it to the stack environment in Portainer and
+> **Update the stack**, which recreates the app container with the new
+> environment. A plain `docker restart` keeps the old one. Afterwards, the app
+> logs should stop showing `[Indexer] nft.blkfndr.com answered 401 for metadata …`
+> (and the `gateway.pinata.cloud answered 429` that follows it). Projects still
+> titled `Project #N` fill in over the next indexer runs.
 
 ### Token contract addresses
 

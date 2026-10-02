@@ -58,18 +58,27 @@ const SHARED_GATEWAY_HOST = "gateway.pinata.cloud";
  * indexer into a server-side request forgery gadget whose response body gets
  * written into the public project listing.
  *
- * The shared gateway is always included because a dedicated one can refuse
- * content outright: on 2026-10-01 every dedicated gateway on the account
- * answered 401 ERR_ID:00024 for metadata pinned on that same account, and with
- * only one URL to try the indexer recorded every project as "Project #N".
+ * A dedicated gateway refuses requests (401 ERR_ID:00024) unless they carry
+ * its Gateway Key, which is separate from the API JWT. PINATA_GATEWAY_KEY is
+ * sent to the dedicated gateway only, never to the shared one, which neither
+ * needs it nor should see it. The shared gateway is still tried second so a
+ * missing or revoked key degrades to rate-limited lookups instead of every
+ * project being listed as "Project #N".
  *
  * Returns an empty list if the value is not a plausible bare CID.
  */
-export function getIPFSFetchUrls(cid: string): string[] {
+export function getIPFSFetchUrls(cid: string): { url: string; headers: Record<string, string> }[] {
   const value = normalizeCid(cid);
   if (!value) return [];
-  const hosts = [...new Set([resolveGatewayHost(), SHARED_GATEWAY_HOST])];
-  return hosts.map((host) => `https://${host}/ipfs/${value}`);
+
+  const dedicated = resolveGatewayHost();
+  const gatewayKey = process.env.PINATA_GATEWAY_KEY?.trim();
+  const hosts = [...new Set([dedicated, SHARED_GATEWAY_HOST])];
+  return hosts.map((host) => {
+    const headers: Record<string, string> = {};
+    if (host !== SHARED_GATEWAY_HOST && gatewayKey) headers["x-pinata-gateway-token"] = gatewayKey;
+    return { url: `https://${host}/ipfs/${value}`, headers };
+  });
 }
 
 function normalizeCid(cid: string): string | null {

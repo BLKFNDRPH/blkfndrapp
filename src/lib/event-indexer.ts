@@ -70,18 +70,27 @@ export async function fetchMetadata(cid: string): Promise<any> {
 
   // Strict CID resolution only. The value arrives from an on-chain event any
   // project creator controls, so an absolute URL here would be an SSRF.
-  const urls = getIPFSFetchUrls(cid);
-  if (urls.length === 0) {
+  const sources = getIPFSFetchUrls(cid);
+  if (sources.length === 0) {
     console.warn(`[Indexer] Ignoring non-CID metadata reference: ${cid}`);
     return null;
   }
 
   // Each gateway is tried in turn. A refusal used to end the lookup silently,
   // which is how every project came to be listed as "Project #N".
-  for (const url of urls) {
+  //
+  // Redirects are not followed. On a cross-origin redirect fetch drops
+  // Authorization but carries custom headers along, so following one would
+  // hand the Gateway Key to whatever host it points at. Metadata is a single
+  // file and no gateway redirects for it, so a 3xx counts as a refusal.
+  for (const { url, headers } of sources) {
     const host = new URL(url).host;
     try {
-      const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
+      const response = await fetch(url, {
+        headers,
+        redirect: "manual",
+        signal: AbortSignal.timeout(8000),
+      });
       if (!response.ok) {
         console.warn(`[Indexer] ${host} answered ${response.status} for metadata ${cid}`);
         continue;
