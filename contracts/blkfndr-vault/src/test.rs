@@ -82,6 +82,10 @@ fn setup() -> Setup {
 }
 
 fn setup_with(goal: i128, bond: i128, platform_fee: i128) -> Setup {
+    setup_full(goal, bond, platform_fee, MIN_CONTRIBUTION)
+}
+
+fn setup_full(goal: i128, bond: i128, platform_fee: i128, min_contribution: i128) -> Setup {
     let env = Env::default();
     env.mock_all_auths();
     env.ledger().set_timestamp(1_000_000);
@@ -137,7 +141,7 @@ fn setup_with(goal: i128, bond: i128, platform_fee: i128) -> Setup {
         fee_wallet_address: fee_wallet.clone(),
         platform_fee,
         voting_window_secs: VOTING_WINDOW,
-        min_contribution: MIN_CONTRIBUTION,
+        min_contribution,
         milestones,
         metadata_cid: String::from_str(&env, "bafytestcid"),
     });
@@ -540,6 +544,37 @@ fn two_backers_release_when_both_approve() {
     assert!(s.vault.get_info().milestones.get(0).unwrap().released);
 }
 
+/// A backer who tops up is still one wallet: a sole backer who contributed
+/// twice releases on their own vote. Counting each deposit would make them two
+/// contributors and their own approval one short — the same deadlock again.
+#[test]
+fn a_backer_who_tops_up_is_still_one_wallet() {
+    let s = setup();
+    s.vault.contribute(&s.alice, &(100 * UNIT));
+    s.vault.contribute(&s.alice, &(200 * UNIT));
+    assert_eq!(s.vault.get_state(), VaultState::Funded);
+
+    s.vault.open_milestone_vote(&1u32);
+    s.vault.approve_milestone(&s.alice, &1u32);
+    assert_eq!(s.vault.get_milestone_wallets(&1u32), (1, 1));
+    s.vault.release_milestone(&1u32);
+}
+
+/// A raise under five base units floors a fifth of it to zero. The cap is held
+/// at one unit, so every backer still has weight and a unanimous vote carries.
+#[test]
+fn a_tiny_raise_still_releases_when_every_backer_approves() {
+    let s = setup_full(4, BOND, PLATFORM_FEE, 1);
+    s.vault.contribute(&s.alice, &3);
+    s.vault.contribute(&s.bob, &1);
+
+    s.vault.open_milestone_vote(&1u32);
+    s.vault.approve_milestone(&s.alice, &1u32);
+    assert!(s.vault.try_release_milestone(&1u32).is_err(), "bob has not approved");
+    s.vault.approve_milestone(&s.bob, &1u32);
+    s.vault.release_milestone(&1u32);
+}
+
 /// A raise concentrated enough that the capped weights could not clear half
 /// the raise even all together: 60 + 50 + 40 = 150, not more than 150. Measured
 /// against the raise this vault could never release anything.
@@ -626,13 +661,43 @@ fn a_late_whale_is_counted_in_the_capped_total() {
     assert_eq!(required, 295 * UNIT + 1);
 }
 
+/// Up to four wallets can exceed the cap, and every one of them must come off
+/// the capped total. Four whales at 240 of a 1000 raise (cap 200) plus 40:
+/// capped total 4 * 200 + 40 = 840, so the bar is more than 420 — and two
+/// whales with the small backer (440, three wallets) carry it. Tracking only
+/// three would leave a whale's 40 excess in, putting the bar above 440.
+#[test]
+fn a_fourth_capped_wallet_is_counted_in_the_capped_total() {
+    let s = setup_with(1_000 * UNIT, BOND, PLATFORM_FEE);
+    let dave = Address::generate(&s.env);
+    let erin = Address::generate(&s.env);
+    s.minter.mint(&dave, &(1_000 * UNIT));
+    s.minter.mint(&erin, &(1_000 * UNIT));
+
+    s.vault.contribute(&s.alice, &(240 * UNIT));
+    s.vault.contribute(&s.bob, &(240 * UNIT));
+    s.vault.contribute(&s.carol, &(240 * UNIT));
+    s.vault.contribute(&dave, &(240 * UNIT));
+    s.vault.contribute(&erin, &(40 * UNIT));
+
+    s.vault.open_milestone_vote(&1u32);
+    let (_, required, _) = s.vault.get_milestone_vote(&1u32);
+    assert_eq!(required, 420 * UNIT + 1);
+
+    s.vault.approve_milestone(&s.alice, &1u32);
+    s.vault.approve_milestone(&s.bob, &1u32);
+    s.vault.approve_milestone(&erin, &1u32);
+    s.vault.release_milestone(&1u32); // 440 > 420 from three wallets
+}
+
 /// Cross-check the tracked capped total against a direct sum over every
-/// contributor, for a spread of deterministic contribution orders.
+/// contributor, for a spread of deterministic contribution orders. Every seed
+/// puts one to three wallets over the cap; four is covered above.
 #[test]
 fn the_capped_total_matches_a_direct_sum() {
     extern crate std;
     let mut concentrated = 0;
-    for seed in 1u64..=40 {
+    for seed in 1u64..=5 {
         let goal = 2_000 * UNIT;
         let s = setup_with(goal, BOND, PLATFORM_FEE);
         let mut wallets: std::vec::Vec<Address> = std::vec::Vec::new();
@@ -678,7 +743,7 @@ fn the_capped_total_matches_a_direct_sum() {
         let (_, required, _) = s.vault.get_milestone_vote(&1u32);
         assert_eq!(required, direct * 5_000 / 10_000 + 1, "seed {}", seed);
     }
-    assert!(concentrated >= 10, "only {} seeds put a wallet over the cap", concentrated);
+    assert_eq!(concentrated, 5, "every seed puts a wallet over the cap");
 }
 
 #[test]
@@ -838,6 +903,24 @@ fn a_window_that_met_threshold_cannot_be_declared_failed() {
 
     // And it can still be executed.
     s.vault.release_milestone(&1u32);
+}
+
+/// A window that cleared the weight but not the wallet floor did not carry, so
+/// it lapses like any other — otherwise the milestone could neither be released
+/// nor failed, and contributor funds would sit locked.
+#[test]
+fn a_window_short_of_the_wallet_floor_lapses() {
+    let s = setup();
+    fund_evenly(&s); // capped total 180, bar more than 90
+    s.vault.open_milestone_vote(&1u32);
+    s.vault.approve_milestone(&s.alice, &1u32);
+    s.vault.approve_milestone(&s.bob, &1u32); // 120 clears the weight, two wallets
+    assert!(s.vault.try_release_milestone(&1u32).is_err(), "two wallets do not carry");
+
+    advance(&s.env, VOTING_WINDOW + 1);
+    s.vault.settle_lapsed_milestone(&1u32);
+    assert_eq!(s.vault.get_state(), VaultState::Refunding);
+    assert!(s.vault.get_info().milestones.get(0).unwrap().failed);
 }
 
 // ── Bond forfeiture ────────────────────────────────────────────────────────
@@ -1184,6 +1267,25 @@ fn an_open_vote_is_not_abandonment() {
         s.vault.try_settle_stalled().is_err(),
         "an open, unelapsed vote is not abandonment"
     );
+}
+
+/// A milestone contributors carried is a release waiting to happen, not
+/// abandonment. Opening a vote does not reset the stall clock, so without this
+/// a dissenting contributor could fail an approved milestone — and forfeit the
+/// builder's bond — in the first ledger after its window closed.
+#[test]
+fn a_carried_vote_cannot_be_stalled_out() {
+    let s = setup();
+    fund_evenly(&s);
+    advance(&s.env, STALL_WINDOW - 10);
+    s.vault.open_milestone_vote(&1u32);
+    s.vault.approve_milestone(&s.alice, &1u32);
+    s.vault.approve_milestone(&s.bob, &1u32);
+    s.vault.approve_milestone(&s.carol, &1u32);
+
+    advance(&s.env, VOTING_WINDOW + 1);
+    assert!(s.vault.try_settle_stalled().is_err(), "the vote carried");
+    s.vault.release_milestone(&1u32);
 }
 
 #[test]

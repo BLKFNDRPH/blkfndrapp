@@ -271,12 +271,22 @@ fn extend_instance_ttl(env: &Env) {
 ///
 /// The cap is a fifth of the raise, not of the capped total, so it is fixed once
 /// the raise closes and a contributor's weight cannot shift under a vote.
+///
+/// Never below one base unit: a raise under five units would otherwise floor
+/// the cap to zero, zeroing every weight so that not even a unanimous vote
+/// could carry. At most four balances still exceed it, since five balances of
+/// at least `cap + 1` would sum to more than the raise.
 fn weight_cap(raised_amount: i128) -> i128 {
-    raised_amount
+    let cap = raised_amount
         .checked_mul(WEIGHT_CAP_BPS)
         .unwrap()
         .checked_div(BPS)
-        .unwrap()
+        .unwrap();
+    if cap < 1 {
+        1
+    } else {
+        cap
+    }
 }
 
 fn effective_weight(contribution: i128, raised_amount: i128) -> i128 {
@@ -1065,6 +1075,21 @@ impl BlkfndrVault {
                 && env.ledger().timestamp() < m.vote_opens_at + info.voting_window_secs
             {
                 panic_with_error!(&env, Error::VotingAlreadyOpen);
+            }
+        }
+
+        // Nor is a milestone contributors carried: it is a release waiting to
+        // happen that anyone can execute. Failing it would forfeit the bond of a
+        // builder whose work was approved — and opening a vote does not reset the
+        // stall clock, so a dissenting contributor could race the release.
+        for i in 0..info.milestones.len() {
+            let m = info.milestones.get(i).unwrap();
+            if !m.released
+                && !m.failed
+                && m.vote_opens_at != 0
+                && carried(&env, &m, info.raised_amount)
+            {
+                panic_with_error!(&env, Error::ThresholdMet);
             }
         }
 

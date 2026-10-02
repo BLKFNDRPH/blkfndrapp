@@ -57,7 +57,7 @@ Amounts are in stroops throughout (1 unit = 10,000,000 stroops, 7 decimals). Dep
 
 ## blkfndr-vault
 
-One vault per project. It holds every stake and the builder's performance bond in the same contract, runs the milestone votes that release money, and refunds automatically when a project misses its goal or a milestone fails. **47 tests.**
+One vault per project. It holds every stake and the builder's performance bond in the same contract, runs the milestone votes that release money, and refunds automatically when a project misses its goal or a milestone fails. **52 tests.**
 
 ### Lifecycle states
 

@@ -205,7 +205,7 @@ Each of these changes the legal character of a contribution and none will ship a
 
 The properties in [Section 4](#4-release-authority) are enforced by contract logic, not by application code or platform policy. The admin roster contract exists for platform administration and is deliberately absent from the release path.
 
-The bonded-vault contract alone stands at **47 passing tests**, with the treasury and Operations Vault adding a further **45** and **25**, covering the threshold arithmetic, the weight cap, the capped total, the distinct-wallet requirement, lapse handling, forfeiture, refund accounting, and the two-thirds governance model.
+The bonded-vault contract alone stands at **52 passing tests**, with the treasury and Operations Vault adding a further **45** and **25**, covering the threshold arithmetic, the weight cap, the capped total, the distinct-wallet requirement, lapse handling, forfeiture, refund accounting, and the two-thirds governance model.
 
 ### **6.2 Off-chain**
 

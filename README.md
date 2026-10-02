@@ -24,7 +24,7 @@ Release authority is contribution-weighted rather than held by appointed signers
 
 | Area | State |
 |---|---|
-| Bonded vault with contributor-weighted release | ✅ Deployed to testnet, 47 tests passing (the capped-total release rule reaches new projects once the factory's vault wasm hash is updated) |
+| Bonded vault with contributor-weighted release | ✅ Deployed to testnet, 52 tests passing (the capped-total release rule reaches new projects once the factory's vault wasm hash is updated) |
 | Builder attestation registry | ✅ Deployed to testnet |
 | Platform treasury + owner-voted governance (fee, bond, ops funding) | ✅ Deployed to testnet, 45 tests passing |
 | Operations Vault (governed gas budget) + managed KYC-attestor keys | ✅ Deployed to testnet, 25 tests passing |
