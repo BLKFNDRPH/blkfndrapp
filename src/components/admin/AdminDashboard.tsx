@@ -81,6 +81,7 @@ import { formatCurrency } from "@/lib/formatters";
 import { Client as VaultClient, type ProjectInfo } from "@/packages/blkfndr_vault/src";
 import { StellarFormatter } from "@/lib/stellar-format";
 import { SOROBAN_RPC_URL, NETWORK_PASSPHRASE } from "@/lib/stellar";
+import { isMissingFunction } from "@/hooks/use-stellar-contract";
 import {
   Dialog,
   DialogContent,
@@ -252,6 +253,12 @@ export function AdminDashboard() {
   const [selectedVaultInfo, setSelectedVaultInfo] = useState<
     ProjectInfo | { isLegacy: true } | null
   >(null);
+  // Which release rule the selected vault runs. Vaults created before the
+  // three-wallet floor measure the bar against the raw raise and have no
+  // get_milestone_wallets; null when the read could not tell.
+  const [selectedVaultHasWalletFloor, setSelectedVaultHasWalletFloor] = useState<
+    boolean | null
+  >(null);
   const [isLoadingVaultInfo, setIsLoadingVaultInfo] = useState(false);
   const [vaultInfoError, setVaultInfoError] = useState<string | null>(null);
   const [liveBondAmounts, setLiveBondAmounts] = useState<Record<string, number>>({});
@@ -304,6 +311,7 @@ export function AdminDashboard() {
   const handleViewVaultConfig = async (project: Project) => {
     setSelectedVaultProject(project);
     setSelectedVaultInfo(null);
+    setSelectedVaultHasWalletFloor(null);
     setVaultInfoError(null);
     if (!project.vaultAddress) {
       setVaultInfoError("No vault address found for this project.");
@@ -326,6 +334,18 @@ export function AdminDashboard() {
         parsedInfo = { isLegacy: true };
       }
       setSelectedVaultInfo(parsedInfo);
+
+      if (parsedInfo && !("isLegacy" in parsedInfo) && parsedInfo.milestones.length > 0) {
+        try {
+          const walletsTx = await vaultClient.get_milestone_wallets({
+            milestone_id: parsedInfo.milestones[0].id,
+          });
+          void walletsTx.result; // throws when the simulation failed
+          setSelectedVaultHasWalletFloor(true);
+        } catch (walletsErr) {
+          setSelectedVaultHasWalletFloor(isMissingFunction(walletsErr) ? false : null);
+        }
+      }
     } catch (err: any) {
       console.error("Failed to fetch vault info:", err);
       setVaultInfoError(err.message || String(err));
@@ -1177,7 +1197,12 @@ export function AdminDashboard() {
                         Contributor vote, no admin key
                       </span>
                       <span className="text-muted-foreground text-[11px] leading-relaxed">
-                        Over 50% of the raise, 20% cap per wallet,{" "}
+                        {selectedVaultHasWalletFloor === true
+                          ? "Over 50% of the capped weight from 3+ wallets (or every backer), "
+                          : selectedVaultHasWalletFloor === false
+                            ? "Over 50% of the raise (pre-floor vault), "
+                            : ""}
+                        20% cap per wallet,{" "}
                         {Number(selectedVaultInfo.voting_window_secs) / 86_400}-day window
                       </span>
                     </div>

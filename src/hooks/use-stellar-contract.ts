@@ -99,7 +99,7 @@ export type MilestoneWallets =
  * never get this far — they surface from the HTTP client — and a contract that
  * has the function but panics reports a `Contract` error, so neither matches.
  */
-function isMissingFunction(error: unknown): boolean {
+export function isMissingFunction(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   return (
     message.includes("Error(WasmVm, MissingValue)") ||
