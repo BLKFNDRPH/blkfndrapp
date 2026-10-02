@@ -25,6 +25,8 @@ export interface OnChainMilestone {
   id: number;
   amount: number;
   released: boolean;
+  /** Settled as failed: its vote ended short, or the builder went quiet. */
+  failed: boolean;
 }
 
 export interface VaultState {
@@ -94,19 +96,11 @@ export async function readVaultState(vaultAddress: string): Promise<VaultState |
         id: Number(m.id),
         amount: Number(m.amount) / STROOPS,
         released: Boolean(m.released),
+        failed: Boolean(m.failed),
       })),
     };
   } catch (error) {
     console.warn(`[vault-state] Failed to read vault ${vaultAddress}:`, error);
     return null;
   }
-}
-
-/**
- * Resolve a vault's creator address on-chain. Used to authorize writes that
- * only a project's builder may perform.
- */
-export async function getVaultCreator(vaultAddress: string): Promise<string | null> {
-  const state = await readVaultState(vaultAddress);
-  return state?.creator ?? null;
 }

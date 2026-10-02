@@ -18,7 +18,7 @@ import {
   revokeSubmissionAttestation,
   myManagedAttestor,
 } from "@/lib/data/kyc";
-import { getVaultCreator } from "@/lib/vault-state";
+import { readVaultState } from "@/lib/vault-state";
 
 // Every export here is a public HTTP endpoint. Each one guards itself, and the
 // database confines what it can reach even if one forgets.
@@ -168,19 +168,56 @@ export async function triggerIndexerSync() {
 
 // ── Milestones ─────────────────────────────────────────────────────────────
 
+const MILESTONE_NOT_FOUND =
+  "We couldn't find this milestone in the project's records. Refresh the project and try again.";
+
 export async function submitMilestoneProof(
   vaultAddress: string,
   milestoneId: number,
   proof: string,
 ) {
   try {
+    // Public endpoint: the arguments are whatever the request carried.
+    if (typeof vaultAddress !== "string" || typeof proof !== "string" || !Number.isInteger(milestoneId)) {
+      return { success: false, error: "That proof request was malformed." };
+    }
+
+    // The vault itself, not the indexer's copy of it, which can lag: it names
+    // the builder, and it is the current answer to whether this milestone can
+    // still take proof. A failed read and a missing vault look the same here.
+    const vault = await readVaultState(vaultAddress);
+    if (!vault) {
+      return { success: false, error: "We couldn't read this project's vault from the network. Try again in a moment." };
+    }
+
     // Only the project's builder may submit delivery evidence for it.
-    const creator = await getVaultCreator(vaultAddress);
-    if (!creator) return { success: false, error: "Vault not found on-chain" };
-    await requireWalletOwnerOrAdmin(creator);
+    await requireWalletOwnerOrAdmin(vault.creator);
+
+    // Proof is accepted exactly when the project dialog offers it: while the
+    // vault is paying out milestones, for a milestone that has neither been
+    // paid out nor failed. Past that point the proof is the record of what
+    // stakeholders voted on, so it stays as it was.
+    const milestone = vault.milestones.find((m) => m.id === milestoneId);
+    if (!milestone) return { success: false, error: MILESTONE_NOT_FOUND };
+    if (milestone.released) {
+      return { success: false, error: "This milestone has been paid out, so its proof can no longer be changed." };
+    }
+    if (milestone.failed) {
+      return { success: false, error: "This milestone has failed, so its proof can no longer be changed." };
+    }
+    // A failed milestone marks only itself; the vault closing ends the rest.
+    if (vault.status !== "funded" && vault.status !== "active") {
+      return {
+        success: false,
+        error:
+          vault.status === "raising" || vault.status === "pending"
+            ? "Proof can be added once this project reaches its goal."
+            : "This project's vault has closed, so its proof can no longer be changed.",
+      };
+    }
 
     const ok = await setMilestoneProof(vaultAddress, milestoneId, proof);
-    if (!ok) return { success: false, error: "Project or milestone not found" };
+    if (!ok) return { success: false, error: MILESTONE_NOT_FOUND };
 
     const project = await getProjectByVault(vaultAddress);
     const title = project?.title ?? vaultAddress;

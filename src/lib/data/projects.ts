@@ -233,13 +233,25 @@ export async function upsertMilestones(
   if (error) throw new Error(`Could not upsert milestones: ${error.message}`);
 }
 
-/** Delivery evidence for a milestone. Off-chain by nature; the builder writes it. */
+/** The longest proof stored for one milestone. MilestoneProofDialog checks it too. */
+const MAX_MILESTONE_PROOF_LENGTH = 4000;
+
+/**
+ * Delivery evidence for one milestone. Off-chain by nature; the builder writes
+ * it. False when the project or the milestone is not on record.
+ */
 export async function setMilestoneProof(
   vaultAddress: string,
   milestoneId: number,
   proof: string,
 ) {
   await requireCaller();
+
+  // A proof is a JSON document, and cutting one short leaves it unreadable, so
+  // one that does not fit is refused rather than truncated.
+  if (proof.length > MAX_MILESTONE_PROOF_LENGTH) {
+    throw new Error("This proof is too long to save. Shorten the description and try again.");
+  }
 
   const admin = createAdminClient();
   const { data: project } = await admin
@@ -250,17 +262,39 @@ export async function setMilestoneProof(
 
   if (!project) return false;
 
-  const { error } = await admin
+  const { data: milestone } = await admin
     .from("project_milestones")
-    .update({ proof: proof.slice(0, 4000) })
+    .select("released")
     .eq("project_id", project.id)
-    .eq("milestone_id", milestoneId);
+    .eq("milestone_id", milestoneId)
+    .maybeSingle();
+
+  if (!milestone) return false;
+  // Stakeholders voted on the proof as it stood; once the money has moved it is
+  // the record of what they approved. submitMilestoneProof asks the vault
+  // itself first, since this indexed flag can lag a payout. This is the
+  // database's own guard, for any other caller.
+  if (milestone.released) {
+    throw new Error("This milestone has been paid out, so its proof can no longer be changed.");
+  }
+
+  const { data: updated, error } = await admin
+    .from("project_milestones")
+    .update({ proof })
+    .eq("project_id", project.id)
+    .eq("milestone_id", milestoneId)
+    .eq("released", false)
+    .select("milestone_id");
 
   if (error) {
     // A platform lock refuses proof in a trigger, which the service role does
     // not bypass. Its message is already the one to show the builder.
     if (error.code === "23514") throw new Error(error.message);
     throw new Error(`Could not save milestone proof: ${error.message}`);
+  }
+  // Paid out between the read above and this write.
+  if (!updated?.length) {
+    throw new Error("This milestone has been paid out, so its proof can no longer be changed.");
   }
   return true;
 }
