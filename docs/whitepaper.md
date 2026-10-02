@@ -156,7 +156,7 @@ Contributor apathy is the normal failure mode of on-chain governance, and most d
 
 A builder who goes silent is covered too. A funded vault moves forward only when the builder opens the next vote. If 90 days pass with no release since funding or since the last release, and no vote is open, anyone can call `settle_stalled`. It fails the next milestone, forfeits the bond and opens refunds. The platform runs a daily job that does this for any vault where it would succeed, so an abandoned project's money is not stranded by a lost key.
 
-**Known defect.** In the current source and in the deployed vault, `settle_stalled` refuses only while a vote window is open, and opening a vote does not reset the 90-day clock. So a milestone stakeholders approved but nobody released before its window closed can still be failed once the clock runs out, forfeiting the bond of a builder whose work was approved. Executing a carried release promptly avoids it. The fix is written (unmerged commit `d212b37`) and has to land before the factory is switched to the new vault code.
+**Known defect in deployed vaults.** In the deployed vault code, `settle_stalled` refuses only while a vote window is open, and opening a vote does not reset the 90-day clock. So a milestone stakeholders approved but nobody released before its window closed can still be failed once the clock runs out, forfeiting the bond of a builder whose work was approved. Executing a carried release promptly avoids it. The source is fixed: `settle_stalled` now spares a carried milestone. The fix reaches only vaults created after the factory is switched to the new vault code.
 
 ### **4.6 The bond**
 
@@ -227,7 +227,7 @@ None will ship ahead of the corresponding legal structuring.
 
 The properties in [Section 4](#4-release-authority) are enforced by contract logic, not by application code or platform policy. The admin roster contract exists for platform administration and is deliberately absent from the release path.
 
-The full contract suite passes 170 tests on `main`: the vault 47, the treasury 45, the Operations Vault 25, the factory 15, the identity registry 15, the attestation registry 14 and the admin roster 9. They cover the threshold arithmetic, the weight cap, the capped total, the distinct-wallet requirement, lapse and stall handling, forfeiture, refund accounting, and the two-thirds governance model.
+The full contract suite passes 175 tests on `main`: the vault 52, the treasury 45, the Operations Vault 25, the factory 15, the identity registry 15, the attestation registry 14 and the admin roster 9. They cover the threshold arithmetic, the weight cap, the capped total, the distinct-wallet requirement, lapse and stall handling, forfeiture, refund accounting, and the two-thirds governance model.
 
 ### **6.2 Off-chain**
 
