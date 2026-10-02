@@ -1,91 +1,221 @@
 # BLKFNDR — Progress
 
-_Last updated: 2026-09-28_
+_Last updated: 2026-10-03 · `main` at #104_
 
-Status of the repositioning work and the security-audit remediation. Everything below is merged to `main`. On 2026-09-28 the **treasury and Operations Vault were redeployed** with their audit fixes: the treasury is live, and the Operations Vault cutover is in progress. The open items are that cutover, the remaining **factory + registries redeploy**, one DB migration to apply, and two findings that need a human decision or a tool the agent can't run.
+Where the platform stands: what is live on testnet, what is merged but not yet active, and what is still open. It covers:
+- the repositioning (#67)
+- the security-audit remediation (#68–#75)
+- the treasury and Operations Vault redeploy (#77)
+- the QA trials and launch hardening (#79–#86)
+- the indexer, governance, proof and stake-flow work since (#85–#104)
 
-> ⚠️ **Deployment reality — read this first.**
-> **The source still carries more fixes than the live testnet does.** Merging a PR does *not* put a contract fix on-chain — a Soroban contract only changes when it is redeployed (or, for the vault, when a *new* vault is created from the repointed factory). Do **not** assume the deployed contracts carry the source fixes. See [Live vs shelf-ready](#live-vs-shelf-ready).
+> ⚠️ **Merged is not deployed.**
+> A Soroban contract only changes when it is redeployed. A vault change reaches only vaults the factory creates after it is repointed with `update_wasm_hash`. **The source carries contract fixes the testnet does not**, including the new vault release rule (#99). See [Live vs shelf-ready](#live-vs-shelf-ready).
+
+---
+
+## Snapshot — verified on testnet, 2026-10-02
+
+Read-only checks, not inferred from merges: the deployed `/_next/static` bundle, the live Supabase project (`eqnheftmstapthlblpbx`), Supabase edge logs, and `stellar contract invoke --send=no`.
+
+| Area | State |
+|---|---|
+| **App** | ✅ The host runs `main` through at least #103. The deployed bundle contains #102 and #103, and its Operations Vault address is `CCVXM3YP…`. #104 is server-only, so the bundle can't show whether it is deployed |
+| **Google sign-in** | ✅ Fixed on the host. Since 2026-10-01 its redirects use `https://`, and the PKCE exchanges complete |
+| **Indexer** | ✅ Current. The cursor was updated 2026-10-02, and all 7 live projects carry their real titles except the three test rows (#1–3) |
+| **Vault release rule (#99)** | ❌ Not live. The factory still deploys vault wasm `70e5f3a8…`, as `/api/vault-wasm-hash` confirms |
+| **Operations Vault cutover** | ⚠️ Half done. The app points at the new vault, but the old one still holds 25 XLM, the new one 0, and the treasury's ops funding is unset |
+| **`profiles` column grants (#70)** | ❌ Not applied. `authenticated` can still `UPDATE profiles.stellar_public_key` |
+| **KYC linked-wallet policy (#89)** | ❌ Not applied, and it has to follow the grants above |
+| **Project hide/lock (#85)** | ✅ Migration applied, 4 restrictions in use |
+| **IPFS reads** | ⏳ #104 (merged 2026-10-02) sends the Pinata Gateway Key, but it only helps once the host runs #104 and has `PINATA_GATEWAY_KEY` set ([item 3b](#3b-set-pinata_gateway_key-on-the-host)). Until then the dedicated gateway refuses (401) and reads fall back to the rate-limited shared gateway |
 
 ---
 
 ## Done
 
-### Positioning & docs — PR #67 (merged)
-- Landing page + repo docs repositioned from "crowdfunding" → **a secure on-chain vault for real-world projects**; funding de-emphasised.
+### Since 2026-09-28 (#76–#104)
 
-### Security audit — delivered
-- Full multi-domain audit: 5-agent static review + dynamic VAPT. **Security analysis PDF delivered.**
+Every app-layer change below is live, because the host was rebuilt from `main`. The exceptions are marked.
 
-### Remediation — merged PRs and deploys
+| PR | Area | What changed | Live? |
+|----|------|--------------|-------|
+| #76, #77 | Docs / deploy | This tracker. Treasury and Operations Vault references moved to the 2026-09-28 redeploy | ✅ |
+| #78 | Auth | `/login` reads `?checkEmail=1` and `?error=`, so new email users are no longer told "Login failed". A log line warns when the configured origin is plain `http://` | ✅ |
+| #79 | KYC | The applicant is notified of the decision, and rejections carry the reviewer's reason. The bell toasts any newly arrived notification | ✅ |
+| #80 | Launch | Bond pre-flight. A missing USDC trustline, an insufficient balance or an unfunded wallet each get their own instructions, instead of `VM call trapped` | ✅ |
+| #81, #82 | UI | The Launch button holds its size and shows a visible spinner. The header and pages share one width rule | ✅ |
+| #83 | Launch | Launch no longer fails silently. Validation runs through zod plus an explicit milestone check, and a blocked launch lists what to fix | ✅ |
+| #84, #93 | Signing | One shared `freighterSigner` that checks Freighter's reply, names a decline as "Signing cancelled", and builds every transaction from the signer's own account. Before #93, every `signerFor` action (stake, vote, release, refund, treasury) failed before Freighter opened | ✅ |
+| #85 | Moderation | Platform-level **hide** and **lock**, which need a reason and are audit-logged. Enforced in Postgres (RPCs, RLS, a proof trigger) and in the app. A lock binds this interface, never the vault. It also fixed an indexer bug that would have re-keyed hidden projects | ✅ Migration applied |
+| #86 | Launch / ops | **QA Trial #3.** The `keep-alive-cron` keeps shared contract storage from expiring, which cut the launch fee from 172.83 to 5.88 XLM. Also a review dialog with the simulated fee, a duplicate-launch guard, and recovery when a launch was sent but never confirmed | ✅ |
+| #87 | Data | Project reads now select `location`, `location_lat` and `location_lng` | ✅ |
+| #88 | Admin | "Is this an admin" comes from the `platform_admins` roster. `notifyAdmins` notifies roster members | ✅ |
+| #89 | Wallet / KYC | The linked wallet comes from the session, and Freighter is no longer snapped back to it. The signer must match the requested account. A failed unlink is reported. KYC can be filed only against the linked wallet | ✅ Code · ⏳ migration `20261001160000` |
+| #90 | Indexer | Follows the RPC cursor through quiet 10,000-ledger windows, and restarts at the oldest retained ledger instead of skipping a gap | ✅ |
+| #91, #104 | Indexer / IPFS | Falls back from the dedicated gateway to `gateway.pinata.cloud`, and retries projects still titled "Project #N". #91's Gateway Key commit was pushed after its merge. #104 landed it: `PINATA_GATEWAY_KEY` goes to the dedicated gateway only, and redirects are not followed, so the key cannot leak | ✅ #91 · ⏳ #104 needs the host env var |
+| #92, #94 | Profiles | Creator and backer names and photos come from the linked profile. The indexer fills `creator_display`, and syncs no longer reset titles | ✅ |
+| #95 | Cleanup | Removed 52 unreachable files, Firebase config, the image allowlist, two unread env vars and 13 npm packages. The unwired entry points were kept (see [item 7](#7-unwired-features--wire-up-or-delete)) | ✅ |
+| #96 | Profile | Recent Activity reads Horizon `/operations` and labels contract calls ("Fund vault", "Open milestone vote") with signed amounts | ✅ |
+| #97, #103 | Milestones | Each milestone shows its own proof (description and photo) in the project dialog. The builder adds or edits proof per milestone, and the server decides from the live vault (funded or active, milestone not released or failed). Proof is capped at 4,000 characters, photos at 8 MB (PNG, JPEG, WebP, GIF) | ✅ |
+| #98 | Admin | **View Vault** shows the real release authority (contributor vote, no admin key) and the flat fee | ✅ |
+| #99 | **Contract** | **Release rule.** A release needs more than half of the *capped* total, from at least three wallets (or every backer when there are fewer than three). The homepage reads the vault hash live from the factory. Vault tests on `main`: 47. The PR's last commit (`d212b37`: `settle_stalled` sparing approved milestones, the cap floor, +5 tests) was pushed after the merge and **is not on `main`** ([item 2](#2-switch-the-factory-to-the-99-vault-wasm)) | ✅ App · ❌ **contract not switched** |
+| #100 | Design | [Web3-accessibility redesign brief](docs/design/web3-accessibility-redesign.md): the friction map, 14 Claude Design prompts and four delivery phases | — |
+| #101 | Stake flow | Removed the phantom 3% fee from the stake dialog. Stakes were never charged a fee | ✅ |
+| #102 | Stake flow | Sign-in opens above the project dialog. After sign-in (Google reload or password remount), the project reopens, in the fund flow when that was the intent | ✅ |
+
+### Security-audit remediation (#67–#75)
+
 | PR | Tier | What | On testnet? |
 |----|------|------|-------------|
-| #68 | App | Removed unauth `createNotification`; security headers; `platform-settings` auth-order fix | ✅ Live |
-| #69 | Contract | Vault **H-02** fund-lock timeout (`settle_stalled`), **M-03** milestone cap, **M-07** `return_bond` CEI; treasury/operations **M-05/M-06** CEI | ✅ Vault live via #71; treasury/ops CEI live via the 2026-09-28 redeploy |
-| #70 | DB | KYC `requireKycReviewer` gate (owner \| platform_admin \| kyc_manager); `profiles` write-only column grants | ✅ Code live · ⏳ migration to apply (below) |
-| #71 | Deploy | Redeployed hardened **vault** wasm `70e5f3a8`; factory repointed via `update_wasm_hash`; bindings + docs | ✅ Live |
-| #72 | Keeper | `settle_stalled` keeper cron (auto-reclaims abandoned funded vaults) | ✅ Live |
-| #73 | Contract | Attestation **H-07** (records keyed by vault addr — fixes cross-factory `project_id` collision), **M-04** `disable_factory`; identity **M-02** (TTL re-extend on use + permissionless bumps) | ❌ Shelf-ready |
-| #74 | Contract | **H-03**: `initialize` → Soroban `__constructor` on **treasury + operations** | ✅ Live (2026-09-28 redeploy) |
-| #75 | Contract | **H-03**: `initialize` → `__constructor` on **factory + attestation + identity + admin**; broke the factory↔attestation deploy cycle; rewrote `scripts/deploy-contracts.sh` | ❌ Shelf-ready |
-| — | Deploy | 2026-09-28: redeployed **treasury + Operations Vault** from `main` (#69 CEI + #74 constructors); factory fee wallet repointed to the new treasury | ✅ Treasury live · ⏳ ops cutover |
+| #67 | Docs | Repositioned from "crowdfunding" to **a secure on-chain vault for real-world projects** | ✅ |
+| #68 | App | Removed the unauthenticated `createNotification`. Security headers. Fixed the auth order in `platform-settings` | ✅ |
+| #69 | Contract | Vault **H-02** (`settle_stalled`), **M-03** milestone cap, **M-07** `return_bond` CEI. Treasury and operations **M-05/M-06** CEI | ✅ Vault via #71, treasury and ops via the 2026-09-28 redeploy |
+| #70 | DB | `requireKycReviewer` gate. Write-only column grants on `profiles` | ✅ Code · ❌ **migration not applied** ([item 3](#3-apply-the-two-pending-migrations-in-order)) |
+| #71 | Deploy | Hardened vault wasm `70e5f3a8`, with the factory repointed | ✅ |
+| #72 | Keeper | `settle_stalled` keeper cron | ✅ |
+| #73 | Contract | Attestation **H-07** (records keyed by vault) and **M-04** `disable_factory`. Identity **M-02** (TTL) | ❌ Shelf-ready |
+| #74 | Contract | **H-03**: `__constructor` on treasury and operations | ✅ |
+| #75 | Contract | **H-03**: `__constructor` on factory, attestation, identity and admin. New deploy order | ❌ Shelf-ready |
 
-**H-03 is now fully closed in source** — every contract configures itself in a constructor except the **vault**, which is deployed+initialized atomically inside `create_vault` (no deploy→init gap), so it deliberately keeps `initialize`. The treasury/ops redeploy is the first live proof that constructor-based deploys work on testnet.
+**H-03 is closed in source.** Every contract configures itself in a constructor, except the vault, which `create_vault` deploys and initializes atomically.
+
+### QA trials
+
+- **QA-RPT-2026-09-30 (BUG-001…005).** Fixed by #79–#82. BUG-003's off-centre logo does not reproduce: it measures centred, and the offset is the scrollbar.
+- **QA Trial #3.** Fixed by #84 and #86. Defects 002, 003 and 007 (favicon, empty wallet space, prompt position) are Freighter's own behaviour, and an upstream issue was drafted.
 
 ---
 
 ## Live vs shelf-ready
 
-**Live on testnet (deployed + active):**
-- **Vault** hardened wasm `70e5f3a8` — factory repointed to it. *New* projects get H-02/M-03/M-07. **Existing vaults keep their original code (`9c20bca3`) — immutable per project.**
-- **Treasury** [`CDA5XDY5…M44COAXU`](https://stellar.expert/explorer/testnet/contract/CDA5XDY564RV2OSZNF2S6CXQYCABFASBOHUCXJEGII6M232VM44COAXU) — redeployed 2026-09-28 with #69 CEI + #74 constructor. The factory routes fees to it ([repoint tx `69e3d4c3…`](https://stellar.expert/explorer/testnet/tx/69e3d4c3cc9ba7adad7ad354d845d524bf7435f9c4c84b608f9b64cbdbc7487e)); the old treasury `CCNID3UW…` was empty and is superseded.
-- **App layer** — #68 fixes, #70 KYC-reviewer gate, #72 keeper cron (reuses `OPS_FUNDING_SUBMITTER_SECRET`).
+**Live on testnet:**
 
-**Deployed, cutover in progress:**
-- **Operations Vault** [`CCVXM3YP…NQG7FDSN`](https://stellar.expert/explorer/testnet/contract/CCVXM3YPPEMWG4INHFTZ4NBJ3PQW3ZUNYIZMBJBNYQOMSNOENQG7FDSN) — deployed 2026-09-28 with #69 CEI + #74 constructor, same 3 owners. The app still points at the old vault `CDZXCWKY…` (25 XLM) until the steps in [item 1](#1-operations-vault-cutover-in-progress) are done.
+- **App:** everything on `main` through #103, including the #68 fixes, the #70 reviewer gate, the keeper (#72), the keep-alive (#86) and the hide/lock migration (#85).
+- **Vault** wasm `70e5f3a8…`. The factory deploys it, so new projects get H-02, M-03 and M-07. Vaults are immutable, so older vaults keep their original code.
+- **Treasury** [`CDA5XDY5…M44COAXU`](https://stellar.expert/explorer/testnet/contract/CDA5XDY564RV2OSZNF2S6CXQYCABFASBOHUCXJEGII6M232VM44COAXU), redeployed 2026-09-28. The factory routes fees to it.
+- **Operations Vault** [`CCVXM3YP…NQG7FDSN`](https://stellar.expert/explorer/testnet/contract/CCVXM3YPPEMWG4INHFTZ4NBJ3PQW3ZUNYIZMBJBNYQOMSNOENQG7FDSN), which the app now points at. It is unfunded until [item 1](#1-finish-the-operations-vault-cutover) is done.
 
-**Shelf-ready in source — NOT yet on testnet** (activates only on a redeploy):
-- **factory, attestation, identity, admin** carry un-deployed source changes: H-03 constructors (#75), attestation H-07 + M-04 (#73), identity M-02 (#73). The deployed wasm for these predates all of it.
-- Authoritative current hashes come from a fresh `bash scripts/build-contracts.sh`.
+**Merged, not active:**
 
-> **Verified on-chain 2026-09-28** (read-only, `stellar contract info interface`, addresses from `docs/smart-contracts.md`): the live **factory** and **attestation** still expose `initialize`, and the live attestation still keys `get_record` by `project_id: u64` — so #73 (H-07) and #75 are **not** deployed. The new **treasury** and **Operations Vault** expose `__constructor` and no `initialize`, carry the same shareholders/owners as the contracts they replace, and their on-chain wasm is byte-identical to the audited build (`3dc2b67d…` / `08360ea4…`).
+- **Vault #99 release rule.** Waiting on `update_wasm_hash` (item 2).
+- **Factory, attestation, identity, admin.** They carry #73 and #75. Read from testnet on 2026-10-02:
+  - all four still expose `initialize`;
+  - attestation still keys records by `project_id` and has no `disable_factory`;
+  - identity has no `bump_kyc` or `bump_attestor`.
+- **Migrations** `20260809160000_profiles_column_grants` and `20261001160000_kyc_filed_against_linked_wallet`.
+
+Current hashes come from a fresh `bash scripts/build-contracts.sh`. The wasm embeds absolute build paths, so a hash only reproduces on the same paths (see item 8).
 
 ---
 
 ## Not yet done
 
-### 1. Operations Vault cutover (in progress)
-The new vault is deployed and verified. Three steps remain, **in this order**:
-1. **Owners (2-of-3, Freighter):** vote a `Release` of the old vault's 25 XLM to `CCVXM3YP…` — while the app still points at the old vault.
-2. **Host:** set `NEXT_PUBLIC_BLKFNDR_OPERATIONS_CONTRACT_ID=CCVXM3YPPEMWG4INHFTZ4NBJ3PQW3ZUNYIZMBJBNYQOMSNOENQG7FDSN` and **rebuild** the image (it's a build arg, not runtime). The same rebuild ships the landing page's new contract links. Update local `.env.local` too.
-3. **Owners:** vote `SetOpsFunding` on the new treasury → the new vault. The governance panel sends it to the vault named in the app's env, hence after step 2.
+### 1. Finish the Operations Vault cutover
+The host step is done: the app addresses `CCVXM3YP…`. Two owner votes remain:
 
-### 2. Redeploy the factory + registries (#73 + #75)
-Redeploy factory, attestation, identity and admin with `scripts/deploy-contracts.sh` to activate the remaining shelf-ready fixes. Constructor deploys are proven on testnet now, but **#75's deploy order** (attestation before factory, then one post-deploy `add_factory`) is still reasoning-verified and unit-tested only — never run live.
-- Redeploy mints **new contract addresses** → update `NEXT_PUBLIC_BLKFNDR_{FACTORY,ATTESTATION,IDENTITY,ADMIN}_CONTRACT_ID`, then **rebuild** — new `NEXT_PUBLIC_*` vars need Docker build args + a rebuild, not just a redeploy.
-- **Re-attest existing KYC** into the new identity registry, and re-establish attestation trust.
-- **Redeploy the treasury again in the same pass.** Its `factory` is set once by the constructor and no governed action changes it, so after a factory redeploy its factory-policy votes (`SetFee`, `SetWasmHash`, `TransferAdmin`, …) would still target the old factory. The factory in turn takes its fee wallet at construction, so: deploy the factory with an interim fee wallet, deploy the new treasury against it, then `update_fee_wallet` on the new factory. Cheap while the treasury holds no funds.
-- Constructor args are passed at deploy time (`stellar contract deploy … -- --admin … --attestation_registry …`); no separate `invoke initialize`.
-- On-chain action — needs the deployer key and explicit go-ahead.
+1. **Move the old vault's 25 XLM.** `CDZXCWKY…` still holds 250,000,000 stroops. The governance panel now addresses the new vault, so this `Release` has to be proposed and approved outside the panel, with each owner's key in Stellar Lab or the CLI. Since it is testnet XLM, writing it off is also an option.
+2. **`SetOpsFunding`** on the treasury, pointing at `CCVXM3YP…`. `get_ops_funding` returns `null` today, so the monthly gas transfer has nothing to send to. This can be done from the panel now.
 
-### 3. Apply the #70 `profiles` column-grant migration
-`supabase/migrations/…profiles_column_grants.sql` must be applied to the live DB via `supabase db push` (owner action). Confirm whether this has been run. Note: `profiles` is now write-only column-granted, so any code path writing it must use column-scoped writes, not PostgREST `.upsert()`.
+### 2. Switch the factory to the #99 vault wasm
+Until this is done, every new vault still gets the old bar (more than half the raw raise), under which a raise with one or two backers can never release.
 
-### 4. M-09 — admin-role enum + migration ordering
-`admin_role` enum is missing `platform_admin`, and a migration-timestamp ordering issue breaks a clean `supabase db reset`. **Needs the Supabase CLI**, which isn't available in the agent environment.
+- **Land `d212b37` first.** #99's final commit was pushed 17 minutes after the merge, so `main`'s vault still has two defects the PR describes as fixed:
+  - `settle_stalled` refuses only while a window is open. Once an *approved* milestone's window closes past the 90-day stall clock, anyone can fail it and forfeit the bond. Opening a vote does not reset that clock, so a dissenter can race the release. The deployed `70e5f3a8…` vaults have the same defect, and `settle-stalled-cron` submits `settle_stalled` wherever it simulates successfully. So a carried but unreleased milestone should be released promptly.
+  - A raise under 5 base units floors the 20% cap to zero, so even a unanimous vote cannot carry.
 
-### 5. M-01 — contributor Sybil resistance
-The 20% contribution cap binds **addresses, not people**. Open **policy decision**: gate contribution on the identity registry (one KYC'd human = one cap)? Needs a product call before implementation.
+  Cherry-pick it in its own PR (it also brings the vault suite to 52 tests). The wasm hash changes with it.
+- **Decide: Sybil wallets against a large backer.** Under the new rule, a builder with just over 20% of the raise spread across three wallets can out-vote one backer holding the rest, whose weight is capped at 20%. The proposed fix is a dual majority: the approvers' *uncapped* stake must also exceed half the raise. That gives any wallet holding more than half a veto, so it is a product call. It is not in source yet.
+- **Then:** upload the wasm and call `update_wasm_hash` with the factory admin key. The commands are in [deployment.md](docs/deployment.md#switching-the-vault-code). The homepage hash updates within 5 minutes.
+- Old and new bindings decode both vault shapes, so app and contract can switch in either order.
+- If item 4 happens first, the new factory can be constructed with the new hash instead.
 
-### 6. Set `PINATA_GATEWAY_KEY` on the host
-The dedicated Pinata gateway (`PINATA_GATEWAY_URL`, `nft.blkfndr.com`) answers `401 ERR_ID:00024` unless a request carries its **Gateway Key**, which is separate from the API JWT. The fix (commit `900082d`) was pushed to #91's branch after that PR merged, so `main` sent no key and every server-side metadata read fell back to the shared `gateway.pinata.cloud`, which rate-limits (429). The commit is now cherry-picked onto `main`, with one addition: the indexer no longer follows redirects, because fetch carries custom headers across a cross-origin redirect.
-- The key is a **runtime, server-only** variable, sent as `x-pinata-gateway-token` to the dedicated gateway only.
-- **Host action:** add `PINATA_GATEWAY_KEY` to the Portainer stack environment and **Update the stack**. No rebuild is needed. See [deployment](docs/deployment.md#runtime--secret).
-- Verified 2026-10-03 against the live gateway: with the key, `nft.blkfndr.com` answers 200 for project #7's metadata. Without it, it answers 401 and the shared gateway answers 429.
+### 3. Apply the two pending migrations, in order
+1. `20260809160000_profiles_column_grants`. Without it, anyone signed in can set their own linked wallet without a signature.
+2. `20261001160000_kyc_filed_against_linked_wallet`. Without step 1, this policy can be bypassed by rewriting your own link first.
+
+Both are owner actions (`supabase db push`, or the MCP with approval). Once the grants apply, `profiles` writes must stay column-scoped, so no PostgREST `.upsert()`.
+
+### 3b. Set `PINATA_GATEWAY_KEY` on the host
+Without a Gateway Key, the dedicated gateway (`PINATA_GATEWAY_URL`, `nft.blkfndr.com`) answers `401 ERR_ID:00024` for this account's pins. The API JWT only authorizes pinning.
+
+- **#104 landed the fix on `main`.** It cherry-picks #91's late commit, `900082d`, plus one addition: the indexer no longer follows redirects, which would otherwise carry the key to another host.
+- **Host action:** add `PINATA_GATEWAY_KEY` to the Portainer stack environment, then **Update the stack**. It is a runtime variable, so no rebuild is needed, but a plain `docker restart` keeps the old environment. See [deployment.md](docs/deployment.md).
+- **Success:** the app logs stop showing `nft.blkfndr.com answered 401`.
+
+### 4. Redeploy the factory and registries (#73 + #75)
+Redeploy the factory, attestation, identity and admin with `scripts/deploy-contracts.sh`.
+
+- **Deploy order is unproven live.** Attestation goes before the factory, then one `add_factory`. That order is unit-tested only. Constructor deploys themselves are proven by the treasury and ops redeploy.
+- **New addresses:** update `NEXT_PUBLIC_BLKFNDR_{FACTORY,ATTESTATION,IDENTITY,ADMIN}_CONTRACT_ID` and **rebuild**. These are build args.
+- **Re-attest** existing KYC into the new identity registry.
+- **Redeploy the treasury again in the same pass.** Its `factory` is fixed at construction. Deploy the factory with an interim fee wallet, then the treasury against it, then call `update_fee_wallet`.
+- **Keep-alive:** add the new contracts to its set.
+- This is an on-chain action. It needs the deployer key and an explicit go-ahead.
+
+### 4b. Hand the factory admin to the treasury
+The live factory's admin is still the deployer key `GDR4TPUF…`.
+
+- Until `transfer_admin` hands it to the treasury, a carried treasury proposal that calls the factory cannot execute. That covers `SetFee`, `SetBondBps`, `SetWasmHash`, `SetFeeWallet`, `SetIdentityRegistry`, `SetVotingWindow`, `SetMinContribution` and `TransferAdmin`.
+- Today, fee and policy changes are one signature, not an owner vote.
+- If item 4 redeploys the factory, construct the new one with the treasury as admin, or transfer it straight after.
+
+### 5. M-09 — migration history drift
+- **Enum:** live has `admin_role` with `platform_admin`, added by a live-only migration (`20260809015229 add_platform_admin_role`) that has no file in the repo. The repo's `moderator_roles.sql` creates the enum without it.
+- **Timestamps:** four repo files carry different timestamps from their live versions: `community_feature_requests`, `moderator_roles`, `my_role` and `managed_attestor_keys`.
+- **Missing from live history:** `correct_bootstrap_admin` exists in the repo but not in the live history.
+- **Result:** a clean `supabase db reset` from the repo does not reproduce live.
+- **Fix:** add the missing migration and align the filenames to the live versions. This needs the Supabase CLI to verify.
+
+### 6. M-01 — contributor Sybil resistance
+The 20% cap and the three-wallet floor count addresses, not people. The open policy decision is whether to gate staking on the identity registry (one verified person, one cap). This interacts with item 2's decision.
+
+### 7. Unwired features — wire up or delete
+#95 kept these because each is the only way into a feature that is otherwise built. Each needs a call from the owner.
+
+| Code | Missing without a caller |
+|---|---|
+| `flagProjectAction` / `flagForConsensus` | Nothing can put a listing into owner-consensus review |
+| `requestPasswordReset` | No "forgot password" UI. Email users cannot recover a password |
+| `returnBond` / `settleVault` | A builder whose raise fails has no button to reclaim the bond |
+| `respondToFeatureRequestAction` | Roadmap responses render, but nothing writes them |
+| `getAdminAuditLogAction` | The audit log is written, but has no viewer |
+| `attestationClient()` | A builder's track record is never shown |
+
+The Settings "Resend API key" is saved but never read, because nothing sends email.
+
+### 8. Known defects (found, not yet fixed)
+
+| Where | Defect |
+|---|---|
+| [FundDialog.tsx:193](src/components/project/FundDialog.tsx) | Picks the first USDC balance by code, not issuer, so a wallet with several USDC trustlines can show 0 |
+| [profile/page.tsx:1245](src/app/profile/page.tsx) | The "most investors" sort counts `r.investor`, but receipts carry `contributor` |
+| 5 files, 6 places (profile ×2, KYC page, ListingForm, ProjectDetailsDialog, IdentityRegistryPanel) | Hard-code the testnet Soroban RPC URL instead of using `stellar-clients`. `stellar-clients` itself pins `Networks.TESTNET`. Both block mainnet |
+| [Header.tsx](src/components/layout/Header.tsx) | The side-menu Admin link follows on-chain admin status, not the roster, so console-only admins don't see it |
+| [profiles.ts:168](src/lib/data/profiles.ts) | `syncAdminClaim` still writes `app_metadata.role`, which nothing reads, and the landing security copy still says roles come from `app_metadata` |
+| MilestoneVoting | Offers vote buttons on refunding or completed vaults. A window that closes while open is judged on stale data until reload |
+| Factory | Recorded `platform_fee` is 300 base units (0.00003 of the project's token), likely a leftover 3% from the percentage model. Changing it needs `update_platform_fee` from the factory admin (see item 4b) |
+| PlatformGovernanceView | Labels the platform fee "XLM flat", but it is charged in the project's own token |
+| Operations Vault | `SetVotingWindow` has no bounds. A carried vote setting it to 0, or to an overflowing value, would stop the vault from ever passing another vote |
+| Contract build | The wasm embeds absolute cargo paths, so hashes are machine-dependent. A pinned Docker build would fix it |
+| Admin dashboard | Wider than a phone screen, so dialogs open off to the side |
+| Location | Nothing writes `location_lat` / `location_lng`, so the map pin can't appear |
+
+### 9. Manual passes still owed
+These were verified with harnesses, but not with a real wallet or account:
+
+- a real Freighter launch, stake, decline and timeout
+- a signed-in builder saving milestone proof with a photo
+- an admin clicking Hide/Lock in the console
+- linking a different Freighter account from the header
+- a full KYC submit from the verification page
 
 ---
 
-## Suggested next step
-Finish the **Operations Vault cutover** (item 1: an owner vote, a host rebuild, another owner vote). Then schedule the **factory + registries redeploy** (item 2) together with the second treasury redeploy against the new factory. Everything else is blocked on a tool (M-09), a product decision (M-01), or a one-command DB push (#70). Setting `PINATA_GATEWAY_KEY` on the host (item 6) is a one-variable stack update that can go any time.
+## Next
+1. Finish the Operations Vault cutover (item 1): two owner votes.
+2. Apply the two migrations (item 3): a one-command push, in order. Set the gateway key on the host (item 3b), a one-variable stack update.
+3. Land `d212b37`, decide the dual-majority question, then switch the factory's vault wasm (item 2). Or fold the switch into the coordinated redeploy (item 4).
+4. Start Phase 1 of the [Web3-accessibility redesign](docs/design/web3-accessibility-redesign.md): copy, information architecture and flow, with no chain changes. #103 was its first item.
 
-_Per-finding detail is in the security-audit PDF; per-PR detail is in the commit/PR history (#67 onward)._
+_Per-finding audit detail is in the security-audit PDF. Per-PR detail is in the PR descriptions._

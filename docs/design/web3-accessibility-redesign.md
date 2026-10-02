@@ -8,6 +8,16 @@
 >
 > **How to use it:** paste the Design principles and the Vocabulary table into Claude Design as standing instructions, then paste one "Prompt N" block at a time, in order. The last section has the full steps.
 
+> **Status since this brief (updated 2026-10-02).** The brief is a dated snapshot; its file:line references point at `a4ffb48`. These items have shipped on `main` since and are live:
+>
+> | Item in the brief | Shipped in |
+> |---|---|
+> | Phantom 3% fee on the stake screen (`phantom-3-percent-fee`) | #101 — the stake dialog shows the stake alone and says no platform fee is taken from stakes |
+> | Signed-out press on "Fund with USDC" does nothing; Google sign-in loses the project (`oauth-return-loses-the-project`, `login-redirect-loses-the-project`) | #102 — sign-in opens above the project dialog, and the project reopens after sign-in, in the fund flow when that was the intent |
+> | "awaiting multi-sig verification" toast; one footer proof button that only reached the first milestone | #103 — per-milestone proof in each milestone card, with the brief's copy ("Your proof is saved. Stakeholders can now see it when they vote.") |
+>
+> Everything else in the brief is still open. Track progress in [progress.md](../../progress.md).
+
 
 ## Summary
 
