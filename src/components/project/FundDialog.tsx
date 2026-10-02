@@ -50,8 +50,9 @@ export function FundDialog({
 }) {
   const [amount, setAmount] = useState("");
   const { toast } = useToast();
-  const { user, login, refreshUser } = useAuth();
-  const { closeProjectDetails, refreshProject } = useProjectDetails();
+  const { user, refreshUser } = useAuth();
+  const { closeProjectDetails, refreshProject, signInToContinue } =
+    useProjectDetails();
   const refreshAfterTx = useRefreshAfterTx();
   const [isSubmitPending, startSubmitTransition] = useTransition();
 
@@ -69,7 +70,7 @@ export function FundDialog({
         description: "Please log in with Google first before connecting your wallet.",
         variant: "destructive",
       });
-      login();
+      signInToContinue({ fund: true });
       return;
     }
     setIsConnectingFreighter(true);
@@ -369,7 +370,7 @@ export function FundDialog({
 
   const handleFund = () => {
     if (!user) {
-      login("user");
+      signInToContinue({ fund: true });
       return;
     }
     if (!freighterWalletAddress) {
@@ -417,7 +418,7 @@ export function FundDialog({
 
   const handleTriggerClick = () => {
     if (!user) {
-      login("user");
+      signInToContinue({ fund: true });
       return;
     }
     if (!freighterWalletAddress) {
@@ -439,7 +440,12 @@ export function FundDialog({
     return `Fund with ${projectCurrency}`;
   };
 
-  const MainButton = () => (
+  // An element, not a component declared inside render. As a component it
+  // was a new type on every render, so React replaced the button each time
+  // this dialog re-rendered. A press that straddled one of those re-renders
+  // (the project refetch finishing, for instance) ended on a button that no
+  // longer existed, and nothing happened.
+  const mainButton = (
     <Button
       onClick={handleTriggerClick}
       variant={isProjectFunded ? "outline" : "default"}
@@ -688,7 +694,7 @@ export function FundDialog({
             transition={{ duration: 0.2 }}
             className="w-full sm:w-auto"
           >
-            <MainButton />
+            {mainButton}
           </motion.div>
         )}
       </AnimatePresence>

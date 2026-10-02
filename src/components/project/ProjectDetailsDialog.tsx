@@ -90,9 +90,10 @@ export function ProjectDetailsDialog() {
     refreshProject,
     isLoading,
     error,
+    signInToContinue,
   } = useProjectDetails();
 
-  const { user, login, refreshUser } = useAuth();
+  const { user, refreshUser } = useAuth();
   const { toast } = useToast();
   const router = useRouter();
   const refreshAfterTx = useRefreshAfterTx();
@@ -107,7 +108,7 @@ export function ProjectDetailsDialog() {
         description: "Please log in with Google first before connecting your wallet.",
         variant: "destructive",
       });
-      login();
+      signInToContinue();
       return null;
     }
     try {
@@ -157,7 +158,7 @@ export function ProjectDetailsDialog() {
         description: "Please log in with Google first.",
         variant: "destructive",
       });
-      login();
+      signInToContinue();
       return;
     }
     if (!project || !activeMilestone) return;
@@ -376,7 +377,7 @@ export function ProjectDetailsDialog() {
         description: "Please log in with Google first.",
         variant: "destructive",
       });
-      login();
+      signInToContinue();
       return;
     }
     if (!project || !project.vaultAddress) return;
@@ -426,7 +427,7 @@ export function ProjectDetailsDialog() {
         description: "Please log in with Google first.",
         variant: "destructive",
       });
-      login();
+      signInToContinue();
       return;
     }
     if (!project || !project.vaultAddress) return;
