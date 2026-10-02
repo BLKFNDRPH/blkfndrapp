@@ -1,7 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useTransition,
+  type ReactNode,
+} from "react";
+import {
+  AlertTriangle,
   CheckCircle2,
   Clock,
   Lock,
@@ -43,6 +51,24 @@ interface VaultMilestone {
   approved_weight: bigint;
 }
 
+/** What the listing says about a milestone. Off-chain, so readable when the vault is not. */
+export interface MilestoneDetail {
+  id: number;
+  title?: string;
+  /** Whole units, shown only when the vault could not be read. */
+  amount: number;
+  released: boolean;
+}
+
+/** The vault's side of a milestone, for the block a card renders under its heading. */
+export interface MilestoneVaultState {
+  id: number;
+  released: boolean;
+  failed: boolean;
+  /** Whether the builder has opened voting; null when the vault could not be read. */
+  voteOpened: boolean | null;
+}
+
 interface Props {
   vaultAddress: string;
   /**
@@ -59,6 +85,13 @@ interface Props {
    * settling a lapsed one stay with the stakeholders, lock or no lock.
    */
   platformLocked?: boolean;
+  /** Titles from the listing, and the cards to fall back on if the vault can't be read. */
+  details?: MilestoneDetail[];
+  /**
+   * Rendered in each milestone's card, under its heading: the builder's proof
+   * for that milestone, so it sits beside the vote it supports.
+   */
+  renderProof?: (milestone: MilestoneVaultState) => ReactNode;
   onChange?: () => void;
 }
 
@@ -142,11 +175,40 @@ function timeLeft(endsAt: number): string {
   return `${m}m left`;
 }
 
+/** A milestone card's top row: its number and title, its state, its amount. */
+function MilestoneHeading({
+  id,
+  title,
+  badge,
+  amount,
+}: {
+  id: number;
+  title?: string;
+  badge?: ReactNode;
+  amount: string;
+}) {
+  const name = title?.trim();
+  return (
+    <div className="flex flex-wrap items-start justify-between gap-2">
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <h5 className="min-w-0 break-words font-semibold">
+          Milestone {id}
+          {name && `: ${name}`}
+        </h5>
+        {badge}
+      </div>
+      <span className="text-sm text-muted-foreground">{amount}</span>
+    </div>
+  );
+}
+
 export function MilestoneVoting({
   vaultAddress,
   currency: listedCurrency,
   creatorAddress,
   platformLocked = false,
+  details,
+  renderProof,
   onChange,
 }: Props) {
   const { toast } = useToast();
@@ -173,6 +235,7 @@ export function MilestoneVoting({
   const [myWeight, setMyWeight] = useState(0n);
   const [voted, setVoted] = useState<Record<number, boolean>>({});
   const [loading, setLoading] = useState(true);
+  const [readFailed, setReadFailed] = useState(false);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [, startTransition] = useTransition();
   // Re-renders the countdown without refetching.
@@ -185,7 +248,14 @@ export function MilestoneVoting({
     setLoading(true);
     try {
       const info: any = await getVaultInfo(vaultAddress);
-      if (!info) return;
+      // A failed read is not an empty vault, and the last answer's buttons
+      // must not outlive it.
+      if (!info) {
+        setReadFailed(true);
+        setMilestones([]);
+        return;
+      }
+      setReadFailed(false);
 
       const list: VaultMilestone[] = info.milestones ?? [];
       setMilestones(list);
@@ -267,6 +337,11 @@ export function MilestoneVoting({
     return currencyForToken(token) ?? `${token.slice(0, 4)}…${token.slice(-4)}`;
   }, [token, listedCurrency]);
 
+  const titles = useMemo(
+    () => new Map((details ?? []).map((d) => [d.id, d.title])),
+    [details],
+  );
+
   const run = (id: number, label: string, action: () => Promise<unknown>) => {
     setBusyId(id);
     startTransition(async () => {
@@ -296,10 +371,49 @@ export function MilestoneVoting({
     );
   }
 
+  // The vault couldn't be read, so nothing about the vote is known. The
+  // listing's copy of each milestone still carries the builder's proof, which
+  // whoever is deciding needs to see whether or not the network answers.
+  if (readFailed) {
+    return (
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border p-3 text-sm">
+          <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" aria-hidden="true" />
+          <span>We couldn&apos;t read the vote right now, so voting is unavailable.</span>
+          <Button
+            variant="link"
+            size="sm"
+            className="h-auto p-0"
+            onClick={() => {
+              load();
+            }}
+          >
+            Try again
+          </Button>
+        </div>
+        {(details ?? []).map((d) => (
+          <div key={d.id} className="rounded-lg border p-4">
+            <MilestoneHeading
+              id={d.id}
+              title={d.title}
+              badge={
+                d.released ? (
+                  <Badge variant={PHASE_VARIANT.released}>{PHASE_LABEL.released}</Badge>
+                ) : undefined
+              }
+              amount={`${d.amount.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${currency}`}
+            />
+            {renderProof?.({ id: d.id, released: d.released, failed: false, voteOpened: null })}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   if (milestones.length === 0) {
     return (
       <p className="py-6 text-sm text-muted-foreground">
-        This project has no milestones on-chain.
+        This project has no milestones.
       </p>
     );
   }
@@ -390,18 +504,21 @@ export function MilestoneVoting({
 
         return (
           <div key={m.id} className="rounded-lg border p-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <span className="font-semibold">Milestone {m.id}</span>
-                <Badge variant={PHASE_VARIANT[phase]}>{PHASE_LABEL[phase]}</Badge>
-              </div>
-              <span className="text-sm text-muted-foreground">
-                {fromStroops(BigInt(m.amount)).toLocaleString(undefined, {
-                  maximumFractionDigits: 2,
-                })}{" "}
-                {currency}
-              </span>
-            </div>
+            <MilestoneHeading
+              id={m.id}
+              title={titles.get(m.id)}
+              badge={<Badge variant={PHASE_VARIANT[phase]}>{PHASE_LABEL[phase]}</Badge>}
+              amount={`${fromStroops(BigInt(m.amount)).toLocaleString(undefined, {
+                maximumFractionDigits: 2,
+              })} ${currency}`}
+            />
+
+            {renderProof?.({
+              id: m.id,
+              released: m.released,
+              failed: m.failed,
+              voteOpened: opensAt !== 0,
+            })}
 
             {(phase === "voting" ||
               phase === "passed" ||
@@ -451,6 +568,7 @@ export function MilestoneVoting({
                 }>
                   {busy && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
                   Open voting
+                  <span className="sr-only"> on milestone {m.id}</span>
                 </Button>
               )}
 
@@ -473,6 +591,7 @@ export function MilestoneVoting({
                     <ThumbsUp className="mr-2 h-3.5 w-3.5" aria-hidden="true" />
                   )}
                   Approve release
+                  <span className="sr-only"> of milestone {m.id}</span>
                 </Button>
               )}
 
@@ -498,6 +617,7 @@ export function MilestoneVoting({
                   }>
                     {busy && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
                     Release funds
+                    <span className="sr-only"> for milestone {m.id}</span>
                   </Button>
                   <p className="self-center text-xs text-muted-foreground">
                     Approved — anyone can execute this. Nobody can hold it up.
@@ -514,6 +634,7 @@ export function MilestoneVoting({
                   }>
                     {busy && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
                     Settle as failed
+                    <span className="sr-only">: milestone {m.id}</span>
                   </Button>
                   <p className="self-center text-xs text-muted-foreground">
                     Closed without carrying. Settling refunds backers and

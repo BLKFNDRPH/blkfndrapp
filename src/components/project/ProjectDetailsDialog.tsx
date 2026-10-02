@@ -13,21 +13,23 @@ import { Avatar, AvatarFallback, AvatarImage } from "../ui/avatar";
 import { FundDialog } from "./FundDialog";
 import { Progress } from "../ui/progress";
 import { useProjectDetails } from "@/context/ProjectDetailsContext";
-import { MilestoneVoting } from "./MilestoneVoting";
+import { MilestoneVoting, type MilestoneVaultState } from "./MilestoneVoting";
+import { MilestoneProofDialog, MilestoneProofView, parseProof } from "./MilestoneProof";
 import { ProjectLocation } from "./ProjectLocation";
 import { RestrictionNotice } from "./RestrictionNotice";
 import { ProjectRestrictionControls } from "../admin/ProjectRestrictionControls";
 import { ScrollArea } from "../ui/scroll-area";
 import {
   RefreshCw,
-  ArrowDownCircle,
   AlertTriangle,
+  ImagePlus,
+  Lock,
 } from "lucide-react";
 import { Button } from "../ui/button";
 import { useAuth } from "@/context/AuthContext";
 import { CubeSpinner } from "../ui/CubeSpinner";
 import { useToast } from "@/hooks/use-toast";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { ImageWithFallback } from "../ui/image-with-fallback";
 import { StellarFormatter } from "@/lib/stellar-format";
@@ -39,11 +41,6 @@ import { shortenAddress } from "@/lib/utils";
 import { useFreighterWallet } from "@/context/FreighterWalletContext";
 import { getUserByCreatorId } from "@/lib/data.client";
 import { Client as VaultClient } from "@/packages/blkfndr_vault/src";
-import { submitMilestoneProof } from "@/app/actions";
-import { getPinataClient, getIPFSGatewayUrl } from "@/lib/pinata-client";
-import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
 import { freighterSigner } from "@/lib/freighter-signer";
 
 const NETWORK_PASSPHRASE = "Test SDF Network ; September 2015";
@@ -53,32 +50,6 @@ const SOROBAN_RPC_URL = "https://soroban-testnet.stellar.org";
 // returned. Passing Freighter's raw result to the SDK meant a dismissed popup
 // surfaced as "Cannot read properties of undefined (reading 'switch')".
 const getSignerOptions = (publicKey: string) => freighterSigner(publicKey);
-
-// A proof is JSON {description, imageUrl} since images could be attached, and
-// plain text before that. The builder writes it, so neither field is trusted
-// to be a string: an object here would crash the dialog when rendered.
-function parseProof(raw: string): { description: string; imageUrl: string } {
-  if (raw.startsWith("{")) {
-    try {
-      const parsed = JSON.parse(raw);
-      return {
-        description: typeof parsed.description === "string" ? parsed.description : "",
-        imageUrl: typeof parsed.imageUrl === "string" ? parsed.imageUrl : "",
-      };
-    } catch { }
-  }
-  return { description: raw, imageUrl: "" };
-}
-
-// Only https images are shown or linked; anything else the builder typed in is
-// dropped rather than handed to an href.
-function proofImageUrl(url: string): string | null {
-  try {
-    return new URL(url).protocol === "https:" ? url : null;
-  } catch {
-    return null;
-  }
-}
 
 export function ProjectDetailsDialog() {
   const {
@@ -135,114 +106,40 @@ export function ProjectDetailsDialog() {
   const [creatorName, setCreatorName] = useState<string | null>(null);
   const [creatorAvatar, setCreatorAvatar] = useState<string | null>(null);
 
-  // Submit Proof Modal states
-  const [isSubmitModalOpen, setIsSubmitModalOpen] = useState(false);
-  const [detailedProof, setDetailedProof] = useState("");
-  const [attachedFile, setAttachedFile] = useState<File | null>(null);
-  const [isUploadingImage, setIsUploadingImage] = useState(false);
-  const [isUpdatingProof, setIsUpdatingProof] = useState(false);
+  // Each milestone has its own proof, posted from its own card. The form opens
+  // for one milestone at a time; `proofSession` remounts it so it always starts
+  // from that milestone's saved proof, and the id outlives the closing animation.
+  const [proofMilestoneId, setProofMilestoneId] = useState<number | null>(null);
+  const [isProofFormOpen, setIsProofFormOpen] = useState(false);
+  const [proofSession, setProofSession] = useState(0);
+  // Proof saved from this dialog, keyed by project and milestone. The card shows
+  // it straight away instead of waiting for the project to be read back.
+  const [savedProofs, setSavedProofs] = useState<Record<string, string>>({});
+  const proofOpenerRef = useRef<HTMLElement | null>(null);
 
-  const activeMilestone = project?.milestones?.find((m) => !m.released);
-  const activeMilestoneIndex = project?.milestones?.findIndex((m) => !m.released) ?? -1;
+  const proofOf = (milestoneId: number) =>
+    savedProofs[`${project?.id}:${milestoneId}`] ??
+    project?.milestones?.find((m) => m.id === milestoneId)?.proof;
 
-  // Backers vote on a release, and the admin console's "Verify" opens this
-  // dialog, so whoever is deciding needs to see what the builder submitted.
-  const provenMilestones = (project?.milestones ?? [])
-    .filter((m) => m.proof?.trim())
-    .map((m) => ({ milestone: m, proof: parseProof(m.proof!) }));
-
-  const handleOpenSubmitProofModal = () => {
-    if (!user) {
-      toast({
-        title: "Login Required",
-        description: "Please log in with Google first.",
-        variant: "destructive",
-      });
-      signInToContinue();
-      return;
-    }
-    if (!project || !activeMilestone) return;
-
-    setDetailedProof(
-      activeMilestone.proof ? parseProof(activeMilestone.proof).description : "",
-    );
-    setAttachedFile(null);
-    setIsSubmitModalOpen(true);
+  const openProofForm = (milestoneId: number, opener: HTMLElement) => {
+    proofOpenerRef.current = opener;
+    setProofMilestoneId(milestoneId);
+    setProofSession((n) => n + 1);
+    setIsProofFormOpen(true);
   };
 
-  const handleConfirmSubmitProof = async () => {
-    if (!project || !activeMilestone) return;
-    if (!detailedProof.trim()) {
-      toast({
-        title: "Validation Error",
-        description: "Detailed proof is required.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    let imageUrl = "";
-
-    if (attachedFile) {
-      setIsUploadingImage(true);
-      try {
-        const pinata = getPinataClient();
-        const cid = await pinata.uploadFile(attachedFile);
-        imageUrl = getIPFSGatewayUrl(cid);
-      } catch (err: any) {
-        console.error("Image upload failed:", err);
-        toast({
-          title: "Image Upload Failed",
-          description: err.message || "Failed to upload image.",
-          variant: "destructive",
-        });
-        setIsUploadingImage(false);
-        return;
-      }
-      setIsUploadingImage(false);
-    } else if (activeMilestone.proof) {
-      imageUrl = parseProof(activeMilestone.proof).imageUrl;
-    }
-
-    const payload = JSON.stringify({
-      description: detailedProof.trim(),
-      imageUrl: imageUrl
+  const handleProofSaved = (milestoneId: number, proof: string) => {
+    if (!project) return;
+    setSavedProofs((saved) => ({ ...saved, [`${project.id}:${milestoneId}`]: proof }));
+    setIsProofFormOpen(false);
+    toast({
+      title: "Proof saved",
+      description: "Your proof is saved. Stakeholders can now see it when they vote.",
     });
-
-    setIsUpdatingProof(true);
-    try {
-      const res = await submitMilestoneProof(
-        project.vaultAddress!,
-        activeMilestone.id,
-        payload
-      );
-      if (res.success) {
-        toast({
-          title: "Proof Submitted Successfully",
-          description: "Milestone completion proof has been logged and is awaiting multi-sig verification.",
-        });
-        setIsSubmitModalOpen(false);
-        await fetch("/api/indexer", { method: "POST" });
-        refreshProject(project.id);
-        refreshProjects();
-        window.dispatchEvent(new Event("refresh-notifications"));
-        router.refresh();
-      } else {
-        toast({
-          title: "Submission Failed",
-          description: res.error,
-          variant: "destructive",
-        });
-      }
-    } catch (err: any) {
-      toast({
-        title: "Error",
-        description: err.message || String(err),
-        variant: "destructive",
-      });
-    } finally {
-      setIsUpdatingProof(false);
-    }
+    refreshProject(project.id);
+    refreshProjects();
+    window.dispatchEvent(new Event("refresh-notifications"));
+    router.refresh();
   };
 
   const projectCurrency = project?.currencyType ?? "XLM";
@@ -252,15 +149,66 @@ export function ProjectDetailsDialog() {
 
   const activeAddress = freighterWalletAddress || user?.stellarPublicKey || "";
 
-  const isCreator =
-    !!activeAddress &&
-    creatorAddress !== "" &&
-    activeAddress === creatorAddress;
+  // Proof is a server action checked against the account's linked wallet, not a
+  // signature, so the builder is the account linked to the creator address and
+  // nothing has to be connected right now. It is exactly the server's test.
+  const isBuilder = creatorAddress !== "" && user?.stellarPublicKey === creatorAddress;
 
   // A platform lock pauses the builder's actions here — proof, and opening a
   // milestone vote — and new stakes in FundDialog. Everything a stakeholder
   // does with money already in the vault is untouched.
   const isLocked = project?.restriction?.locked === true;
+
+  // Backers vote on a release, and the admin console's "Verify" opens this
+  // dialog, so the proof sits in each milestone's card, beside its vote. The
+  // builder adds or edits it there, one milestone at a time, while the vault is
+  // building; once a milestone is paid out or has failed its vote is over and
+  // the proof stays as it was voted on.
+  const renderMilestoneProof = (state: MilestoneVaultState) => {
+    const milestone = project?.milestones?.find((m) => m.id === state.id);
+    const proof = parseProof(proofOf(state.id));
+    const canPost =
+      isBuilder &&
+      (project?.status === "funded" || project?.status === "active") &&
+      !!milestone &&
+      !state.released &&
+      !state.failed;
+
+    return (
+      <MilestoneProofView milestoneId={state.id} proof={proof} released={state.released}>
+        {canPost && isLocked && (
+          <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+            <Lock className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            The platform has locked this project, so adding proof is paused
+            until it is unlocked.
+          </p>
+        )}
+        {canPost && !isLocked && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 pt-1">
+            <Button
+              type="button"
+              size="sm"
+              variant={proof ? "outline" : "default"}
+              onClick={(event) => openProofForm(state.id, event.currentTarget)}
+            >
+              <ImagePlus aria-hidden="true" />
+              {proof ? "Edit proof" : "Add proof"}
+              <span className="sr-only"> for milestone {state.id}</span>
+            </Button>
+            {!proof && state.voteOpened === false && (
+              <p className="text-sm text-muted-foreground">
+                Add it before you open voting, so stakeholders can see what
+                they&apos;re approving.
+              </p>
+            )}
+          </div>
+        )}
+      </MilestoneProofView>
+    );
+  };
+
+  const proofMilestone =
+    project?.milestones?.find((m) => m.id === proofMilestoneId) ?? null;
 
   const [vaultContributorBalance, setVaultContributorBalance] = useState<number | null>(null);
   const [hasContributedHistorically, setHasContributedHistorically] = useState<boolean>(false);
@@ -505,10 +453,14 @@ export function ProjectDetailsDialog() {
     <Dialog open={isOpen} onOpenChange={handleClose}>
       <DialogContent className="w-[calc(100vw-1rem)] max-w-2xl grid-rows-[auto_minmax(0,1fr)_auto] p-0 max-h-[92vh] sm:w-full sm:max-h-[90vh]">
         <DialogHeader className="p-4 pb-3 pr-24 sm:p-6 sm:pb-4 sm:pr-28 border-b relative">
-          <DialogTitle className="text-xl sm:text-2xl font-bold font-headline leading-tight break-all line-clamp-3 text-left">
+          {/* overflow-wrap:anywhere, not break-all. break-all split ordinary
+              words at the edge ("Restaurant an / d Bakeshop"); this wraps at
+              spaces and still breaks a long unbroken string, without letting
+              it widen the dialog. */}
+          <DialogTitle className="text-xl sm:text-2xl font-bold font-headline leading-tight [overflow-wrap:anywhere] line-clamp-3 text-left">
             {project?.title || "Loading..."}
           </DialogTitle>
-          <DialogDescription className="text-sm sm:text-lg leading-snug break-words break-all text-left line-clamp-3 sm:line-clamp-4">
+          <DialogDescription className="text-sm sm:text-lg leading-snug [overflow-wrap:anywhere] text-left line-clamp-3 sm:line-clamp-4">
             {/* A loaded project with no tagline is not a project still loading.
                 The old copy said "Fetching details..." forever whenever the
                 metadata carried no description. */}
@@ -522,8 +474,10 @@ export function ProjectDetailsDialog() {
             className="absolute top-3 right-14 h-7 w-7 sm:top-1.5 sm:right-16 sm:h-8 sm:w-8"
             onClick={() => project && refreshProject(project.id)}
             disabled={isLoading}
+            aria-label="Refresh this project"
+            title="Refresh this project"
           >
-            <RefreshCw className={isLoading ? "animate-spin" : ""} />
+            <RefreshCw className={isLoading ? "animate-spin" : ""} aria-hidden="true" />
           </Button>
         </DialogHeader>
 
@@ -598,53 +552,10 @@ export function ProjectDetailsDialog() {
                   </div>
                 </div>
 
-                {provenMilestones.length > 0 && (
-                  <div className="border-t pt-4">
-                    <h4 className="font-semibold mb-2">Delivery Proof</h4>
-                    <div className="space-y-3">
-                      {provenMilestones.map(({ milestone, proof }) => {
-                        const imageUrl = proofImageUrl(proof.imageUrl);
-                        return (
-                          <div key={milestone.id} className="rounded-lg border p-3 space-y-2">
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                              <span className="text-sm font-semibold break-words min-w-0">
-                                Milestone {milestone.id}: {milestone.title || "Untitled"}
-                              </span>
-                              <Badge variant={milestone.released ? "secondary" : "outline"}>
-                                {milestone.released ? "Released" : "Not released"}
-                              </Badge>
-                            </div>
-                            {proof.description && (
-                              <p className="text-sm text-muted-foreground whitespace-pre-wrap break-words">
-                                {proof.description}
-                              </p>
-                            )}
-                            {imageUrl && (
-                              <a
-                                href={imageUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="block w-fit"
-                              >
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img
-                                  src={imageUrl}
-                                  alt={`Proof for milestone ${milestone.id}`}
-                                  loading="lazy"
-                                  className="max-h-64 rounded-md border object-contain"
-                                />
-                              </a>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
                 {/* Milestones sat in the footer, which does not scroll. With a
                     vote open they filled a 768px-high window and left the body
-                    above, proof included, zero pixels tall. */}
+                    above, proof included, zero pixels tall. Proof only exists
+                    once a vault is funded, which is when this section shows. */}
                 {project.vaultAddress &&
                   ["funded", "active", "completed", "refunding"].includes(project.status) && (
                     <div className="border-t pt-4">
@@ -654,6 +565,8 @@ export function ProjectDetailsDialog() {
                         currency={project.currencyType ?? "USDC"}
                         creatorAddress={project.creatorAddress ?? project.creator}
                         platformLocked={isLocked}
+                        details={project.milestones}
+                        renderProof={renderMilestoneProof}
                         onChange={() => refreshProject(project.id)}
                       />
                     </div>
@@ -748,115 +661,31 @@ export function ProjectDetailsDialog() {
                 </Button>
               )}
 
-              {isCreator && !isLocked && (project?.status === "funded" || project?.status === "active") && activeMilestone && (
-                <Button
-                  onClick={handleOpenSubmitProofModal}
-                  disabled={isUpdatingProof || isUploadingImage}
-                  className="w-full sm:w-auto whitespace-nowrap shrink-0 bg-accent text-accent-foreground hover:bg-accent/90 font-semibold"
-                >
-                  {(isUpdatingProof || isUploadingImage) && <CubeSpinner size="small" className="mr-2" />}
-                  <ArrowDownCircle className="mr-2 h-4 w-4 shrink-0" />
-                  {activeMilestone.proof ? "Update Proof" : "Submit Proof"}
-                </Button>
-              )}
-
-
-
               <FundDialog
                 project={project!}
                 isFundFlow={isFundFlow}
                 setIsFundFlow={setIsFundFlow}
               />
-
-              <Dialog open={isSubmitModalOpen} onOpenChange={setIsSubmitModalOpen}>
-                <DialogContent className="sm:max-w-[480px] max-w-[95vw] border border-border bg-card p-6 rounded-2xl shadow-2xl">
-                  <DialogHeader>
-                    <DialogTitle className="text-lg font-bold text-accent flex items-center gap-2 font-headline">
-                      Submit Milestone Proof
-                    </DialogTitle>
-                    <DialogDescription className="text-xs text-muted-foreground">
-                      Provide verifiable proof of completion for the active milestone.
-                    </DialogDescription>
-                  </DialogHeader>
-
-                  {project && activeMilestone && activeMilestoneIndex !== -1 && (
-                    <div className="space-y-4 py-3">
-                      <div className="bg-muted/40 border border-border/60 rounded-xl p-3.5 space-y-1.5">
-                        <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">
-                          Milestone Details
-                        </p>
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="font-bold text-foreground">
-                            Milestone #{activeMilestoneIndex + 1}: {activeMilestone.title || `Milestone ${activeMilestone.id}`}
-                          </span>
-                          <Badge variant="secondary" className="bg-accent/10 text-accent border-none text-[10px] rounded-full px-2.5">
-                            {activeMilestone.amount.toLocaleString()} USDC
-                          </Badge>
-                        </div>
-                        <p className="text-[11px] text-muted-foreground">
-                          Project: <strong className="text-foreground">{project.title}</strong>
-                        </p>
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <Label htmlFor="detailed-proof" className="text-xs font-semibold">
-                          Detailed Proof <span className="text-rose-500">*</span>
-                        </Label>
-                        <Textarea
-                          id="detailed-proof"
-                          rows={4}
-                          placeholder="Summarize the work completed."
-                          value={detailedProof}
-                          onChange={(e) => setDetailedProof(e.target.value)}
-                          className="resize-none text-xs rounded-lg"
-                        />
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <Label htmlFor="visual-proof" className="text-xs font-semibold">
-                          Visual Proof Attachment (Optional)
-                        </Label>
-                        <Input
-                          id="visual-proof"
-                          type="file"
-                          accept="image/*"
-                          onChange={(e) => {
-                            const file = e.target.files?.[0] || null;
-                            setAttachedFile(file);
-                          }}
-                          className="text-xs file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-[11px] file:font-semibold file:bg-accent/10 file:text-accent hover:file:bg-accent/20"
-                        />
-                        <p className="text-[10px] text-muted-foreground">
-                          Supported formats: PNG, JPG, JPEG. Max size 5MB.
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  <DialogFooter className="flex flex-col sm:flex-row gap-2 mt-4">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setIsSubmitModalOpen(false)}
-                      disabled={isUpdatingProof || isUploadingImage}
-                      className="text-xs font-semibold"
-                    >
-                      Cancel
-                    </Button>
-                    <Button
-                      size="sm"
-                      onClick={handleConfirmSubmitProof}
-                      disabled={isUpdatingProof || isUploadingImage || !detailedProof.trim()}
-                      className="bg-accent text-accent-foreground hover:bg-accent/90 text-xs font-semibold"
-                    >
-                      {(isUpdatingProof || isUploadingImage) && <CubeSpinner size="small" className="mr-1.5" />}
-                      {isUploadingImage ? "Uploading Image..." : isUpdatingProof ? "Submitting..." : "Submit Proof"}
-                    </Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
             </div>
           </DialogFooter>
+        )}
+
+        {/* Rendered inside this dialog's content so Radix treats it as a
+            nested layer: pressing in it is not a press outside the project. */}
+        {project?.vaultAddress && (
+          <MilestoneProofDialog
+            key={proofSession}
+            open={isProofFormOpen}
+            onOpenChange={setIsProofFormOpen}
+            milestone={
+              proofMilestone && { ...proofMilestone, proof: proofOf(proofMilestone.id) }
+            }
+            vaultAddress={project.vaultAddress}
+            projectTitle={project.title}
+            currency={projectCurrency}
+            onSaved={handleProofSaved}
+            returnFocusRef={proofOpenerRef}
+          />
         )}
       </DialogContent>
     </Dialog>
