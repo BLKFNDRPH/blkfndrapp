@@ -8,10 +8,7 @@ import type { Project } from "@/lib/types";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/context/AuthContext";
 import { useProjectDetails } from "@/context/ProjectDetailsContext";
-import {
-  usePlatformInfo,
-  useRefreshAfterTx,
-} from "@/context/BlockchainContext";
+import { useRefreshAfterTx } from "@/context/BlockchainContext";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Info,
@@ -27,7 +24,6 @@ import { getBalance } from "@/lib/stellar";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const PLATFORM_FEE_PERCENTAGE = 0.03;
 const MAX_FUND_AMOUNT = 1_000_000_000_000;
 const AUTO_FUND_THRESHOLD = 0.2;
 
@@ -56,7 +52,6 @@ export function FundDialog({
   const { toast } = useToast();
   const { user, login, refreshUser } = useAuth();
   const { closeProjectDetails, refreshProject } = useProjectDetails();
-  const { platformInfo } = usePlatformInfo();
   const refreshAfterTx = useRefreshAfterTx();
   const [isSubmitPending, startSubmitTransition] = useTransition();
 
@@ -185,8 +180,10 @@ export function FundDialog({
   };
 
   const fundAmount = parseFloat(amount) || 0;
-  const platformFeePercentage = platformInfo?.feePercentage ? platformInfo.feePercentage / 10000 : PLATFORM_FEE_PERCENTAGE;
-  const platformFee = fundAmount * platformFeePercentage;
+  // The vault's `contribute` takes the whole stake and nothing else. The
+  // platform's flat listing fee is charged to the builder once at creation,
+  // so no fee is added here. This used to add a percentage on top, which
+  // overstated every stake and refused wallets that could in fact cover it.
 
   const targetAssetCode =
     projectCurrency === "XLM"
@@ -200,7 +197,7 @@ export function FundDialog({
   const userBalance = userBalanceObj
     ? parseFloat(userBalanceObj.balance)
     : 0;
-  const isBalanceSufficient = userBalance >= (fundAmount + platformFee);
+  const isBalanceSufficient = userBalance >= fundAmount;
 
   const isProjectApproved = project.status === "raising";
   const isProjectPending = project.status === "pending";
@@ -257,13 +254,10 @@ export function FundDialog({
         : 0;
       const userBalanceSmallest = BigInt(Math.floor(userBalance * 10_000_000));
 
-      const totalAmountRaw = fundAmount + platformFee;
-      const parsedTotalAmount = BigInt(toRawAmount(totalAmountRaw));
-
-      if (parsedTotalAmount > userBalanceSmallest) {
+      if (parsedAmount > userBalanceSmallest) {
         toast({
           title: "Insufficient balance",
-          description: `You have ${userBalance} ${projectCurrency}, but tried to fund ${totalAmountRaw.toLocaleString(undefined, { maximumFractionDigits: 4 })} ${projectCurrency} (including fee).`,
+          description: `You have ${userBalance} ${projectCurrency}, but tried to stake ${fundAmount.toLocaleString(undefined, { maximumFractionDigits: 4 })} ${projectCurrency}.`,
           variant: "destructive",
         });
         return;
@@ -581,7 +575,7 @@ export function FundDialog({
                 <div className="space-y-2 text-sm text-card-foreground">
                   <div className="flex justify-between">
                     <span className="text-muted-foreground font-medium">
-                      Project Contribution:
+                      Your stake:
                     </span>
                     <span className="font-bold text-foreground">
                       {fundAmount.toLocaleString(undefined, {
@@ -591,31 +585,8 @@ export function FundDialog({
                       {projectCurrency}
                     </span>
                   </div>
-                  <div className="flex justify-between text-amber-600 dark:text-amber-400 font-semibold">
-                    <span className="text-muted-foreground font-medium">
-                      Platform Fee (Added) ({(platformFeePercentage * 100).toFixed(1)}%):
-                    </span>
-                    <span>
-                      +
-                      {platformFee.toLocaleString(undefined, {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: coinDecimals > 6 ? 4 : 2,
-                      })}{" "}
-                      {projectCurrency}
-                    </span>
-                  </div>
                   <div className="flex justify-between text-accent font-bold border-t border-muted-foreground/10 pt-2 text-sm">
-                    <span>Total Deducted from Wallet:</span>
-                    <span>
-                      {(fundAmount + platformFee).toLocaleString(undefined, {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: coinDecimals > 6 ? 4 : 2,
-                      })}{" "}
-                      {projectCurrency}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-green-600 dark:text-green-400 font-bold border-t border-muted-foreground/10 pt-2 text-sm">
-                    <span>Credited toward goal:</span>
+                    <span>Total deducted from wallet:</span>
                     <span>
                       {fundAmount.toLocaleString(undefined, {
                         minimumFractionDigits: 2,
@@ -625,12 +596,10 @@ export function FundDialog({
                     </span>
                   </div>
                   <div className="flex justify-between font-bold text-emerald-600 dark:text-emerald-400 text-sm border-t border-muted-foreground/10 pt-2">
-                    <span>Estimated USD Value (with fee):</span>
+                    <span>Estimated USD value:</span>
                     <span>
                       $
-                      {(
-                        (fundAmount + platformFee) * (usdRates[projectCurrency] || 0)
-                      ).toLocaleString(undefined, {
+                      {(fundAmount * (usdRates[projectCurrency] || 0)).toLocaleString(undefined, {
                         minimumFractionDigits: 2,
                         maximumFractionDigits: 2,
                       })}{" "}
@@ -638,6 +607,12 @@ export function FundDialog({
                     </span>
                   </div>
                 </div>
+                <p className="text-xs text-muted-foreground">
+                  No platform fee is taken from stakes. The builder paid a flat
+                  listing fee when the vault was created, so your whole stake is
+                  credited toward the goal. Freighter shows the network fee
+                  separately.
+                </p>
 
                 <div className="mt-3 pt-3 border-t border-muted-foreground/10 flex flex-wrap gap-x-4 gap-y-1.5 justify-between text-xs items-center">
                   <div>
