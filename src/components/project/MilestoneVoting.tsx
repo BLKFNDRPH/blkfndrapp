@@ -15,7 +15,7 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useFreighterWallet } from "@/context/FreighterWalletContext";
-import { useStellarContract } from "@/hooks/use-stellar-contract";
+import { useStellarContract, type MilestoneWallets } from "@/hooks/use-stellar-contract";
 import { currencyForToken, fromStroops } from "@/lib/currencies";
 
 /**
@@ -27,6 +27,11 @@ import { currencyForToken, fromStroops } from "@/lib/currencies";
  * threshold, and how long the window has left. A backer who cannot see why
  * their large contribution counts for less than they expect will assume the
  * cap is a bug.
+ *
+ * Two rules are live. Vaults deployed before the wallet floor release on more
+ * than half the raw raise. Current vaults release on more than half the capped
+ * total, from at least three approving wallets or every contributor when there
+ * are fewer. The panel asks the vault which one it runs rather than guessing.
  */
 
 interface VaultMilestone {
@@ -57,14 +62,53 @@ interface Props {
   onChange?: () => void;
 }
 
-type Phase = "locked" | "voting" | "passed" | "released" | "failed" | "lapsed";
+/** `unconfirmed`: the window has closed, but a failed read left the outcome unknown. */
+type Phase =
+  | "locked"
+  | "voting"
+  | "passed"
+  | "released"
+  | "failed"
+  | "lapsed"
+  | "unconfirmed";
 
-function phaseOf(m: VaultMilestone, windowEndsAt: number, threshold: bigint): Phase {
+/**
+ * Whether a milestone's vote has carried. Mirrors the contract's `carried`.
+ *
+ * Null when a read it depends on failed. The weight bar alone can say no, but
+ * only the wallet count can say yes on a vault with the floor, so an unknown
+ * count is never read as a met one.
+ */
+function carriedOf(
+  approved: bigint,
+  required: bigint | null,
+  walletFloor: boolean | null,
+  count: MilestoneWallets | null | undefined,
+): boolean | null {
+  if (required === null) return null;
+  if (approved < required) return false;
+  if (walletFloor === false) return true;
+  if (count?.supported) return count.approvals >= count.required;
+  return null;
+}
+
+function phaseOf(m: VaultMilestone, windowEndsAt: number, carried: boolean | null): Phase {
   if (m.released) return "released";
   if (m.failed) return "failed";
   if (m.vote_opens_at === 0n) return "locked";
-  if (m.approved_weight > threshold) return "passed";
-  return Date.now() / 1000 >= windowEndsAt ? "lapsed" : "voting";
+  if (carried === true) return "passed";
+  if (Date.now() / 1000 < windowEndsAt) return "voting";
+  return carried === false ? "lapsed" : "unconfirmed";
+}
+
+const fmt = (stroops: bigint) =>
+  fromStroops(stroops).toLocaleString(undefined, { maximumFractionDigits: 2 });
+
+/** Distinct approvals against the floor, in the same shape as the weight line. */
+function walletsLine({ approvals, required }: { approvals: number; required: number }) {
+  return approvals <= required
+    ? `${approvals} of ${required} backer ${required === 1 ? "approval" : "approvals"} needed`
+    : `${approvals} backer approvals (${required} needed)`;
 }
 
 const PHASE_LABEL: Record<Phase, string> = {
@@ -74,6 +118,7 @@ const PHASE_LABEL: Record<Phase, string> = {
   released: "Released",
   failed: "Failed",
   lapsed: "Window closed",
+  unconfirmed: "Unconfirmed",
 };
 
 const PHASE_VARIANT: Record<Phase, "default" | "secondary" | "destructive" | "outline"> = {
@@ -83,6 +128,7 @@ const PHASE_VARIANT: Record<Phase, "default" | "secondary" | "destructive" | "ou
   released: "secondary",
   failed: "destructive",
   lapsed: "destructive",
+  unconfirmed: "outline",
 };
 
 function timeLeft(endsAt: number): string {
@@ -109,6 +155,8 @@ export function MilestoneVoting({
     getVaultInfo,
     getVotingWeight,
     hasVoted,
+    getMilestoneVote,
+    getMilestoneWallets,
     openMilestoneVote,
     approveMilestone,
     releaseMilestone,
@@ -119,6 +167,9 @@ export function MilestoneVoting({
   const [raised, setRaised] = useState(0n);
   const [windowSecs, setWindowSecs] = useState(0);
   const [token, setToken] = useState<string | undefined>(undefined);
+  // The vault's own bar, not one computed here: it differs between the rules.
+  const [requiredWeight, setRequiredWeight] = useState<bigint | null>(null);
+  const [wallets, setWallets] = useState<Record<number, MilestoneWallets | null>>({});
   const [myWeight, setMyWeight] = useState(0n);
   const [voted, setVoted] = useState<Record<number, boolean>>({});
   const [loading, setLoading] = useState(true);
@@ -136,17 +187,34 @@ export function MilestoneVoting({
       const info: any = await getVaultInfo(vaultAddress);
       if (!info) return;
 
-      setMilestones(info.milestones ?? []);
+      const list: VaultMilestone[] = info.milestones ?? [];
+      setMilestones(list);
       setRaised(BigInt(info.raised_amount ?? 0));
       setWindowSecs(Number(info.voting_window_secs ?? 0));
       setToken(info.token ? String(info.token) : undefined);
+
+      // Only a vote that has opened and not settled can still carry, so only
+      // those need counting. With none, ask once anyway: the answer also says
+      // which rule this vault runs, and the header explains it.
+      const live = list.filter((m) => !m.released && !m.failed && m.vote_opens_at !== 0n);
+      const counted = live.length > 0 ? live : list.slice(0, 1);
+
+      const [vote, counts] = await Promise.all([
+        // The bar is the same for every milestone of a vault; one read serves all.
+        list.length > 0 ? getMilestoneVote(vaultAddress, list[0].id) : null,
+        Promise.all(
+          counted.map(async (m) => [m.id, await getMilestoneWallets(vaultAddress, m.id)] as const),
+        ),
+      ]);
+      setRequiredWeight(vote ? vote[1] : null);
+      setWallets(Object.fromEntries(counts));
 
       if (freighterWalletAddress) {
         const weight = await getVotingWeight(vaultAddress, freighterWalletAddress);
         setMyWeight(BigInt((weight as bigint | null) ?? 0n));
 
         const results = await Promise.all(
-          (info.milestones ?? []).map(async (m: VaultMilestone) => [
+          list.map(async (m: VaultMilestone) => [
             m.id,
             Boolean(await hasVoted(vaultAddress, m.id, freighterWalletAddress)),
           ]),
@@ -159,7 +227,15 @@ export function MilestoneVoting({
     } finally {
       setLoading(false);
     }
-  }, [vaultAddress, freighterWalletAddress, getVaultInfo, getVotingWeight, hasVoted]);
+  }, [
+    vaultAddress,
+    freighterWalletAddress,
+    getVaultInfo,
+    getVotingWeight,
+    hasVoted,
+    getMilestoneVote,
+    getMilestoneWallets,
+  ]);
 
   useEffect(() => {
     load();
@@ -170,10 +246,17 @@ export function MilestoneVoting({
     return () => clearInterval(timer);
   }, []);
 
-  // Smallest weight that clears "more than 50% of the raise". Mirrors the
-  // contract so the UI never claims a vote will pass when it will not.
-  const threshold = useMemo(() => (raised * 5000n) / 10000n, [raised]);
   const cap = useMemo(() => (raised * 2000n) / 10000n, [raised]);
+
+  // Whether this vault enforces the wallet floor: false for one deployed
+  // before it, null while no read has answered either way. A vault's code
+  // never changes, so one definite answer settles it for every milestone.
+  const walletFloor = useMemo(() => {
+    const answers = Object.values(wallets);
+    if (answers.some((a) => a?.supported === false)) return false;
+    if (answers.some((a) => a?.supported === true)) return true;
+    return null;
+  }, [wallets]);
 
   // Every figure below is money the vault is about to move, so name the asset
   // the vault actually holds. Fall back to the listing's label only until the
@@ -223,6 +306,19 @@ export function MilestoneVoting({
 
   const isContributor = myWeight > 0n;
 
+  const retry = (
+    <Button
+      variant="link"
+      size="sm"
+      className="h-auto p-0 text-xs"
+      onClick={() => {
+        load();
+      }}
+    >
+      Retry
+    </Button>
+  );
+
   return (
     <div className="space-y-4">
       <div className="rounded-lg border bg-muted/30 p-3 text-sm">
@@ -230,12 +326,32 @@ export function MilestoneVoting({
           <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
           <div className="space-y-1">
             <p className="font-medium">Backers decide when funds move.</p>
-            <p className="text-muted-foreground">
-              A release needs more than half the total raise behind it, and no
-              single wallet counts for more than 20% — so it always takes at
-              least three backers. If a window closes short, the milestone fails
-              and the builder&apos;s bond is forfeited to you.
-            </p>
+            {walletFloor === true && (
+              <p className="text-muted-foreground">
+                A release needs more than half of the backers&apos; combined vote,
+                with no single wallet counting for more than 20% of the raise,
+                and it needs at least three backers to approve — or every
+                backer, when there are fewer than three. If a window closes
+                short, the milestone fails and the builder&apos;s bond is
+                forfeited to you.
+              </p>
+            )}
+            {walletFloor === false && (
+              <p className="text-muted-foreground">
+                A release needs more than half the total raise behind it, and no
+                single wallet counts for more than 20% — so it always takes at
+                least three backers. If a window closes short, the milestone fails
+                and the builder&apos;s bond is forfeited to you.
+              </p>
+            )}
+            {walletFloor === null && (
+              <p className="text-muted-foreground">
+                Each release goes to a vote of the backers, and no single wallet
+                counts for more than 20% of the raise. If a window closes short,
+                the milestone fails and the builder&apos;s bond is forfeited to
+                you.
+              </p>
+            )}
             {isContributor && (
               <p className="pt-1">
                 Your vote is worth{" "}
@@ -258,10 +374,17 @@ export function MilestoneVoting({
       {milestones.map((m) => {
         const opensAt = Number(m.vote_opens_at);
         const endsAt = opensAt === 0 ? 0 : opensAt + windowSecs;
-        const phase = phaseOf(m, endsAt, threshold);
         const approved = BigInt(m.approved_weight ?? 0);
+        const count = wallets[m.id];
+        const carried = carriedOf(approved, requiredWeight, walletFloor, count);
+        const phase = phaseOf(m, endsAt, carried);
         const pct =
-          threshold > 0n ? Math.min(100, Number((approved * 100n) / (threshold + 1n))) : 0;
+          requiredWeight && requiredWeight > 0n
+            ? Math.min(100, Number((approved * 100n) / requiredWeight))
+            : 0;
+        // The vault has the floor, or may have, and this milestone's count did
+        // not come back. Say so rather than show a tally missing its other half.
+        const countUnread = walletFloor !== false && !count;
         const busy = busyId === m.id;
         const alreadyVoted = voted[m.id];
 
@@ -280,19 +403,17 @@ export function MilestoneVoting({
               </span>
             </div>
 
-            {(phase === "voting" || phase === "passed" || phase === "lapsed") && (
+            {(phase === "voting" ||
+              phase === "passed" ||
+              phase === "lapsed" ||
+              phase === "unconfirmed") && (
               <div className="mt-3 space-y-1.5">
                 <Progress value={pct} aria-label={`Milestone ${m.id} approval`} />
                 <div className="flex justify-between text-xs text-muted-foreground">
                   <span>
-                    {fromStroops(approved).toLocaleString(undefined, {
-                      maximumFractionDigits: 2,
-                    })}{" "}
-                    of{" "}
-                    {fromStroops(threshold + 1n).toLocaleString(undefined, {
-                      maximumFractionDigits: 2,
-                    })}{" "}
-                    {currency} needed
+                    {requiredWeight !== null
+                      ? `${fmt(approved)} of ${fmt(requiredWeight)} ${currency} needed`
+                      : `${fmt(approved)} ${currency} approved`}
                   </span>
                   {phase === "voting" && (
                     <span className="flex items-center gap-1">
@@ -301,6 +422,15 @@ export function MilestoneVoting({
                     </span>
                   )}
                 </div>
+                {count?.supported && (
+                  <p className="text-xs text-muted-foreground">{walletsLine(count)}</p>
+                )}
+                {(requiredWeight === null || countUnread) && (
+                  <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    Part of this vote could not be read from the network.
+                    {retry}
+                  </p>
+                )}
               </div>
             )}
 
@@ -386,10 +516,17 @@ export function MilestoneVoting({
                     Settle as failed
                   </Button>
                   <p className="self-center text-xs text-muted-foreground">
-                    Closed short of the threshold. Settling refunds backers and
+                    Closed without carrying. Settling refunds backers and
                     forfeits the bond.
                   </p>
                 </>
+              )}
+
+              {phase === "unconfirmed" && (
+                <p className="text-sm text-muted-foreground">
+                  The window has closed, but whether the vote carried could not
+                  be confirmed. Retry before releasing or settling.
+                </p>
               )}
 
               {phase === "released" && (

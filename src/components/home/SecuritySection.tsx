@@ -13,6 +13,7 @@ import {
   X,
 } from "lucide-react";
 import { SectionHeading } from "./SectionHeading";
+import { LiveVaultHash } from "./LiveVaultHash";
 
 const PROTECTIONS = [
   {
@@ -23,12 +24,12 @@ const PROTECTIONS = [
   {
     icon: Users,
     title: "Money moves only on a stakeholder vote",
-    body: "A tranche leaves the vault when more than 50% of the total stake votes to release it. Not a majority of voters — a majority of the stake actually committed. The builder can open the vote; they cannot decide it.",
+    body: "A tranche leaves the vault when backers holding more than half of its capped voting weight approve it, from at least three wallets — or every backer, if there are fewer. A majority of the weight, not a head count. The builder can open the vote; they cannot decide it.",
   },
   {
     icon: Ban,
     title: "No single wallet can wave a release through",
-    body: "However much one wallet puts in, it counts for at most 20% of the raise. Clearing a >50% threshold in 20% increments always takes at least three distinct wallets, so buying your own release is not a strategy that exists.",
+    body: "However much one wallet puts in, it counts for at most 20% of the raise, and a release needs at least three approving wallets, so no single wallet, however large, can release other backers' money over their heads. With one or two backers, every one of them has to approve. The cap counts wallets, not people.",
   },
   {
     icon: Timer,
@@ -66,7 +67,7 @@ const RUG_COMPARISON = [
   {
     needs: "One large holder to approve the exit",
     blkfndr:
-      "A 20% weight cap per wallet, so a release always needs at least three distinct wallets behind it.",
+      "A 20% weight cap per wallet and a three-wallet minimum, so no single wallet can carry a release over the other backers.",
   },
   {
     needs: "Contributor inattention to work in their favour",
@@ -82,7 +83,12 @@ const RUG_COMPARISON = [
 
 const CAP_EXAMPLE = [
   { approvers: "One wallet", weight: "60", outcome: "short", releases: false },
-  { approvers: "Two wallets", weight: "120", outcome: "short", releases: false },
+  {
+    approvers: "Two wallets",
+    weight: "120",
+    outcome: "short — enough weight, only two wallets",
+    releases: false,
+  },
   {
     approvers: "Three wallets",
     weight: "180",
@@ -91,10 +97,12 @@ const CAP_EXAMPLE = [
   },
 ];
 
+const FACTORY_ID = "CDIXGE5MWFAYXA7FKLB4CDRSSQZ6VQSGHT6O6OY3TFTWVF6F7BGKR7D5";
+
 const CONTRACTS = [
   {
     label: "Factory",
-    id: "CDIXGE5MWFAYXA7FKLB4CDRSSQZ6VQSGHT6O6OY3TFTWVF6F7BGKR7D5",
+    id: FACTORY_ID,
   },
   {
     label: "Attestation registry",
@@ -117,9 +125,6 @@ const CONTRACTS = [
     id: "CAHAOAX52JAQ75C3INJIDVKT7EITWDVPYP2K27NJTD4CPYZUAU6WAGOG",
   },
 ];
-
-const VAULT_WASM_HASH =
-  "70e5f3a81a3d66155b46780f0c7bc1bd7574721d5477865f7a2cd471d9746b53";
 
 export function SecuritySection() {
   return (
@@ -199,7 +204,8 @@ export function SecuritySection() {
             <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
               Three backers put in 100 USDC each against a 300 USDC goal. The cap
               is 20% of the raise, so each one counts for 60 regardless of what
-              they actually contributed. A release needs more than 150.
+              they actually contributed. Together they count for 180, so a
+              release needs more than 90 — from three wallets.
             </p>
             <div className="mt-6 overflow-x-auto">
               <table className="w-full text-sm">
@@ -232,9 +238,18 @@ export function SecuritySection() {
               </table>
             </div>
             <p className="mt-5 text-sm leading-relaxed text-muted-foreground">
+              The bar is half of what the backers can actually cast, not half
+              the raise. Weight above the cap can never be voted. Measured
+              against the raise, one or two backers could never release, even
+              unanimously, and a builder who delivered would lose their bond.
+            </p>
+            <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
               A backer holding two thirds of the raise still counts for 60, and
-              still cannot release alone. Both properties are pinned down by the
-              contract test suite —{" "}
+              still cannot release alone. Put 200 against two backers of 50:
+              the capped total is 160, so the bar is more than 80. The large backer
+              and one other reach 110 — enough weight, but two wallets, so
+              nothing moves until the third approves. Both properties are
+              pinned down by the contract test suite —{" "}
               <code className="break-all rounded bg-muted px-1.5 py-0.5 font-code text-xs">
                 a_majority_contributor_cannot_release_alone
               </code>{" "}
@@ -243,6 +258,12 @@ export function SecuritySection() {
                 release_requires_at_least_three_distinct_wallets
               </code>
               .
+            </p>
+            <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+              With fewer than three backers, every backer must approve. A sole
+              backer of the whole 300 counts for 60 of a capped total of 60, so
+              their one vote releases. Vaults are not upgradeable: projects
+              created before this rule keep the earlier one.
             </p>
           </div>
 
@@ -259,18 +280,19 @@ export function SecuritySection() {
             <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
               The vault is not deployed as a single contract. Its wasm is
               uploaded once and the factory instantiates one instance per project
-              from that hash, so any project&apos;s vault can be checked against
-              it.
+              from that hash, read live from the factory below. A project&apos;s
+              vault keeps the code that was current when it was created, so an
+              older project may run an earlier hash.
             </p>
 
             <div className="mt-5 rounded-lg border bg-muted/40 p-4">
               <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
                 <Hash className="h-3.5 w-3.5" />
-                blkfndr_vault.wasm — sha256
+                blkfndr_vault.wasm — sha256, as the factory deploys it today
               </div>
-              <code className="mt-2 block break-all font-code text-xs leading-relaxed">
-                {VAULT_WASM_HASH}
-              </code>
+              <LiveVaultHash
+                factoryExplorerUrl={`https://stellar.expert/explorer/testnet/contract/${FACTORY_ID}`}
+              />
               <p className="mt-3 text-xs text-muted-foreground">
                 Reproduce it from source with{" "}
                 <code className="break-all font-code">
@@ -309,7 +331,7 @@ export function SecuritySection() {
 
             <p className="mt-5 text-xs leading-relaxed text-muted-foreground">
               Deployed to Stellar testnet. The vault&apos;s release rules alone
-              are pinned by 38 passing tests, with the treasury and operations
+              are pinned by 47 passing tests, with the treasury and operations
               vault adding 45 and 25 more. Mainnet is planned and not yet
               deployed — treat anything on testnet as a live rehearsal, not a
               place to commit funds you need back.

@@ -63,16 +63,17 @@ Builder fills the listing → media pinned to IPFS (Pinata) → listing metadata
     → vault instantiated from the audited wasm hash; bond + flat fee taken in the same tx
 ```
 
-### Staking (KYC-gated)
+### Staking
 ```
-Stakeholder connects Freighter → identity registry checked (is_kyc_approved)
+Stakeholder connects Freighter (no on-chain identity check on contributors; see M-01 in the root progress.md)
     → vault.contribute(addr, amount), amount ≥ min → weight recorded (capped at 20%)
 ```
 
 ### Milestone release (permissionless)
 ```
 Builder opens a milestone vote → stakeholders approve_milestone (weighted)
-    → once >50% of the raise has approved, ANYONE calls release_milestone → tranche pays out
+    → once >50% of the capped total has approved, from ≥3 wallets (or every backer if fewer),
+      ANYONE calls release_milestone → tranche pays out
 A window that lapses without carrying → settle_lapsed_milestone → funds + bond become claimable
 ```
 

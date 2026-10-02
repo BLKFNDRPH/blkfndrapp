@@ -369,41 +369,316 @@ fn a_majority_contributor_cannot_release_alone() {
     s.vault.open_milestone_vote(&1u32);
     s.vault.approve_milestone(&s.carol, &1u32);
 
+    // Capped total: 60 + 50 + 50 = 160, so a release needs more than 80.
     let (approved, required, open) = s.vault.get_milestone_vote(&1u32);
     assert!(open);
     assert_eq!(approved, 60 * UNIT, "capped at 20% of the raise");
+    assert_eq!(required, 80 * UNIT + 1);
     assert!(approved < required);
 
     let alone = s.vault.try_release_milestone(&1u32);
     assert!(alone.is_err(), "60% of the money must not be 60% of the vote");
 
-    // Even with one ally the whale is short: 60 + 50 = 110, needs > 150.
+    // With one ally the whale clears the weight (60 + 50 = 110 > 80) but is
+    // still one wallet short of three.
     s.vault.approve_milestone(&s.alice, &1u32);
+    let (approved, required, _) = s.vault.get_milestone_vote(&1u32);
+    assert!(approved >= required);
+    assert_eq!(s.vault.get_milestone_wallets(&1u32), (2, 3));
     let pair = s.vault.try_release_milestone(&1u32);
-    assert!(pair.is_err());
+    assert!(pair.is_err(), "two wallets never carry over a third");
 
-    // Only the third wallet carries it: 60 + 50 + 50 = 160 > 150.
+    // Only the third wallet carries it.
     s.vault.approve_milestone(&s.bob, &1u32);
     s.vault.release_milestone(&1u32);
     assert!(s.vault.get_info().milestones.get(0).unwrap().released);
 }
 
-/// With every wallet at the cap, arithmetic forces at least three of them.
+/// With every wallet at the cap, two wallets clear the weight bar on their own,
+/// so it is the three-wallet floor, not arithmetic, that holds them back.
 #[test]
 fn release_requires_at_least_three_distinct_wallets() {
     let s = setup();
     fund_evenly(&s); // three at 100 each, each capped to 60
 
     s.vault.open_milestone_vote(&1u32);
+    // Capped total 180, so the weight bar is more than 90.
+    let (_, required, _) = s.vault.get_milestone_vote(&1u32);
+    assert_eq!(required, 90 * UNIT + 1);
 
     s.vault.approve_milestone(&s.alice, &1u32);
     assert!(s.vault.try_release_milestone(&1u32).is_err(), "one wallet: 60");
 
     s.vault.approve_milestone(&s.bob, &1u32);
+    let (approved, required, _) = s.vault.get_milestone_vote(&1u32);
+    assert!(approved >= required, "120 clears the weight");
+    assert_eq!(s.vault.get_milestone_wallets(&1u32), (2, 3));
     assert!(s.vault.try_release_milestone(&1u32).is_err(), "two wallets: 120");
 
     s.vault.approve_milestone(&s.carol, &1u32);
-    s.vault.release_milestone(&1u32); // three wallets: 180 > 150
+    s.vault.release_milestone(&1u32); // three wallets
+}
+
+/// The threshold carries on its own: a release does not wait for the last
+/// backer once more than half the capped total, from three wallets, is behind
+/// it.
+#[test]
+fn a_capped_majority_carries_without_every_backer() {
+    let s = setup();
+    let dave = Address::generate(&s.env);
+    s.minter.mint(&dave, &(1_000 * UNIT));
+
+    s.vault.contribute(&s.alice, &(100 * UNIT));
+    s.vault.contribute(&s.bob, &(100 * UNIT));
+    s.vault.contribute(&s.carol, &(75 * UNIT));
+    s.vault.contribute(&dave, &(25 * UNIT));
+
+    s.vault.open_milestone_vote(&1u32);
+    s.vault.approve_milestone(&s.alice, &1u32);
+    s.vault.approve_milestone(&s.bob, &1u32);
+    s.vault.approve_milestone(&s.carol, &1u32);
+
+    // Capped total 60 + 60 + 60 + 25 = 205; 180 > 102.5, with dave silent.
+    s.vault.release_milestone(&1u32);
+    assert!(s.vault.get_info().milestones.get(0).unwrap().released);
+}
+
+// ── Concentrated raises ────────────────────────────────────────────────────
+//
+// Measured against the raw raise, a capped wallet's excess is weight nobody
+// can ever cast: a sole backer counts for 20% of a >50% bar, two for 40% at
+// most, so their milestones could only lapse and forfeit the bond of a builder
+// who delivered. The bar is measured against the capped total instead, and the
+// three-wallet floor (or every backer, when there are fewer) keeps that lower
+// bar from letting one or two wallets outvote anyone.
+
+/// One backer, one vote: the whole tranche moves.
+#[test]
+fn a_sole_backer_releases_with_one_vote() {
+    let s = setup();
+    s.vault.contribute(&s.alice, &GOAL);
+    assert_eq!(s.vault.get_state(), VaultState::Funded);
+
+    s.vault.open_milestone_vote(&1u32);
+    s.vault.approve_milestone(&s.alice, &1u32);
+
+    // Capped total is alice's 60, so the bar is more than 30 — from one wallet.
+    let (approved, required, _) = s.vault.get_milestone_vote(&1u32);
+    assert_eq!(approved, 60 * UNIT);
+    assert_eq!(required, 30 * UNIT + 1);
+    assert_eq!(s.vault.get_milestone_wallets(&1u32), (1, 1));
+
+    let builder_start = s.token.balance(&s.builder);
+    s.vault.release_milestone(&1u32);
+    for id in 2u32..=3u32 {
+        s.vault.open_milestone_vote(&id);
+        s.vault.approve_milestone(&s.alice, &id);
+        s.vault.release_milestone(&id);
+    }
+
+    assert_eq!(s.vault.get_state(), VaultState::Completed);
+    assert_eq!(s.token.balance(&s.builder), builder_start + GOAL + BOND);
+    assert_eq!(s.token.balance(&s.vault_address), 0);
+}
+
+/// Silence still fails closed.
+#[test]
+fn a_sole_backer_who_does_not_vote_still_fails_the_milestone() {
+    let s = setup();
+    s.vault.contribute(&s.alice, &GOAL);
+
+    s.vault.open_milestone_vote(&1u32);
+    assert!(s.vault.try_release_milestone(&1u32).is_err());
+
+    advance(&s.env, VOTING_WINDOW + 1);
+    s.vault.settle_lapsed_milestone(&1u32);
+    assert_eq!(s.vault.get_state(), VaultState::Refunding);
+
+    // The backer gets their money back plus the whole forfeited bond.
+    let before = s.token.balance(&s.alice);
+    s.vault.claim_refund(&s.alice);
+    assert_eq!(s.token.balance(&s.alice) - before, GOAL + BOND);
+}
+
+#[test]
+fn a_sole_backers_approval_cannot_be_settled_as_lapsed() {
+    let s = setup();
+    s.vault.contribute(&s.alice, &GOAL);
+
+    s.vault.open_milestone_vote(&1u32);
+    s.vault.approve_milestone(&s.alice, &1u32);
+
+    advance(&s.env, VOTING_WINDOW + 1);
+    let sabotage = s.vault.try_settle_lapsed_milestone(&1u32);
+    assert!(sabotage.is_err(), "an approved milestone stays approved after the window");
+
+    s.vault.release_milestone(&1u32);
+}
+
+/// Two backers release by both approving — and the larger one, though it
+/// clears the weight alone, still cannot override the smaller.
+#[test]
+fn two_backers_release_when_both_approve() {
+    let s = setup();
+    s.vault.contribute(&s.alice, &(250 * UNIT));
+    s.vault.contribute(&s.bob, &(50 * UNIT));
+
+    s.vault.open_milestone_vote(&1u32);
+    s.vault.approve_milestone(&s.alice, &1u32);
+
+    // Capped total 60 + 50 = 110; alice's 60 clears 55 on weight alone.
+    let (approved, required, _) = s.vault.get_milestone_vote(&1u32);
+    assert!(approved >= required);
+    assert_eq!(s.vault.get_milestone_wallets(&1u32), (1, 2));
+    assert!(
+        s.vault.try_release_milestone(&1u32).is_err(),
+        "83% of the money still cannot override the other backer"
+    );
+
+    s.vault.approve_milestone(&s.bob, &1u32);
+    s.vault.release_milestone(&1u32);
+    assert!(s.vault.get_info().milestones.get(0).unwrap().released);
+}
+
+/// A raise concentrated enough that the capped weights could not clear half
+/// the raise even all together: 60 + 50 + 40 = 150, not more than 150. Measured
+/// against the raise this vault could never release anything.
+#[test]
+fn a_concentrated_raise_releases_when_every_backer_approves() {
+    let s = setup();
+    s.vault.contribute(&s.carol, &(210 * UNIT));
+    s.vault.contribute(&s.alice, &(50 * UNIT));
+    s.vault.contribute(&s.bob, &(40 * UNIT));
+
+    s.vault.open_milestone_vote(&1u32);
+    s.vault.approve_milestone(&s.carol, &1u32);
+    s.vault.approve_milestone(&s.alice, &1u32);
+    assert!(s.vault.try_release_milestone(&1u32).is_err(), "bob has not approved");
+
+    s.vault.approve_milestone(&s.bob, &1u32);
+    s.vault.release_milestone(&1u32);
+}
+
+/// The case the capped total exists for: one wallet holds most of the raise and
+/// the rest is spread thin. Measured against the raise, the whale's 60 plus
+/// every other backer's 45 is 105 of a needed 151 — unreachable, so one silent
+/// small backer used to doom the project. Now the whale and two others carry
+/// it, and the whale with one other still cannot.
+#[test]
+fn a_concentrated_raise_carries_without_its_last_backer() {
+    let s = setup();
+    let dave = Address::generate(&s.env);
+    s.minter.mint(&dave, &(1_000 * UNIT));
+
+    s.vault.contribute(&s.carol, &(255 * UNIT)); // 85% of the raise
+    s.vault.contribute(&s.alice, &(15 * UNIT));
+    s.vault.contribute(&s.bob, &(15 * UNIT));
+    s.vault.contribute(&dave, &(15 * UNIT));
+
+    s.vault.open_milestone_vote(&1u32);
+    // Capped total 60 + 15 + 15 + 15 = 105, so the bar is more than 52.5.
+    let (_, required, _) = s.vault.get_milestone_vote(&1u32);
+    assert_eq!(required, 52 * UNIT + 5_000_001);
+
+    s.vault.approve_milestone(&s.carol, &1u32);
+    assert!(s.vault.try_release_milestone(&1u32).is_err(), "the whale alone");
+
+    s.vault.approve_milestone(&s.alice, &1u32);
+    assert!(
+        s.vault.try_release_milestone(&1u32).is_err(),
+        "the whale and one other: 75 clears the weight, but only two wallets"
+    );
+
+    s.vault.approve_milestone(&s.bob, &1u32);
+    s.vault.release_milestone(&1u32); // 90 > 52.5 from three wallets; dave silent
+}
+
+/// The capped total is computed from the four largest balances only. A wallet
+/// that starts small, is pushed out of the tracked set, and then grows past the
+/// cap must displace the smallest tracked balance — or its excess would go
+/// uncounted and the bar would sit too high.
+#[test]
+fn a_late_whale_is_counted_in_the_capped_total() {
+    let s = setup_with(1_000 * UNIT, BOND, PLATFORM_FEE);
+    let others: [Address; 3] = [
+        Address::generate(&s.env),
+        Address::generate(&s.env),
+        Address::generate(&s.env),
+    ];
+    for who in others.iter() {
+        s.minter.mint(who, &(1_000 * UNIT));
+    }
+
+    // Fill the tracked set with four, then add a fifth, smaller, wallet.
+    s.vault.contribute(&s.alice, &(50 * UNIT));
+    s.vault.contribute(&s.bob, &(60 * UNIT));
+    s.vault.contribute(&s.carol, &(70 * UNIT));
+    s.vault.contribute(&others[0], &(80 * UNIT));
+    s.vault.contribute(&others[1], &(10 * UNIT));
+    // Now it grows past everyone, and a sixth tops the raise up to the goal.
+    s.vault.contribute(&others[1], &(600 * UNIT));
+    s.vault.contribute(&others[2], &(130 * UNIT));
+
+    // Raise 1000, cap 200. Only the 610 balance is over the cap: capped total
+    // = 1000 - 410 = 590, so the bar is more than 295.
+    s.vault.open_milestone_vote(&1u32);
+    let (_, required, _) = s.vault.get_milestone_vote(&1u32);
+    assert_eq!(required, 295 * UNIT + 1);
+}
+
+/// Cross-check the tracked capped total against a direct sum over every
+/// contributor, for a spread of deterministic contribution orders.
+#[test]
+fn the_capped_total_matches_a_direct_sum() {
+    extern crate std;
+    let mut concentrated = 0;
+    for seed in 1u64..=40 {
+        let goal = 2_000 * UNIT;
+        let s = setup_with(goal, BOND, PLATFORM_FEE);
+        let mut wallets: std::vec::Vec<Address> = std::vec::Vec::new();
+        for _ in 0..7 {
+            let w = Address::generate(&s.env);
+            s.minter.mint(&w, &(10_000 * UNIT));
+            wallets.push(w);
+        }
+
+        // A small LCG drives who contributes and how much, skewed so that one
+        // or two wallets often end up over the cap.
+        let mut x = seed.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
+        let mut raised: i128 = 0;
+        while raised < goal {
+            x = x
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            let who = ((x >> 33) % 7) as usize;
+            let big = (x >> 20) % 4 == 0;
+            let units = if big { 100 + ((x >> 40) % 400) } else { 5 + ((x >> 45) % 40) };
+            let remaining = goal - raised;
+            let mut amount = core::cmp::min(units as i128 * UNIT, remaining);
+            // Never leave a remainder below the minimum, which nobody could pay.
+            if remaining - amount < MIN_CONTRIBUTION {
+                amount = remaining;
+            }
+            s.vault.contribute(&wallets[who], &amount);
+            raised += amount;
+        }
+        assert_eq!(s.vault.get_state(), VaultState::Funded);
+
+        let cap = raised * 2_000 / 10_000;
+        let mut direct: i128 = 0;
+        for w in wallets.iter() {
+            let b = s.vault.get_balance(w);
+            direct += if b < cap { b } else { cap };
+        }
+        if direct < raised {
+            concentrated += 1;
+        }
+
+        s.vault.open_milestone_vote(&1u32);
+        let (_, required, _) = s.vault.get_milestone_vote(&1u32);
+        assert_eq!(required, direct * 5_000 / 10_000 + 1, "seed {}", seed);
+    }
+    assert!(concentrated >= 10, "only {} seeds put a wallet over the cap", concentrated);
 }
 
 #[test]
@@ -514,7 +789,7 @@ fn a_window_that_closes_below_threshold_fails_the_milestone() {
     fund_evenly(&s);
 
     s.vault.open_milestone_vote(&1u32);
-    s.vault.approve_milestone(&s.alice, &1u32); // 60 of the 150 needed
+    s.vault.approve_milestone(&s.alice, &1u32); // 60 of the 91 needed, one wallet of three
 
     // Nobody else votes.
     advance(&s.env, VOTING_WINDOW + 1);

@@ -1,7 +1,6 @@
 import "server-only";
 
 import {
-  Address,
   BASE_FEE,
   Keypair,
   Operation,
@@ -21,6 +20,7 @@ import {
   factoryClient,
   simulate,
 } from "@/lib/stellar-clients";
+import { instanceKey, vaultWasmHashFromFactory } from "@/lib/factory-vault-hash";
 
 /**
  * Keeps the platform's shared contract storage alive.
@@ -88,35 +88,8 @@ interface Tracked {
   liveUntil: number;
 }
 
-function instanceKey(contractId: string): xdr.LedgerKey {
-  return xdr.LedgerKey.contractData(
-    new xdr.LedgerKeyContractData({
-      contract: new Address(contractId).toScAddress(),
-      key: xdr.ScVal.scvLedgerKeyContractInstance(),
-      durability: xdr.ContractDataDurability.persistent(),
-    }),
-  );
-}
-
 function codeKey(hash: Buffer): xdr.LedgerKey {
   return xdr.LedgerKey.contractCode(new xdr.LedgerKeyContractCode({ hash }));
-}
-
-/** The factory stores the code hash it deploys vaults from; it has no getter. */
-function vaultWasmHashFromFactory(instance: xdr.ScContractInstance): Buffer | null {
-  for (const entry of instance.storage() ?? []) {
-    const k = entry.key();
-    if (
-      k.switch().name === "scvVec" &&
-      k.vec()?.length === 1 &&
-      k.vec()![0].switch().name === "scvSymbol" &&
-      k.vec()![0].sym().toString() === "VaultWasmHash" &&
-      entry.val().switch().name === "scvBytes"
-    ) {
-      return entry.val().bytes();
-    }
-  }
-  return null;
 }
 
 /** Every shared contract the platform depends on, by name. */

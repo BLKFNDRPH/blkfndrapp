@@ -57,7 +57,7 @@ Amounts are in stroops throughout (1 unit = 10,000,000 stroops, 7 decimals). Dep
 
 ## blkfndr-vault
 
-One vault per project. It holds every stake and the builder's performance bond in the same contract, runs the milestone votes that release money, and refunds automatically when a project misses its goal or a milestone fails. **38 tests.**
+One vault per project. It holds every stake and the builder's performance bond in the same contract, runs the milestone votes that release money, and refunds automatically when a project misses its goal or a milestone fails. **47 tests.**
 
 ### Lifecycle states
 
@@ -82,7 +82,7 @@ struct VaultInitConfig {
 | Function | Who | Effect |
 |---|---|---|
 | `initialize(config)` | Factory only | Takes the bond + flat fee from the creator in the same transaction, pins the trusted addresses, opens the raise |
-| `contribute(contributor, amount)` | Anyone (KYC-gated) | Adds a stake; `amount ≥ min_contribution`; records voting weight |
+| `contribute(contributor, amount)` | Anyone (not identity-gated on-chain; only the builder is KYC-checked, at `initialize`) | Adds a stake; `amount ≥ min_contribution`; records voting weight |
 | `settle()` | Anyone | Closes the raise: `Funded` if the goal is met, `Failed` if the deadline passed short |
 | `return_bond()` | Anyone | Returns the bond to the builder when a failed raise is settled |
 | `open_milestone_vote(id)` | Creator | Opens a fixed-window vote on a milestone tranche |
@@ -91,12 +91,17 @@ struct VaultInitConfig {
 | `settle_lapsed_milestone(id)` | Anyone | Fails a milestone whose window lapsed without carrying; forfeits the bond |
 | `claim_refund(contributor)` | Stakeholder | Pro-rata claim of remaining funds (and forfeited bond) after failure |
 
-Reads: `get_state`, `get_info`, `get_balance`, `get_contributors(offset, limit)`, `contributor_count`, `get_voting_weight`, `has_voted`, `get_milestone_vote`.
+Reads: `get_state`, `get_info`, `get_balance`, `get_contributors(offset, limit)`, `contributor_count`, `get_voting_weight`, `has_voted`, `get_milestone_vote`, `get_milestone_wallets`.
+
+`get_milestone_vote(id)` returns the approved weight, the weight a release needs (`floor(capped total / 2) + 1`) and whether the window is open. `get_milestone_wallets(id)` returns the distinct wallets that have approved and how many a release needs. Vaults built from earlier wasm measure the bar against the raw raise (`floor(raise / 2) + 1`) and do not expose `get_milestone_wallets`. There the 20% cap alone forces three wallets — which is also why, on those vaults, a raise with one or two backers, or any raise whose capped weights sum to half the raise or less (e.g. 210/50/40 on 300), can never release. Vaults are not upgradeable, so they keep that rule.
 
 ### Invariants
 
-- **>50% of the total raise** must approve a release (`RELEASE_THRESHOLD_BPS = 5_000`).
-- **No wallet counts for more than 20%** of the vote, however much it contributed (`WEIGHT_CAP_BPS = 2_000`). Clearing >50% in ≤20% steps always takes **at least three distinct wallets** — pinned by `a_majority_contributor_cannot_release_alone` and `release_requires_at_least_three_distinct_wallets`.
+- **>50% of the capped total** must approve a release (`RELEASE_THRESHOLD_BPS = 5_000`, strict). The capped total is every contributor's weight after the cap, summed; when nobody is over the cap it equals the raise. It is measured this way because weight above the cap is weight nobody can cast: against the raw raise a sole backer counts for 20% and two backers for 40% at most, so a concentrated raise could never release, even unanimously, and the bond of a builder who delivered would be forfeited.
+- **No wallet counts for more than 20% of the raise**, however much it contributed (`WEIGHT_CAP_BPS = 2_000`). Only four wallets can exceed the cap (five balances each above a fifth of the raise would exceed the raise), so the vault tracks the four largest balances (`DataKey::Largest`) and computes the capped total as the raise less their excess, without walking the contributor list — pinned by `a_late_whale_is_counted_in_the_capped_total` and `the_capped_total_matches_a_direct_sum`.
+- **At least three distinct approving wallets**, or every contributor when there are fewer than three (`MIN_APPROVING_WALLETS = 3`; approvals counted per milestone in `DataKey::Approvals`, contributors in `DataKey::ContributorCount`). No release is ever carried over a dissenting contributor by fewer than three wallets, and a dominant contributor cannot release alone. At 200/50/50 on a 300 raise the capped total is 160 and the bar is more than 80: the large backer and one other reach 110, which clears the weight, but two wallets cannot carry it — pinned by `a_majority_contributor_cannot_release_alone`, `release_requires_at_least_three_distinct_wallets` and `a_concentrated_raise_carries_without_its_last_backer`.
+- **A vote every contributor approves always carries**, so concentration never deadlocks a vault. A sole backer releases with one vote; two backers release when both approve — pinned by `a_sole_backer_releases_with_one_vote`, `two_backers_release_when_both_approve` and `a_concentrated_raise_releases_when_every_backer_approves`.
+- **Trade-off:** weight above the cap counts neither for nor against a release, so a release can carry with less than half of the money when another stake is capped — three wallets of 140 outvote two backers of 290 on a 1,000 raise (capped total 820, bar more than 410, the three hold 420). The three-wallet floor bounds this by wallets, not people (see M-01 in the root progress.md).
 - **Silence returns money, never releases it.** A lapsed window fails the milestone and makes funds claimable; it can never pay the builder.
 - Paged reads are capped (`MAX_PAGE = 100`) so no caller can request a page large enough to exceed the resource budget.
 
@@ -136,7 +141,7 @@ Reads: `get_record(project_id)`, `has_record`, `get_builder_projects(builder)`, 
 
 ## blkfndr-identity
 
-The KYC gate. Named attestors write approvals; the vault checks them before accepting a stake. The platform holds the attestors' signing keys as **managed, gas-only wallets** (see [Architecture](architecture.md)), so a human reviewer approves KYC in the console and the server signs `attest` — the reviewer never touches a wallet.
+The KYC gate. Named attestors write approvals; the vault checks the builder's at `initialize`. Contributors are not identity-gated on-chain, so the 20% cap and the three-wallet floor bind addresses, not people. The platform holds the attestors' signing keys as **managed, gas-only wallets** (see [Architecture](architecture.md)), so a human reviewer approves KYC in the console and the server signs `attest` — the reviewer never touches a wallet.
 
 | Function | Who | Effect |
 |---|---|---|
