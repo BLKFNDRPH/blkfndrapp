@@ -142,15 +142,16 @@ services:
       - PINATA_GROUP_BLKDFNDR=${PINATA_GROUP_BLKDFNDR:-}
 
       # ── Indexer auth (required, SECRET) ──────────────────────────────────
-      # Bearer token for POST /api/indexer and POST /api/ops-funding. The
-      # endpoints are public without it. Shared with the cron services below.
+      # Bearer token for the cron endpoints: POST /api/indexer, /api/ops-funding,
+      # /api/settle-stalled and /api/keep-alive. Shared with the cron services below.
       - INDEXER_SECRET=${INDEXER_SECRET:-}
 
       # ── Operations funding submitter (optional, SECRET) ──────────────────
-      # A funded classic account that pays the fee for the monthly
-      # fund_operations call. It holds no authority — the transfer is authorised
-      # by the owners' SetOpsFunding vote — so it only needs a little XLM for gas.
-      # Unset means POST /api/ops-funding cleanly skips instead of moving money.
+      # A funded classic account that pays the network fees for three
+      # permissionless jobs: the monthly fund_operations call, settle_stalled on
+      # abandoned vaults, and the storage keep-alive. It holds no authority over
+      # any funds — the ops transfer is authorised by the owners' SetOpsFunding
+      # vote — so it only needs XLM for gas. Unset means those endpoints skip.
       - OPS_FUNDING_SUBMITTER_SECRET=${OPS_FUNDING_SUBMITTER_SECRET:-}
 
       # ── Genkit / Gemini (optional) ───────────────────────────────────────
@@ -173,7 +174,7 @@ services:
       - "io.portainer.accesscontrol.teams=admins"
       - "app.name=blkfndr3"
       - "app.version=1.0.0"
-      - "app.description=Bonded crowdfunding for real-world builds, on Stellar"
+      - "app.description=Secure on-chain vaults for real-world projects, on Stellar"
 
   # The ledger is the source of truth, but the site reads Postgres. This is what
   # moves data between the two: without something calling POST /api/indexer on a

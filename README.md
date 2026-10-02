@@ -18,20 +18,25 @@ Under the hood the vault is bonded and stakeholder-governed. The builder's perfo
 
 ## Status
 
-**Current phase: Testnet, mid-rebuild.**
+**Current phase: Testnet.**
 
-Release authority is contribution-weighted rather than held by appointed signers, the contracts are **deployed to testnet**, and the app runs against them at [testnetv2.blkfndr.com](https://testnetv2.blkfndr.com/). MongoDB is gone: every table is Postgres with Row Level Security.
+Release authority is contribution-weighted rather than held by appointed signers, the contracts are **deployed to testnet**, and the app runs against them at [testnetv2.blkfndr.com](https://testnetv2.blkfndr.com/). Every table is Postgres with Row Level Security.
+
+**[progress.md](progress.md)** tracks what is live, what is merged but not yet active on-chain, and the owner actions still pending. Merged is not deployed: a contract change reaches testnet only when it is redeployed.
 
 | Area | State |
 |---|---|
-| Bonded vault with contributor-weighted release | ✅ Deployed to testnet, 47 tests passing (the capped-total release rule reaches new projects once the factory's vault wasm hash is updated) |
+| Bonded vault with contributor-weighted release | ✅ Deployed to testnet, 47 tests passing. The capped-total release rule (#99) is merged but **not yet live**: it reaches new projects once the factory's vault wasm hash is updated |
 | Builder attestation registry | ✅ Deployed to testnet |
 | Platform treasury + owner-voted governance (fee, bond, ops funding) | ✅ Deployed to testnet, 45 tests passing |
 | Operations Vault (governed gas budget) + managed KYC-attestor keys | ✅ Deployed to testnet, 25 tests passing |
 | Four admin groups, user bans, platform health, KYC review | ✅ Live |
 | Supabase schema, RLS, and auth | ✅ Applied, verified, and the app runs on it |
 | MongoDB | ✅ Fully removed |
-| TypeScript contract bindings | ✅ Regenerated from the deployed wasm |
+| TypeScript contract bindings | ✅ Generated from source. The factory, attestation, identity and admin bindings are ahead of their deployed contracts until the redeploy in [progress.md](progress.md) |
+| Listing moderation — owner-consensus approval, platform-level hide and lock | ✅ Live |
+| Per-milestone delivery proof, shown to stakeholders before they vote | ✅ Live |
+| Event indexer, stalled-vault keeper, storage keep-alive (compose crons) | ✅ Live |
 | Mainnet | 🔜 Planned, not deployed |
 | AI listing quality analysis | ✅ Live (Genkit + Gemini 2.5 Flash) |
 | AI query analysis & sentiment tracking | 📝 Documented, not implemented |
@@ -67,7 +72,7 @@ With fewer than three backers, every backer must approve. A sole backer of the w
 
 The trade-off: weight above the cap counts neither for nor against a release, so a release can carry with less than half of the money when another stake is capped. On a 1,000 raise, three wallets of 140 (42%) outvote two backers of 290, because each of those counts for only 200. The three-wallet floor bounds this by wallets, not people — contributions are not identity-gated.
 
-This rule applies to vaults the factory creates after its wasm hash was updated. Vaults are not upgradeable, so earlier vaults keep the old bar — more than half of the raw raise — under which a raise with one or two backers, or one concentrated in a single wallet, cannot release.
+This rule applies to vaults the factory creates after its wasm hash is updated. **As of 2026-10-02 that has not happened**: the factory still deploys wasm `70e5f3a8…`, so every vault on testnet — new ones included — runs the old bar, more than half of the raw raise, under which a raise with one or two backers, or one concentrated in a single wallet, cannot release. Vaults are not upgradeable, so vaults created before the switch keep the old bar for good. The switch is waiting on one open decision, a dual-majority guard against a builder splitting a small stake across three wallets; see [progress.md](progress.md#2-switch-the-factory-to-the-99-vault-wasm).
 
 ## Tech Stack
 
@@ -77,11 +82,9 @@ This rule applies to vaults the factory creates after its wasm hash was updated.
 | **Frontend** | Next.js 16, React 19, TailwindCSS, shadcn/ui |
 | **Database** | Supabase (Postgres with Row Level Security) |
 | **Auth** | Supabase Auth — email/password and Google; Freighter for wallet linking |
-| **Storage** | Supabase Storage (identity documents), Pinata IPFS (listing media) |
+| **Storage** | Supabase Storage (identity documents), Pinata IPFS (listing metadata, media, milestone proof photos) |
 | **AI** | Google Genkit + Gemini 2.5 Flash |
-| **Deployment** | Docker, Portainer |
-
-MongoDB is still present in the codebase and is being removed collection by collection as each call site moves to Supabase.
+| **Deployment** | Docker Compose on Portainer: the app plus four cron services (indexer, ops funding, stalled-vault keeper, storage keep-alive) |
 
 ## Smart Contracts
 
@@ -108,7 +111,11 @@ The rebuilt set, deployed with `scripts/deploy-contracts.sh` and wiring verified
 | Treasury (fee destination + governance) | [`CDA5XDY5...M44COAXU`](https://stellar.expert/explorer/testnet/contract/CDA5XDY564RV2OSZNF2S6CXQYCABFASBOHUCXJEGII6M232VM44COAXU) |
 | Operations Vault (gas budget) | [`CCVXM3YP...NQG7FDSN`](https://stellar.expert/explorer/testnet/contract/CCVXM3YPPEMWG4INHFTZ4NBJ3PQW3ZUNYIZMBJBNYQOMSNOENQG7FDSN) |
 
-The treasury is the factory's fee wallet, so the app reads its address from the factory rather than from configuration. The treasury and Operations Vault were redeployed on 2026-09-28 with their audit fixes: each is configured by a constructor inside its own deploy transaction (H-03), and both follow checks-effects-interactions (M-05/M-06). The previous instances are superseded: treasury `CCNID3UW…` (empty) and Operations Vault `CDZXCWKY…`, whose balance moves to the new vault by owner vote.
+The treasury is the factory's fee wallet, so the app reads its address from the factory rather than from configuration. The treasury and Operations Vault were redeployed on 2026-09-28 with their audit fixes: each is configured by a constructor inside its own deploy transaction (H-03), and both follow checks-effects-interactions (M-05/M-06). The previous instances are superseded: treasury `CCNID3UW…` (empty) and Operations Vault `CDZXCWKY…`, which still holds 25 XLM until the owners vote it across ([progress.md](progress.md#1-finish-the-operations-vault-cutover)).
+
+The factory, attestation, identity and admin contracts above predate the #73 and #75 source fixes (constructor-based configuration, attestation records keyed by vault, identity TTL). Those reach testnet with the coordinated redeploy tracked in [progress.md](progress.md#4-redeploy-the-factory-and-registries-73--75), which mints new addresses.
+
+Shared contract storage on Soroban expires when nobody pays its rent, and the next caller pays to restore it. The `keep-alive-cron` service checks the factory, both registries, the admin roster, the treasury, the Operations Vault and the code they and every vault run from on a schedule, restoring anything archived and topping up anything under 21 days to 60, so a launch never pays to resurrect them.
 
 The **vault is not deployed as a contract**. Its wasm is uploaded and the factory instantiates one instance per project from that hash:
 
@@ -116,13 +123,21 @@ The **vault is not deployed as a contract**. Its wasm is uploaded and the factor
 blkfndr_vault.wasm  sha256:70e5f3a81a3d66155b46780f0c7bc1bd7574721d5477865f7a2cd471d9746b53
 ```
 
-A reviewer checks any project's vault against that hash. `scripts/build-contracts.sh` reproduces it from source.
+A reviewer checks any project's vault against that hash. The landing page's "Check it yourself" box reads the factory's current hash live from [`/api/vault-wasm-hash`](https://testnetv2.blkfndr.com/api/vault-wasm-hash) rather than quoting a constant. `scripts/build-contracts.sh` builds it from source; the wasm embeds absolute dependency paths in its panic locations, so a matching hash needs the same build paths (a pinned Docker build would remove that caveat).
 
-Platform parameters as deployed: flat fee 10 units, minimum contribution 5 units, voting window 7 days, minimum bond 5% of goal.
+Platform parameters as deployed, read from the factory on 2026-10-02:
+- **Flat fee:** 300 base units (0.00003 of the project's token). This is almost certainly a leftover 3% from the earlier percentage model. `scripts/deploy-contracts.sh` defaults to 10 units.
+- **Minimum contribution:** 5 units.
+- **Voting window:** 7 days.
+- **Minimum bond:** 5% of the goal.
+
+The factory's admin is still the deployer key, not the treasury, so these change by one signature until the admin is handed over ([progress.md](progress.md#4b-hand-the-factory-admin-to-the-treasury)).
+
+The contract suite has 170 tests: vault 47, treasury 45, operations 25, factory 15, identity 15, attestation 14 and admin 9.
 
 #### Previous generation
 
-Still on-chain and still running the live site until the UI migrates. **Superseded — do not build against these.** The crowdfunding contract in particular carries a refund defect that can pay an early investor money already released to the creator.
+Still on-chain, no longer used by the app. **Superseded — do not build against these.** The crowdfunding contract in particular carries a refund defect that can pay an early investor money already released to the creator.
 
 | Contract | Address |
 |---|---|
@@ -137,7 +152,7 @@ blkfndr charges a **flat fee per project**, paid by the builder when the vault i
 
 ## Prerequisites
 
-- **Node.js** 20+ and **npm** 10+
+- **Node.js** 22+ (`engines` in [package.json](package.json)) and **npm** 10+
 - **Rust** 1.81.0 with the `wasm32-unknown-unknown` target (see [rust-toolchain.toml](rust-toolchain.toml))
 - **Stellar Freighter** browser extension ([freighter.app](https://freighter.app))
 - A **Supabase** project
@@ -183,12 +198,16 @@ cargo test --workspace
 | `NEXT_PUBLIC_BLKFNDR_ATTESTATION_CONTRACT_ID` | Yes | Attestation registry contract ID |
 | `NEXT_PUBLIC_BLKFNDR_OPERATIONS_CONTRACT_ID` | Recommended | Operations Vault contract ID. Its governance panel reads "Not configured" without it |
 | `NEXT_PUBLIC_STELLAR_XLM_TOKEN_ID` | Yes | XLM token contract ID (also `_USDC_`) |
-| `PINATA_JWT` | Yes | Pinata API JWT for IPFS uploads. Server-only |
-| `PINATA_GATEWAY_URL` | Recommended | Dedicated Pinata gateway hostname. The shared public one rate-limits |
-| `PINATA_GATEWAY_KEY` | With a dedicated gateway | That gateway's Gateway Key (not the JWT), sent only to it as `x-pinata-gateway-token`. Without it the dedicated gateway answers 401. Server-only, runtime |
-| `GEMINI_API_KEY` | Optional | Gemini API key for the AI listing review. Server-only. Without it that feature is simply off |
-| `INDEXER_SECRET` | Yes | Bearer token for `POST /api/indexer` and `POST /api/ops-funding`. Generate with `openssl rand -hex 32` |
-| `OPS_FUNDING_SUBMITTER_SECRET` | Optional | Funded account that pays the fee for the monthly operations-funding transfer. Server-only. Unset means the transfer cleanly skips |
+| `NEXT_PUBLIC_SOROBAN_RPC_URL`, `NEXT_PUBLIC_HORIZON_URL` | Optional | RPC and Horizon endpoints. Default to testnet. The network passphrase is pinned to testnet in code, so these alone do not make a mainnet build |
+| `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | Optional | Map on a project's Location section |
+| `APP_URLS` | Optional | Extra allowed origins, comma-separated, for a host answering on several domains. Read at runtime, so a change needs the container recreated (a stack update), not a rebuild. Use https only on a public host |
+| `PINATA_JWT` | Yes | Pinata API JWT for IPFS uploads. Server-only. An owner can instead store it in the Supabase Vault from the console, which then takes precedence |
+| `PINATA_GATEWAY_URL` | Recommended | Dedicated Pinata gateway hostname. The indexer reads metadata from it first, then from the shared `gateway.pinata.cloud`, which rate-limits |
+| `PINATA_GATEWAY_KEY` | With a dedicated gateway | That gateway's Gateway Key (not the JWT), sent only to it as `x-pinata-gateway-token`. Without it the dedicated gateway answers 401 and every read falls back to the shared one. Server-only, runtime |
+| `PINATA_GROUP_BLKDFNDR` | Optional | Pinata group that uploads are filed into |
+| `GEMINI_API_KEY` | Optional | Gemini API key for the AI listing review, read by the Genkit plugin at runtime. Server-only. Without it the AI Suggestions button still shows, and every press fails with a toast |
+| `INDEXER_SECRET` | Yes | Bearer token for the cron endpoints: `/api/indexer`, `/api/ops-funding`, `/api/settle-stalled`, `/api/keep-alive`. Generate with `openssl rand -hex 32` |
+| `OPS_FUNDING_SUBMITTER_SECRET` | Recommended | Gas-only funded account that pays the fees for the ops-funding transfer, the stalled-vault keeper and the storage keep-alive. Server-only. Unset means those jobs skip cleanly |
 
 Anything prefixed `NEXT_PUBLIC_` is inlined into the client bundle at build time and visible to every visitor. Never put a secret behind that prefix. See [.env.example](.env.example) for how each variable reaches the container.
 
@@ -211,9 +230,13 @@ Authorization is enforced by the database, not only by application code. Every t
 
 Identity documents are not stored in the database. They live in a private Storage bucket reached through short-lived signed URLs minted server-side.
 
-Roles are read from `app_metadata`, never `user_metadata`, which a user can edit. On-chain state remains the source of truth for who is an admin.
+Console roles come from the `platform_admins` roster — the four groups the platform is run by: owner, platform administrator, KYC manager and project administrator — asked through `my_role()` and `is_admin()` in the database and `requireCaller()` on the server, never from `user_metadata`, which a user can edit. The on-chain `blkfndr-admin` roster is separate, and neither is in the path that moves funds.
 
 Every exported async function in a `"use server"` file is a public HTTP endpoint. Each one re-authenticates, authorizes, and validates its arguments — the argument list is treated as hostile.
+
+Platform moderation binds the platform, not the vault. Hiding a project removes it from explore, search and the home page while its builder and stakeholders can still reach it; locking one stops this interface from building new stakes, vote openings and proof. Neither touches the contract, which stays permissionless — refunds, open votes and carried releases always go through.
+
+Transactions are signed in the user's own Freighter wallet through one shared signer ([src/lib/freighter-signer.ts](src/lib/freighter-signer.ts)) that builds every transaction from the signing account and refuses a signature from any other. The platform holds keys only for gas and for KYC attestation — never over a stake, a vote or a vault.
 
 ## Project Structure
 
@@ -233,23 +256,28 @@ blkfndrapp/
 │   ├── build-contracts.sh      # Builds wasm, prints build hashes
 │   └── deploy-contracts.sh     # Deploys and wires the contract set
 ├── src/
+│   ├── actions/                # Server actions: admins, moderation, restrictions, secrets…
 │   ├── ai/                     # Genkit flows and configuration
 │   ├── app/                    # Next.js App Router pages and API routes
 │   │   ├── auth/               # Supabase auth actions and callbacks
-│   │   └── api/                # REST endpoints
+│   │   └── api/                # REST endpoints (indexer, crons, session, uploads…)
 │   ├── components/             # React components (shadcn/ui)
-│   ├── context/                # React context providers
-│   ├── hooks/                  # Custom hooks
+│   ├── context/                # Auth, Freighter wallet, project dialog, chain state
+│   ├── hooks/                  # Custom hooks, incl. use-stellar-contract
 │   ├── lib/
-│   │   ├── auth/               # Authorization guards
+│   │   ├── auth/               # Authorization guards, app origin, safe redirects
 │   │   ├── data/               # Server-only data-access layer
 │   │   ├── supabase/           # Client setup and generated types
-│   │   └── models/             # Mongoose models, being removed
-│   ├── packages/               # Generated contract bindings
+│   │   ├── event-indexer.ts    # Chain → Postgres indexer
+│   │   ├── stellar-clients.ts  # Configured contract clients
+│   │   ├── freighter-signer.ts # The one Freighter signer
+│   │   └── ttl-keeper.ts       # Shared-storage keep-alive
+│   ├── packages/               # Generated contract bindings (source, no package.json)
 │   └── proxy.ts                # Session refresh (not a security boundary)
 ├── docs/
+├── progress.md                 # Live vs pending status
 ├── .github/workflows/ci.yml
-├── docker-compose.yml
+├── docker-compose.yml          # App + indexer, ops-funding, settle-stalled, keep-alive crons
 └── Dockerfile
 ```
 
@@ -262,7 +290,7 @@ blkfndrapp/
 | `npm run start` | Start the production server |
 | `npm run lint` | ESLint |
 | `npm run typecheck` | TypeScript, no emit |
-| `npm run genkit:dev` | Genkit developer UI |
+| `npm run genkit:dev` | Genkit developer UI (`genkit:watch` reloads on change) |
 | `bash scripts/build-contracts.sh` | Compile contracts to wasm, print sha256 hashes |
 | `bash scripts/deploy-contracts.sh --source <key>` | Deploy and wire the contract set, verifying the result |
 | `cargo test --workspace` | Contract test suite |
@@ -270,27 +298,30 @@ blkfndrapp/
 
 ## Documentation
 
+- [Progress](progress.md) — What is live, merged-but-pending, and open
+- [Whitepaper](docs/whitepaper.md) — Product and economic model
 - [Architecture](docs/architecture.md) — System design and data flow
 - [Smart Contracts](docs/smart-contracts.md) — Soroban contract API reference
+- [Contract Bindings](docs/blkfndr-stellar-cntrct-setup.md) — Generated TypeScript bindings
+- [API Reference](docs/api-reference.md) — HTTP routes, server actions, Horizon and Soroban RPC
+- [Authentication](docs/authentication.md) — Supabase Auth, wallet linking and signing, admin roles
 - [AI Features](docs/ai-features.md) — Genkit flows and AI integration
-- [API Reference](docs/api-reference.md) — Horizon, Soroban RPC, and server actions
-- [Authentication](docs/authentication.md) — Auth and wallet linking
-- [Deployment](docs/deployment.md) — Docker, Portainer, and production setup
-- [Whitepaper](docs/whitepaper.md) — Product and economic model
-- [Blueprint](docs/blueprint.md) — Product and technical blueprint
+- [Deployment](docs/deployment.md) — Docker, Portainer, crons, and contract deploys
 - [Contributing](docs/contributing.md) — Development setup and guidelines
-- [Migration: Tusky → Pinata](docs/migration-tusky-pinata.md) — File storage migration
+- [Blueprint](docs/blueprint.md) — Product and technical blueprint
+- [Web3 Accessibility Redesign](docs/design/web3-accessibility-redesign.md) — Design brief for users with no Web3 background
+- [Migration: Tusky → Pinata](docs/migration-tusky-pinata.md) — Completed file-storage migration
+- [Documentation Coverage](docs/content-migration.md) — Which page covers what, last review date
 - [GitBook Sync](docs/gitbook-sync.md) — GitHub/GitBook synchronization
-- [Content Migration](docs/content-migration.md) — Feature coverage checklist
 
-> The core docs — [whitepaper.md](docs/whitepaper.md), [architecture.md](docs/architecture.md), [smart-contracts.md](docs/smart-contracts.md) and [api-reference.md](docs/api-reference.md) — were rewritten for the current vault / factory / attestation / identity / admin / treasury / operations suite, the two-thirds governance model, and the gas-funding transfer. [authentication.md](docs/authentication.md), [ai-features.md](docs/ai-features.md) and [deployment.md](docs/deployment.md) round out the set.
+Every page was re-checked against the code on 2026-10-02 and 2026-10-03 (`main` at #104).
 
 ## GitHub to GitBook Single Source of Truth
 
-1. All technical docs live under [docs](docs/).
+1. All technical docs live under [docs](docs/); this README and [progress.md](progress.md) sit at the root.
 2. The GitBook sidebar is controlled by [docs/SUMMARY.md](docs/SUMMARY.md).
-3. Git Sync targets `main` and keeps markdown in sync both ways.
-4. Doc changes in pull requests should update [docs/content-migration.md](docs/content-migration.md) when feature coverage changes.
+3. Git Sync targets `main`.
+4. A PR that changes behaviour updates the affected docs in the same PR, [progress.md](progress.md) when it changes what is live or open, and [docs/content-migration.md](docs/content-migration.md) when coverage changes.
 
 ## License
 

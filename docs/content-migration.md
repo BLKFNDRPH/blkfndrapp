@@ -1,56 +1,50 @@
-# Content Migration
+# Documentation Coverage
 
 ## Objective
 
-Track and verify migration of blkfndr documentation into a complete GitHub + GitBook documentation system.
+Track which documentation pages cover which parts of the platform, and when each was last checked against the code. The repository is the single source of truth; see [gitbook-sync.md](gitbook-sync.md) for how GitBook mirrors it.
 
-## Scope
+## Coverage Matrix
 
-- Root onboarding and technical README
-- Detailed docs in `docs/`
-- GitBook sync and sidebar structure
-- Feature-level documentation for platform and AI capabilities
+Last full review: **2026-10-02 to 2026-10-03**, against `main` at #104. Every page below was re-checked against the source in that pass.
 
-## Migration Matrix
-
-| Area | Source | Target | Status | Notes |
-|---|---|---|---|---|
-| Project overview and setup | Legacy README | `README.md` | Complete | Includes installation, configuration, and API usage examples |
-| Whitepaper | Parent workspace file | `docs/whitepaper.md` | Complete | Core protocol thesis and strategic roadmap |
-| Architecture | Internal project notes | `docs/architecture.md` | Complete | System diagrams and data flows included |
-| Smart contracts | Internal specs | `docs/smart-contracts.md` | Complete | Contract models, methods, and operational notes |
-| API reference | Internal snippets | `docs/api-reference.md` | Complete | Soroban RPC, Horizon, Server Actions, REST |
-| Authentication | Legacy auth notes | `docs/authentication.md` | Complete | Freighter and NextAuth flows |
-| Deployment | Team runbooks | `docs/deployment.md` | Complete | Docker and Portainer guides |
-| Storage migration | Tusky migration notes | `docs/migration-tusky-pinata.md` | Complete | Migration details preserved |
-| GitBook integration | Ticket requirement | `docs/gitbook-sync.md` | Complete | Bi-directional sync checklist |
-| AI listing quality analysis | Existing implementation | `docs/ai-features.md` | Complete | Includes flow design, schema, and example |
-| AI query analysis | Ticket requirement | `docs/ai-features.md` | Complete (Spec) | Documented design and integration snippets |
-| AI sentiment tracking | Ticket requirement | `docs/ai-features.md` | Complete (Spec) | Documented pipeline and dashboard metrics |
+| Area | Page | Status | Notes |
+|---|---|---|---|
+| Overview, setup, environment | [README.md](../README.md) | Current | Status table, testnet addresses, release rule, quick start, env vars |
+| Live status and open work | [progress.md](../progress.md) | Current | Live vs shelf-ready, pending owner actions, known defects |
+| Product and economic model | [whitepaper.md](whitepaper.md) | Current | Vault positioning, flat builder-paid fee, bond, release rule, treasury governance |
+| System design and data flow | [architecture.md](architecture.md) | Current | Indexer, crons, RLS, moderation, launch and proof flows |
+| Contract API | [smart-contracts.md](smart-contracts.md) | Current | All seven contracts, release rule, deployed addresses |
+| Contract bindings | [blkfndr-stellar-cntrct-setup.md](blkfndr-stellar-cntrct-setup.md) | Current | Generated TypeScript bindings and how to regenerate them |
+| HTTP routes and server actions | [api-reference.md](api-reference.md) | Current | Every `src/app/api` route and exported action |
+| Auth, sessions, wallet linking | [authentication.md](authentication.md) | Current | Supabase Auth, Google, Freighter linking and signing, admin roster |
+| AI listing review | [ai-features.md](ai-features.md) | Current | Implemented Genkit flow; query analysis and sentiment tracking are design specs only |
+| Deployment and operations | [deployment.md](deployment.md) | Current | Docker, Portainer, compose crons, env vars, contract deploys |
+| Contributing | [contributing.md](contributing.md) | Current | Setup, checks, migrations, PR conventions |
+| Product blueprint | [blueprint.md](blueprint.md) | Current | Core features and style guide |
+| Web3 accessibility redesign | [design/web3-accessibility-redesign.md](design/web3-accessibility-redesign.md) | Brief | Design input, not a description of shipped behaviour |
+| Storage migration | [migration-tusky-pinata.md](migration-tusky-pinata.md) | Historical | Completed migration, kept for reference |
 
 ## Feature Coverage Checklist
 
-- [x] Project listing lifecycle
-- [x] Multi-sig admin workflow
-- [x] Funding and fee behavior
-- [x] API and server action usage
-- [x] Listing quality AI
-- [x] Query analysis AI
-- [x] Sentiment tracking AI
-- [x] Visual diagrams for architecture and AI pipelines
-
-## Migration Process
-
-1. Audit existing docs and source code for feature parity.
-2. Normalize blockchain assumptions and terminology (Stellar/Soroban).
-3. Add missing pages and link them via `docs/SUMMARY.md`.
-4. Add code snippets and diagrams for all requested feature docs.
-5. Verify GitBook sync behavior from GitHub and back.
+- [x] Project vault lifecycle (raising → funded → active → refunding / completed)
+- [x] Stakeholder-weighted milestone release (capped total, three-wallet floor)
+- [x] Flat builder-paid fee and performance bond
+- [x] Treasury and Operations Vault governance
+- [x] Platform moderation: approval consensus, hide and lock
+- [x] KYC attestation and managed attestor keys
+- [x] Event indexer, keeper and keep-alive crons
+- [x] HTTP routes and server actions
+- [x] AI listing review
+- [ ] AI query analysis — specified, not implemented
+- [ ] AI sentiment tracking — specified, not implemented
 
 ## Change Control
 
-Any PR that changes behavior for listed features must also update:
+A PR that changes behaviour updates, in the same PR:
 
-- `README.md` if setup/API usage changes
-- `docs/<feature>.md` if technical behavior changes
-- `docs/content-migration.md` status rows when coverage expands or regresses
+- `README.md` when setup, environment or the status table changes
+- `docs/<area>.md` when that area's behaviour changes
+- `progress.md` when something becomes live, pending or open
+- `docs/SUMMARY.md` when a page is added, removed or renamed
+- this page's matrix when coverage changes
