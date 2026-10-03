@@ -161,7 +161,7 @@ The three that transact are signed by `OPS_FUNDING_SUBMITTER_SECRET`, a funded a
 
 As of 2026-10-02 the treasury's ops funding is unset (`get_ops_funding` returns nothing), so `ops-funding-cron` skips until the owners vote `SetOpsFunding`.
 
-`settle-stalled-cron` submits `settle_stalled` wherever the contract allows it. On `main` that includes a vault whose carried milestone was never released (see [Known gaps](#known-gaps-on-main)), so a carried milestone should be released promptly.
+`settle-stalled-cron` submits `settle_stalled` wherever the contract allows it. On the deployed vault code that includes a vault whose carried milestone was never released (see [Known gap in deployed vaults](#known-gap-in-deployed-vaults)), so a carried milestone should be released promptly.
 
 ### Keeping shared contract storage alive
 
@@ -240,12 +240,11 @@ This is the rule in `main`'s [contracts/blkfndr-vault/src/lib.rs](../contracts/b
 
 **Not live yet.** The rule reaches only vaults the factory creates after its `update_wasm_hash` is called. As of 2026-10-02 that has not been done: the factory (`CDIXGE5M…`) still deploys vault wasm `70e5f3a8…`, which predates #99 and needs more than half of the raw raise. Existing vaults are immutable and keep the rule they were created with. `/api/vault-wasm-hash` shows the hash the factory currently deploys.
 
-### Known gaps on main
+### Known gap in deployed vaults
 
-PR #99 describes two review fixes that are **not on `main`**. They sit in commit `d212b37`, pushed to the PR branch after it merged. `main`'s vault suite has 47 tests, not the 52 the PR reports. See [progress.md](../progress.md).
+PR #99's two review fixes (commit `d212b37`, pushed to the PR branch after it merged) have since landed on `main`. In source, `settle_stalled` refuses a carried milestone, as `settle_lapsed_milestone` already did, and the 20% cap never drops below one base unit, so a raise under 5 base units still releases when every backer approves. They reach only vaults the factory creates after its vault wasm is switched.
 
-- **`settle_stalled` can fail a carried milestone.** It refuses only while a vote window is open, and opening a vote does not reset the 90-day stall clock. So once a carried milestone's window closes without a release, and 90 days have passed since funding or the last release, anyone can call `settle_stalled`, fail that milestone and forfeit the bond. `settle-stalled-cron` does this automatically wherever it would succeed.
-- **Tiny raises.** A raise under 5 base units floors the cap to zero, so even a unanimous vote cannot carry.
+Until then, and in every existing vault, **`settle_stalled` can fail a carried milestone.** It refuses only while a vote window is open, and opening a vote does not reset the 90-day stall clock. So once a carried milestone's window closes without a release, and 90 days have passed since funding or the last release, anyone can call `settle_stalled`, fail that milestone and forfeit the bond. `settle-stalled-cron` does this automatically wherever it would succeed.
 
 The open product decision on Sybil wallets against a large stakeholder is described in [Smart Contracts](smart-contracts.md).
 
