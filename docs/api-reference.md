@@ -88,6 +88,7 @@ A few reads bypass the bindings:
 - [src/lib/factory-vault-hash.ts](../src/lib/factory-vault-hash.ts) reads `VaultWasmHash` straight out of the factory's instance storage with `getLedgerEntries`. The factory has no getter for it.
 - [src/lib/ttl-keeper.ts](../src/lib/ttl-keeper.ts) reads the live-until ledger of each shared instance and code entry.
 - [src/lib/vault-deploy-guard.ts](../src/lib/vault-deploy-guard.ts) reads the factory's project count, `get_vault` and each vault's `get_info` to find an earlier launch of the same draft.
+- [src/lib/bond-readiness.ts](../src/lib/bond-readiness.ts) simulates `name()` and `balance(address)` on a token contract directly (`bondAssetFor`, `tokenBalance`). The stake dialog reads the vault's `get_info().token`, then `tokenBalance`, so the balance it shows is the exact asset a stake moves, not the first Horizon line called USDC. A refusal is classified from the host's text: "trustline entry is missing" (no trustline, or no account, which `getAccount` then tells apart) and "account entry is missing" (no account). Anything else reads as unknown and does not block the stake.
 
 ---
 
@@ -294,7 +295,7 @@ Horizon serves read-only account data. It is used for display and pre-flight che
 
 | Function | Horizon call | Used by |
 |---|---|---|
-| `getAccountInfo(address)`, `getBalance(address)` | `loadAccount` (`/accounts/{id}`). A `404` reads as an empty native balance | Balances in the stake and profile views |
+| `getAccountInfo(address)`, `getBalance(address)` | `loadAccount` (`/accounts/{id}`). A `404` reads as an empty native balance | Balances in the profile view. The stake dialog reads the vault token's `balance()` instead (see [Raw ledger reads](#raw-ledger-reads)) |
 | `getRecentAccountOperations(address, limit)` | `/accounts/{id}/operations`, newest first, failed transactions included | The profile's Recent Activity. Each record is labelled ("Fund vault", "Open milestone vote", "Payment") with its net change per asset. `/payments` is not enough: it drops contract calls that moved no tokens |
 | `checkBondReadiness(...)` in [src/lib/bond-readiness.ts](../src/lib/bond-readiness.ts) | `loadAccount` | The launch pre-flight: no account, no trustline, or a balance below the bond |
 

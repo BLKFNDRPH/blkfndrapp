@@ -1,9 +1,11 @@
 import {
   Account,
+  Address,
   Contract,
   TransactionBuilder,
   rpc,
   scValToNative,
+  type xdr,
 } from "@stellar/stellar-sdk";
 import { NETWORK_PASSPHRASE, SOROBAN_RPC_URL } from "@/lib/stellar-clients";
 import { horizonClient } from "@/lib/stellar";
@@ -50,6 +52,30 @@ export type BondReadiness =
 const NULL_ACCOUNT = "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
 
 /**
+ * Simulate a read on a token contract. A refusal comes back as the host's own
+ * diagnostic text, which callers match on; a network failure throws.
+ */
+async function readToken(
+  tokenAddress: string,
+  method: string,
+  ...args: xdr.ScVal[]
+): Promise<{ value: unknown } | { error: string }> {
+  const server = new rpc.Server(SOROBAN_RPC_URL);
+  const tx = new TransactionBuilder(new Account(NULL_ACCOUNT, "0"), {
+    fee: "100",
+    networkPassphrase: NETWORK_PASSPHRASE,
+  })
+    .addOperation(new Contract(tokenAddress).call(method, ...args))
+    .setTimeout(30)
+    .build();
+
+  const sim = await server.simulateTransaction(tx);
+  if (rpc.Api.isSimulationError(sim)) return { error: sim.error };
+  if (!sim.result) return { error: "The simulation returned no result." };
+  return { value: scValToNative(sim.result.retval) };
+}
+
+/**
  * Ask the token contract which asset it is.
  *
  * A Stellar Asset Contract reports `name()` as "CODE:ISSUER", or "native" for
@@ -63,19 +89,10 @@ const NULL_ACCOUNT = "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
  */
 export async function bondAssetFor(tokenAddress: string): Promise<BondAsset | null> {
   try {
-    const server = new rpc.Server(SOROBAN_RPC_URL);
-    const tx = new TransactionBuilder(new Account(NULL_ACCOUNT, "0"), {
-      fee: "100",
-      networkPassphrase: NETWORK_PASSPHRASE,
-    })
-      .addOperation(new Contract(tokenAddress).call("name"))
-      .setTimeout(30)
-      .build();
+    const read = await readToken(tokenAddress, "name");
+    if ("error" in read) return null;
 
-    const sim = await server.simulateTransaction(tx);
-    if (rpc.Api.isSimulationError(sim) || !sim.result) return null;
-
-    const name = String(scValToNative(sim.result.retval));
+    const name = String(read.value);
     if (name === "native") return { code: "XLM", issuer: null, isNative: true };
 
     const [code, issuer] = name.split(":");
@@ -83,6 +100,61 @@ export async function bondAssetFor(tokenAddress: string): Promise<BondAsset | nu
     return { code, issuer, isNative: false };
   } catch {
     return null;
+  }
+}
+
+/** What a token contract says a wallet holds, or why it cannot hold any. */
+export type TokenBalance =
+  | { status: "ok"; raw: bigint }
+  | { status: "no-trustline" }
+  | { status: "no-account" }
+  | { status: "unknown" };
+
+/**
+ * How much of a token a wallet holds, asked of the token contract itself.
+ *
+ * Horizon lists a wallet's balances by asset code, and one wallet can hold
+ * several assets that are all called USDC, each from a different issuer. Taking
+ * the first "USDC" line read 0 for a wallet whose first line was another
+ * issuer's while it held thousands of the USDC the vault takes, and refused a
+ * stake it could cover. `balance(address)` on the vault's own token contract
+ * answers for exactly the asset a stake moves, in base units.
+ *
+ * The contract refuses rather than answering 0 when the wallet has no
+ * trustline for the asset, or no account at all. Both are told apart by the
+ * host's diagnostic text, never by the bare error number, for the reason given
+ * on `looksLikeMissingTrustline`. Anything else, network failures included, is
+ * "unknown", which callers treat as "cannot tell" rather than "has nothing".
+ */
+export async function tokenBalance(
+  tokenAddress: string,
+  holder: string,
+): Promise<TokenBalance> {
+  try {
+    const read = await readToken(tokenAddress, "balance", new Address(holder).toScVal());
+    if ("error" in read) {
+      if (/trustline entry is missing/i.test(read.error)) {
+        // An issued asset checks the trustline first, so a wallet with no
+        // account at all gets the same answer. It cannot add a trustline until
+        // it is funded, so it needs different words.
+        return (await accountMissing(holder)) ? { status: "no-account" } : { status: "no-trustline" };
+      }
+      if (/account entry is missing/i.test(read.error)) return { status: "no-account" };
+      return { status: "unknown" };
+    }
+    return { status: "ok", raw: BigInt(read.value as bigint) };
+  } catch {
+    return { status: "unknown" };
+  }
+}
+
+/** True only when the network says the account does not exist. */
+async function accountMissing(holder: string): Promise<boolean> {
+  try {
+    await new rpc.Server(SOROBAN_RPC_URL).getAccount(holder);
+    return false;
+  } catch (error) {
+    return /account not found/i.test(error instanceof Error ? error.message : String(error));
   }
 }
 

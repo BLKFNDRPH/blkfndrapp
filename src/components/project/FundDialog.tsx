@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useTransition, useCallback } from "react";
+import { useState, useEffect, useTransition, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,7 +20,13 @@ import { CubeSpinner } from "../ui/CubeSpinner";
 import { useStellarContract, PlatformLockError } from "@/hooks/use-stellar-contract";
 import { FreighterDeclined } from "@/lib/freighter-signer";
 import { useFreighterWallet } from "@/context/FreighterWalletContext";
-import { getBalance } from "@/lib/stellar";
+import { vaultClient, simulate } from "@/lib/stellar-clients";
+import {
+  bondAssetFor,
+  tokenBalance,
+  type BondAsset,
+  type TokenBalance,
+} from "@/lib/bond-readiness";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -59,7 +65,10 @@ export function FundDialog({
   const { contribute } = useStellarContract();
   const { freighterWalletAddress, login: connectFreighter } = useFreighterWallet();
 
-  const [balances, setBalances] = useState<any[]>([]);
+  // Null until the first read for the connected wallet comes back.
+  const [walletBalance, setWalletBalance] = useState<TokenBalance | null>(null);
+  const [vaultAsset, setVaultAsset] = useState<BondAsset | null>(null);
+  const balanceRequest = useRef(0);
   const [usdRates, setUsdRates] = useState<Record<string, number>>(MOCK_USD_RATES);
   const [isConnectingFreighter, setIsConnectingFreighter] = useState(false);
 
@@ -137,24 +146,45 @@ export function FundDialog({
   const isCloseToGoal =
     remainingGoal > 0 && remainingGoal < AUTO_FUND_THRESHOLD;
 
+  // The balance comes from the vault's own token contract. This used to take
+  // the first Horizon balance line whose code matched, but a wallet can hold
+  // several assets called USDC from different issuers: one whose first line was
+  // another issuer's showed 0.00 and was refused a stake it could cover. The
+  // vault fixes its token at construction, so it, not the listing, says which
+  // asset a stake moves.
   const refreshBalances = useCallback(async () => {
-    if (!freighterWalletAddress) {
-      setBalances([]);
+    const request = ++balanceRequest.current;
+    const vaultAddress = project.vaultAddress;
+    if (!freighterWalletAddress || !vaultAddress) {
+      setWalletBalance(vaultAddress ? null : { status: "unknown" });
+      setVaultAsset(null);
       return;
     }
-    try {
-      const walletBalances = await getBalance(freighterWalletAddress);
-      setBalances(walletBalances as any[]);
-    } catch (error) {
-      console.error("Failed to load freighter balances:", error);
-    }
-  }, [freighterWalletAddress]);
+    setWalletBalance(null);
+    const info = await simulate(
+      () => vaultClient(vaultAddress).get_info(),
+      `get_info(${vaultAddress})`,
+    );
+    const token = info?.token ? String(info.token) : null;
+    const [balance, asset] = token
+      ? await Promise.all([
+          tokenBalance(token, freighterWalletAddress),
+          bondAssetFor(token),
+        ])
+      : [{ status: "unknown" } as TokenBalance, null];
+    // A wallet switch or a newer refresh has started since; its answer wins.
+    if (request !== balanceRequest.current) return;
+    setWalletBalance(balance);
+    setVaultAsset(asset);
+  }, [freighterWalletAddress, project.vaultAddress]);
 
   useEffect(() => {
-    if (isFundFlow && freighterWalletAddress) {
+    // Also runs on disconnect, so a balance read for a previous wallet is
+    // cleared rather than left to vouch for the next one.
+    if (isFundFlow) {
       refreshBalances();
     }
-  }, [isFundFlow, freighterWalletAddress, refreshBalances]);
+  }, [isFundFlow, refreshBalances]);
 
   useEffect(() => {
     if (isFundFlow) {
@@ -176,6 +206,7 @@ export function FundDialog({
     let numericValue = parseFloat(value);
     if (!isNaN(numericValue)) {
       if (numericValue > MAX_FUND_AMOUNT) numericValue = MAX_FUND_AMOUNT;
+      if (numericValue < 0) numericValue = 0;
       setAmount(numericValue.toString());
     }
   };
@@ -186,19 +217,25 @@ export function FundDialog({
   // so no fee is added here. This used to add a percentage on top, which
   // overstated every stake and refused wallets that could in fact cover it.
 
-  const targetAssetCode =
-    projectCurrency === "XLM"
-      ? "native"
-      : projectCurrency;
-  const userBalanceObj = balances.find((b) =>
-    targetAssetCode === "native"
-      ? b.asset_type === "native"
-      : b.asset_code === targetAssetCode,
-  );
-  const userBalance = userBalanceObj
-    ? parseFloat(userBalanceObj.balance)
-    : 0;
-  const isBalanceSufficient = userBalance >= fundAmount;
+  // No trustline or no account means the wallet holds none of this token. A
+  // failed read is not the same as an empty wallet: contribute is simulated
+  // before Freighter is asked to sign, and a stake the wallet cannot cover is
+  // refused there, so an unknown balance does not block the stake.
+  const balanceLoading = Boolean(freighterWalletAddress) && walletBalance === null;
+  const balanceRaw: bigint | null =
+    walletBalance?.status === "ok"
+      ? walletBalance.raw
+      : walletBalance?.status === "no-trustline" || walletBalance?.status === "no-account"
+        ? 0n
+        : null;
+  const userBalance = balanceRaw === null ? null : toHumanAmount(balanceRaw.toString());
+  // Computed on every render, so it must never throw: BigInt() rejects the
+  // -Infinity a huge negative entry floors to. A positive amount is capped at
+  // MAX_FUND_AMOUNT above and always converts.
+  const stakeRaw = fundAmount > 0 ? BigInt(toRawAmount(fundAmount)) : 0n;
+  const isBalanceSufficient = balanceRaw === null || balanceRaw >= stakeRaw;
+  const issuerShort =
+    vaultAsset?.issuer ? `${vaultAsset.issuer.slice(0, 4)}…${vaultAsset.issuer.slice(-5)}` : null;
 
   const isProjectApproved = project.status === "raising";
   const isProjectPending = project.status === "pending";
@@ -223,9 +260,11 @@ export function FundDialog({
   const canFund = (() => {
     if (isLocked) return false;
     if (!freighterWalletAddress) return true;
-    if (!isProjectApproved || isProjectExpired || fundAmount <= 0)
+    // In base units: an amount under one stroop floors to a stake of nothing.
+    if (!isProjectApproved || isProjectExpired || stakeRaw <= 0n)
       return false;
     if (wouldExceedGoal) return false;
+    if (balanceLoading) return false;
     return isBalanceSufficient;
   })();
 
@@ -238,27 +277,12 @@ export function FundDialog({
 
       const parsedAmount = BigInt(toRawAmount(fundAmount));
 
-      // Wallet balance validations
-      const targetAssetCode =
-        projectCurrency === "XLM"
-          ? "native"
-          : projectCurrency;
-
-      const targetBalanceObj = balances.find((b) =>
-        targetAssetCode === "native"
-          ? b.asset_type === "native"
-          : b.asset_code === targetAssetCode,
-      );
-
-      const userBalance = targetBalanceObj
-        ? parseFloat(targetBalanceObj.balance)
-        : 0;
-      const userBalanceSmallest = BigInt(Math.floor(userBalance * 10_000_000));
-
-      if (parsedAmount > userBalanceSmallest) {
+      // The same token-contract balance the dialog shows, compared in base
+      // units. An unknown balance is left to contribute's own simulation.
+      if (balanceRaw !== null && parsedAmount > balanceRaw) {
         toast({
           title: "Insufficient balance",
-          description: `You have ${userBalance} ${projectCurrency}, but tried to stake ${fundAmount.toLocaleString(undefined, { maximumFractionDigits: 4 })} ${projectCurrency}.`,
+          description: `You have ${formatAmount(userBalance ?? 0, projectCurrency)}, but tried to stake ${formatAmount(fundAmount, projectCurrency)}.`,
           variant: "destructive",
         });
         return;
@@ -377,7 +401,7 @@ export function FundDialog({
       handleConnectFreighter();
       return;
     }
-    if (isNaN(fundAmount) || fundAmount <= 0) {
+    if (isNaN(fundAmount) || stakeRaw <= 0n) {
       toast({
         title: "Invalid Amount",
         description: "Please enter a valid amount.",
@@ -558,22 +582,60 @@ export function FundDialog({
                     <div className="flex flex-col min-w-0">
                       <span className="text-[10px] text-muted-foreground font-medium uppercase truncate">
                         {projectCurrency} Balance
+                        {issuerShort && (
+                          <span className="normal-case font-normal"> · issuer {issuerShort}</span>
+                        )}
                       </span>
                       <span className="text-sm text-foreground font-bold tracking-tight">
-                        {userBalance.toLocaleString(undefined, {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: coinDecimals > 6 ? 4 : 2,
-                        })}{" "}
-                        {projectCurrency}
+                        {balanceLoading
+                          ? "Checking…"
+                          : userBalance === null
+                            ? "Unavailable"
+                            : `${userBalance.toLocaleString(undefined, {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: coinDecimals > 6 ? 4 : 2,
+                              })} ${projectCurrency}`}
                       </span>
                     </div>
                   </div>
+                  {walletBalance?.status === "no-trustline" && (
+                    <div className="text-xs text-amber-600 dark:text-amber-400 ml-1 space-y-1">
+                      <p>
+                        Your wallet cannot hold the {vaultAsset?.code ?? projectCurrency} this vault
+                        takes yet. In Freighter, open{" "}
+                        <span className="font-medium">Manage Assets</span> and add it, then reopen
+                        this dialog.
+                      </p>
+                      {vaultAsset?.issuer && (
+                        <p>
+                          If Freighter asks for the issuer:
+                          <br />
+                          <span className="font-mono break-all select-all">{vaultAsset.issuer}</span>
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  {walletBalance?.status === "no-account" && (
+                    <p className="text-xs text-amber-600 dark:text-amber-400 ml-1">
+                      This wallet does not exist on the network yet. Fund it with XLM in
+                      Freighter first{vaultAsset && !vaultAsset.isNative
+                        ? `, then add ${vaultAsset.code} under Manage Assets`
+                        : ""}.
+                    </p>
+                  )}
+                  {walletBalance?.status === "unknown" && (
+                    <p className="text-xs text-muted-foreground ml-1">
+                      Your balance could not be read. If it does not cover the stake, the stake
+                      is refused before anything is signed.
+                    </p>
+                  )}
                 </div>
               )}
             </div>
 
             {/* ── Transaction Summary & Breakdown ───────────────────────── */}
-            {fundAmount > 0 && (
+            {/* An amount under one stroop is a stake of nothing: no summary, no badge. */}
+            {stakeRaw > 0n && (
               <div className="mt-2 rounded-xl bg-muted/30 border border-muted/50 p-4 text-xs sm:text-sm space-y-3.5 shadow-sm text-muted-foreground">
                 <p className="font-bold text-xs uppercase tracking-wider text-muted-foreground">
                   Transaction Summary & Breakdown
@@ -622,7 +684,11 @@ export function FundDialog({
 
                 <div className="mt-3 pt-3 border-t border-muted-foreground/10 flex flex-wrap gap-x-4 gap-y-1.5 justify-between text-xs items-center">
                   <div>
-                    {isBalanceSufficient ? (
+                    {balanceLoading || balanceRaw === null ? (
+                      <span className="text-muted-foreground font-bold bg-muted px-2.5 py-0.5 rounded-full">
+                        {balanceLoading ? "Checking balance…" : "Balance not checked"}
+                      </span>
+                    ) : isBalanceSufficient ? (
                       <span className="text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-500/10 px-2.5 py-0.5 rounded-full flex items-center gap-1.5">
                         <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-ping"></span>
                         Sufficient Balance
