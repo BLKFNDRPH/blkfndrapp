@@ -59,7 +59,7 @@ Every app-layer change below is live, because the host was rebuilt from `main`. 
 | #96 | Profile | Recent Activity reads Horizon `/operations` and labels contract calls ("Fund vault", "Open milestone vote") with signed amounts | ✅ |
 | #97, #103 | Milestones | Each milestone shows its own proof (description and photo) in the project dialog. The builder adds or edits proof per milestone, and the server decides from the live vault (funded or active, milestone not released or failed). Proof is capped at 4,000 characters, photos at 8 MB (PNG, JPEG, WebP, GIF) | ✅ |
 | #98 | Admin | **View Vault** shows the real release authority (contributor vote, no admin key) and the flat fee | ✅ |
-| #99 | **Contract** | **Release rule.** A release needs more than half of the *capped* total, from at least three wallets (or every backer when there are fewer than three). The homepage reads the vault hash live from the factory. Vault tests on `main`: 47. The PR's last commit (`d212b37`: `settle_stalled` sparing approved milestones, the cap floor, +5 tests) was pushed after the merge and **is not on `main`** ([item 2](#2-switch-the-factory-to-the-99-vault-wasm)) | ✅ App · ❌ **contract not switched** |
+| #99 | **Contract** | **Release rule.** A release needs more than half of the *capped* total, from at least three wallets (or every backer when there are fewer than three). The homepage reads the vault hash live from the factory. The PR's last commit (`d212b37`: `settle_stalled` sparing approved milestones, the cap floor, +5 tests) was pushed after the merge and landed on `main` separately on 2026-10-03. Vault tests on `main`: 52 ([item 2](#2-switch-the-factory-to-the-99-vault-wasm)) | ✅ App · ❌ **contract not switched** |
 | #100 | Design | [Web3-accessibility redesign brief](docs/design/web3-accessibility-redesign.md): the friction map, 14 Claude Design prompts and four delivery phases | — |
 | #101 | Stake flow | Removed the phantom 3% fee from the stake dialog. Stakes were never charged a fee | ✅ |
 | #102 | Stake flow | Sign-in opens above the project dialog. After sign-in (Google reload or password remount), the project reopens, in the fund flow when that was the intent | ✅ |
@@ -120,11 +120,11 @@ The host step is done: the app addresses `CCVXM3YP…`. Two owner votes remain:
 ### 2. Switch the factory to the #99 vault wasm
 Until this is done, every new vault still gets the old bar (more than half the raw raise), under which a raise with one or two backers can never release.
 
-- **Land `d212b37` first.** #99's final commit was pushed 17 minutes after the merge, so `main`'s vault still has two defects the PR describes as fixed:
-  - `settle_stalled` refuses only while a window is open. Once an *approved* milestone's window closes past the 90-day stall clock, anyone can fail it and forfeit the bond. Opening a vote does not reset that clock, so a dissenter can race the release. The deployed `70e5f3a8…` vaults have the same defect, and `settle-stalled-cron` submits `settle_stalled` wherever it simulates successfully. So a carried but unreleased milestone should be released promptly.
-  - A raise under 5 base units floors the 20% cap to zero, so even a unanimous vote cannot carry.
+- ✅ **`d212b37` has landed.** #99's final commit was pushed 17 minutes after the merge and landed on `main` separately on 2026-10-03:
+  - `settle_stalled` now spares a carried milestone. The deployed `70e5f3a8…` vaults still don't: once an *approved* milestone's window closes past the 90-day stall clock, anyone can fail it and forfeit the bond. Opening a vote does not reset that clock, so a dissenter can race the release. `settle-stalled-cron` submits `settle_stalled` wherever it simulates successfully, so a carried but unreleased milestone should be released promptly.
+  - The 20% cap never drops below one base unit, so a raise under 5 base units can still release.
 
-  Cherry-pick it in its own PR (it also brings the vault suite to 52 tests). The wasm hash changes with it.
+  `main` now builds the vault to `436e8b46…` on the maintainer's machine, the hash #99 quotes.
 - **Decide: Sybil wallets against a large backer.** Under the new rule, a builder with just over 20% of the raise spread across three wallets can out-vote one backer holding the rest, whose weight is capped at 20%. The proposed fix is a dual majority: the approvers' *uncapped* stake must also exceed half the raise. That gives any wallet holding more than half a veto, so it is a product call. It is not in source yet.
 - **Then:** upload the wasm and call `update_wasm_hash` with the factory admin key. The commands are in [deployment.md](docs/deployment.md#switching-the-vault-code). The homepage hash updates within 5 minutes.
 - Old and new bindings decode both vault shapes, so app and contract can switch in either order.
@@ -215,7 +215,7 @@ These were verified with harnesses, but not with a real wallet or account:
 ## Next
 1. Finish the Operations Vault cutover (item 1): two owner votes.
 2. Apply the two migrations (item 3): a one-command push, in order. Set the gateway key on the host (item 3b), a one-variable stack update.
-3. Land `d212b37`, decide the dual-majority question, then switch the factory's vault wasm (item 2). Or fold the switch into the coordinated redeploy (item 4).
+3. Decide the dual-majority question, then switch the factory's vault wasm (item 2). Or fold the switch into the coordinated redeploy (item 4).
 4. Start Phase 1 of the [Web3-accessibility redesign](docs/design/web3-accessibility-redesign.md): copy, information architecture and flow, with no chain changes. #103 was its first item.
 
 _Per-finding audit detail is in the security-audit PDF. Per-PR detail is in the PR descriptions._

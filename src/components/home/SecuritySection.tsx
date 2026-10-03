@@ -29,7 +29,7 @@ const PROTECTIONS = [
   {
     icon: Ban,
     title: "No single wallet can wave a release through",
-    body: "However much one wallet puts in, it counts for at most 20% of the raise, and a release needs at least three approving wallets, so no single wallet, however large, can release other backers' money over their heads. With one or two backers, every one of them has to approve. The cap counts wallets, not people.",
+    body: "However much one wallet puts in, it counts for at most 20% of the raise, and a release needs at least three approving wallets, so no single wallet, however large, can release other backers' money over their heads. With one or two backers, every one of them has to approve. The cap and the three-wallet minimum count wallets, not people.",
   },
   {
     icon: Timer,
@@ -331,7 +331,7 @@ export function SecuritySection() {
 
             <p className="mt-5 text-xs leading-relaxed text-muted-foreground">
               Deployed to Stellar testnet. The vault&apos;s release rules alone
-              are pinned by 47 passing tests, with the treasury and operations
+              are pinned by 52 passing tests, with the treasury and operations
               vault adding 45 and 25 more. Mainnet is planned and not yet
               deployed — treat anything on testnet as a live rehearsal, not a
               place to commit funds you need back.

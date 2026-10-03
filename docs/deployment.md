@@ -490,8 +490,9 @@ stellar contract upload --wasm target/wasm32-unknown-unknown/release/blkfndr_vau
 stellar contract invoke --id CDIXGE5MWFAYXA7FKLB4CDRSSQZ6VQSGHT6O6OY3TFTWVF6F7BGKR7D5 --source-account ba-escrow-deployer --network testnet -- update_wasm_hash --new_hash <hash printed by the upload>
 ```
 
-Built on the author's machine, that wasm hashed `436e8b46…`. Another machine
-gives a different hash (see the build caveat above).
+Built from `main` on the maintainer's machine, that wasm hashes `436e8b46…`.
+Another machine gives a different hash (see the build caveat above). Use the hash
+the upload prints.
 
 To check, `GET /api/vault-wasm-hash` reads the hash straight from the factory's
 storage and caches it for 5 minutes. The homepage's "check it yourself" box shows

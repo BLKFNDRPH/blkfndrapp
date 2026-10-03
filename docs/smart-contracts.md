@@ -74,7 +74,7 @@ The factory has no getter for this hash. [src/lib/factory-vault-hash.ts](../src/
 
 `70e5f3a8…` is **not** the vault on `main`. It predates #99, so it runs the old release rule (see [Older vaults](#older-vaults)). The #99 rule reaches only vaults the factory creates after the factory admin uploads the new wasm and calls `update_wasm_hash`. Existing vaults are immutable and keep the code they were created with.
 
-A build of `main` does not have one canonical hash. The wasm embeds absolute cargo-registry paths in panic locations, so the hash depends on the machine that built it (the checkout directory does not matter). On the maintainer's machine on 2026-10-02, `main` built to `1aeec93e…` for the vault. The `436e8b46…` quoted in #99 is the same machine's build of commit `d212b37`, which carries the fixes in [Known issues on `main`](#known-issues-on-main); `main` does not reproduce it. Another machine will likely produce different values for both. Compare a deployed vault against a build made on the same paths, or against the hash the factory reports.
+A build of `main` does not have one canonical hash. The wasm embeds absolute cargo-registry paths in panic locations, so the hash depends on the machine that built it (the checkout directory does not matter). On the maintainer's machine, `main` builds the vault to `436e8b46…`, the hash quoted in #99. Before commit `d212b37` landed it built to `1aeec93e…`, without the fixes described in [Known issue in deployed vaults](#known-issue-in-deployed-vaults). Neither is uploaded to testnet yet. Another machine will likely produce a different value. Compare a deployed vault against a build made on the same paths, or against the hash the factory reports.
 
 ## Platform parameters
 
@@ -105,7 +105,7 @@ Soroban charges rent. Every contract instance, persistent entry and uploaded was
 
 ## blkfndr-vault
 
-One vault per project. It holds every stake and the builder's performance bond in the same contract, runs the milestone votes that release money, and returns money when a project misses its goal, fails a milestone or is abandoned. **47 tests.**
+One vault per project. It holds every stake and the builder's performance bond in the same contract, runs the milestone votes that release money, and returns money when a project misses its goal, fails a milestone or is abandoned. **52 tests.**
 
 ### Lifecycle
 
@@ -200,12 +200,14 @@ Found in the adversarial review of #99 and still open. It is the reason the fact
 - **Proposed fix: a dual majority.** Also require the approvers' **uncapped** contributions to exceed half the raise. Unanimity still always carries and every worked shape above keeps its outcome. A wallet holding more than half the raise could then block a release but not make one alone, and the "minority of the money" trade-off disappears.
 - **Status.** Awaiting the product owner, because it gives any wallet over 50% a veto. Not in source.
 
-### Known issues on `main`
+### Known issue in deployed vaults
 
-Two fixes from the #99 review are described in the PR but are **not on `main`**. They are in commit `d212b37`, pushed to the #99 branch 17 minutes after it merged. They must land before the factory is switched to the new vault wasm. The first defect is also present in the deployed `70e5f3a8…` vault. Both reproduce: `d212b37`'s tests `a_carried_vote_cannot_be_stalled_out` and `a_tiny_raise_still_releases_when_every_backer_approves` fail against `main`'s vault and pass against `d212b37`.
+Two fixes from the #99 review were pushed to its branch 17 minutes after it merged, in commit `d212b37`, and have since landed on `main`. The tests `a_carried_vote_cannot_be_stalled_out` and `a_tiny_raise_still_releases_when_every_backer_approves` pin them. They reach only vaults the factory creates after its vault wasm is switched:
 
-- **`settle_stalled` can fail a carried milestone.** It refuses only while a window is open. Opening a vote does not reset the 90-day stall clock. So once a carried milestone's window closes unreleased, and 90 days have passed since funding or the last release, anyone can call `settle_stalled`, fail that milestone and forfeit the bond of a builder whose work was approved. The platform's `settle-stalled-cron` submits `settle_stalled` for any vault where it would succeed. Releasing a carried milestone promptly avoids it.
-- **The weight cap has no floor.** For a raise under five base units the cap rounds to zero, every weight is zero and not even a unanimous vote can carry. The live 5-unit minimum contribution makes such a raise impossible today.
+- **`settle_stalled` spares a carried milestone**, as `settle_lapsed_milestone` already did.
+- **The weight cap never drops below one base unit**, so a raise under five base units still releases when every backer approves. The live 5-unit minimum contribution already makes such a raise impossible.
+
+Every existing vault, including those created from the deployed `70e5f3a8…`, keeps the first defect: **`settle_stalled` can fail a carried milestone.** It refuses only while a window is open. Opening a vote does not reset the 90-day stall clock. So once a carried milestone's window closes unreleased, and 90 days have passed since funding or the last release, anyone can call `settle_stalled`, fail that milestone and forfeit the bond of a builder whose work was approved. The platform's `settle-stalled-cron` submits `settle_stalled` for any vault where it would succeed. Releasing a carried milestone promptly avoids it.
 
 ### Older vaults
 
@@ -457,6 +459,6 @@ cargo test --workspace            # the full test suite
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 
-Run `build-contracts.sh` before `cargo test`. The factory's six deployment tests need the vault compiled to wasm and skip themselves when it is absent. On 2026-10-02 the suite passed in full: vault 47, treasury 45, operations 25, factory 15, identity 15, attestation 14, admin 9.
+Run `build-contracts.sh` before `cargo test`. The factory's six deployment tests need the vault compiled to wasm and skip themselves when it is absent. On 2026-10-03 the suite passed in full: vault 52, treasury 45, operations 25, factory 15, identity 15, attestation 14, admin 9.
 
 To check a vault, build on the same paths as the build you compare against (see [The vault wasm hash](#the-vault-wasm-hash)), or fetch the deployed code with `stellar contract fetch --wasm-hash <hash>` and compare that directly.

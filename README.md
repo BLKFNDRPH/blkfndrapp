@@ -26,7 +26,7 @@ Release authority is contribution-weighted rather than held by appointed signers
 
 | Area | State |
 |---|---|
-| Bonded vault with contributor-weighted release | ✅ Deployed to testnet, 47 tests passing. The capped-total release rule (#99) is merged but **not yet live**: it reaches new projects once the factory's vault wasm hash is updated |
+| Bonded vault with contributor-weighted release | ✅ Deployed to testnet, 52 tests passing. The capped-total release rule (#99) is merged but **not yet live**: it reaches new projects once the factory's vault wasm hash is updated |
 | Builder attestation registry | ✅ Deployed to testnet |
 | Platform treasury + owner-voted governance (fee, bond, ops funding) | ✅ Deployed to testnet, 45 tests passing |
 | Operations Vault (governed gas budget) + managed KYC-attestor keys | ✅ Deployed to testnet, 25 tests passing |
@@ -133,7 +133,7 @@ Platform parameters as deployed, read from the factory on 2026-10-02:
 
 The factory's admin is still the deployer key, not the treasury, so these change by one signature until the admin is handed over ([progress.md](progress.md#4b-hand-the-factory-admin-to-the-treasury)).
 
-The contract suite has 170 tests: vault 47, treasury 45, operations 25, factory 15, identity 15, attestation 14 and admin 9.
+The contract suite has 175 tests: vault 52, treasury 45, operations 25, factory 15, identity 15, attestation 14 and admin 9.
 
 #### Previous generation
 
