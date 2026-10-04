@@ -224,10 +224,11 @@ merged.
 
 Setting mainnet RPC and Horizon URLs does not make a mainnet deployment.
 [stellar-clients.ts](../src/lib/stellar-clients.ts) hard-codes
-`Networks.TESTNET` as the network passphrase, and six places hard-code the
+`Networks.TESTNET` as the network passphrase, and five places hard-code the
 testnet Soroban RPC URL instead of using `stellar-clients`: the profile page
-(twice), the KYC attestation page, `ListingForm`, `ProjectDetailsDialog` and
-`IdentityRegistryPanel`. Mainnet needs a code change first.
+(twice), the KYC attestation page, `ListingForm` and `IdentityRegistryPanel`
+(the project page, `ProjectView`, reads them from `lib/stellar`). Mainnet
+needs a code change first.
 
 ## Quick start
 

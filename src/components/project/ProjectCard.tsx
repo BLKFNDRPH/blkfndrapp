@@ -15,9 +15,11 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { Project } from "@/lib/types";
 import { Avatar, AvatarFallback, AvatarImage } from "../ui/avatar";
-import { useProjectDetails } from "@/context/ProjectDetailsContext";
+import { projectHref } from "@/lib/project-href";
 import { cn } from "@/lib/utils";
 import { getIPFSGatewayUrl } from "@/lib/pinata-client";
 import "./ProjectCard.css";
@@ -40,6 +42,12 @@ import { useXlmRate } from "@/lib/xlm-rate";
  * far the vault is from its goal and how long it stays open, and the footer
  * names the builder. Nothing on the card is a public key, a token icon or a
  * bare percentage.
+ *
+ * The card leads to the project's page. The title is a real link, so it is
+ * crawlable, keyboard-focusable and opens in a new tab on a middle or ctrl
+ * click; the rest of the card follows along through a click handler, because
+ * wrapping the whole card in an anchor would nest the focusable status pill
+ * inside it, which is invalid markup.
  */
 
 interface ProjectCardProps {
@@ -118,8 +126,18 @@ function progressPercent(project: Project): number {
 }
 
 export function ProjectCard({ project, showStatus = true }: ProjectCardProps) {
-  const { openProjectDetails } = useProjectDetails();
+  const router = useRouter();
   const { rate, isLoading: rateLoading } = useXlmRate();
+  const href = projectHref(project.id);
+
+  // A click anywhere on the card opens the page, except a click that landed on
+  // the title link, which is already navigating on its own (and may be opening
+  // a new tab, which a router push would cut across).
+  const handleCardClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (event.defaultPrevented) return;
+    if (event.target instanceof Element && event.target.closest("a")) return;
+    router.push(href);
+  };
 
   const status = describeStatus(project);
   const badges = secondaryBadges(project);
@@ -142,10 +160,7 @@ export function ProjectCard({ project, showStatus = true }: ProjectCardProps) {
 
   return (
     <TooltipProvider delayDuration={150}>
-      <div
-        className="project-card-wrapper"
-        onClick={() => openProjectDetails(project)}
-      >
+      <div className="project-card-wrapper" onClick={handleCardClick}>
         <Card className="project-card flex h-full w-full cursor-pointer flex-col gap-2 overflow-hidden transition-transform hover:shadow-xl">
           <CardHeader className="relative w-full shrink-0 p-0">
             {showStatus && (
@@ -185,7 +200,12 @@ export function ProjectCard({ project, showStatus = true }: ProjectCardProps) {
           <CardContent className="flex min-h-0 w-full flex-grow flex-col justify-start gap-2 overflow-hidden p-4 pt-2">
             <div className="min-w-0 w-full">
               <CardTitle className="mb-1 line-clamp-2 w-full break-words font-headline text-lg font-bold leading-tight">
-                {project.title}
+                <Link
+                  href={href}
+                  className="rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  {project.title}
+                </Link>
               </CardTitle>
               <CardDescription className="project-tagline line-clamp-2 w-full text-sm">
                 {project.tagline}

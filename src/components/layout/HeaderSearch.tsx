@@ -11,7 +11,7 @@ import { useMediaQuery } from "@/hooks/use-media-query";
 import { Project } from "@/lib/types";
 import { debounce } from "lodash";
 import { Card } from "../ui/card";
-import { useProjectDetails } from "@/context/ProjectDetailsContext";
+import { projectHref } from "@/lib/project-href";
 import { Avatar, AvatarFallback, AvatarImage } from "../ui/avatar";
 import { describeMoney } from "@/lib/money";
 import { describeStatus } from "@/lib/project-status";
@@ -36,7 +36,6 @@ export function HeaderSearch({ isMobileOpen, setMobileOpen }: HeaderSearchProps)
   const inputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
   const isDesktop = useMediaQuery("(min-width: 950px)");
-  const { openProjectDetails } = useProjectDetails();
   const { rate } = useXlmRate();
 
   useEffect(() => {
@@ -82,10 +81,11 @@ export function HeaderSearch({ isMobileOpen, setMobileOpen }: HeaderSearchProps)
     }
   };
 
+  // A result row goes to the project's page; the dropdown closes behind it.
   const handleSelectProject = (project: Project) => {
     setSearchQuery("");
     setShowSuggestions(false);
-    openProjectDetails(project, false);
+    router.push(projectHref(project.id));
     if (setMobileOpen) {
       setMobileOpen(false);
     }
