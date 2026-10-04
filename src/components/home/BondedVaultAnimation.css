@@ -71,7 +71,7 @@
   font-family: "Source Code Pro", monospace;
 }
 
-/* ---------- Contributions falling in ---------- */
+/* ---------- Stakes falling in ---------- */
 
 .bv-coin {
   animation: bv-coin-drop 2.1s cubic-bezier(0.55, 0, 0.5, 1) infinite;
@@ -140,7 +140,7 @@
 
 .bv-tag text {
   fill: rgba(255, 255, 255, 0.92);
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 700;
   text-anchor: middle;
   font-family: "Source Code Pro", monospace;
@@ -267,7 +267,7 @@
   }
 }
 
-/* ---------- Vault and bond ---------- */
+/* ---------- Vault and deposit ---------- */
 
 .bv-vault {
   fill: url(#bv-vault);
@@ -304,9 +304,9 @@
 
 .bv-vault__line1 {
   fill: rgba(255, 255, 255, 0.9);
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   font-family: "Source Code Pro", monospace;
 }
 
@@ -316,7 +316,7 @@
   font-family: "Source Code Pro", monospace;
 }
 
-/* ---------- Raise progress ---------- */
+/* ---------- Stake progress ---------- */
 
 .bv-bar__track {
   fill: rgba(var(--bv-line), 0.14);
@@ -357,9 +357,9 @@
 
 .bv-funded text {
   fill: rgba(255, 255, 255, 0.95);
-  font-size: 9px;
+  font-size: 8.5px;
   font-weight: 700;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.08em;
   text-anchor: middle;
   font-family: "Source Code Pro", monospace;
 }

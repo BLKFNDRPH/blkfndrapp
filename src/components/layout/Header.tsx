@@ -16,9 +16,12 @@ import { Button } from "@/components/ui/button";
 import {
   Menu,
   LayoutGrid,
+  ListOrdered,
   Shield,
   ChevronsRight,
-  Heart,
+  HandCoins,
+  FolderKanban,
+  Settings,
 } from "lucide-react";
 import React, { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
@@ -38,9 +41,14 @@ import {
 import { WalletButton } from "../auth/WalletButton";
 import StaticBLKFNDR from "./StaticBLKFNDR";
 import { useFreighterWallet } from "@/context/FreighterWalletContext";
+import type { Project } from "@/lib/types";
+
+/** The three places a visitor can go, in the order the brief puts them. */
+const NAV_LINK_CLASS =
+  "whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium transition-colors hover:text-foreground";
 
 export default function Header() {
-  const { user } = useAuth();
+  const { user, login } = useAuth();
   const { freighterWalletAddress } = useFreighterWallet();
   const { hasAdminAccess } = useAdminStatus(
     freighterWalletAddress ?? undefined,
@@ -64,9 +72,9 @@ export default function Header() {
         new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime(),
     );
 
-  const fundedProjectIds = userFunds.map((inv) => inv.project_id);
-  const fundedProjects = projects.filter((p) =>
-    fundedProjectIds.includes(p.id),
+  const stakedProjectIds = userFunds.map((inv) => inv.project_id);
+  const stakedProjects = projects.filter((p) =>
+    stakedProjectIds.includes(p.id),
   );
 
   useEffect(() => {
@@ -102,8 +110,35 @@ export default function Header() {
   const projectsIsActive = pathname === "/projects";
   const adminIsActive = pathname === "/admin";
   const createIsActive = pathname === "/create-listing";
+  const settingsIsActive = pathname === "/settings";
   const latestProjects = userProjects.slice(0, 3);
-  const latestFunded = fundedProjects.slice(0, 3);
+  const latestStaked = stakedProjects.slice(0, 3);
+
+  const closeSheet = () => setIsSheetOpen(false);
+
+  /** A project row in the sheet's "Your stakes" / "Your projects" lists. */
+  const renderProjectRow = (project: Project) => (
+    <div
+      key={project.id}
+      onClick={() => {
+        openProjectDetails(project);
+        closeSheet();
+      }}
+      className="flex items-center gap-3 p-2 rounded-md text-md h-12 hover:bg-secondary menu-item-ripple cursor-pointer"
+      onMouseMove={handleRippleEffect}
+    >
+      <Avatar className="h-7 w-7 border-2 border-primary/50">
+        <AvatarImage
+          src={project.imageUrl}
+          alt={project.title}
+          className="object-cover"
+        />
+        <AvatarFallback>{project.title.charAt(0)}</AvatarFallback>
+      </Avatar>
+      <span className="truncate">{project.title}</span>
+      <span className="ripple-span"></span>
+    </div>
+  );
 
   if (!isClient) {
     // Render a placeholder or nothing on the server to avoid hydration mismatch
@@ -151,51 +186,62 @@ export default function Header() {
           />
         ) : (
           <>
-            <div className="flex min-w-0 items-center gap-2">
+            <div className="flex min-w-0 items-center gap-1 sm:gap-2">
               <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
                 <SheetTrigger asChild>
                   <Button
                     variant="default"
                     size="icon"
-                    className="rounded-full nav-button"
+                    className="rounded-full nav-button shrink-0"
                     onClick={() => setIsSheetOpen(true)}
                   >
-                    <Menu className="h-6 w-6" />
-                    <span className="sr-only">Toggle Menu</span>
+                    <Menu className="h-6 w-6" aria-hidden="true" />
+                    <span className="sr-only">Open menu</span>
                   </Button>
                 </SheetTrigger>
                 <SheetContent
                   side="left"
-                  className="w-full max-w-xs p-6 pr-6 overflow-y-auto"
-                  onMouseLeave={() => setIsSheetOpen(false)}
+                  className="flex w-full max-w-xs flex-col overflow-y-auto p-6 pr-6"
+                  onMouseLeave={closeSheet}
                 >
-                  <SheetTitle className="sr-only">Main Menu</SheetTitle>
+                  <SheetTitle className="sr-only">Main menu</SheetTitle>
                   <PcbPattern className="text-gray-400/50 dark:text-gray-600/50 opacity-10" />
                   <Link
                     href="/"
                     className="mr-6 flex items-center space-x-2 mb-6"
-                    onClick={() => setIsSheetOpen(false)}
+                    onClick={closeSheet}
                   >
                     <CubeAvatar />
                     <div className="text-xl">
                       <StaticBLKFNDR className="-mt-2" />
                     </div>
                   </Link>
-                  <nav className="flex flex-col gap-1 relative z-10">
+                  <nav className="flex flex-col gap-1 relative z-10" aria-label="Main">
                     <Link
                       href="/projects"
-                      onClick={() => setIsSheetOpen(false)}
+                      onClick={closeSheet}
                       className={cn(
                         "flex items-center gap-4 p-3 rounded-md text-lg h-12 menu-item-ripple",
                         projectsIsActive ? "active" : "",
                       )}
                       onMouseMove={handleRippleEffect}
                     >
-                      <LayoutGrid className="h-5 w-5" />
+                      <LayoutGrid className="h-5 w-5" aria-hidden="true" />
                       <span>Projects</span>
                       {projectsIsActive && (
                         <span className="ripple-active-background"></span>
                       )}
+                      <span className="ripple-span"></span>
+                    </Link>
+
+                    <Link
+                      href="/#how-it-works"
+                      onClick={closeSheet}
+                      className="flex items-center gap-4 p-3 rounded-md text-lg h-12 menu-item-ripple"
+                      onMouseMove={handleRippleEffect}
+                    >
+                      <ListOrdered className="h-5 w-5" aria-hidden="true" />
+                      <span>How it works</span>
                       <span className="ripple-span"></span>
                     </Link>
 
@@ -207,8 +253,9 @@ export default function Header() {
                       )}
                     >
                       <CreateListingButton
+                        variant="menu"
                         className="text-lg gap-4"
-                        onAfterClick={() => setIsSheetOpen(false)}
+                        onAfterClick={closeSheet}
                       />
                       {createIsActive && (
                         <span className="ripple-active-background"></span>
@@ -217,123 +264,104 @@ export default function Header() {
                     </div>
 
                     {hasAdminAccess && (
-                      <>
-                        <Link
-                          href="/admin"
-                          onClick={() => setIsSheetOpen(false)}
-                          className={cn(
-                            "flex items-center gap-4 p-3 rounded-md text-lg h-12 menu-item-ripple",
-                            adminIsActive ? "active" : "",
-                          )}
-                          onMouseMove={handleRippleEffect}
-                        >
-                          <Shield className="h-5 w-5" />
-                          <span>Admin</span>
-                          {adminIsActive && (
-                            <span className="ripple-active-background"></span>
-                          )}
-                          <span className="ripple-span"></span>
-                        </Link>
-                        {/* "Withdrawal Proposals" and "Testing" linked here to
-                            /admin/withdrawals and /testing/stellar. Both pages
-                            went with the move to the vault model, where backers
-                            release funds by vote, so both links were 404s. */}
-                      </>
+                      <Link
+                        href="/admin"
+                        onClick={closeSheet}
+                        className={cn(
+                          "flex items-center gap-4 p-3 rounded-md text-lg h-12 menu-item-ripple",
+                          adminIsActive ? "active" : "",
+                        )}
+                        onMouseMove={handleRippleEffect}
+                      >
+                        <Shield className="h-5 w-5" aria-hidden="true" />
+                        <span>Admin</span>
+                        {adminIsActive && (
+                          <span className="ripple-active-background"></span>
+                        )}
+                        <span className="ripple-span"></span>
+                      </Link>
                     )}
                   </nav>
-                  {user && latestProjects.length > 0 && (
+
+                  {user && (
                     <>
                       <Separator className="my-4" />
                       <div className="relative z-10">
-                        <h3 className="px-3 text-sm font-semibold text-muted-foreground mb-2">
-                          My Projects
-                        </h3>
+                        <Link
+                          href="/profile?tab=funded"
+                          onClick={closeSheet}
+                          className="mb-2 flex items-center gap-2 px-3 text-sm font-semibold text-muted-foreground hover:text-foreground"
+                        >
+                          <HandCoins className="h-4 w-4" aria-hidden="true" />
+                          Your stakes
+                        </Link>
                         <div className="flex flex-col gap-1">
-                          {latestProjects.map((project) => (
-                            <div
-                              key={project.id}
-                              onClick={() => {
-                                openProjectDetails(project);
-                                setIsSheetOpen(false);
-                              }}
-                              className="flex items-center gap-3 p-2 rounded-md text-md h-12 hover:bg-secondary menu-item-ripple cursor-pointer"
-                              onMouseMove={handleRippleEffect}
-                            >
-                              <Avatar className="h-7 w-7 border-2 border-primary/50">
-                                <AvatarImage
-                                  src={project.imageUrl}
-                                  alt={project.title}
-                                  className="object-cover"
-                                />
-                                <AvatarFallback>
-                                  {project.title.charAt(0)}
-                                </AvatarFallback>
-                              </Avatar>
-                              <span className="truncate">{project.title}</span>
-                              <span className="ripple-span"></span>
-                            </div>
-                          ))}
-                          <Link
-                            href="/profile?tab=projects"
-                            onClick={() => setIsSheetOpen(false)}
-                            className="flex items-center gap-3 p-2 rounded-md text-sm h-12 text-muted-foreground hover:text-foreground hover:bg-secondary menu-item-ripple"
-                            onMouseMove={handleRippleEffect}
-                          >
-                            <ChevronsRight className="h-5 w-5" />
-                            <span>Show All</span>
-                            <span className="ripple-span"></span>
-                          </Link>
-                        </div>
-                      </div>
-                    </>
-                  )}
-                  {user && latestFunded.length > 0 && (
-                    <>
-                      <Separator className="my-4" />
-                      <div className="relative z-10">
-                        <h3 className="px-3 text-sm font-semibold text-muted-foreground mb-2 flex items-center gap-2">
-                          <Heart className="h-4 w-4" />
-                          Funded Projects
-                        </h3>
-                        <div className="flex flex-col gap-1">
-                          {latestFunded.map((project) => (
-                            <div
-                              key={project.id}
-                              onClick={() => {
-                                openProjectDetails(project);
-                                setIsSheetOpen(false);
-                              }}
-                              className="flex items-center gap-3 p-2 rounded-md text-md h-12 hover:bg-secondary menu-item-ripple cursor-pointer"
-                              onMouseMove={handleRippleEffect}
-                            >
-                              <Avatar className="h-7 w-7 border-2 border-primary/50">
-                                <AvatarImage
-                                  src={project.imageUrl}
-                                  alt={project.title}
-                                  className="object-cover"
-                                />
-                                <AvatarFallback>
-                                  {project.title.charAt(0)}
-                                </AvatarFallback>
-                              </Avatar>
-                              <span className="truncate">{project.title}</span>
-                              <span className="ripple-span"></span>
-                            </div>
-                          ))}
+                          {latestStaked.map(renderProjectRow)}
                           <Link
                             href="/profile?tab=funded"
-                            onClick={() => setIsSheetOpen(false)}
+                            onClick={closeSheet}
                             className="flex items-center gap-3 p-2 rounded-md text-sm h-12 text-muted-foreground hover:text-foreground hover:bg-secondary menu-item-ripple"
                             onMouseMove={handleRippleEffect}
                           >
-                            <ChevronsRight className="h-5 w-5" />
-                            <span>Show All</span>
+                            <ChevronsRight className="h-5 w-5" aria-hidden="true" />
+                            <span>
+                              {latestStaked.length > 0
+                                ? "Show all"
+                                : "No stakes yet"}
+                            </span>
+                            <span className="ripple-span"></span>
+                          </Link>
+                        </div>
+                      </div>
+
+                      <Separator className="my-4" />
+                      <div className="relative z-10">
+                        <Link
+                          href="/profile?tab=projects"
+                          onClick={closeSheet}
+                          className="mb-2 flex items-center gap-2 px-3 text-sm font-semibold text-muted-foreground hover:text-foreground"
+                        >
+                          <FolderKanban className="h-4 w-4" aria-hidden="true" />
+                          Your projects
+                        </Link>
+                        <div className="flex flex-col gap-1">
+                          {latestProjects.map(renderProjectRow)}
+                          <Link
+                            href="/profile?tab=projects"
+                            onClick={closeSheet}
+                            className="flex items-center gap-3 p-2 rounded-md text-sm h-12 text-muted-foreground hover:text-foreground hover:bg-secondary menu-item-ripple"
+                            onMouseMove={handleRippleEffect}
+                          >
+                            <ChevronsRight className="h-5 w-5" aria-hidden="true" />
+                            <span>
+                              {latestProjects.length > 0
+                                ? "Show all"
+                                : "No projects yet"}
+                            </span>
                             <span className="ripple-span"></span>
                           </Link>
                         </div>
                       </div>
                     </>
                   )}
+
+                  <Separator className="my-4" />
+                  <Link
+                    href="/settings"
+                    onClick={closeSheet}
+                    className={cn(
+                      "relative z-10 flex items-center gap-4 p-3 rounded-md text-lg h-12 menu-item-ripple",
+                      settingsIsActive ? "active" : "",
+                    )}
+                    onMouseMove={handleRippleEffect}
+                  >
+                    <Settings className="h-5 w-5" aria-hidden="true" />
+                    <span>Settings</span>
+                    {settingsIsActive && (
+                      <span className="ripple-active-background"></span>
+                    )}
+                    <span className="ripple-span"></span>
+                  </Link>
 
                   <Separator className="my-4" />
                   <div className="relative z-10 appearance-section">
@@ -344,12 +372,49 @@ export default function Header() {
                       <AppearanceSettings isMenu={true} />
                     </div>
                   </div>
+
+                  {!user && (
+                    <div className="relative z-10 mt-auto pt-6">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="w-full"
+                        onClick={() => {
+                          closeSheet();
+                          login();
+                        }}
+                      >
+                        Sign in
+                      </Button>
+                    </div>
+                  )}
                 </SheetContent>
               </Sheet>
+
               {isDesktop ? (
-                <div className="w-full">
-                  <HeaderSearch />
-                </div>
+                <nav
+                  aria-label="Primary"
+                  className="flex min-w-0 items-center gap-1"
+                >
+                  <Link
+                    href="/projects"
+                    className={cn(
+                      NAV_LINK_CLASS,
+                      projectsIsActive
+                        ? "bg-secondary text-foreground"
+                        : "text-foreground/70",
+                    )}
+                  >
+                    Projects
+                  </Link>
+                  <Link
+                    href="/#how-it-works"
+                    className={cn(NAV_LINK_CLASS, "text-foreground/70")}
+                  >
+                    How it works
+                  </Link>
+                  <CreateListingButton variant="nav" />
+                </nav>
               ) : (
                 <HeaderSearch
                   isMobileOpen={isSearchOpen}
@@ -380,9 +445,15 @@ export default function Header() {
             </div>
 
             <div className="flex min-w-0 items-center justify-end gap-2 justify-self-end">
-              <div className={cn("transition-opacity duration-300")}>
-                {user && <NotificationBell />}
-              </div>
+              {isDesktop && (
+                // HeaderSearch sizes itself to 30% of its container on desktop;
+                // here the container is this flex item, so the field fills the
+                // room the other controls leave rather than a fixed slice of it.
+                <div className="min-w-0 max-w-xs flex-1 [&_.header-search-container]:w-full">
+                  <HeaderSearch />
+                </div>
+              )}
+              {user && <NotificationBell />}
               {user && <WalletButton />}
               <AuthButton />
             </div>

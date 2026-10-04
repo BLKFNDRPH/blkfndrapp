@@ -2,7 +2,7 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { DisplayNameForm } from "@/components/settings/DisplayNameForm";
 import { AppearanceSettings } from "@/components/settings/AppearanceSettings";
-import { WalletSettings } from "@/components/settings/WalletSettings";
+import { PracticeNetworkBadge, WalletSettings } from "@/components/settings/WalletSettings";
 
 export default function SettingsPage() {
   return (
@@ -10,7 +10,7 @@ export default function SettingsPage() {
       <div className="space-y-4 mb-8">
         <h1 className="text-4xl font-bold tracking-tight font-headline text-accent">Settings</h1>
         <p className="text-muted-foreground text-lg">
-          Manage your account, appearance, and wallet preferences.
+          Your account, how the app looks, and your wallet.
         </p>
       </div>
       <div className="space-y-8">
@@ -25,7 +25,7 @@ export default function SettingsPage() {
             <DisplayNameForm />
           </CardContent>
         </Card>
-        
+
         <Card>
           <CardHeader>
             <CardTitle>Appearance</CardTitle>
@@ -40,9 +40,12 @@ export default function SettingsPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Wallet</CardTitle>
+            <div className="flex items-center justify-between gap-2">
+              <CardTitle>Your wallet</CardTitle>
+              <PracticeNetworkBadge />
+            </div>
             <CardDescription>
-              View your connected Freighter wallet details.
+              The wallet you confirm stakes, votes and refunds with. It lives on your device, not with BLKFNDR.
             </CardDescription>
           </CardHeader>
           <CardContent>

@@ -140,8 +140,8 @@ const fmt = (stroops: bigint) =>
 /** Distinct approvals against the floor, in the same shape as the weight line. */
 function walletsLine({ approvals, required }: { approvals: number; required: number }) {
   return approvals <= required
-    ? `${approvals} of ${required} backer ${required === 1 ? "approval" : "approvals"} needed`
-    : `${approvals} backer approvals (${required} needed)`;
+    ? `${approvals} of ${required} stakeholder ${required === 1 ? "approval" : "approvals"} needed`
+    : `${approvals} stakeholder approvals (${required} needed)`;
 }
 
 const PHASE_LABEL: Record<Phase, string> = {
@@ -347,7 +347,7 @@ export function MilestoneVoting({
     startTransition(async () => {
       try {
         await action();
-        toast({ title: label, description: "Confirmed on-chain." });
+        toast({ title: label, description: "Confirmed." });
         await load();
         onChange?.();
       } catch (error: any) {
@@ -439,30 +439,30 @@ export function MilestoneVoting({
         <div className="flex items-start gap-2">
           <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
           <div className="space-y-1">
-            <p className="font-medium">Backers decide when funds move.</p>
+            <p className="font-medium">Stakeholders decide when money moves.</p>
             {walletFloor === true && (
               <p className="text-muted-foreground">
-                A release needs more than half of the backers&apos; combined vote,
-                with no single wallet counting for more than 20% of the raise,
-                and it needs at least three backers to approve — or every
-                backer, when there are fewer than three. If a window closes
-                short, the milestone fails and the builder&apos;s bond is
+                A payout needs more than half of the stakeholders&apos; combined vote,
+                with no single wallet counting for more than 20% of all stakes,
+                and it needs at least three stakeholders to approve — or every
+                stakeholder, when there are fewer than three. If a window closes
+                short, the stage fails and the builder&apos;s deposit is
                 forfeited to you.
               </p>
             )}
             {walletFloor === false && (
               <p className="text-muted-foreground">
-                A release needs more than half the total raise behind it, and no
+                A payout needs more than half of all stakes behind it, and no
                 single wallet counts for more than 20% — so it always takes at
-                least three backers. If a window closes short, the milestone fails
-                and the builder&apos;s bond is forfeited to you.
+                least three stakeholders. If a window closes short, the stage fails
+                and the builder&apos;s deposit is forfeited to you.
               </p>
             )}
             {walletFloor === null && (
               <p className="text-muted-foreground">
-                Each release goes to a vote of the backers, and no single wallet
-                counts for more than 20% of the raise. If a window closes short,
-                the milestone fails and the builder&apos;s bond is forfeited to
+                Each payout goes to a vote of the stakeholders, and no single wallet
+                counts for more than 20% of all stakes. If a window closes short,
+                the stage fails and the builder&apos;s deposit is forfeited to
                 you.
               </p>
             )}
@@ -598,13 +598,13 @@ export function MilestoneVoting({
               {phase === "voting" && alreadyVoted && (
                 <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
                   <CheckCircle2 className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
-                  You have voted. One vote per backer.
+                  You have voted. One vote per stakeholder.
                 </p>
               )}
 
               {phase === "voting" && !isContributor && (
                 <p className="text-sm text-muted-foreground">
-                  Only backers of this project can vote.
+                  Only this project&apos;s stakeholders can vote.
                 </p>
               )}
 
@@ -616,8 +616,8 @@ export function MilestoneVoting({
                     )
                   }>
                     {busy && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
-                    Release funds
-                    <span className="sr-only"> for milestone {m.id}</span>
+                    Pay out this stage
+                    <span className="sr-only"> (stage {m.id})</span>
                   </Button>
                   <p className="self-center text-xs text-muted-foreground">
                     Approved — anyone can execute this. Nobody can hold it up.
@@ -637,8 +637,8 @@ export function MilestoneVoting({
                     <span className="sr-only">: milestone {m.id}</span>
                   </Button>
                   <p className="self-center text-xs text-muted-foreground">
-                    Closed without carrying. Settling refunds backers and
-                    forfeits the bond.
+                    Closed without carrying. Settling returns money to stakeholders
+                    and forfeits the builder&apos;s deposit.
                   </p>
                 </>
               )}
@@ -660,8 +660,8 @@ export function MilestoneVoting({
               {phase === "failed" && (
                 <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
                   <XCircle className="h-3.5 w-3.5 text-destructive" aria-hidden="true" />
-                  Failed. Backers can claim their share of the remaining funds
-                  and the forfeited bond.
+                  Failed. Stakeholders can collect their share of the remaining money
+                  and the builder&apos;s deposit.
                 </p>
               )}
             </div>

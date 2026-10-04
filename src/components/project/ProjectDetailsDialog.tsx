@@ -9,6 +9,13 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "../ui/avatar";
 import { FundDialog } from "./FundDialog";
 import { Progress } from "../ui/progress";
@@ -23,13 +30,15 @@ import {
   RefreshCw,
   AlertTriangle,
   ImagePlus,
-  Lock,
+  PauseCircle,
+  ExternalLink,
+  ChevronDown,
 } from "lucide-react";
 import { Button } from "../ui/button";
 import { useAuth } from "@/context/AuthContext";
 import { CubeSpinner } from "../ui/CubeSpinner";
 import { useToast } from "@/hooks/use-toast";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { ImageWithFallback } from "../ui/image-with-fallback";
 import { StellarFormatter } from "@/lib/stellar-format";
@@ -37,19 +46,105 @@ import {
   useRefreshAfterTx,
   useBlockchain,
 } from "@/context/BlockchainContext";
-import { shortenAddress } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { useFreighterWallet } from "@/context/FreighterWalletContext";
 import { getUserByCreatorId } from "@/lib/data.client";
 import { Client as VaultClient } from "@/packages/blkfndr_vault/src";
 import { freighterSigner } from "@/lib/freighter-signer";
+import { describeMoney, describeRateAge, formatToken } from "@/lib/money";
+import { useXlmRate } from "@/lib/xlm-rate";
+import {
+  describeStatus,
+  describeDeadline,
+  TONE_CLASSES,
+  type StatusView,
+} from "@/lib/project-status";
+import { EXPLORER_BASE, EXPLORER_EXPLAINER } from "@/lib/network";
 
 const NETWORK_PASSPHRASE = "Test SDF Network ; September 2015";
 const SOROBAN_RPC_URL = "https://soroban-testnet.stellar.org";
 
 // Signing goes through freighterSigner, which checks what the wallet actually
-// returned. Passing Freighter's raw result to the SDK meant a dismissed popup
+// returned. Passing the wallet's raw result to the SDK meant a dismissed popup
 // surfaced as "Cannot read properties of undefined (reading 'switch')".
 const getSignerOptions = (publicKey: string) => freighterSigner(publicKey);
+
+/** The vault counts in stroops; a person reads whole tokens. */
+const STROOPS = 10_000_000;
+
+const SIGN_IN_TOAST = {
+  title: "Sign in first",
+  description: "Sign in to continue.",
+  variant: "destructive" as const,
+};
+
+/** A Stellar account or contract address, which must never stand in for a name. */
+const looksLikeAddress = (s: string) => /^[GC][A-Z2-7]{55}$/.test(s);
+
+/** "14 Mar", the way the deadline is spoken everywhere in the dialog. */
+const shortDate = (ms: number) =>
+  new Date(ms).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+
+/** The four promises under the money block. Exact copy from the brief. */
+const WHAT_HAPPENS_TO_MY_MONEY = [
+  "It goes into this project's vault, not to BLKFNDR.",
+  "If the goal isn't reached by the deadline, you collect it back.",
+  "Once the goal is reached, the builder is paid stage by stage, each time stakeholders vote yes.",
+  "If a stage fails the vote, what's left and the builder's deposit come back to stakeholders.",
+];
+
+/**
+ * The one status pill, with its tooltip. The same words as the card, because
+ * both read describeStatus.
+ */
+function StatusPill({ status }: { status: StatusView }) {
+  return (
+    <TooltipProvider delayDuration={150}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Badge
+            variant="outline"
+            tabIndex={0}
+            className={cn("cursor-help whitespace-nowrap", TONE_CLASSES[status.tone])}
+          >
+            {status.label}
+          </Badge>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" className="max-w-xs text-left">
+          {status.tooltip}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
+/**
+ * A collapsed section opened by a click. A native details element rather than
+ * a Radix accordion: the dependency is not installed and a disclosure that
+ * works without JavaScript is exactly right for text nobody has to read.
+ */
+function Disclosure({
+  summary,
+  children,
+  className,
+}: {
+  summary: string;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <details className={cn("group rounded-lg border border-border/60", className)}>
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2.5 text-sm font-medium [&::-webkit-details-marker]:hidden">
+        <span>{summary}</span>
+        <ChevronDown
+          className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180"
+          aria-hidden="true"
+        />
+      </summary>
+      <div className="border-t border-border/60 px-3 py-3 text-sm">{children}</div>
+    </details>
+  );
+}
 
 export function ProjectDetailsDialog() {
   const {
@@ -69,16 +164,13 @@ export function ProjectDetailsDialog() {
   const router = useRouter();
   const refreshAfterTx = useRefreshAfterTx();
   const { userFunds, refreshUserFunds, refreshProjects } = useBlockchain();
+  const { rate: xlmUsd, updatedAt: rateUpdatedAt } = useXlmRate();
 
   const { freighterWalletAddress, login: connectFreighter } = useFreighterWallet();
 
-  const handleConnectFreighter = async (): Promise<string | null> => {
+  const handleConnectWallet = async (): Promise<string | null> => {
     if (!user) {
-      toast({
-        title: "Login Required",
-        description: "Please log in with Google first before connecting your wallet.",
-        variant: "destructive",
-      });
+      toast(SIGN_IN_TOAST);
       signInToContinue();
       return null;
     }
@@ -86,33 +178,33 @@ export function ProjectDetailsDialog() {
       const address = await connectFreighter();
       await refreshUser();
       toast({
-        title: "Wallet Connected",
-        description: "Freighter wallet successfully connected and verified.",
+        title: "Your wallet is linked",
+        description: "Your wallet is linked to your account.",
       });
       return address || null;
     } catch (err: any) {
-      console.error("[ProjectDetailsDialog] Freighter connection failed:", err);
+      console.error("[ProjectDetailsDialog] wallet connection failed:", err);
       toast({
-        title: "Connection Failed",
-        description: err.message || "Failed to connect Freighter wallet.",
+        title: "Couldn't reach your wallet",
+        description: err.message || "We couldn't connect your wallet. Try again.",
         variant: "destructive",
       });
       return null;
     }
   };
 
-  const [isFinalizePending, setIsFinalizePending] = useState(false);
+  const [isClosePending, setIsClosePending] = useState(false);
   const [isRefundClaimPending, setIsRefundClaimPending] = useState(false);
   const [creatorName, setCreatorName] = useState<string | null>(null);
   const [creatorAvatar, setCreatorAvatar] = useState<string | null>(null);
 
-  // Each milestone has its own proof, posted from its own card. The form opens
-  // for one milestone at a time; `proofSession` remounts it so it always starts
-  // from that milestone's saved proof, and the id outlives the closing animation.
+  // Each stage has its own proof, posted from its own card. The form opens for
+  // one stage at a time; `proofSession` remounts it so it always starts from
+  // that stage's saved proof, and the id outlives the closing animation.
   const [proofMilestoneId, setProofMilestoneId] = useState<number | null>(null);
   const [isProofFormOpen, setIsProofFormOpen] = useState(false);
   const [proofSession, setProofSession] = useState(0);
-  // Proof saved from this dialog, keyed by project and milestone. The card shows
+  // Proof saved from this dialog, keyed by project and stage. The card shows
   // it straight away instead of waiting for the project to be read back.
   const [savedProofs, setSavedProofs] = useState<Record<string, string>>({});
   const proofOpenerRef = useRef<HTMLElement | null>(null);
@@ -144,8 +236,17 @@ export function ProjectDetailsDialog() {
 
   const projectCurrency = project?.currencyType ?? "XLM";
   const creatorAddress = project?.creatorAddress ?? project?.creatorId ?? "";
-  const creatorDisplayName =
-    creatorName ?? project?.creator ?? "Unknown Creator";
+  // The name, or a neutral word: never the address, however the row was
+  // indexed. The indexed profile name is read synchronously so the first paint
+  // already shows it; the lookup effect below only refines it.
+  const creatorDisplayName = (() => {
+    const isName = (s: string | null | undefined): s is string => {
+      const t = (s ?? "").trim();
+      return t !== "" && t !== creatorAddress && !looksLikeAddress(t);
+    };
+    const candidate = [creatorName, project?.creatorName, project?.creator].find(isName);
+    return candidate ? candidate.trim() : "Unnamed builder";
+  })();
 
   const activeAddress = freighterWalletAddress || user?.stellarPublicKey || "";
 
@@ -154,16 +255,16 @@ export function ProjectDetailsDialog() {
   // nothing has to be connected right now. It is exactly the server's test.
   const isBuilder = creatorAddress !== "" && user?.stellarPublicKey === creatorAddress;
 
-  // A platform lock pauses the builder's actions here — proof, and opening a
-  // milestone vote — and new stakes in FundDialog. Everything a stakeholder
-  // does with money already in the vault is untouched.
+  // A platform pause stops the builder's actions here — proof, and opening a
+  // stage vote — and new stakes in FundDialog. Everything a stakeholder does
+  // with money already in the vault is untouched.
   const isLocked = project?.restriction?.locked === true;
 
-  // Backers vote on a release, and the admin console's "Verify" opens this
-  // dialog, so the proof sits in each milestone's card, beside its vote. The
-  // builder adds or edits it there, one milestone at a time, while the vault is
-  // building; once a milestone is paid out or has failed its vote is over and
-  // the proof stays as it was voted on.
+  // Stakeholders vote on a payout, and the admin console's "Verify" opens this
+  // dialog, so the proof sits in each stage's card, beside its vote. The
+  // builder adds or edits it there, one stage at a time, while the vault is
+  // building; once a stage is paid out or has failed its vote is over and the
+  // proof stays as it was voted on.
   const renderMilestoneProof = (state: MilestoneVaultState) => {
     const milestone = project?.milestones?.find((m) => m.id === state.id);
     const proof = parseProof(proofOf(state.id));
@@ -178,9 +279,8 @@ export function ProjectDetailsDialog() {
       <MilestoneProofView milestoneId={state.id} proof={proof} released={state.released}>
         {canPost && isLocked && (
           <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
-            <Lock className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-            The platform has locked this project, so adding proof is paused
-            until it is unlocked.
+            <PauseCircle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            Paused by BLKFNDR, so adding proof waits until the review is over.
           </p>
         )}
         {canPost && !isLocked && (
@@ -193,7 +293,7 @@ export function ProjectDetailsDialog() {
             >
               <ImagePlus aria-hidden="true" />
               {proof ? "Edit proof" : "Add proof"}
-              <span className="sr-only"> for milestone {state.id}</span>
+              <span className="sr-only"> for stage {state.id}</span>
             </Button>
             {!proof && state.voteOpened === false && (
               <p className="text-sm text-muted-foreground">
@@ -210,19 +310,35 @@ export function ProjectDetailsDialog() {
   const proofMilestone =
     project?.milestones?.find((m) => m.id === proofMilestoneId) ?? null;
 
+  // Raw stroops, as the vault's get_balance returns them.
   const [vaultContributorBalance, setVaultContributorBalance] = useState<number | null>(null);
   const [hasContributedHistorically, setHasContributedHistorically] = useState<boolean>(false);
 
-  const hasBacked =
-    userFunds.some((receipt) => receipt.project_id === project?.id) ||
+  const ownReceipts = userFunds.filter((receipt) => receipt.project_id === project?.id);
+
+  const isStakeholder =
+    ownReceipts.length > 0 ||
     hasContributedHistorically ||
     (vaultContributorBalance !== null && vaultContributorBalance > 0);
 
+  // What this account has in the vault right now, in whole tokens. The vault's
+  // own figure wins; the indexed receipts stand in while it is being read.
+  const ownStakeTokens: number | null = (() => {
+    if (vaultContributorBalance !== null && vaultContributorBalance > 0) {
+      return vaultContributorBalance / STROOPS;
+    }
+    if (ownReceipts.length > 0) {
+      const sum = ownReceipts.reduce((acc, r) => acc + Number(r.amount || 0), 0);
+      return Number.isFinite(sum) && sum > 0 ? sum / STROOPS : null;
+    }
+    return null;
+  })();
+
   const isRefundClaimed =
-    hasBacked &&
+    isStakeholder &&
     (project?.vaultAddress
       ? vaultContributorBalance === 0
-      : hasContributedHistorically && !userFunds.some((receipt) => receipt.project_id === project?.id));
+      : hasContributedHistorically && ownReceipts.length === 0);
 
   useEffect(() => {
     if (isOpen && activeAddress) {
@@ -237,7 +353,7 @@ export function ProjectDetailsDialog() {
             }
           })
           .catch((err) => {
-            console.error("Failed to check historical contributions:", err);
+            console.error("Failed to check stake history:", err);
           });
       }
 
@@ -279,7 +395,7 @@ export function ProjectDetailsDialog() {
         return;
       }
 
-      // Indexed from the creator's linked profile; no lookup needed.
+      // Indexed from the builder's linked profile; no lookup needed.
       if (project.creatorName && project.creatorName !== creatorAddress) {
         setCreatorName(project.creatorName);
         return;
@@ -302,7 +418,10 @@ export function ProjectDetailsDialog() {
       const user = await getUserByCreatorId(creatorAddress);
       if (!isActive) return;
 
-      setCreatorName(user?.name || project.creator || null);
+      // Never fall back to the address: the name is the only thing shown here.
+      const fallback =
+        project.creator && project.creator !== creatorAddress ? project.creator : null;
+      setCreatorName(user?.name || fallback);
       setCreatorAvatar(user?.avatarUrl || null);
     };
 
@@ -313,78 +432,72 @@ export function ProjectDetailsDialog() {
     };
   }, [project, creatorAddress]);
 
+  // handlePostBond is gone: the builder's deposit is transferred during
+  // create_vault, so a vault either exists with its deposit locked or does not
+  // exist.
 
-  // handlePostBond is gone: the bond is transferred during create_vault, so a
-  // vault either exists with its bond locked or does not exist.
-
-
-  const handleFinalizeCampaign = async () => {
+  // "Close it now": settle a vault whose deadline has passed. Permissionless in
+  // the contract; here it is kept under Technical details for a signed-in
+  // stakeholder or the builder, because BLKFNDR's cron does the same thing.
+  const handleCloseNow = async () => {
     if (!user) {
-      toast({
-        title: "Login Required",
-        description: "Please log in with Google first.",
-        variant: "destructive",
-      });
+      toast(SIGN_IN_TOAST);
       signInToContinue();
       return;
     }
     if (!project || !project.vaultAddress) return;
 
-    let activeAddress = freighterWalletAddress;
-    if (!activeAddress) {
-      const connectedAddress = await handleConnectFreighter();
+    let signingAddress = freighterWalletAddress;
+    if (!signingAddress) {
+      const connectedAddress = await handleConnectWallet();
       if (!connectedAddress) return;
-      activeAddress = connectedAddress;
+      signingAddress = connectedAddress;
     }
 
-    setIsFinalizePending(true);
+    setIsClosePending(true);
     try {
       const client = new VaultClient({
         contractId: project.vaultAddress,
         rpcUrl: SOROBAN_RPC_URL,
         networkPassphrase: NETWORK_PASSPHRASE,
-        ...getSignerOptions(activeAddress),
+        ...getSignerOptions(signingAddress),
       });
 
       const tx = await client.settle();
       await tx.signAndSend();
 
       toast({
-        title: "Campaign Finalized",
-        description: "The raise has been settled on-chain.",
+        title: "Vault closed to new stakes",
+        description: "The vault has recorded what happens next.",
       });
 
       refreshProject(project.id);
-      await refreshAfterTx(activeAddress);
+      await refreshAfterTx(signingAddress);
     } catch (err: any) {
-      console.error("Finalization failed:", err);
+      console.error("Close now failed:", err);
       toast({
-        title: "Finalize Failed",
+        title: "Couldn't close the vault",
         description: err.message || String(err),
         variant: "destructive",
       });
     } finally {
-      setIsFinalizePending(false);
+      setIsClosePending(false);
     }
   };
 
-  const handleClaimRefund = async () => {
+  const handleCollectRefund = async () => {
     if (!user) {
-      toast({
-        title: "Login Required",
-        description: "Please log in with Google first.",
-        variant: "destructive",
-      });
+      toast(SIGN_IN_TOAST);
       signInToContinue();
       return;
     }
     if (!project || !project.vaultAddress) return;
 
-    let activeAddress = freighterWalletAddress;
-    if (!activeAddress) {
-      const connectedAddress = await handleConnectFreighter();
+    let signingAddress = freighterWalletAddress;
+    if (!signingAddress) {
+      const connectedAddress = await handleConnectWallet();
       if (!connectedAddress) return;
-      activeAddress = connectedAddress;
+      signingAddress = connectedAddress;
     }
 
     setIsRefundClaimPending(true);
@@ -393,37 +506,38 @@ export function ProjectDetailsDialog() {
         contractId: project.vaultAddress,
         rpcUrl: SOROBAN_RPC_URL,
         networkPassphrase: NETWORK_PASSPHRASE,
-        ...getSignerOptions(activeAddress),
+        ...getSignerOptions(signingAddress),
       });
 
       const tx = await client.claim_refund({
-        contributor: activeAddress,
+        contributor: signingAddress,
       });
 
       await tx.signAndSend();
 
       toast({
-        title: "Refund Claimed",
-        description: "Your contribution has been refunded successfully.",
+        title: "Refund collected",
+        description: "Your stake is back in your wallet.",
       });
 
       refreshProject(project.id);
-      await refreshAfterTx(activeAddress);
+      await refreshAfterTx(signingAddress);
     } catch (err: any) {
-      console.error("Claim refund failed:", err);
+      console.error("Collect refund failed:", err);
       const simError = (err.simulation as any)?.error;
       const errMsg = simError || err.message || String(err);
       const isAlreadyClaimed = String(errMsg).includes("#9") || String(errMsg).includes("NoFundsToRefund") || String(errMsg).includes("Contract, #9");
 
       if (isAlreadyClaimed) {
         toast({
-          title: "Refund Unavailable",
-          description: "Refund already claimed or no contribution balance found.",
+          title: "Nothing to collect",
+          description:
+            "This refund was already collected, or this wallet has no stake in the vault.",
           variant: "destructive",
         });
       } else {
         toast({
-          title: "Refund Failed",
+          title: "Couldn't collect your refund",
           description: String(errMsg),
           variant: "destructive",
         });
@@ -448,6 +562,108 @@ export function ProjectDetailsDialog() {
       )
     : 0;
 
+  // ---- Status, money and the primary action, all read from shared helpers ----
+
+  const status = project ? describeStatus(project) : null;
+
+  // An unlisted project is still open to the people who can see it, so the
+  // stake decision looks past the hide and only the pause counts.
+  const stakeStatus: StatusView | null = project
+    ? project.restriction?.hidden && !project.restriction?.locked
+      ? describeStatus({ ...project, restriction: null })
+      : status
+    : null;
+  const stakesOpen = stakeStatus?.key === "open";
+
+  const deadline = project ? describeDeadline(project.fundingDeadline) : null;
+  const deadlineDate =
+    project?.fundingDeadline && Number.isFinite(project.fundingDeadline)
+      ? shortDate(project.fundingDeadline)
+      : null;
+
+  const raisedView = project
+    ? describeMoney(project.currentFunding, projectCurrency, xlmUsd)
+    : null;
+  const goalView = project ? describeMoney(project.fundingGoal, projectCurrency, xlmUsd) : null;
+  const depositView =
+    project?.bondPosted && project.bondAmount && project.bondAmount > 0
+      ? describeMoney(project.bondAmount, projectCurrency, xlmUsd)
+      : null;
+  const ownStakeView =
+    ownStakeTokens !== null ? describeMoney(ownStakeTokens, projectCurrency, xlmUsd) : null;
+
+  const statsLine: string[] = [];
+  if (deadline && deadlineDate) {
+    if (deadline.passed) statsLine.push(`Deadline passed ${deadlineDate}`);
+    else if (deadline.label === "Ends today") statsLine.push("Ends today");
+    else statsLine.push(`Ends ${deadlineDate} (${deadline.label.replace(/ left$/, "")})`);
+  }
+  if (depositView) statsLine.push(`Builder's deposit ${depositView.primary} locked`);
+
+  // The sentence that stands in for the stake button when stakes are closed.
+  const closedReason: { chip: string; sentence: string; chipClass: string } | null = (() => {
+    if (!project || !stakeStatus || stakesOpen) return null;
+    const chip = stakeStatus.label;
+    const chipClass = TONE_CLASSES[stakeStatus.tone];
+    switch (stakeStatus.key) {
+      case "goal-reached":
+      case "building":
+        return { chip, chipClass, sentence: "Goal reached, no more stakes needed" };
+      case "completed":
+        return null; // the completed banner says it all
+      case "awaiting-deposit":
+        return { chip, chipClass, sentence: "Awaiting the builder's deposit" };
+      case "paused":
+        return { chip, chipClass, sentence: "Paused by BLKFNDR" };
+      case "deadline-passed":
+        return {
+          chip,
+          chipClass,
+          sentence:
+            "Deadline passed. The vault is closing to new stakes and will say what happens next here.",
+        };
+      case "goal-not-reached":
+      case "returning-money":
+        return {
+          chip,
+          chipClass,
+          sentence: deadlineDate ? `Closed to stakes on ${deadlineDate}` : "Closed to stakes",
+        };
+      default:
+        return { chip, chipClass, sentence: stakeStatus.tooltip };
+    }
+  })();
+
+  // The line under the stake button. A visitor is told what the two steps are;
+  // a stakeholder sees their own figure; a signed-in newcomer only the second
+  // step, since the first is done.
+  const stakeHelper: string | null = isStakeholder
+    ? ownStakeView
+      ? `Your stake ${ownStakeView.primary}`
+      : null
+    : !user
+      ? "Sign in with Google or email, then approve in a wallet you control. We'll walk you through it."
+      : "Approve in a wallet you control. We'll walk you through it.";
+
+  // Manual close, for a vault past its deadline that the cron has not yet
+  // settled. Never shown to a visitor.
+  const canCloseNow =
+    !!project?.vaultAddress &&
+    !!user &&
+    (isStakeholder || isBuilder) &&
+    (project.status === "raising" || project.status === "pending") &&
+    typeof project.fundingDeadline === "number" &&
+    project.fundingDeadline > 0 &&
+    Date.now() >= project.fundingDeadline;
+
+  const showsTechnicalDetails = !!(creatorAddress || project?.vaultAddress || canCloseNow);
+  const ledgerUrl = project?.vaultAddress
+    ? `${EXPLORER_BASE}/contract/${project.vaultAddress}`
+    : null;
+
+  const liveFiguresError = error
+    ? "We couldn't read this vault's live figures. Try again."
+    : null;
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
@@ -458,24 +674,44 @@ export function ProjectDetailsDialog() {
               spaces and still breaks a long unbroken string, without letting
               it widen the dialog. */}
           <DialogTitle className="text-xl sm:text-2xl font-bold font-headline leading-tight [overflow-wrap:anywhere] line-clamp-3 text-left">
-            {project?.title || "Loading..."}
+            {project?.title || "Reading the vault…"}
           </DialogTitle>
-          <DialogDescription className="text-sm sm:text-lg leading-snug [overflow-wrap:anywhere] text-left line-clamp-3 sm:line-clamp-4">
+          <DialogDescription className="text-sm sm:text-base leading-snug [overflow-wrap:anywhere] text-left line-clamp-3 sm:line-clamp-4">
             {/* A loaded project with no tagline is not a project still loading.
                 The old copy said "Fetching details..." forever whenever the
                 metadata carried no description. */}
             {project
               ? project.tagline || "No description was published for this project."
-              : "Fetching details…"}
+              : "Reading the vault…"}
           </DialogDescription>
+          {project && status && (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2 pt-1 text-left">
+              <StatusPill status={status} />
+              {project.category && <Badge variant="secondary">{project.category}</Badge>}
+              <div className="flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground">
+                <Avatar className="h-5 w-5 shrink-0">
+                  <AvatarImage
+                    src={creatorAvatar ?? project.creatorAvatar}
+                    alt=""
+                  />
+                  <AvatarFallback className="text-[10px]">
+                    {creatorDisplayName.charAt(0)}
+                  </AvatarFallback>
+                </Avatar>
+                <span className="truncate" title={creatorDisplayName}>
+                  {creatorDisplayName}
+                </span>
+              </div>
+            </div>
+          )}
           <Button
             variant="ghost"
             size="icon"
             className="absolute top-3 right-14 h-7 w-7 sm:top-1.5 sm:right-16 sm:h-8 sm:w-8"
             onClick={() => project && refreshProject(project.id)}
             disabled={isLoading}
-            aria-label="Refresh this project"
-            title="Refresh this project"
+            aria-label="Read the vault again"
+            title="Read the vault again"
           >
             <RefreshCw className={isLoading ? "animate-spin" : ""} aria-hidden="true" />
           </Button>
@@ -483,22 +719,19 @@ export function ProjectDetailsDialog() {
 
         <ScrollArea className="h-full">
           {isLoading && !project ? (
-            <div className="flex justify-center items-center h-96">
+            <div className="flex flex-col justify-center items-center h-96 gap-3">
               <CubeSpinner size="large" />
+              <p className="text-sm text-muted-foreground">Reading the vault…</p>
             </div>
-          ) : error ? (
-            <div className="flex flex-col items-center justify-center h-96 gap-4 text-center">
-              <AlertTriangle className="h-12 w-12 text-destructive" />
-              <h3 className="text-xl font-semibold">Could not load project</h3>
-              <p className="text-muted-foreground">{error}</p>
-              <Button onClick={() => project && refreshProject(project.id)}>
-                <RefreshCw className="mr-2 h-4 w-4" />
-                Try Again
-              </Button>
+          ) : error && !project ? (
+            <div className="flex flex-col items-center justify-center h-96 gap-4 text-center px-6">
+              <AlertTriangle className="h-12 w-12 text-destructive" aria-hidden="true" />
+              <h3 className="text-xl font-semibold">We couldn&apos;t open this project</h3>
+              <p className="text-muted-foreground">{liveFiguresError}</p>
             </div>
           ) : (
-            project && (
-              <div className="space-y-4 p-6">
+            project && status && raisedView && goalView && (
+              <div className="space-y-4 p-4 sm:p-6">
                 <RestrictionNotice restriction={project.restriction} />
                 <div className="relative h-60 w-full mb-4 rounded-md overflow-hidden">
                   <ImageWithFallback
@@ -508,43 +741,75 @@ export function ProjectDetailsDialog() {
                     fill
                   />
                 </div>
-                <div className="flex items-center justify-between">
-                  <Badge variant="secondary">{project.category}</Badge>
-                  <div className="text-right">
-                    <p className="font-semibold text-lg">
-                      {StellarFormatter.formatWithLabel(
-                        project.fundingGoalRaw,
-                        2,
-                        projectCurrency,
-                      )}
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      Funding Goal
-                    </p>
-                  </div>
-                </div>
 
-                <div className="mt-4">
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-sm font-semibold text-foreground">
-                      {project.status === "completed"
-                        ? `${StellarFormatter.formatWithLabel(project.fundingGoalRaw, 2, projectCurrency)} raised & withdrawn`
-                        : `${StellarFormatter.formatWithLabel(project.currentFundingRaw, 2, projectCurrency)} raised`}
-                    </span>
-                    <span className="text-sm text-muted-foreground">
-                      {project.status === "completed"
-                        ? "100"
-                        : fundingPercentage.toFixed(0)}
-                      %
-                    </span>
-                  </div>
-                  <Progress
-                    value={
-                      project.status === "completed" ? 100 : fundingPercentage
-                    }
-                    className="h-2"
-                  />
-                </div>
+                {/* ---- Money block ---- */}
+                <section aria-label="Money in the vault" className="space-y-2">
+                  {isLoading ? (
+                    <div className="space-y-2" role="status" aria-live="polite">
+                      <div className="h-7 w-2/3 rounded bg-muted animate-pulse" />
+                      <div className="h-4 w-1/3 rounded bg-muted animate-pulse" />
+                      <div className="h-2 w-full rounded bg-muted animate-pulse" />
+                      <p className="text-sm text-muted-foreground">Reading the vault…</p>
+                    </div>
+                  ) : (
+                    <>
+                      {liveFiguresError && (
+                        <div
+                          role="alert"
+                          className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm"
+                        >
+                          <span className="flex items-center gap-2">
+                            <AlertTriangle className="h-4 w-4 shrink-0 text-destructive" aria-hidden="true" />
+                            {liveFiguresError}
+                          </span>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => refreshProject(project.id)}
+                          >
+                            <RefreshCw className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
+                            Try again
+                          </Button>
+                        </div>
+                      )}
+                      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                        <p className="text-lg sm:text-xl font-semibold text-foreground">
+                          {raisedView.primary} staked{" "}
+                          <span className="font-normal text-muted-foreground">of</span>{" "}
+                          {goalView.primary}
+                        </p>
+                        <span className="text-sm text-muted-foreground">
+                          {fundingPercentage.toFixed(0)}%
+                        </span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {raisedView.approx && raisedView.secondary
+                          ? `${formatToken(project.currentFunding, undefined)} of ${formatToken(project.fundingGoal, projectCurrency)} · dollar estimate, ${describeRateAge(rateUpdatedAt)}`
+                          : raisedView.approx
+                            ? "Counted in XLM. A dollar estimate isn't available right now."
+                            : `Counted in ${projectCurrency}`}
+                      </p>
+                      <Progress value={fundingPercentage} className="h-2" />
+                      {statsLine.length > 0 && (
+                        <p className="text-sm text-muted-foreground">
+                          {statsLine.join(" · ")}
+                        </p>
+                      )}
+                    </>
+                  )}
+                </section>
+
+                <Disclosure summary="What happens to my money?">
+                  <ul className="space-y-1.5 text-muted-foreground">
+                    {WHAT_HAPPENS_TO_MY_MONEY.map((line) => (
+                      <li key={line} className="flex gap-2">
+                        <span aria-hidden="true">•</span>
+                        <span>{line}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </Disclosure>
 
                 <div className="prose prose-sm dark:prose-invert max-w-none pt-2 pr-6">
                   <div className="max-h-40 overflow-auto break-words">
@@ -552,14 +817,15 @@ export function ProjectDetailsDialog() {
                   </div>
                 </div>
 
-                {/* Milestones sat in the footer, which does not scroll. With a
-                    vote open they filled a 768px-high window and left the body
+                {/* Stages sat in the footer, which does not scroll. With a vote
+                    open they filled a 768px-high window and left the body
                     above, proof included, zero pixels tall. Proof only exists
-                    once a vault is funded, which is when this section shows. */}
+                    once a vault has reached its goal, which is when this
+                    section shows. */}
                 {project.vaultAddress &&
                   ["funded", "active", "completed", "refunding"].includes(project.status) && (
                     <div className="border-t pt-4">
-                      <h4 className="font-semibold mb-2">Milestones</h4>
+                      <h4 className="font-semibold mb-2">Stages</h4>
                       <MilestoneVoting
                         vaultAddress={project.vaultAddress}
                         currency={project.currencyType ?? "USDC"}
@@ -584,35 +850,49 @@ export function ProjectDetailsDialog() {
                 )}
 
                 <div className="border-t pt-4">
-                  <h4 className="font-semibold mb-2">Creator</h4>
+                  <h4 className="font-semibold mb-2">Builder</h4>
                   <div className="flex items-center gap-2 min-w-0">
                     <Avatar className="h-8 w-8 shrink-0">
                       <AvatarImage
                         src={creatorAvatar ?? project.creatorAvatar}
-                        alt={creatorDisplayName}
+                        alt=""
                       />
                       <AvatarFallback>
                         {creatorDisplayName.charAt(0)}
                       </AvatarFallback>
                     </Avatar>
-                    <div className="min-w-0">
-                      <p
-                        className="text-sm font-semibold text-foreground truncate"
-                        title={creatorDisplayName}
-                      >
-                        {creatorDisplayName}
-                      </p>
-                      {creatorAddress && (
-                        <p
-                          className="text-xs text-muted-foreground font-mono truncate"
-                          title={creatorAddress}
-                        >
-                          {shortenAddress(creatorAddress)}
-                        </p>
-                      )}
-                    </div>
+                    <p
+                      className="min-w-0 text-sm font-semibold text-foreground truncate"
+                      title={creatorDisplayName}
+                    >
+                      {creatorDisplayName}
+                    </p>
                   </div>
                 </div>
+
+                {/* ---- Public record, Phase 1 variant ---- */}
+                {ledgerUrl && (
+                  <Card className="border-border/60 bg-muted/20">
+                    <CardHeader className="p-4 pb-2">
+                      <CardTitle className="text-base">The full money record is coming.</CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-4 pt-0 space-y-2 text-sm">
+                      <p className="text-muted-foreground">
+                        For now, every entry for this vault is on the public ledger.
+                      </p>
+                      <a
+                        href={ledgerUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+                      >
+                        Open on the public ledger (stellar.expert)
+                        <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+                      </a>
+                      <p className="text-xs text-muted-foreground">{EXPLORER_EXPLAINER}</p>
+                    </CardContent>
+                  </Card>
+                )}
 
                 <ProjectRestrictionControls
                   project={project}
@@ -621,51 +901,117 @@ export function ProjectDetailsDialog() {
                     refreshProjects();
                   }}
                 />
+
+                {/* ---- Technical details: the only place an address appears ---- */}
+                {showsTechnicalDetails && (
+                  <Disclosure summary="Technical details">
+                    <dl className="space-y-3">
+                      {creatorAddress && (
+                        <div>
+                          <dt className="text-xs uppercase tracking-wide text-muted-foreground">
+                            Builder&apos;s account ID
+                          </dt>
+                          <dd className="font-mono text-xs break-all">{creatorAddress}</dd>
+                        </div>
+                      )}
+                      {project.vaultAddress && (
+                        <div>
+                          <dt className="text-xs uppercase tracking-wide text-muted-foreground">
+                            Vault address
+                          </dt>
+                          <dd className="font-mono text-xs break-all">{project.vaultAddress}</dd>
+                        </div>
+                      )}
+                      {ledgerUrl && (
+                        <div>
+                          <a
+                            href={ledgerUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                          >
+                            Open this vault on the public ledger (stellar.expert)
+                            <ExternalLink className="h-3 w-3" aria-hidden="true" />
+                          </a>
+                          <p className="text-xs text-muted-foreground">{EXPLORER_EXPLAINER}</p>
+                        </div>
+                      )}
+                      {canCloseNow && (
+                        <div className="space-y-1.5 border-t border-border/60 pt-3">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={handleCloseNow}
+                            disabled={isClosePending}
+                          >
+                            {isClosePending && <CubeSpinner />}
+                            Close it now
+                          </Button>
+                          <p className="text-xs text-muted-foreground">
+                            Anyone can do this; it costs a small network fee from
+                            your wallet. BLKFNDR does it automatically within a day.
+                          </p>
+                        </div>
+                      )}
+                    </dl>
+                  </Disclosure>
+                )}
               </div>
             )
           )}
         </ScrollArea>
 
-        {project && (
+        {project && status && (
           <DialogFooter className="p-4 sm:p-6 border-t flex-col items-stretch gap-3">
-            {project?.status === "completed" && (
-              <div className="w-full text-xs text-green-600 dark:text-green-400 font-medium py-2 px-3 bg-green-50 dark:bg-green-950/20 rounded-md border border-green-200 dark:border-green-800/30 text-center">
-                Campaign completed. All raised funds have been successfully claimed.
+            {project.status === "completed" && (
+              <div
+                role="status"
+                className="w-full text-xs text-green-700 dark:text-green-400 font-medium py-2 px-3 bg-green-50 dark:bg-green-950/20 rounded-md border border-green-200 dark:border-green-800/30 text-center"
+              >
+                Completed. Every stage was approved and paid to the builder.
               </div>
             )}
 
             <div className="flex w-full flex-col sm:flex-row gap-2 justify-end items-stretch sm:items-center">
-              {/* Finalize Project Campaign Button */}
-              {((project.status === "raising" || project.status === "pending") && Date.now() >= (project.fundingDeadline || 0)) && (
+              {/* Collect a refund once the vault is returning money. */}
+              {isStakeholder && (project.status === "failed" || project.status === "refunding") && (
                 <Button
-                  onClick={handleFinalizeCampaign}
-                  disabled={isFinalizePending}
-                  variant="outline"
-                  className="w-full sm:w-auto whitespace-nowrap shrink-0 border-amber-500 hover:bg-amber-500/10 text-amber-500 hover:text-amber-400"
-                >
-                  {isFinalizePending && <CubeSpinner />}
-                  Finalize Campaign
-                </Button>
-              )}
-
-              {/* Claim Refund Button */}
-              {hasBacked && (project.status === "failed" || project.status === "refunding") && (
-                <Button
-                  onClick={handleClaimRefund}
+                  onClick={handleCollectRefund}
                   disabled={isRefundClaimPending || isRefundClaimed}
                   variant={isRefundClaimed ? "outline" : "destructive"}
                   className="w-full sm:w-auto whitespace-nowrap shrink-0"
                 >
                   {isRefundClaimPending && <CubeSpinner />}
-                  {isRefundClaimed ? "Refund Claimed" : "Claim Refund"}
+                  {isRefundClaimed ? "Refund collected" : "Collect your refund"}
                 </Button>
               )}
 
-              <FundDialog
-                project={project!}
-                isFundFlow={isFundFlow}
-                setIsFundFlow={setIsFundFlow}
-              />
+              {/* The one primary action. While stakes are open (or a stake is
+                  already under way) it is FundDialog, triggered exactly as
+                  before; otherwise a chip and one sentence say why not. */}
+              {stakesOpen || isFundFlow ? (
+                <div className={cn("flex flex-col gap-1.5", isFundFlow ? "w-full" : "w-full sm:w-auto sm:items-end")}>
+                  <FundDialog
+                    project={project}
+                    isFundFlow={isFundFlow}
+                    setIsFundFlow={setIsFundFlow}
+                  />
+                  {!isFundFlow && stakeHelper && (
+                    <p className="text-xs text-muted-foreground sm:text-right">{stakeHelper}</p>
+                  )}
+                </div>
+              ) : closedReason ? (
+                <div className="flex w-full flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-end sm:gap-3">
+                  <Badge
+                    variant="outline"
+                    className={cn("w-fit whitespace-nowrap", closedReason.chipClass)}
+                  >
+                    {closedReason.chip}
+                  </Badge>
+                  <p className="text-sm text-muted-foreground">{closedReason.sentence}</p>
+                </div>
+              ) : null}
             </div>
           </DialogFooter>
         )}

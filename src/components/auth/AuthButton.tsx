@@ -23,9 +23,15 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { LogOut, User as UserIcon, Settings, Cog } from "lucide-react";
 import Link from "next/link";
+import { cn } from "@/lib/utils";
 import { CubeSpinner } from "../ui/CubeSpinner";
 
-export function AuthButton() {
+/**
+ * Signed out: an outline button that says "Sign in" and opens the sign-in
+ * dialog. It used to be an unlabelled person icon, which the people this page
+ * is for did not read as a login. Signed in: the avatar menu, unchanged.
+ */
+export function AuthButton({ className }: { className?: string }) {
   const { user, login, logout, loading } = useAuth();
   const [showLogoutDialog, setShowLogoutDialog] = useState(false);
 
@@ -47,7 +53,13 @@ export function AuthButton() {
 
   if (loading) {
     return (
-      <Button variant="default" size="icon" disabled className="nav-button">
+      <Button
+        variant="default"
+        size="icon"
+        disabled
+        className={cn("nav-button", className)}
+        aria-label="Checking your sign-in"
+      >
         <CubeSpinner />
       </Button>
     );
@@ -56,7 +68,7 @@ export function AuthButton() {
   if (user) {
     return (
       <>
-        <div className="relative">
+        <div className={cn("relative", className)}>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -68,7 +80,7 @@ export function AuthButton() {
                   <AvatarImage src={user.avatarUrl} alt={user.name} />
                   <AvatarFallback>{user.name.charAt(0)}</AvatarFallback>
                 </Avatar>
-                <span className="sr-only">User Menu</span>
+                <span className="sr-only">Account menu</span>
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent className="w-56" align="end" forceMount>
@@ -98,7 +110,7 @@ export function AuthButton() {
                     href="/profile"
                     className="flex items-center cursor-pointer w-full h-full px-2 py-1.5"
                   >
-                    <UserIcon className="mr-2 h-4 w-4" />
+                    <UserIcon className="mr-2 h-4 w-4" aria-hidden="true" />
                     <span>Profile</span>
                   </Link>
                   <span className="ripple-span"></span>
@@ -113,7 +125,7 @@ export function AuthButton() {
                     href="/settings"
                     className="flex items-center cursor-pointer w-full h-full px-2 py-1.5"
                   >
-                    <Settings className="mr-2 h-4 w-4" />
+                    <Settings className="mr-2 h-4 w-4" aria-hidden="true" />
                     <span>Settings</span>
                   </Link>
                   <span className="ripple-span"></span>
@@ -125,24 +137,25 @@ export function AuthButton() {
                 className="menu-item-ripple"
                 onMouseMove={handleRippleEffect}
               >
-                <LogOut className="mr-2 h-4 w-4" />
-                <span>Log out</span>
+                <LogOut className="mr-2 h-4 w-4" aria-hidden="true" />
+                <span>Sign out</span>
                 <span className="ripple-span"></span>
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
           {user.role === "admin" && (
             <div className="absolute bottom-0 right-0 bg-primary text-primary-foreground rounded-full p-1 border-2 border-background z-10">
-              <Cog className="h-3 w-3" />
+              <Cog className="h-3 w-3" aria-hidden="true" />
             </div>
           )}
         </div>
         <AlertDialog open={showLogoutDialog} onOpenChange={setShowLogoutDialog}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Log out?</AlertDialogTitle>
+              <AlertDialogTitle>Sign out?</AlertDialogTitle>
               <AlertDialogDescription>
-                Are you sure you want to log out of your account?
+                You can sign back in any time. Signing out never changes your
+                stakes or your wallet.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -157,7 +170,7 @@ export function AuthButton() {
                   className="w-full text-destructive hover:text-destructive hover:bg-destructive/10 focus-visible:ring-0 focus-visible:outline-none border-0"
                   onClick={logout}
                 >
-                  Log out
+                  Sign out
                 </Button>
               </div>
             </AlertDialogFooter>
@@ -169,13 +182,12 @@ export function AuthButton() {
 
   return (
     <Button
+      type="button"
       onClick={() => login()}
-      variant="default"
-      size="icon"
-      className="rounded-full nav-button"
+      variant="outline"
+      className={cn("whitespace-nowrap font-medium", className)}
     >
-      <UserIcon className="h-5 w-5" />
-      <span className="sr-only">Login</span>
+      Sign in
     </Button>
   );
 }

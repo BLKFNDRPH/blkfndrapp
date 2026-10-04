@@ -112,12 +112,23 @@
   }
 }
 
-/* Tagline styling: allow wrapping and ensure it pushes content down */
+/*
+ * Tagline: two clamped lines (the clamp itself is Tailwind's line-clamp-2).
+ * `white-space: normal` matters here — a pre-wrap tagline with a blank line in
+ * it would spend one of its two lines on nothing.
+ */
 .project-tagline {
-  padding-right: 0.75rem;
-  display: block;
   overflow-wrap: anywhere;
   word-break: break-word;
-  white-space: pre-wrap;
-  box-sizing: border-box;
+  white-space: normal;
+}
+
+/* The hover pop scales the card; a visitor who asked for less motion gets none. */
+@media (prefers-reduced-motion: reduce) {
+  .project-card-wrapper:hover > .project-card,
+  .project-card-wrapper:hover::before,
+  .project-card-wrapper:hover::after {
+    animation: none;
+    transform: none;
+  }
 }

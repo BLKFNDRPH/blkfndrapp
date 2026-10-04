@@ -2,6 +2,7 @@
 
 import { useAuth } from "@/context/AuthContext";
 import { useFreighterWallet } from "@/context/FreighterWalletContext";
+import { EXPLORER_BASE } from "@/lib/network";
 import {
   getBalance,
   getRecentAccountOperations,
@@ -296,7 +297,7 @@ function ProjectInvestorsCard({
           </p>
           <div className="flex items-center gap-3 mt-1 text-[10px] uppercase tracking-wider font-semibold text-white/70">
             <span className="flex items-center gap-1">
-              <Users className="h-3 w-3" /> {investors.length} Funders
+              <Users className="h-3 w-3" /> {investors.length} stakeholders
             </span>
             <span>·</span>
             <span className="text-[#16A34A] font-bold">
@@ -316,7 +317,7 @@ function ProjectInvestorsCard({
               className="w-full flex items-center justify-between px-4 py-3 text-xs font-medium hover:bg-muted/50 transition-colors"
             >
               <span className="text-muted-foreground">
-                View Funders List
+                See stakeholders
               </span>
               <ChevronDown
                 className={cn(
@@ -332,7 +333,7 @@ function ProjectInvestorsCard({
                 {project.title}
               </DialogTitle>
               <DialogDescription className="text-xs text-muted-foreground mt-1">
-                Manage and view all supporters who have invested in this project.
+                Everyone who has staked in this project.
               </DialogDescription>
             </DialogHeader>
 
@@ -343,7 +344,7 @@ function ProjectInvestorsCard({
                   <CubeSpinner size="large" />
                 </div>
               ) : investors.length === 0 ? (
-                <p className="text-xs text-muted-foreground text-center py-4">No funders found.</p>
+                <p className="text-xs text-muted-foreground text-center py-4">No stakeholders yet.</p>
               ) : (
                 investors.map((f) => (
                   <div
@@ -449,9 +450,9 @@ function StellarWalletDetailsCard({ address }: { address: string }) {
       const res = await fetch(`https://friendbot.stellar.org/?addr=${address}`);
       if (res.ok) {
         toast({
-          title: "Account Funded!",
+          title: "Practice XLM added",
           description:
-            "Received 10,000 testnet XLM successfully. Refreshing balances...",
+            "Added 10,000 practice XLM. That covers hundreds of actions.",
         });
         setTriggerRefresh((prev) => prev + 1);
       } else {
@@ -459,8 +460,8 @@ function StellarWalletDetailsCard({ address }: { address: string }) {
       }
     } catch {
       toast({
-        title: "Funding Failed",
-        description: "Could not contact Friendbot. Please try again later.",
+        title: "Couldn't add practice XLM",
+        description: "The practice dispenser didn't answer. Try again in a minute.",
         variant: "destructive",
       });
     } finally {
@@ -475,10 +476,10 @@ function StellarWalletDetailsCard({ address }: { address: string }) {
           <div>
             <CardTitle className="text-xl font-bold flex items-center gap-2">
               <Coins className="h-5 w-5 text-accent" />
-              Stellar Asset Balances
+              In your wallet
             </CardTitle>
             <CardDescription>
-              Your token balances on the Stellar Testnet.
+              What your wallet holds on the practice network.
             </CardDescription>
           </div>
           <div className="flex gap-2">
@@ -492,12 +493,12 @@ function StellarWalletDetailsCard({ address }: { address: string }) {
               {isFunding ? (
                 <>
                   <RefreshCw className="mr-2 h-3.5 w-3.5 animate-spin" />
-                  Funding...
+                  Adding...
                 </>
               ) : (
                 <>
                   <Flame className="mr-2 h-3.5 w-3.5" />
-                  Get testnet XLM
+                  Add practice XLM
                 </>
               )}
             </Button>
@@ -523,7 +524,7 @@ function StellarWalletDetailsCard({ address }: { address: string }) {
           <div className="divide-y divide-border/20">
             {balances.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
-                No balances found. Make sure your account is funded.
+                Nothing in this wallet yet. Add practice XLM to get started.
               </div>
             ) : (
               balances.map((b) => (
@@ -539,8 +540,8 @@ function StellarWalletDetailsCard({ address }: { address: string }) {
                       <p className="font-semibold text-base">{b.asset}</p>
                       <p className="text-xs text-muted-foreground">
                         {b.asset === "XLM"
-                          ? "Stellar Native Asset"
-                          : "Soroban Token"}
+                          ? "Network currency"
+                          : "Dollar token"}
                       </p>
                     </div>
                   </div>
@@ -599,8 +600,7 @@ function StellarRecentActivityCard({ address }: { address: string }) {
               Recent Activity
             </CardTitle>
             <CardDescription>
-              Your last 10 transactions on the testnet — funding, votes,
-              refunds and payments.
+              Your last 10 actions: stakes, votes, refunds and payouts.
             </CardDescription>
           </div>
           <Button
@@ -618,7 +618,7 @@ function StellarRecentActivityCard({ address }: { address: string }) {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Transaction Hash</TableHead>
+              <TableHead>Record</TableHead>
               <TableHead>Type</TableHead>
               <TableHead>Amount</TableHead>
               <TableHead className="text-right">Time</TableHead>
@@ -646,8 +646,8 @@ function StellarRecentActivityCard({ address }: { address: string }) {
                   colSpan={4}
                   className="text-center py-6 text-muted-foreground"
                 >
-                  No transaction history found. Fund your wallet or make a
-                  transaction to see records.
+                  Nothing yet. Your stakes, votes and refunds will show here,
+                  with a record for each.
                 </TableCell>
               </TableRow>
             ) : (
@@ -655,7 +655,7 @@ function StellarRecentActivityCard({ address }: { address: string }) {
                 <TableRow key={item.id}>
                   <TableCell>
                     <a
-                      href={`https://stellar.expert/explorer/testnet/tx/${item.transaction_hash}`}
+                      href={`${EXPLORER_BASE}/tx/${item.transaction_hash}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="font-mono text-sm text-accent hover:text-[#D62828] hover:underline truncate block max-w-[200px]"
@@ -775,7 +775,7 @@ function ReceiptCard({
     ...groupReceipts.map((r) => r.fund_date ?? 0),
   );
 
-  const explorerUrl = `https://stellar.expert/explorer/testnet/contract/${project?.vaultAddress ?? ""}`;
+  const explorerUrl = `${EXPLORER_BASE}/contract/${project?.vaultAddress ?? ""}`;
 
   const handleRefund = async (receipt: FundReceipt) => {
     if (!project || !project.vaultAddress) {
@@ -794,12 +794,12 @@ function ReceiptCard({
 
       const txStatus = (result as any)?.getTransactionResponse?.status;
       if (txStatus !== "SUCCESS") {
-        throw new Error("Refund transaction failed on-chain.");
+        throw new Error("Your refund didn't go through. Nothing was moved.");
       }
 
       toast({
         title: "Refund Successful",
-        description: "Your contribution has been successfully refunded.",
+        description: "Your stake is back in your wallet.",
       });
       // Receipt is burned on-chain as part of the refund, remove it from UI
       onBurned(receipt.fund_id);
@@ -807,7 +807,7 @@ function ReceiptCard({
       console.error("Refund failed:", error);
       toast({
         title: "Refund Failed",
-        description: error.message || "Could not complete refund on-chain.",
+        description: error.message || "Couldn't collect your refund. Try again.",
         variant: "destructive",
       });
     } finally {
@@ -937,7 +937,7 @@ function ReceiptCard({
             </p>
           </div>
           <div className="text-right shrink-0">
-            <p className="text-[9px] text-muted-foreground uppercase font-bold tracking-wider mb-0.5">Total Funded</p>
+            <p className="text-[9px] text-muted-foreground uppercase font-bold tracking-wider mb-0.5">Total staked</p>
             <p className="font-bold text-sm text-[#16A34A]">
               {humanAmount.toLocaleString(undefined, {
                 maximumFractionDigits: 4,
@@ -965,7 +965,7 @@ function ReceiptCard({
                     {primary.project_title || "Project"}
                   </DialogTitle>
                   <DialogDescription className="text-xs text-muted-foreground mt-1">
-                    Manage and view all your investment receipts for this project.
+                    Every stake receipt you hold for this project.
                   </DialogDescription>
                 </DialogHeader>
 
@@ -1031,13 +1031,13 @@ export default function ProfilePage() {
       await connectFreighter();
       await refreshUser();
       toast({
-        title: "Wallet Connected",
-        description: "Freighter wallet successfully connected and verified.",
+        title: "Your wallet is linked",
+        description: "Your wallet is linked to your account.",
       });
     } catch (err: any) {
       toast({
-        title: "Connection Failed",
-        description: err.message || "Failed to connect Freighter wallet.",
+        title: "Couldn't set up your wallet",
+        description: err.message || "Something went wrong setting up your wallet. Nothing was moved. Try again.",
         variant: "destructive",
       });
     } finally {
@@ -1270,11 +1270,11 @@ export default function ProfilePage() {
   const handleCopyAddress = (address: string) => {
     navigator.clipboard.writeText(address);
     toast({
-      title: "Address Copied",
+      title: "Account ID copied",
       description: (
         <span className="inline-flex items-baseline gap-1">
-          <Wallet className="h-4 w-4 text-accent mr-1" /> Stellar public key
-          copied to clipboard.
+          <Wallet className="h-4 w-4 text-accent mr-1" /> Your account ID is on
+          the clipboard.
         </span>
       ),
     });
@@ -1339,17 +1339,17 @@ export default function ProfilePage() {
                   {user.name}
                 </h1>
                 <p className="text-muted-foreground">
-                  {user.email || "Freighter Authenticated"}
+                  {user.email || "Wallet linked"}
                 </p>
                 {connectedAddress ? (
                   <span className="inline-flex items-center gap-1.5 mt-1.5 text-xs text-green-600 dark:text-green-400 font-semibold px-2.5 py-0.5 rounded-full bg-green-500/10 border border-green-500/20 shadow-sm">
                     <div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
-                    Freighter Connected
+                    Wallet linked
                   </span>
                 ) : (
-                  <span className="inline-flex items-center gap-1.5 mt-1.5 text-xs text-red-600 dark:text-red-400 font-semibold px-2.5 py-0.5 rounded-full bg-red-500/10 border border-red-500/20 shadow-sm">
-                    <div className="h-1.5 w-1.5 rounded-full bg-red-500" />
-                    Wallet Disconnected
+                  <span className="inline-flex items-center gap-1.5 mt-1.5 text-xs text-muted-foreground font-medium px-2.5 py-0.5 rounded-full bg-muted/60 border border-border shadow-sm">
+                    <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60" />
+                    Wallet: not set up
                   </span>
                 )}
               </div>
@@ -1371,7 +1371,7 @@ export default function ProfilePage() {
                         Identity Verification
                       </h3>
                       <p className="text-xs text-muted-foreground mt-0.5">
-                        Attest your identity on the Stellar network
+                        Verify your identity
                       </p>
                     </div>
                   </div>
@@ -1381,7 +1381,7 @@ export default function ProfilePage() {
                       <span className="text-xs text-muted-foreground">Checking status...</span>
                     ) : isOnChainKycApproved ? (
                       <Badge className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 text-xs py-1 px-3 font-semibold">
-                        Verified On-Chain
+                        Verified
                       </Badge>
                     ) : kycStatus === "pending" ? (
                       <Badge className="bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 text-xs py-1 px-3 font-semibold">
@@ -1416,9 +1416,9 @@ export default function ProfilePage() {
         onValueChange={(v) => router.push(`/profile?tab=${v}`)}
       >
         <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="projects">Projects</TabsTrigger>
-          <TabsTrigger value="funded">Funded</TabsTrigger>
-          <TabsTrigger value="investors">Funders</TabsTrigger>
+          <TabsTrigger value="projects">Your projects</TabsTrigger>
+          <TabsTrigger value="funded">Your stakes</TabsTrigger>
+          <TabsTrigger value="investors">Stakeholders</TabsTrigger>
           <TabsTrigger value="wallet">Wallet</TabsTrigger>
         </TabsList>
 
@@ -1452,7 +1452,7 @@ export default function ProfilePage() {
 
         <TabsContent value="funded" className="bg-card border rounded-lg p-6">
           <TabHeader
-            title="Projects I've Funded"
+            title="Your stakes"
             showRefresh
             rightElement={
               <Select value={fundedSort} onValueChange={(v: any) => setFundedSort(v)}>
@@ -1460,10 +1460,10 @@ export default function ProfilePage() {
                   <SelectValue placeholder="Sort by" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="date-desc">Latest Funded</SelectItem>
-                  <SelectItem value="date-asc">Oldest Funded</SelectItem>
-                  <SelectItem value="amount-desc">Largest Funded</SelectItem>
-                  <SelectItem value="amount-asc">Smallest Funded</SelectItem>
+                  <SelectItem value="date-desc">Latest</SelectItem>
+                  <SelectItem value="date-asc">Oldest</SelectItem>
+                  <SelectItem value="amount-desc">Largest</SelectItem>
+                  <SelectItem value="amount-asc">Smallest</SelectItem>
                 </SelectContent>
               </Select>
             }
@@ -1483,7 +1483,7 @@ export default function ProfilePage() {
             </div>
           ) : (
             <p className="text-center py-10 text-muted-foreground">
-              No funded projects.
+              You haven&apos;t staked yet. Start with $5 in a project you believe in.
             </p>
           )}
         </TabsContent>
@@ -1491,18 +1491,18 @@ export default function ProfilePage() {
         {/* ── Investors Tab ── */}
         <TabsContent value="investors" className="bg-card border rounded-lg p-6">
           <TabHeader
-            title="Funders Dashboard"
-            description="Manage and view all supporters who have invested in your specific projects."
+            title="Stakeholders"
+            description="Everyone who has staked in your projects."
             rightElement={
               <Select value={investorSort} onValueChange={(v: any) => setInvestorSort(v)}>
                 <SelectTrigger className="w-[190px] bg-background border-input hover:bg-accent hover:text-accent-foreground transition-colors text-xs font-semibold h-9 rounded-lg">
                   <SelectValue placeholder="Sort by" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="investors-desc">Most Funders</SelectItem>
-                  <SelectItem value="investors-asc">Least Funders</SelectItem>
-                  <SelectItem value="amount-desc">Largest Amount Raised</SelectItem>
-                  <SelectItem value="amount-asc">Smallest Amount Raised</SelectItem>
+                  <SelectItem value="investors-desc">Most stakeholders</SelectItem>
+                  <SelectItem value="investors-asc">Fewest stakeholders</SelectItem>
+                  <SelectItem value="amount-desc">Most staked</SelectItem>
+                  <SelectItem value="amount-asc">Least staked</SelectItem>
                 </SelectContent>
               </Select>
             }
@@ -1541,10 +1541,10 @@ export default function ProfilePage() {
               </div>
               <div className="space-y-1">
                 <h4 className="text-base font-semibold text-foreground">
-                  Wallet Disconnected
+                  Wallet: not set up
                 </h4>
                 <p className="text-xs text-muted-foreground max-w-sm">
-                  Please connect your Freighter wallet to view details, testnet balances, and transaction history.
+                  Set up your wallet to see what it holds and your activity.
                 </p>
               </div>
               <Button
@@ -1557,7 +1557,7 @@ export default function ProfilePage() {
                 ) : (
                   <>
                     <FreighterIcon className="h-4 w-4" />
-                    Connect Freighter Wallet
+                    Set up your wallet
                   </>
                 )}
               </Button>
@@ -1577,10 +1577,10 @@ export default function ProfilePage() {
                     </div>
                     <div>
                       <h3 className="font-bold text-lg text-foreground">
-                        Freighter Wallet
+                        Your wallet
                       </h3>
                       <p className="text-xs text-muted-foreground mt-0.5">
-                        Your authenticated Stellar public key on Testnet
+                        Your account ID. Like a bank account number: safe to share.
                       </p>
                     </div>
                   </div>
@@ -1605,7 +1605,7 @@ export default function ProfilePage() {
                                 <Copy className="h-4 w-4" />
                               </Button>
                             </TooltipTrigger>
-                            <TooltipContent>Copy Address</TooltipContent>
+                            <TooltipContent>Copy account ID</TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
 
@@ -1613,7 +1613,7 @@ export default function ProfilePage() {
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <a
-                                href={`https://stellar.expert/explorer/testnet/account/${connectedAddress}`}
+                                href={`${EXPLORER_BASE}/account/${connectedAddress}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="inline-flex"
@@ -1628,7 +1628,7 @@ export default function ProfilePage() {
                               </a>
                             </TooltipTrigger>
                             <TooltipContent>
-                              View on Stellar.Expert
+                              See the public record
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>

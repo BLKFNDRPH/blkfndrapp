@@ -43,9 +43,9 @@ interface FreighterError {
  * know that approving it now does nothing.
  */
 export const NO_SIGNATURE_MESSAGE =
-  "Freighter didn't return a signature — the request was cancelled or expired (Freighter drops a request left open for about 5 minutes). " +
-  "If a Freighter window is still open, close it: it is no longer connected to this page, and approving it now sends nothing. " +
-  "Nothing has been sent to the network.";
+  "Your wallet didn't confirm, so the request was cancelled or timed out (a request left open for about five minutes is dropped). " +
+  "If a wallet window is still open, close it; approving it now does nothing. " +
+  "Nothing was moved or charged.";
 
 /** No signature came back, and the reason was the person at the keyboard. */
 export class FreighterDeclined extends Error {
@@ -56,21 +56,24 @@ export class FreighterDeclined extends Error {
 }
 
 export function describeFreighterError(error: FreighterError): string {
+  // The wallet's own words stay available, but labelled and last: they are for
+  // whoever reads a bug report, not for the person deciding what to do next.
   const detail = [error.message, error.ext?.length ? error.ext.join(", ") : null]
     .filter(Boolean)
     .join(" — ");
+  const technical = detail ? ` (Technical details: ${detail})` : "";
 
   switch (error.code) {
     case -4:
-      return "You declined the request in Freighter. Nothing has been sent to the network.";
+      return "You didn't approve it. Nothing was moved or charged.";
     case -3:
-      return `Freighter rejected the request as malformed${detail ? `: ${detail}` : "."}`;
+      return `Your wallet couldn't read this request. Reload the page and try again. Nothing was moved or charged.${technical}`;
     case -2:
-      return `Freighter could not reach a service it needs${detail ? `: ${detail}` : "."}`;
+      return `Your wallet couldn't reach the network. Check your connection and try again. Nothing was moved or charged.${technical}`;
     case -1:
-      return `Freighter hit an internal error${detail ? `: ${detail}` : "."}`;
+      return `Your wallet hit a problem on its side. Unlock it and try again. Nothing was moved or charged.${technical}`;
     default:
-      return detail || "Freighter could not sign the transaction.";
+      return `Your wallet couldn't confirm this. Try again. Nothing was moved or charged.${technical}`;
   }
 }
 
@@ -95,9 +98,9 @@ function requireSignedBy(
 ) {
   if (!signerAddress || signerAddress === publicKey) return;
   throw new Error(
-    `Freighter signed with ${shortenAddress(signerAddress)}, but this ${what} is for ${shortenAddress(publicKey)}. ` +
-      "If that account is in Freighter, select it there and try again; otherwise connect the wallet you mean to use. " +
-      "Nothing has been sent to the network.",
+    "Your wallet is using a different account than the one linked here. Switch accounts in your wallet and try again. " +
+      "Nothing was moved or charged. " +
+      `(Technical details: this ${what} is for ${shortenAddress(publicKey)}; your wallet confirmed as ${shortenAddress(signerAddress)}.)`,
   );
 }
 
@@ -155,8 +158,8 @@ export function freighterSigner(publicKey: string) {
 
       if (!res?.signedAuthEntry) {
         throw new FreighterDeclined(
-          "Freighter didn't return a signed authorisation — the request was cancelled or expired. " +
-            "If a Freighter window is still open, close it: approving it now sends nothing.",
+          "Your wallet didn't confirm, so the request was cancelled or timed out. " +
+            "If a wallet window is still open, close it; approving it now does nothing. Nothing was moved or charged.",
         );
       }
       requireSignedBy(publicKey, res.signerAddress, "authorisation");

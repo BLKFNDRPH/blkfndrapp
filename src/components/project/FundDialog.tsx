@@ -21,6 +21,7 @@ import { useStellarContract, PlatformLockError } from "@/hooks/use-stellar-contr
 import { FreighterDeclined } from "@/lib/freighter-signer";
 import { useFreighterWallet } from "@/context/FreighterWalletContext";
 import { vaultClient, simulate } from "@/lib/stellar-clients";
+import { EXPLORER_BASE } from "@/lib/network";
 import {
   bondAssetFor,
   tokenBalance,
@@ -75,8 +76,8 @@ export function FundDialog({
   const handleConnectFreighter = async () => {
     if (!user) {
       toast({
-        title: "Login Required",
-        description: "Please log in with Google first before connecting your wallet.",
+        title: "Sign in first",
+        description: "Sign in to continue, then set up your wallet.",
         variant: "destructive",
       });
       signInToContinue({ fund: true });
@@ -87,15 +88,15 @@ export function FundDialog({
       await connectFreighter();
       await refreshUser();
       toast({
-        title: "Wallet Connected",
-        description: "Freighter wallet successfully connected and verified.",
+        title: "Your wallet is linked",
+        description: "Your wallet is linked to your account.",
       });
       setIsFundFlow(true);
     } catch (err: any) {
       console.error("[FundDialog] Freighter connection failed:", err);
       toast({
-        title: "Connection Failed",
-        description: err.message || "Failed to connect Freighter wallet.",
+        title: "Couldn't set up your wallet",
+        description: err.message || "Something went wrong setting up your wallet. Nothing was moved. Try again.",
         variant: "destructive",
       });
     } finally {
@@ -290,8 +291,8 @@ export function FundDialog({
 
       if (!project.vaultAddress) {
         toast({
-          title: "Contribution Failed",
-          description: "Vault address is missing for this project.",
+          title: "Stake not made",
+          description: "This project's vault could not be found. Nothing was moved or charged.",
           variant: "destructive",
         });
         return;
@@ -305,11 +306,11 @@ export function FundDialog({
 
         const txStatus = (result as any)?.getTransactionResponse?.status;
         if (txStatus !== "SUCCESS") {
-          throw new Error("Funding transaction failed on-chain.");
+          throw new Error("Your stake didn't go through. Nothing was moved or charged.");
         }
 
         const txHash = (result as any)?.sendTransactionResponse?.hash;
-        const txUrl = txHash ? `https://stellar.expert/explorer/testnet/tx/${txHash}` : null;
+        const txUrl = txHash ? `${EXPLORER_BASE}/tx/${txHash}` : null;
 
         let investorUid = user?.uid;
         if (!investorUid && freighterWalletAddress) {
@@ -340,10 +341,10 @@ export function FundDialog({
         }
 
         toast({
-          title: "Contribution Successful",
+          title: "Stake confirmed",
           description: (
             <div>
-              <p>Your contribution has been processed on Stellar Testnet.</p>
+              <p>Your stake is in the vault.</p>
               {txUrl && (
                 <Link
                   href={txUrl}
@@ -351,7 +352,7 @@ export function FundDialog({
                   rel="noopener noreferrer"
                   className="underline"
                 >
-                  View on Stellar Explorer
+                  See the public record
                 </Link>
               )}
             </div>
@@ -381,11 +382,11 @@ export function FundDialog({
         console.error("Contribution failed:", error);
         const reason = String(error?.message ?? "").trim();
         toast({
-          title: "Contribution Failed",
+          title: "Stake not made",
           description:
             reason.length > 0
               ? reason.slice(0, 400)
-              : "Your contribution could not be processed. Nothing was sent to the network.",
+              : "Your stake didn't go through. Nothing was moved or charged.",
           variant: "destructive",
         });
       }
@@ -457,11 +458,11 @@ export function FundDialog({
   const getButtonContent = () => {
     if (anyPending) return <CubeSpinner />;
     if (project.status === "completed") return "Completed";
-    if (project.status === "funded" || isProjectFunded) return "Fully Funded";
-    if (isProjectExpired) return "Funding Ended";
-    if (isLocked) return "Locked";
-    if (isProjectPending) return "Pending Approval";
-    return `Fund with ${projectCurrency}`;
+    if (project.status === "funded" || isProjectFunded) return "Goal reached";
+    if (isProjectExpired) return "Deadline passed";
+    if (isLocked) return "Paused by BLKFNDR";
+    if (isProjectPending) return "Under listing review";
+    return "Stake from $5";
   };
 
   // An element, not a component declared inside render. As a component it
@@ -505,7 +506,7 @@ export function FundDialog({
                 <span className="font-bold text-foreground">
                   {projectCurrency}
                 </span>
-                <span> on Stellar</span>
+                <span> for stakes</span>
               </div>
             </div>
 
@@ -526,7 +527,7 @@ export function FundDialog({
                   htmlFor="amount"
                   className="text-xs sm:text-sm font-semibold text-foreground flex justify-between items-center"
                 >
-                  <span>Contribution Amount</span>
+                  <span>Stake</span>
                   <span className="text-xs text-muted-foreground font-normal">
                     Currency: <span className="font-bold text-foreground">{inputCurrency}</span>
                   </span>
@@ -560,10 +561,10 @@ export function FundDialog({
                     </div>
                     <div className="flex flex-col min-w-0">
                       <span className="text-[10px] text-red-400 font-medium uppercase">
-                        Wallet Disconnected
+                        Wallet: not set up
                       </span>
                       <span className="text-xs text-neutral-400 font-normal">
-                        Please connect your Freighter wallet to verify ownership and fund this project.
+                        Set up your wallet to confirm this stake.
                       </span>
                     </div>
                   </div>
@@ -573,7 +574,7 @@ export function FundDialog({
               {freighterWalletAddress && (
                 <div className="flex flex-col gap-2 w-full mt-2 text-left">
                   <span className="font-semibold text-[10px] uppercase tracking-wider text-muted-foreground ml-1">
-                    Freighter Wallet Balance
+                    In your wallet
                   </span>
                   <div className="flex items-center gap-3 bg-secondary/30 border border-border/40 backdrop-blur-md rounded-xl px-3 py-2.5 shadow-sm">
                     <div className="bg-primary/10 p-2 rounded-lg shrink-0">
@@ -678,7 +679,7 @@ export function FundDialog({
                 <p className="text-xs text-muted-foreground">
                   No platform fee is taken from stakes. The builder paid a flat
                   listing fee when the vault was created, so your whole stake is
-                  credited toward the goal. Freighter shows the network fee
+                  credited toward the goal. Your wallet shows the network fee
                   separately.
                 </p>
 
@@ -742,10 +743,10 @@ export function FundDialog({
                   {(isSubmitPending || isConnectingFreighter) && <CubeSpinner />}
                   <span>
                     {isConnectingFreighter
-                      ? "Connecting Wallet..."
+                      ? "Opening your wallet..."
                       : freighterWalletAddress
-                        ? "Confirm Contribution"
-                        : "Connect Wallet to Contribute"}
+                        ? "Review and confirm"
+                        : "Set up your wallet"}
                   </span>
                 </Button>
               </div>

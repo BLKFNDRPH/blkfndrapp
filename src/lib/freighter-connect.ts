@@ -13,6 +13,68 @@ export function isStellarPublicKey(
   return !!value && STELLAR_PUBLIC_KEY_RE.test(value);
 }
 
+/**
+ * Why a connect attempt failed, for the interface to pick a fix from.
+ *
+ * - `not-detected`: no wallet extension answered. On a computer that means
+ *   "install it"; on a phone no extension can exist at all.
+ * - `declined`: the person said no in the wallet's own window.
+ * - `locked`: the wallet is there but gave no account (locked, or none chosen).
+ * - `unavailable`: the wallet errored for a reason of its own.
+ */
+export type WalletConnectFailure =
+  | "not-detected"
+  | "declined"
+  | "locked"
+  | "unavailable";
+
+/** The plain-language sentence for each failure, one fix each. */
+export const WALLET_CONNECT_MESSAGES: Record<WalletConnectFailure, string> = {
+  "not-detected":
+    "We can't see your wallet yet. Make sure it's installed and unlocked, then try again.",
+  declined:
+    "You didn't allow this site in your wallet. Nothing happened. Allow it to continue.",
+  locked:
+    "Your wallet is locked or has no account chosen. Unlock it, pick an account, then try again.",
+  unavailable:
+    "Your wallet didn't respond. Make sure it's unlocked, then try again.",
+};
+
+/** A connect failure with its code attached, so screens can branch on it. */
+export class WalletConnectError extends Error {
+  code: WalletConnectFailure;
+  /** The wallet's own words, for Technical details and the console only. */
+  detail?: string;
+
+  constructor(code: WalletConnectFailure, detail?: string) {
+    super(WALLET_CONNECT_MESSAGES[code]);
+    this.name = "WalletConnectError";
+    this.code = code;
+    this.detail = detail;
+  }
+}
+
+/** True when an error thrown by a connect attempt says no wallet was found. */
+export function isWalletNotDetected(err: unknown): boolean {
+  return err instanceof WalletConnectError && err.code === "not-detected";
+}
+
+/** Freighter's error envelope; -4 is the person declining. */
+interface FreighterApiError {
+  code?: number;
+  message?: string;
+}
+
+function classify(error: FreighterApiError): WalletConnectFailure {
+  if (error.code === -4) return "declined";
+  const text = (error.message ?? "").toLowerCase();
+  if (text.includes("declin") || text.includes("reject") || text.includes("denied")) {
+    return "declined";
+  }
+  if (text.includes("lock")) return "locked";
+  return "unavailable";
+}
+
 export async function getFreighterAddressIfAvailable(): Promise<string | null> {
   if (typeof window === "undefined") return null;
 
@@ -40,30 +102,48 @@ export async function getFreighterAddressIfAvailable(): Promise<string | null> {
  * extension is installed but still initializing.
  */
 export async function connectFreighterWallet(): Promise<
-  { ok: true; address: string } | { ok: false; message: string }
+  | { ok: true; address: string }
+  | { ok: false; code: WalletConnectFailure; message: string; detail?: string }
 > {
   if (typeof window === "undefined") {
-    return { ok: false, message: "Freighter can only be used in the browser." };
+    return {
+      ok: false,
+      code: "unavailable",
+      message: "Your wallet can only be set up from a web browser.",
+    };
   }
 
   const connected = await isConnected();
   if (connected.error || !connected.isConnected) {
     return {
       ok: false,
-      message:
-        "Could not detect Freighter in this browser. If you already installed it, make sure the extension is enabled and unlocked, then reload and try again. Otherwise install it at https://freighter.app.",
+      code: "not-detected",
+      message: WALLET_CONNECT_MESSAGES["not-detected"],
+      detail: connected.error?.message,
     };
   }
 
   const allowed = await isAllowed();
   if (allowed.error) {
-    return { ok: false, message: allowed.error.message };
+    const code = classify(allowed.error);
+    return {
+      ok: false,
+      code,
+      message: WALLET_CONNECT_MESSAGES[code],
+      detail: allowed.error.message,
+    };
   }
 
   if (allowed.isAllowed) {
     const addressResult = await getAddress();
     if (addressResult.error) {
-      return { ok: false, message: addressResult.error.message };
+      const code = classify(addressResult.error);
+      return {
+        ok: false,
+        code,
+        message: WALLET_CONNECT_MESSAGES[code],
+        detail: addressResult.error.message,
+      };
     }
     if (isStellarPublicKey(addressResult.address)) {
       return { ok: true, address: addressResult.address };
@@ -72,7 +152,13 @@ export async function connectFreighterWallet(): Promise<
 
   const accessResult = await requestAccess();
   if (accessResult.error) {
-    return { ok: false, message: accessResult.error.message };
+    const code = classify(accessResult.error);
+    return {
+      ok: false,
+      code,
+      message: WALLET_CONNECT_MESSAGES[code],
+      detail: accessResult.error.message,
+    };
   }
   if (isStellarPublicKey(accessResult.address)) {
     return { ok: true, address: accessResult.address };
@@ -80,7 +166,7 @@ export async function connectFreighterWallet(): Promise<
 
   return {
     ok: false,
-    message:
-      "Could not connect to Freighter. Open the Freighter extension, unlock it, select an account, and approve this site under Connected Apps. If you use both localhost and 127.0.0.1, stick to one.",
+    code: "locked",
+    message: WALLET_CONNECT_MESSAGES.locked,
   };
 }

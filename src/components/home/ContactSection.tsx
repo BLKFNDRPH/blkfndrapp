@@ -31,38 +31,38 @@ export const CONTACT = {
 const CHANNELS = [
   {
     icon: Mail,
-    title: "General enquiries",
+    title: "General questions",
     body: "Questions about the platform, partnerships, or anything that does not fit the boxes below.",
     action: CONTACT.general,
     href: `mailto:${CONTACT.general}`,
   },
   {
     icon: HardHat,
-    title: "Builders and developers",
-    body: "Planning a raise, or want your project reviewed before you post it. Bring the blueprints, the timeline and the funding goal.",
+    title: "Builders",
+    body: "Planning to open a vault, or want your project reviewed before you post it. Bring the blueprints, the timeline and the goal.",
     action: CONTACT.builders,
     href: `mailto:${CONTACT.builders}`,
   },
   {
     icon: ShieldAlert,
     title: "Security disclosures",
-    body: "Found something in the contracts or the app. Report it privately first and give us a window to fix it before you publish.",
+    body: "Found something in the vault code or the app. Report it privately first and give us a window to fix it before you publish.",
     action: CONTACT.security,
     href: `mailto:${CONTACT.security}`,
   },
   {
     icon: Github,
     title: "Source and issues",
-    body: "The contracts, the app and the docs are public. Read the code, open an issue, or check a deployment against the build hashes.",
+    body: "The vault code, the app and the docs are public. Read the code, open an issue, or check a deployment against the program fingerprints.",
     action: "BLKFNDRPH/blkfndrapp",
     href: CONTACT.repo,
   },
 ];
 
 const TOPICS = [
-  { value: "general", label: "General enquiry", to: CONTACT.general },
-  { value: "builder", label: "I want to fund a build", to: CONTACT.builders },
-  { value: "contributor", label: "Question about contributing", to: CONTACT.general },
+  { value: "general", label: "General question", to: CONTACT.general },
+  { value: "stake", label: "I want to stake in a project", to: CONTACT.general },
+  { value: "builder", label: "I want to open a vault", to: CONTACT.builders },
   { value: "security", label: "Security disclosure", to: CONTACT.security },
 ];
 
@@ -102,7 +102,7 @@ export function ContactSection() {
         <SectionHeading
           eyebrow="Contact"
           title="Talk to the people building it"
-          lead="Whether you are bringing a project to BLKFNDR, weighing up a stake in one, or you have found a hole in the contracts, there is a direct way to reach us."
+          lead="Whether you are bringing a project to BLKFNDR, weighing up a stake in one, or you have found a hole in the vault code, there is a direct way to reach us."
         />
 
         <div className="mt-14 grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] lg:gap-12">
@@ -117,7 +117,7 @@ export function ContactSection() {
                 className="group flex gap-4 rounded-xl border bg-background p-5 transition-all hover:border-accent/50 hover:shadow-md"
               >
                 <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-accent/10 text-accent">
-                  <Icon className="h-5 w-5" />
+                  <Icon className="h-5 w-5" aria-hidden="true" />
                 </span>
                 <span className="min-w-0">
                   <span className="block font-headline text-base font-semibold">
@@ -203,7 +203,7 @@ export function ContactSection() {
             </div>
 
             <Button type="submit" size="lg" className="mt-6 w-full sm:w-auto">
-              <Send className="h-4 w-4" />
+              <Send className="h-4 w-4" aria-hidden="true" />
               Open in my mail client
             </Button>
           </form>

@@ -10,9 +10,9 @@ import { MapPin, ExternalLink } from "lucide-react";
  * one it embeds the map inline. The link is not a degraded fallback; for most
  * deployments it is the right answer, and an interactive map is the upgrade.
  *
- * The location is creator-supplied and unverified, so the wording says "listed"
- * rather than asserting the project is there. A backer reading a precise address
- * should not infer that anyone checked it.
+ * The location is supplied by the builder and unverified, so the wording says
+ * "listed" rather than asserting the project is there. A stakeholder reading a
+ * precise address should not infer that anyone checked it.
  */
 
 const MAPS_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
@@ -44,7 +44,7 @@ export function ProjectLocation({ location, lat, lng }: Props) {
           <div className="min-w-0">
             <p className="text-sm font-medium break-words">{label || query}</p>
             <p className="text-xs text-muted-foreground">
-              Listed by the project creator
+              Listed by the builder
             </p>
           </div>
         </div>

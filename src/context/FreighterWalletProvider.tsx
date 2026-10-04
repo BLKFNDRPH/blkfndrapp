@@ -6,8 +6,20 @@ import {
   connectFreighterWallet,
   getFreighterAddressIfAvailable,
   isStellarPublicKey,
+  WalletConnectError,
 } from "@/lib/freighter-connect";
 import { FreighterWalletContext } from "./FreighterWalletContext";
+
+/**
+ * "Disconnect for now" is remembered here, per browser. The wallet stays
+ * linked to the account on the server; this only stops the app from using it
+ * until the person reconnects. Signing out neither sets nor clears it.
+ */
+const DISCONNECTED_FOR_NOW_KEY = "freighterDisconnected";
+
+/** Our side failed, not the person's. One sentence, the same everywhere. */
+const OUR_SIDE_MESSAGE =
+  "We couldn't finish setting up (our side, not yours). Nothing was moved. Try again in a moment.";
 
 async function restoreAddressFromSession(): Promise<string | null> {
   try {
@@ -23,6 +35,14 @@ async function restoreAddressFromSession(): Promise<string | null> {
     // Session not available — fall through to extension connect
   }
   return null;
+}
+
+function disconnectedForNow(): boolean {
+  try {
+    return localStorage.getItem(DISCONNECTED_FOR_NOW_KEY) === "true";
+  } catch {
+    return false;
+  }
 }
 
 export const FreighterWalletProvider = ({
@@ -43,16 +63,19 @@ export const FreighterWalletProvider = ({
     let cancelled = false;
 
     async function initWallet() {
+      // "Disconnect for now" means exactly that: the linked wallet is not
+      // picked up again until the person reconnects it. Before, a linked
+      // wallet was always restored and the flag was cleared, so a disconnect
+      // lasted only until the next page load.
+      if (disconnectedForNow()) return;
+
       const sessionAddress = await restoreAddressFromSession();
       if (cancelled) return;
 
       if (sessionAddress) {
-        localStorage.removeItem("freighterDisconnected");
         setFreighterWalletAddress(sessionAddress);
         return;
       }
-
-      if (localStorage.getItem("freighterDisconnected") === "true") return;
 
       const address = await getFreighterAddressIfAvailable();
       if (!cancelled && address) {
@@ -66,28 +89,17 @@ export const FreighterWalletProvider = ({
     };
   }, []);
 
-  // Unlink from the account first, and forget the wallet here only once that
-  // has worked. This used to forget it first and never read the response, and
-  // fetch does not throw on a 401 or 500. So a failed unlink still looked like
-  // a disconnect, and the next page load restored the wallet from the account
-  // that still held it. Now a failed unlink changes nothing and says why.
+  // Stop using the wallet in this browser. The link to the account is kept:
+  // the person's stakes and votes still belong to that wallet, and the next
+  // "Reconnect" picks it straight up. Removing a wallet from an account is a
+  // separate action that does not exist in the interface yet; the server route
+  // for it stays in place for when it does. Nothing here can fail.
   const disconnectWallet = async () => {
-    let res: Response;
     try {
-      res = await fetch("/api/auth/freighter/disconnect", { method: "POST" });
+      localStorage.setItem(DISCONNECTED_FOR_NOW_KEY, "true");
     } catch {
-      throw new Error(
-        "Could not reach the server, so your wallet is still connected and linked to your account. Try again.",
-      );
+      // Without storage the disconnect lasts for this page only.
     }
-    if (!res.ok) {
-      throw new Error(
-        res.status === 401
-          ? "Your session has ended, so your wallet could not be unlinked from your account. Sign in again, then disconnect it."
-          : "The server could not unlink your wallet, so it is still connected and linked to your account. Try again.",
-      );
-    }
-    localStorage.setItem("freighterDisconnected", "true");
     setFreighterWalletAddress(null);
   };
 
@@ -97,13 +109,17 @@ export const FreighterWalletProvider = ({
       const sessionRes = await fetch("/api/auth/session");
       const sessionData = await sessionRes.json();
       if (!sessionData?.user) {
-        throw new Error("Must be logged in with Google to connect a wallet.");
+        throw new Error("Sign in first, then set up your wallet.");
       }
 
       const result = await connectFreighterWallet();
       if (!result.ok) {
-        setError(result.message);
-        throw new Error(result.message);
+        if (result.detail) {
+          console.warn("[Wallet] connect:", result.code, result.detail);
+        }
+        const connectError = new WalletConnectError(result.code, result.detail);
+        setError(connectError.message);
+        throw connectError;
       }
       const publicKey = result.address;
 
@@ -114,7 +130,8 @@ export const FreighterWalletProvider = ({
       });
       const { nonce, error: nonceError } = await nonceRes.json();
       if (nonceError || !nonce) {
-        throw new Error(nonceError || "Failed to fetch nonce");
+        console.error("[Wallet] nonce:", nonceError);
+        throw new Error(OUR_SIDE_MESSAGE);
       }
 
       let signaturePayload: string | number[] = "";
@@ -123,6 +140,16 @@ export const FreighterWalletProvider = ({
           networkPassphrase: "Test SDF Network ; September 2015",
           address: publicKey,
         });
+
+        const signError = (
+          signResult as { error?: { code?: number; message?: string } } | undefined
+        )?.error;
+        if (signError) {
+          throw new WalletConnectError(
+            signError.code === -4 ? "declined" : "unavailable",
+            signError.message,
+          );
+        }
 
         let sigBytes: unknown = signResult;
         if (signResult && typeof signResult === "object") {
@@ -157,12 +184,31 @@ export const FreighterWalletProvider = ({
           signaturePayload = (sigBytes as { data: number[] }).data;
         } else {
           console.error("Unknown signature payload structure:", sigBytes);
-          throw new Error("Unknown signature format returned by Freighter.");
+          throw new Error("Unknown signature format returned by the wallet.");
+        }
+
+        const signerAddress = (signResult as { signerAddress?: string })
+          ?.signerAddress;
+        if (signerAddress && signerAddress !== publicKey) {
+          throw new Error(
+            "Your wallet is using a different account than the one linked here. Switch accounts in your wallet and try again.",
+          );
         }
       } catch (signErr) {
         console.error("Sign Error:", signErr);
+        if (signErr instanceof WalletConnectError && signErr.code === "declined") {
+          throw new Error(
+            "You didn't approve the code, so the wallet isn't set up yet. Nothing was moved or charged.",
+          );
+        }
+        if (
+          signErr instanceof Error &&
+          signErr.message.startsWith("Your wallet is using a different account")
+        ) {
+          throw signErr;
+        }
         throw new Error(
-          "Failed to sign the authentication message. Did you reject the request in Freighter?",
+          "Your wallet couldn't confirm the code. Make sure it's unlocked and on the practice network, then try again. Nothing was moved or charged.",
         );
       }
 
@@ -174,17 +220,28 @@ export const FreighterWalletProvider = ({
       const verifyData = await verifyRes.json();
 
       if (!verifyRes.ok || !verifyData.success) {
-        throw new Error(verifyData.error || "Failed to verify signature");
+        console.error("[Wallet] verify:", verifyRes.status, verifyData?.error);
+        // The route answers "Unauthorized" when the sign-in is gone, and
+        // explains a bad challenge or signature in its own words otherwise.
+        throw new Error(
+          verifyData?.error === "Unauthorized"
+            ? "Your sign-in expired. Sign in again and we'll pick up here."
+            : OUR_SIDE_MESSAGE,
+        );
       }
 
-      localStorage.removeItem("freighterDisconnected");
+      try {
+        localStorage.removeItem(DISCONNECTED_FOR_NOW_KEY);
+      } catch {
+        // Nothing to clear.
+      }
       setFreighterWalletAddress(publicKey);
       return publicKey;
     } catch (err) {
       const errorMessage =
         err instanceof Error
           ? err.message
-          : "An unknown error occurred during login.";
+          : "Something went wrong setting up your wallet. Nothing was moved. Try again.";
       setError(errorMessage);
       throw err;
     }

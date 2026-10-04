@@ -15,13 +15,11 @@ import React from "react";
 interface ProjectListProps {
   projects: Project[];
   showStatus?: boolean;
-  onlyShowCompletedStatus?: boolean;
 }
 
 export function ProjectList({
   projects,
   showStatus = true,
-  onlyShowCompletedStatus = false,
 }: ProjectListProps) {
   const plugin = React.useRef(
     Autoplay({ delay: 4000, stopOnInteraction: true }),
@@ -30,7 +28,7 @@ export function ProjectList({
   if (projects.length === 0) {
     return (
       <div className="text-center text-muted-foreground">
-        No projects found.
+        No projects to show yet.
       </div>
     );
   }
@@ -56,7 +54,6 @@ export function ProjectList({
               <ProjectCard
                 project={project}
                 showStatus={showStatus}
-                onlyShowCompletedStatus={onlyShowCompletedStatus}
               />
             </div>
           </CarouselItem>

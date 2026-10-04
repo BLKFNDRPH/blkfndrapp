@@ -7,6 +7,7 @@ import {
   ReactNode,
   useCallback,
   useEffect,
+  useRef,
 } from "react";
 import type { Project } from "@/lib/types";
 import { ProjectDetailsDialog } from "@/components/project/ProjectDetailsDialog";
@@ -70,6 +71,44 @@ function forgetProjectToResume() {
   try {
     sessionStorage.removeItem(RESUME_KEY);
   } catch {}
+}
+
+/** True while a note is waiting, without consuming it. */
+function hasProjectToResume(): boolean {
+  try {
+    return sessionStorage.getItem(RESUME_KEY) !== null;
+  } catch {
+    return false;
+  }
+}
+
+// The open project also lives in the URL as ?project=<id>, so a link to a
+// project can be shared, pasted into a message or kept, and opening it lands
+// on the dialog. Written and read with the plain history API: this provider
+// sits in the root layout, where useSearchParams would need a Suspense
+// boundary around the whole app, and Next keeps its router in step with
+// replaceState on its own.
+const PROJECT_PARAM = "project";
+
+function readProjectParam(): string | null {
+  try {
+    const id = new URLSearchParams(window.location.search).get(PROJECT_PARAM);
+    return id && id.trim() ? id.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeProjectParam(id: string | null) {
+  try {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get(PROJECT_PARAM) === id) return;
+    if (id) url.searchParams.set(PROJECT_PARAM, id);
+    else url.searchParams.delete(PROJECT_PARAM);
+    window.history.replaceState(window.history.state, "", url.toString());
+  } catch {
+    // The dialog works without the URL following it.
+  }
 }
 
 function takeProjectToResume(): ResumeProject | null {
@@ -208,6 +247,7 @@ export const ProjectDetailsProvider = ({
       setIsOpen(true);
       setError(null);
       setIsFundFlow(startFundFlow);
+      writeProjectParam(initialProject.id);
       fetchProject(initialProject.id, initialProject);
     },
     [fetchProject],
@@ -216,6 +256,7 @@ export const ProjectDetailsProvider = ({
   const closeProjectDetails = () => {
     // Closing it is also the signal that nobody wants it back after a sign-in.
     forgetProjectToResume();
+    writeProjectParam(null);
     setIsOpen(false);
     setTimeout(() => {
       setProject(null);
@@ -236,6 +277,27 @@ export const ProjectDetailsProvider = ({
     if (project) rememberProjectToResume(project.id, options?.fund === true);
     login();
   };
+
+  // Open the project a shared link names, once, on arrival. A pending sign-in
+  // note takes precedence: it carries the fund intent, and the effect below
+  // opens the same project from it.
+  const deepLinkHandled = useRef(false);
+  useEffect(() => {
+    if (deepLinkHandled.current) return;
+    deepLinkHandled.current = true;
+    const id = readProjectParam();
+    if (!id || hasProjectToResume()) return;
+
+    let cancelled = false;
+    getProjectById(id).then((found) => {
+      if (cancelled) return;
+      if (found) openProjectDetails(found);
+      else writeProjectParam(null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [openProjectDetails]);
 
   // Bring back the project noted before a sign-in, once the sign-in is done.
   // Nothing is consumed while signed out: the note has to survive the trip to

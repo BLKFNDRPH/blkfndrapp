@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { EXPLORER_EXPLAINER } from "@/lib/network";
 
 /**
  * The vault code hash the factory deploys new projects from, read from the
@@ -10,6 +11,9 @@ import { useEffect, useState } from "react";
  * factory was pointed at new code. Showing a hash that is not the one in use
  * would be worse than showing none, so a failed read says so instead of falling
  * back to a remembered value.
+ *
+ * Renders only inside the "For auditors and developers" disclosure, which is
+ * why it may print a raw hash.
  */
 export function LiveVaultHash({ factoryExplorerUrl }: { factoryExplorerUrl: string }) {
   const [state, setState] = useState<
@@ -46,15 +50,16 @@ export function LiveVaultHash({ factoryExplorerUrl }: { factoryExplorerUrl: stri
   }
   return (
     <p className="mt-2 text-xs text-muted-foreground">
-      Could not read it from the chain just now. The factory&apos;s storage is
+      Could not read it from the network just now. The factory&apos;s storage is
       public —{" "}
       <a
         href={factoryExplorerUrl}
         target="_blank"
         rel="noopener noreferrer"
+        title={EXPLORER_EXPLAINER}
         className="underline underline-offset-2"
       >
-        inspect it on Stellar Expert
+        see the public record
       </a>
       .
     </p>

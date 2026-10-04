@@ -344,7 +344,7 @@ export function MilestoneProofDialog({
           </DialogTitle>
           <DialogDescription>
             Stakeholders see this in the milestone&apos;s card when they vote on
-            releasing its funds.
+            paying it out.
           </DialogDescription>
         </DialogHeader>
 
