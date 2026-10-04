@@ -9,31 +9,56 @@ import {
   useEffect,
   useRef,
 } from "react";
+import { useRouter } from "next/navigation";
 import type { Project } from "@/lib/types";
-import { ProjectDetailsDialog } from "@/components/project/ProjectDetailsDialog";
-import { AnimatePresence } from "framer-motion";
-import { getProjectById } from "@/lib/data.client";
 import { Client as VaultClient } from "@/packages/blkfndr_vault/src";
 import { SOROBAN_RPC_URL, NETWORK_PASSPHRASE } from "@/lib/stellar";
 import { useAuth } from "@/context/AuthContext";
+import {
+  legacyProjectParam,
+  projectHref,
+  PROJECTS_PATH,
+  type ProjectTab,
+} from "@/lib/project-href";
 
+/**
+ * The project someone is looking at, with its live vault figures.
+ *
+ * A project is a page at /projects/[id]. This provider sits in the root layout
+ * so that the page, the stake sheet inside it and the places that link to a
+ * project (cards, search, notifications, the admin console) share one copy of
+ * the project and one fund-flow flag. `openProjectDetails` keeps its name from
+ * the days when projects opened in a dialog; it now navigates to the page.
+ */
 interface ProjectDetailsContextType {
   project: Project | null;
-  isOpen: boolean;
   isLoading: boolean;
   error: string | null;
+  /** The id asked for does not exist, as far as the listing can tell. */
+  notFound: boolean;
   isFundFlow: boolean;
+  /**
+   * Go to the project's page, with what is already known about it in hand.
+   * `tab` lands on that tab (the admin console's proof review opens Stages).
+   */
   openProjectDetails: (
     initialProject: Project,
     startFundFlow?: boolean,
+    options?: { tab?: ProjectTab },
   ) => void;
+  /**
+   * Load a project into the provider without navigating: the project page
+   * calls this on arrival. `fallback` stands in until the live read lands.
+   */
+  loadProject: (projectId: string, fallback?: Project) => void;
+  /** Forget the loaded project. Clears state only; the URL is left alone. */
   closeProjectDetails: () => void;
   setIsFundFlow: (isFundFlow: boolean) => void;
   refreshProject: (projectId: string) => void;
   /**
-   * Open the sign-in dialog on top of the project dialog, and bring the
-   * project back once the sign-in has completed. `fund` reopens it in the
-   * fund flow, for a press on the fund button.
+   * Open the sign-in dialog over the project page, and bring the project back
+   * once the sign-in has completed. `fund` reopens it in the fund flow, for a
+   * press on the stake button.
    */
   signInToContinue: (options?: { fund?: boolean }) => void;
 }
@@ -45,9 +70,11 @@ const ProjectDetailsContext = createContext<
 // Signing in ends with the page being rebuilt. Google comes back through a
 // full navigation, and a password sign-in redirects through Next's redirect
 // boundary, which remounts the whole client tree. Either way this provider
-// starts over and the open dialog is gone. So the project someone was looking
-// at is noted before the sign-in dialog opens, and reopened once there is a
-// signed-in user. sessionStorage is per tab and survives both round trips.
+// starts over. The sign-in form's "next" field carries the person back to the
+// project's page on its own; what it cannot carry is the intent, so the
+// project and whether they were about to stake are noted before the sign-in
+// dialog opens and read back once there is a signed-in user. sessionStorage
+// is per tab and survives both round trips.
 const RESUME_KEY = "blkfndr.resume-project";
 // The lifetime of the post-sign-in destination cookie, so an abandoned attempt
 // does not reopen a project much later.
@@ -63,7 +90,7 @@ function rememberProjectToResume(id: string, fund: boolean) {
     );
   } catch {
     // Storage can be unavailable (private mode, blocked site data). The
-    // sign-in still works; the dialog just does not come back on its own.
+    // sign-in still works; the stake sheet just does not reopen on its own.
   }
 }
 
@@ -71,44 +98,6 @@ function forgetProjectToResume() {
   try {
     sessionStorage.removeItem(RESUME_KEY);
   } catch {}
-}
-
-/** True while a note is waiting, without consuming it. */
-function hasProjectToResume(): boolean {
-  try {
-    return sessionStorage.getItem(RESUME_KEY) !== null;
-  } catch {
-    return false;
-  }
-}
-
-// The open project also lives in the URL as ?project=<id>, so a link to a
-// project can be shared, pasted into a message or kept, and opening it lands
-// on the dialog. Written and read with the plain history API: this provider
-// sits in the root layout, where useSearchParams would need a Suspense
-// boundary around the whole app, and Next keeps its router in step with
-// replaceState on its own.
-const PROJECT_PARAM = "project";
-
-function readProjectParam(): string | null {
-  try {
-    const id = new URLSearchParams(window.location.search).get(PROJECT_PARAM);
-    return id && id.trim() ? id.trim() : null;
-  } catch {
-    return null;
-  }
-}
-
-function writeProjectParam(id: string | null) {
-  try {
-    const url = new URL(window.location.href);
-    if (url.searchParams.get(PROJECT_PARAM) === id) return;
-    if (id) url.searchParams.set(PROJECT_PARAM, id);
-    else url.searchParams.delete(PROJECT_PARAM);
-    window.history.replaceState(window.history.state, "", url.toString());
-  } catch {
-    // The dialog works without the URL following it.
-  }
 }
 
 function takeProjectToResume(): ResumeProject | null {
@@ -127,25 +116,63 @@ function takeProjectToResume(): ResumeProject | null {
   }
 }
 
+/**
+ * The listing as the API serves it, telling a missing project from a failed
+ * read. data.client's getProjectById folds both into `undefined`, which the
+ * page cannot turn into the right sentence.
+ */
+type ProjectRead =
+  | { kind: "ok"; project: Project }
+  | { kind: "missing" }
+  | { kind: "error"; message: string };
+
+async function readProject(projectId: string): Promise<ProjectRead> {
+  try {
+    const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}`);
+    if (res.ok) return { kind: "ok", project: (await res.json()) as Project };
+    if (res.status === 404) return { kind: "missing" };
+    return { kind: "error", message: `The listing answered ${res.status}.` };
+  } catch (e) {
+    return {
+      kind: "error",
+      message: e instanceof Error ? e.message : "An unknown error occurred.",
+    };
+  }
+}
+
 export const ProjectDetailsProvider = ({
   children,
 }: {
   children: ReactNode;
 }) => {
   const [project, setProject] = useState<Project | null>(null);
-  const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notFound, setNotFound] = useState(false);
   const [isFundFlow, setIsFundFlow] = useState(false);
   const { user, loading: authLoading, login } = useAuth();
+  const router = useRouter();
+
+  // The project the page currently shows, or has asked for. A ref, so the
+  // effects below can read it in the same pass the page's own effect set it
+  // (children's effects run first), and so loadProject stays stable.
+  const projectRef = useRef<Project | null>(null);
+  const requestedIdRef = useRef<string | null>(null);
+  // Each load gets a number; a read that lands after a newer load began, or
+  // after the page was left, is dropped rather than shown for the wrong page.
+  const loadSeq = useRef(0);
 
   const fetchProject = useCallback(
     async (projectId: string, fallbackProject?: Project) => {
+      const seq = ++loadSeq.current;
+      const current = () => seq === loadSeq.current;
       setIsLoading(true);
       setError(null);
       try {
-        const freshProject = await getProjectById(projectId);
-        if (freshProject) {
+        const read = await readProject(projectId);
+        if (!current()) return;
+        if (read.kind === "ok") {
+          const freshProject = read.project;
           if (freshProject.vaultAddress) {
             try {
               const vaultClient = new VaultClient({
@@ -218,88 +245,123 @@ export const ProjectDetailsProvider = ({
               console.warn("Failed to fetch live on-chain project vault data, falling back to db cache:", chainErr);
             }
           }
+          if (!current()) return;
+          projectRef.current = freshProject;
           setProject(freshProject);
+          setNotFound(false);
+        } else if (read.kind === "missing") {
+          // Keep whatever was already in hand for this id (a card's copy, or
+          // the last good read) rather than blank the page.
+          const kept =
+            projectRef.current?.id === projectId
+              ? projectRef.current
+              : (fallbackProject ?? null);
+          projectRef.current = kept;
+          setProject(kept);
+          if (!kept) setNotFound(true);
         } else {
-          setProject((prev) =>
-            prev?.id === projectId ? prev : (fallbackProject ?? prev ?? null),
-          );
-          if (!fallbackProject) {
-            setError("Project details could not be refreshed right now.");
-          }
+          const kept =
+            projectRef.current?.id === projectId
+              ? projectRef.current
+              : (fallbackProject ?? null);
+          projectRef.current = kept;
+          setProject(kept);
+          setError(read.message);
+          console.error("Failed to fetch project details:", read.message);
         }
-      } catch (e) {
-        if (!fallbackProject) {
-          setError(
-            e instanceof Error ? e.message : "An unknown error occurred.",
-          );
-        }
-        console.error("Failed to fetch project details:", e);
       } finally {
-        setIsLoading(false);
+        if (current()) setIsLoading(false);
       }
     },
     [],
   );
 
-  const openProjectDetails = useCallback(
-    (initialProject: Project, startFundFlow = false) => {
-      setProject(initialProject);
-      setIsOpen(true);
+  const loadProject = useCallback(
+    (projectId: string, fallback?: Project) => {
+      const known =
+        fallback ??
+        (projectRef.current?.id === projectId ? projectRef.current : undefined);
+      requestedIdRef.current = projectId;
+      projectRef.current = known ?? null;
+      setProject(known ?? null);
+      setNotFound(false);
       setError(null);
-      setIsFundFlow(startFundFlow);
-      writeProjectParam(initialProject.id);
-      fetchProject(initialProject.id, initialProject);
+      fetchProject(projectId, known);
     },
     [fetchProject],
   );
 
-  const closeProjectDetails = () => {
-    // Closing it is also the signal that nobody wants it back after a sign-in.
-    forgetProjectToResume();
-    writeProjectParam(null);
-    setIsOpen(false);
-    setTimeout(() => {
-      setProject(null);
-      setIsFundFlow(false);
+  const openProjectDetails = useCallback(
+    (initialProject: Project, startFundFlow = false, options?: { tab?: ProjectTab }) => {
+      // The page reads this copy straight away and refreshes it from the
+      // vault; the stake intent travels in the address so a link can carry it.
+      projectRef.current = initialProject;
+      setProject(initialProject);
       setError(null);
-    }, 300);
-  };
+      setNotFound(false);
+      setIsFundFlow(startFundFlow);
+      router.push(
+        projectHref(initialProject.id, { stake: startFundFlow, tab: options?.tab }),
+      );
+    },
+    [router],
+  );
+
+  const closeProjectDetails = useCallback(() => {
+    // Leaving the page is also the signal that nobody wants it back after a
+    // sign-in. But a password sign-in rebuilds the client tree at the same
+    // address, which unmounts the page without anyone leaving it, and the
+    // note has to survive that trip: it is kept while the address still names
+    // this project. A read still in flight is dropped either way.
+    const id = requestedIdRef.current;
+    const stillHere =
+      id !== null &&
+      typeof window !== "undefined" &&
+      window.location.pathname === projectHref(id);
+    if (!stillHere) forgetProjectToResume();
+    loadSeq.current++;
+    requestedIdRef.current = null;
+    projectRef.current = null;
+    setProject(null);
+    setIsFundFlow(false);
+    setError(null);
+    setNotFound(false);
+    setIsLoading(false);
+  }, []);
 
   const refreshProject = useCallback(
     (projectId: string) => {
-      const fallbackProject = project?.id === projectId ? project : undefined;
+      const fallbackProject =
+        projectRef.current?.id === projectId ? projectRef.current : undefined;
       fetchProject(projectId, fallbackProject);
     },
-    [fetchProject, project],
+    [fetchProject],
   );
 
-  const signInToContinue = (options?: { fund?: boolean }) => {
-    if (project) rememberProjectToResume(project.id, options?.fund === true);
-    login();
-  };
+  const signInToContinue = useCallback(
+    (options?: { fund?: boolean }) => {
+      const id = requestedIdRef.current ?? projectRef.current?.id ?? null;
+      if (id) rememberProjectToResume(id, options?.fund === true);
+      login();
+    },
+    [login],
+  );
 
-  // Open the project a shared link names, once, on arrival. A pending sign-in
-  // note takes precedence: it carries the fund intent, and the effect below
-  // opens the same project from it.
-  const deepLinkHandled = useRef(false);
+  // A link from before projects had pages: "?project=<id>" on whichever page
+  // the dialog was opened from ("/projects?project=4", but also "/?project=4"
+  // from a home-page card). Send it to the page it meant, once, on arrival.
+  // Read with the plain location API: this provider sits in the root layout,
+  // where useSearchParams would need a Suspense boundary around the whole app.
+  const legacyLinkHandled = useRef(false);
   useEffect(() => {
-    if (deepLinkHandled.current) return;
-    deepLinkHandled.current = true;
-    const id = readProjectParam();
-    if (!id || hasProjectToResume()) return;
+    if (legacyLinkHandled.current) return;
+    legacyLinkHandled.current = true;
+    if (window.location.pathname.startsWith(`${PROJECTS_PATH}/`)) return;
+    const id = legacyProjectParam(window.location.search);
+    if (id) router.replace(projectHref(id));
+  }, [router]);
 
-    let cancelled = false;
-    getProjectById(id).then((found) => {
-      if (cancelled) return;
-      if (found) openProjectDetails(found);
-      else writeProjectParam(null);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [openProjectDetails]);
-
-  // Bring back the project noted before a sign-in, once the sign-in is done.
+  // Finish what was started before a sign-in, once the sign-in is done.
   // Nothing is consumed while signed out: the note has to survive the trip to
   // the provider and back, and a visit that never signs in leaves it to expire.
   const userId = user?.uid ?? null;
@@ -308,30 +370,29 @@ export const ProjectDetailsProvider = ({
     const pending = takeProjectToResume();
     if (!pending) return;
 
-    if (isOpen && project?.id === pending.id) {
-      // Still open, so the sign-in happened without a remount (the dialog was
-      // dismissed and the sign-in came from the header, say).
+    const onPage = requestedIdRef.current;
+    if (onPage === pending.id) {
+      // The "next" field already brought the page back (or it never left:
+      // the sign-in came from the header, say). Only the intent is left.
       if (pending.fund) setIsFundFlow(true);
       return;
     }
-
-    let cancelled = false;
-    getProjectById(pending.id).then((found) => {
-      if (!cancelled && found) openProjectDetails(found, pending.fund);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [authLoading, userId, isOpen, project?.id, openProjectDetails]);
+    if (onPage === null) {
+      // The sign-in finished somewhere else; take them to the project.
+      router.push(projectHref(pending.id, { stake: pending.fund }));
+    }
+    // On a different project's page: they moved on, so the note is dropped.
+  }, [authLoading, userId, router]);
 
   return (
     <ProjectDetailsContext.Provider
       value={{
         project,
-        isOpen,
         isLoading,
         error,
+        notFound,
         openProjectDetails,
+        loadProject,
         closeProjectDetails,
         isFundFlow,
         setIsFundFlow,
@@ -340,7 +401,6 @@ export const ProjectDetailsProvider = ({
       }}
     >
       {children}
-      <AnimatePresence>{isOpen && <ProjectDetailsDialog />}</AnimatePresence>
     </ProjectDetailsContext.Provider>
   );
 };

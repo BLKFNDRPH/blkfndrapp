@@ -58,8 +58,7 @@ export function FundDialog({
   const [amount, setAmount] = useState("");
   const { toast } = useToast();
   const { user, refreshUser } = useAuth();
-  const { closeProjectDetails, refreshProject, signInToContinue } =
-    useProjectDetails();
+  const { refreshProject, signInToContinue } = useProjectDetails();
   const refreshAfterTx = useRefreshAfterTx();
   const [isSubmitPending, startSubmitTransition] = useTransition();
 
@@ -361,7 +360,9 @@ export function FundDialog({
 
         refreshProject(project.id);
         await refreshAfterTx(freighterWalletAddress ?? undefined);
-        closeProjectDetails();
+        // The project is a page now, so there is nothing to close: the sheet
+        // folds back into the button and the refreshed figures show behind it.
+        setIsFundFlow(false);
       } catch (error: any) {
         // Locked since the listing loaded. Say so, and reload it so the notice
         // and the disabled button catch up with what the platform just said.

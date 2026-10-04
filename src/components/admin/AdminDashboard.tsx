@@ -453,7 +453,8 @@ export function AdminDashboard() {
               badgeText: "Proof Submitted",
               badgeVariant: "default",
               actionLabel: "Verify",
-              onAction: () => openProjectDetails(p),
+              // The proof sits beside its stage's vote, on the Stages tab.
+              onAction: () => openProjectDetails(p, false, { tab: "stages" }),
               urgency: "high",
             });
           }
