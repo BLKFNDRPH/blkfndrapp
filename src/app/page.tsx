@@ -5,31 +5,31 @@ import Link from "next/link";
 import { ArrowRight, ShieldCheck, Lock, Users } from "lucide-react";
 
 import { ProjectList } from "@/components/project/ProjectList";
-import { ProjectLoader } from "@/components/project/ProjectLoader";
 import type { Project } from "@/lib/types";
 import { CityScape } from "@/components/layout/CityScape";
-import { StellarLogo } from "@/components/layout/StellarLogo";
 import TextPressure from "@/components/layout/TextPressure";
 import { useProjects, usePlatformInfo } from "@/context/BlockchainContext";
 import { Button } from "@/components/ui/button";
+import { IS_PRACTICE_NETWORK } from "@/lib/network";
 
 import { BlueprintGrid } from "@/components/home/BlueprintGrid";
 import { BondedVaultAnimation } from "@/components/home/BondedVaultAnimation";
+import { FeaturedSkeleton } from "@/components/home/FeaturedSkeleton";
+import { TakePartSection } from "@/components/home/TakePartSection";
 import { AboutSection } from "@/components/home/AboutSection";
-import { FeaturesSection } from "@/components/home/FeaturesSection";
 import { SecuritySection } from "@/components/home/SecuritySection";
 import { ContactSection } from "@/components/home/ContactSection";
 
 const HERO_CHIPS = [
-  { icon: Lock, label: "Funds held in a contract, not a platform account" },
-  { icon: Users, label: "Every release governed by the project's stakeholders" },
-  { icon: ShieldCheck, label: "No admin key that can override the vault" },
+  { icon: Lock, label: "Money sits in the project's vault, not in a BLKFNDR account" },
+  { icon: Users, label: "Stakeholders vote on every payout" },
+  { icon: ShieldCheck, label: "Nobody at BLKFNDR can open a vault" },
 ];
 
 const SECTION_LINKS = [
-  { href: "#about", label: "About" },
-  { href: "#features", label: "Features" },
-  { href: "#security", label: "Security" },
+  { href: "#take-part", label: "Take part" },
+  { href: "#how-it-works", label: "How it works" },
+  { href: "#protection", label: "Protection" },
   { href: "#contact", label: "Contact" },
 ];
 
@@ -65,7 +65,9 @@ export default function Home() {
       if (bProgress !== aProgress) {
         return bProgress - aProgress;
       }
-      return (new Date(b.createdAt!) as any) - (new Date(a.createdAt!) as any);
+      return (
+        new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime()
+      );
     });
 
     setFeaturedProjects(sorted.slice(0, 12));
@@ -88,12 +90,20 @@ export default function Home() {
           <div className="grid items-center gap-10 sm:gap-12 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)] lg:gap-8">
             {/* Copy */}
             <div className="min-w-0 text-center lg:text-left">
-              <div className="inline-flex items-center gap-2 rounded-full border border-accent/30 bg-accent/10 px-3 py-1.5 text-xs font-medium text-foreground/90">
-                <StellarLogo className="h-4 w-4 fill-current text-foreground" />
-                Built on Stellar &amp; Soroban
-                <span className="mx-1 h-1 w-1 rounded-full bg-accent/60" />
-                Live on testnet
-              </div>
+              {IS_PRACTICE_NETWORK ? (
+                <div className="inline-flex items-center gap-2 rounded-full border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-200">
+                  <span
+                    className="h-1.5 w-1.5 rounded-full bg-amber-400"
+                    aria-hidden="true"
+                  />
+                  Practice mode
+                  <span
+                    className="mx-1 h-1 w-1 rounded-full bg-amber-400/60"
+                    aria-hidden="true"
+                  />
+                  real money launch coming
+                </div>
+              ) : null}
 
               {/*
                 Decorative: TextPressure renders its own <h1> of one span per
@@ -116,16 +126,15 @@ export default function Home() {
               </div>
 
               <h1 className="mt-2 font-headline text-2xl font-bold leading-tight tracking-tight text-foreground sm:text-3xl md:text-4xl">
-                A secure on-chain vault for real-world projects — and a record
-                anyone can verify.
+                A vault for real-world projects. The people who stake decide
+                when the builder gets paid.
               </h1>
 
               <p className="mx-auto mt-5 max-w-xl text-base leading-relaxed text-foreground/70 sm:text-lg lg:mx-0">
-                BLKFNDR gives every project its own vault on Stellar. The funds
-                it holds, the milestones it tracks and every release it makes are
-                written on-chain and governed by the project&apos;s own
-                stakeholders — never by the platform. Nothing moves on an
-                admin&apos;s say-so, and anyone can audit the whole history.
+                Every project keeps its money in its own locked vault. Nothing
+                leaves it until the stakeholders vote, and the whole history is
+                public. BLKFNDR can&apos;t open it, and you can check that
+                yourself.
               </p>
 
               <div className="mt-8 flex flex-col items-center gap-3 sm:flex-row sm:justify-center lg:justify-start">
@@ -135,8 +144,8 @@ export default function Home() {
                   className="w-full bg-accent text-accent-foreground hover:bg-accent/90 sm:w-auto"
                 >
                   <Link href="/projects">
-                    Browse live projects
-                    <ArrowRight className="h-4 w-4" />
+                    See live projects
+                    <ArrowRight className="h-4 w-4" aria-hidden="true" />
                   </Link>
                 </Button>
                 <Button
@@ -145,7 +154,7 @@ export default function Home() {
                   variant="outline"
                   className="w-full border-foreground/25 bg-foreground/5 text-foreground hover:bg-foreground/10 hover:text-foreground sm:w-auto"
                 >
-                  <Link href="#security">Why you don&apos;t have to trust us</Link>
+                  <Link href="#protection">How your money is protected</Link>
                 </Button>
               </div>
 
@@ -155,7 +164,10 @@ export default function Home() {
                     key={label}
                     className="flex items-center gap-2.5 text-sm text-foreground/70"
                   >
-                    <Icon className="h-4 w-4 shrink-0 text-accent" />
+                    <Icon
+                      className="h-4 w-4 shrink-0 text-accent"
+                      aria-hidden="true"
+                    />
                     {label}
                   </li>
                 ))}
@@ -168,7 +180,10 @@ export default function Home() {
             </div>
           </div>
 
-          <nav className="mt-10 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 border-t border-foreground/10 pt-6 lg:justify-start">
+          <nav
+            aria-label="On this page"
+            className="mt-10 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 border-t border-foreground/10 pt-6 lg:justify-start"
+          >
             {SECTION_LINKS.map(({ href, label }) => (
               <Link
                 key={href}
@@ -185,32 +200,43 @@ export default function Home() {
       {/* ---------- Featured projects ---------- */}
       <div className="relative z-20 bg-card">
         <CityScape />
-        <section className="-mt-12 pb-20 pt-8 lg:-mt-14">
+        <section className="-mt-12 pb-20 pt-8 lg:-mt-14" aria-labelledby="featured-heading">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="mb-10 text-center">
-              <h2 className="font-headline text-2xl font-bold tracking-tight text-accent sm:text-3xl md:text-4xl">
-                Featured Projects
+              <h2
+                id="featured-heading"
+                className="font-headline text-2xl font-bold tracking-tight text-accent sm:text-3xl md:text-4xl"
+              >
+                Featured projects
               </h2>
               <p className="mt-2 text-base text-muted-foreground sm:text-lg">
-                Live projects on BLKFNDR, each one running on its own transparent
-                on-chain vault.
+                Each one keeps its money in its own vault, with a public record
+                anyone can read.
               </p>
             </div>
             {isLoading ? (
-              <ProjectLoader />
+              <FeaturedSkeleton />
+            ) : featuredProjects.length === 0 ? (
+              <p className="text-center text-muted-foreground">
+                No projects yet. Check back soon, or{" "}
+                <Link
+                  href="/create-listing"
+                  className="underline underline-offset-2 hover:text-accent"
+                >
+                  open a vault
+                </Link>{" "}
+                for your own project.
+              </p>
             ) : (
-              <ProjectList
-                projects={featuredProjects}
-                onlyShowCompletedStatus={true}
-              />
+              <ProjectList projects={featuredProjects} />
             )}
           </div>
         </section>
       </div>
 
       {/* ---------- Content ---------- */}
+      <TakePartSection />
       <AboutSection />
-      <FeaturesSection />
       <SecuritySection />
       <ContactSection />
     </div>

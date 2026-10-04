@@ -10,11 +10,12 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { ProjectDetailsProvider } from "@/context/ProjectDetailsContext";
 import { BlockchainProvider } from "@/context/BlockchainContext";
 import { FreighterWalletProvider } from "@/context/FreighterWalletProvider";
+import { PracticeModeBanner } from "@/components/layout/PracticeModeBanner";
 
 export const metadata: Metadata = {
-  title: "BLKFNDR — A secure on-chain vault for real-world projects, on Stellar",
+  title: "BLKFNDR — A vault for real-world projects",
   description:
-    "Every project gets its own vault on Stellar. The funds it holds, the milestones it tracks and every release it makes are on-chain and governed by the project's own stakeholders — never by the platform. No admin key in the path that moves money, and a record anyone can verify.",
+    "Every project keeps its money in its own locked vault. Nothing leaves it until the stakeholders vote, and the whole history is public. BLKFNDR can't open it, and you can check that yourself.",
 };
 
 export default async function RootLayout({
@@ -56,6 +57,7 @@ export default async function RootLayout({
               <BlockchainProvider>
                 <ProjectDetailsProvider>
                   <div className="relative flex min-h-dvh flex-col bg-background">
+                    <PracticeModeBanner />
                     <Header />
                     <main className="flex-1">{children}</main>
                     <Footer />

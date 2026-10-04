@@ -224,7 +224,7 @@ export async function submitMilestoneProof(
 
     await notifyAdmins(
       "New milestone proof submitted",
-      `Delivery proof for milestone #${milestoneId} of "${title}" is awaiting contributor review.`,
+      `Delivery proof for milestone #${milestoneId} of "${title}" is awaiting stakeholder review.`,
     );
 
     return { success: true as const };

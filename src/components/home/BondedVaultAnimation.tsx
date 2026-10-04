@@ -20,9 +20,9 @@ const FLOORS = [
 ];
 
 /**
- * The hero visual, and the whole product in one loop: contributions fall into a
- * per-project vault, the raise closes, and the build rises one milestone at a
- * time while the builder's bond stays locked at the base.
+ * The hero visual, and the whole product in one loop: stakes fall into a
+ * per-project vault, the goal is reached, and the build rises one stage at a
+ * time while the builder's deposit stays locked at the base.
  *
  * The floor timings are hand-written per floor rather than driven by
  * animation-delay. A shared delay would give each floor its own 16s loop offset
@@ -40,7 +40,7 @@ export function BondedVaultAnimation() {
         viewBox="0 0 400 470"
         className="bv-svg"
         role="img"
-        aria-label="Contributions collect in a per-project vault; the build rises one milestone at a time as stakeholders vote each tranche out, while the builder's performance bond stays locked in the same contract."
+        aria-label="Stakes collect in a project's own vault; the build rises one stage at a time as stakeholders vote each payout out, while the builder's deposit stays locked in the same vault."
       >
         <defs>
           <linearGradient id="bv-slab" x1="0" y1="0" x2="0" y2="1">
@@ -67,7 +67,7 @@ export function BondedVaultAnimation() {
         <path className="bv-ground" d="M36 402 H364" />
         <path className="bv-ground bv-ground--hatch" d="M44 410 l10 -8 M74 410 l10 -8 M104 410 l10 -8 M134 410 l10 -8 M164 410 l10 -8 M194 410 l10 -8 M224 410 l10 -8 M254 410 l10 -8 M284 410 l10 -8 M314 410 l10 -8 M344 410 l10 -8" />
 
-        {/* Incoming contributions */}
+        {/* Incoming stakes */}
         <g className="bv-coins">
           {COINS.map((coin, i) => (
             <g
@@ -111,15 +111,15 @@ export function BondedVaultAnimation() {
                 />
               ))}
             </g>
-            {/* Milestone release tag */}
+            {/* Stage payout tag */}
             <g className="bv-tag">
-              <rect x="288" y={floor.y + 9} width="66" height="22" rx="11" />
+              <rect x="284" y={floor.y + 9} width="78" height="22" rx="11" />
               <path
                 className="bv-tag__check"
-                d={`M300 ${floor.y + 20} l4 4 l7 -8`}
+                d={`M296 ${floor.y + 20} l4 4 l7 -8`}
               />
-              <text x="333" y={floor.y + 24}>
-                M{floor.id}
+              <text x="338" y={floor.y + 24}>
+                Stage {floor.id}
               </text>
             </g>
           </g>
@@ -131,7 +131,7 @@ export function BondedVaultAnimation() {
           <circle className="bv-beacon" cx="200" cy="106" r="5" />
         </g>
 
-        {/* The vault, and the bond locked inside it */}
+        {/* The vault, and the deposit locked inside it */}
         <g className="bv-vaultgroup">
           <text className="bv-label" x="118" y="332">
             PROJECT VAULT
@@ -144,31 +144,31 @@ export function BondedVaultAnimation() {
             />
             <rect className="bv-lock__body" x="134" y="366" width="22" height="16" rx="3" />
           </g>
-          <text className="bv-vault__line1" x="166" y="368">
-            BOND LOCKED
+          <text className="bv-vault__line1" x="164" y="368">
+            {"BUILDER'S DEPOSIT"}
           </text>
-          <text className="bv-vault__line2" x="166" y="382">
-            forfeits on a failed milestone
+          <text className="bv-vault__line2" x="164" y="382">
+            lost if a stage fails
           </text>
         </g>
 
-        {/* Raise progress */}
+        {/* Stake progress */}
         <rect className="bv-bar__track" x="118" y="420" width="164" height="10" rx="5" />
         <rect className="bv-bar__fill" x="118" y="420" width="164" height="10" rx="5" />
         <text className="bv-label" x="118" y="448">
-          RAISE
+          STAKED
         </text>
         <g className="bv-funded">
-          <rect x="222" y="436" width="60" height="18" rx="9" />
-          <text x="252" y="449">
-            FUNDED
+          <rect x="190" y="436" width="92" height="18" rx="9" />
+          <text x="236" y="449">
+            GOAL REACHED
           </text>
         </g>
       </svg>
 
       <p className="bv-caption">
-        No admin key sits anywhere in this path. Every tranche leaves the vault
-        on a stakeholder vote, or not at all.
+        Nobody at BLKFNDR can open the vault. Each stage is paid out on a
+        stakeholder vote, or not at all.
       </p>
     </div>
   );

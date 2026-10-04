@@ -1,6 +1,6 @@
 "use client";
 
-import { EyeOff, Lock } from "lucide-react";
+import { EyeOff, PauseCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { ProjectRestriction } from "@/lib/types";
@@ -8,10 +8,10 @@ import type { ProjectRestriction } from "@/lib/types";
 /**
  * Why a project is restricted, for whoever can see it.
  *
- * A lock is shown to everyone who can open the listing, reason included — the
+ * A pause is shown to everyone who can open the listing, reason included — the
  * platform restricting a project is exactly the kind of act this platform
  * exists to make visible, and a stakeholder deciding what to do next deserves
- * the reason. A hidden listing is seen only by its builder, its stakeholders
+ * the reason. An unlisted project is seen only by its builder, its stakeholders
  * and the console, so for them this explains why it is missing from the site.
  *
  * Each notice says what is NOT affected as plainly as what is. The vault has no
@@ -29,6 +29,8 @@ export function RestrictionNotice({
 }) {
   if (!restriction || (!restriction.hidden && !restriction.locked)) return null;
 
+  const pausedReason = restriction.lockedReason?.trim();
+
   return (
     <div className={cn("space-y-2", className)}>
       {restriction.locked && (
@@ -36,17 +38,18 @@ export function RestrictionNotice({
           role="status"
           className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-sm"
         >
-          <p className="flex items-center gap-2 font-semibold text-amber-600 dark:text-amber-400">
-            <Lock className="h-4 w-4 shrink-0" aria-hidden="true" />
-            Locked by the platform
+          <p className="flex items-start gap-2 font-semibold text-amber-700 dark:text-amber-400">
+            <PauseCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+            <span className="break-words">
+              Paused by BLKFNDR{pausedReason ? `: ${pausedReason}.` : "."}
+            </span>
           </p>
-          {restriction.lockedReason && (
-            <p className="mt-1 break-words text-foreground">{restriction.lockedReason}</p>
-          )}
           <p className="mt-1 text-muted-foreground">
-            New stakes, opening milestone votes and milestone proof are paused.
-            Refunds, stakeholder votes and approved releases are unaffected — the
-            vault itself cannot be locked.
+            New stakes are hidden from the listing in this app while BLKFNDR
+            reviews it. Everything else keeps working here: the builder can
+            still open a vote, stakeholders can still vote, and refunds and
+            approved payouts are unaffected. Nobody, including BLKFNDR, can
+            lock the vault itself.
           </p>
         </div>
       )}
@@ -56,17 +59,19 @@ export function RestrictionNotice({
           role="status"
           className="rounded-lg border border-border bg-muted/40 p-3 text-sm"
         >
-          <p className="flex items-center gap-2 font-semibold">
-            <EyeOff className="h-4 w-4 shrink-0" aria-hidden="true" />
-            Hidden from public listings
+          <p className="flex items-start gap-2 font-semibold">
+            <EyeOff className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+            <span>
+              Unlisted: this project doesn&apos;t appear in search. Only its
+              builder, its stakeholders and BLKFNDR staff can open it. The vault
+              is unaffected.
+            </span>
           </p>
-          {restriction.hiddenReason && (
-            <p className="mt-1 break-words text-foreground">{restriction.hiddenReason}</p>
+          {restriction.hiddenReason?.trim() && (
+            <p className="mt-1 break-words text-muted-foreground">
+              {restriction.hiddenReason}
+            </p>
           )}
-          <p className="mt-1 text-muted-foreground">
-            Only its builder, its stakeholders and platform administrators can
-            see it. Its vault is unaffected.
-          </p>
         </div>
       )}
     </div>
@@ -92,17 +97,17 @@ export function RestrictionBadges({
           title={restriction.hiddenReason || undefined}
         >
           <EyeOff className="h-3 w-3" aria-hidden="true" />
-          Hidden
+          Unlisted
         </Badge>
       )}
       {restriction.locked && (
         <Badge
           variant="outline"
-          className="gap-1 border-amber-500/40 text-amber-500"
+          className="gap-1 border-amber-500/40 text-amber-600 dark:text-amber-400"
           title={restriction.lockedReason || undefined}
         >
-          <Lock className="h-3 w-3" aria-hidden="true" />
-          Locked
+          <PauseCircle className="h-3 w-3" aria-hidden="true" />
+          Paused by BLKFNDR
         </Badge>
       )}
     </span>

@@ -1,28 +1,30 @@
-
 "use client";
 
-import {
-  Carousel,
-  CarouselContent,
-  CarouselItem,
-  CarouselNext,
-  CarouselPrevious,
-} from "@/components/ui/carousel";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import {
   Leaf, Film, BrainCircuit, Network, Users, ShoppingCart, GraduationCap, Sprout,
   Shirt, Video, Utensils, Gamepad2, HardDrive, HeartPulse, Building, Music, Home,
-  Server, Smartphone, Car, Palette, Rocket, Phone, Globe, X
+  Server, Smartphone, Car, Palette, Rocket, Phone, Globe, Trophy, LayoutGrid,
 } from "lucide-react";
 
+/**
+ * The category strip: one row of single-select chips.
+ *
+ * On a phone the row scrolls sideways under the thumb; on a wider screen it
+ * wraps so every category is a tap away. "All" is always first and is the
+ * selected chip whenever no category is chosen (`selectedCategory === null`).
+ */
+
 interface CategoryFilterProps {
+  /** Every category to offer, without an "All" entry — the strip adds its own. */
   categories: string[];
+  /** The chosen category, or null for all of them. */
   selectedCategory: string | null;
   onSelectCategory: (category: string | null) => void;
 }
 
 const categoryIcons: { [key: string]: React.ElementType } = {
-  "Explore": Globe,
   "Agriculture": Leaf,
   "Animation": Film,
   "Artificial Intelligence": BrainCircuit,
@@ -44,64 +46,73 @@ const categoryIcons: { [key: string]: React.ElementType } = {
   "Services": Server,
   "Smart Devices": Smartphone,
   "Software": Server,
-  "Sports": Gamepad2,
+  "Sports": Trophy,
   "Startups": Rocket,
   "Tele-communications": Phone,
   "Transportation": Car,
   "Visual Arts": Palette,
 };
 
-export function CategoryFilter({ categories, selectedCategory, onSelectCategory }: CategoryFilterProps) {
-  const Icon = ({ category }: { category: string }) => {
-    const IconComponent = categoryIcons[category] || Globe;
-    return <IconComponent className="h-6 w-6 mb-2" />;
-  };
+function Chip({
+  label,
+  icon: Icon,
+  selected,
+  onClick,
+}: {
+  label: string;
+  icon: React.ElementType;
+  selected: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <Button
+      type="button"
+      variant={selected ? "default" : "outline"}
+      size="sm"
+      role="radio"
+      aria-checked={selected}
+      className={cn(
+        "h-9 shrink-0 snap-start gap-1.5 rounded-full px-3 text-sm font-medium",
+        selected && "bg-accent text-accent-foreground hover:bg-accent/90",
+      )}
+      onClick={onClick}
+    >
+      <Icon className="h-4 w-4" aria-hidden="true" />
+      <span className="whitespace-nowrap">{label}</span>
+    </Button>
+  );
+}
 
-  const handleCategoryClick = (category: string) => {
-    if (category === 'Explore') {
-      onSelectCategory('Explore');
-    } else {
-      onSelectCategory(category);
-    }
-  };
+export function CategoryFilter({
+  categories,
+  selectedCategory,
+  onSelectCategory,
+}: CategoryFilterProps) {
+  const unique = categories.filter((c, i) => c && categories.indexOf(c) === i);
 
   return (
-    <div className="relative">
-      <Carousel
-        opts={{
-          align: "start",
-          dragFree: true,
-        }}
-        className="w-full"
-      >
-        <CarouselContent>
-          {categories.map((category) => (
-            <CarouselItem key={category} className="basis-auto">
-              <Button
-                variant={selectedCategory === category ? "secondary" : "ghost"}
-                className="h-auto flex flex-col items-center justify-center p-3 gap-1 w-24"
-                onClick={() => handleCategoryClick(category)}
-              >
-                <Icon category={category} />
-                <span className="text-xs text-center w-full whitespace-normal h-8 flex items-center justify-center">{category}</span>
-              </Button>
-            </CarouselItem>
-          ))}
-        </CarouselContent>
-        <CarouselPrevious className="hidden sm:flex" />
-        <CarouselNext className="hidden sm:flex" />
-      </Carousel>
-      {selectedCategory && selectedCategory !== 'Explore' && (
-        <Button
-          variant="ghost"
-          size="icon"
-          className="absolute top-1/2 -right-12 -translate-y-1/2 rounded-full h-8 w-8"
-          onClick={() => onSelectCategory('Explore')}
-        >
-          <X className="h-4 w-4" />
-          <span className="sr-only">Clear category filter</span>
-        </Button>
-      )}
+    <div
+      role="radiogroup"
+      aria-label="Category"
+      className="-mx-4 flex snap-x gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:mx-0 md:flex-wrap md:overflow-visible md:px-0"
+    >
+      <Chip
+        label="All"
+        icon={LayoutGrid}
+        selected={selectedCategory === null}
+        onClick={() => onSelectCategory(null)}
+      />
+      {unique.map((category) => (
+        <Chip
+          key={category}
+          label={category}
+          icon={categoryIcons[category] || Globe}
+          selected={selectedCategory === category}
+          onClick={() =>
+            onSelectCategory(selectedCategory === category ? null : category)
+          }
+        />
+      ))}
     </div>
   );
 }

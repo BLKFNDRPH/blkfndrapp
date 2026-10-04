@@ -14,7 +14,6 @@ import { useToast } from "@/hooks/use-toast";
 import { LoginDialog } from "@/components/auth/LoginDialog";
 import Loading from "@/app/loading";
 
-import { useFreighterWallet } from "@/context/FreighterWalletContext";
 import { isStellarPublicKey } from "@/lib/freighter-connect";
 
 interface AuthContextType {
@@ -69,7 +68,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const { toast } = useToast();
   const { data: session, status, refresh: refreshSession } = useAppSession();
   const loading = status === "loading";
-  const { disconnectWallet: disconnectFreighter } = useFreighterWallet();
 
   useEffect(() => {
     if (loading) {
@@ -172,20 +170,22 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const handleLogout = useCallback(async () => {
     try {
       sessionStorage.removeItem("userRole");
-      // Signing out unlinks the wallet, as it always has. That now throws when
-      // the unlink fails, and a failure must not keep anyone signed in. The
-      // wallet just stays linked to the account until the next sign-in.
-      await disconnectFreighter().catch((err: unknown) => {
-        console.error("[Auth] Wallet not unlinked at sign-out:", err);
-      });
+      // Signing out leaves the wallet alone. The link between an account and
+      // its wallet is durable: it is what the person's stakes and votes key
+      // on, and the next sign-in picks it straight up. Until this, signing out
+      // also unlinked the wallet, so every return meant setting it up again.
+      // "Disconnect for now" in the wallet panel is the explicit action.
       setUser(null);
       await fetch("/api/auth/logout", { method: "POST" });
       window.location.href = "/";
     } catch (error) {
       console.error("Logout error:", error);
-      toast({ title: "Logout Failed", description: "Could not log out." });
+      toast({
+        title: "Couldn't sign you out",
+        description: "Check your connection and try again.",
+      });
     }
-  }, [toast, disconnectFreighter]);
+  }, [toast]);
 
   const showLoading = loading && !loadingTimedOut;
 

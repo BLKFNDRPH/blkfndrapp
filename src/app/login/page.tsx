@@ -16,11 +16,11 @@ import Loading from "@/app/loading";
  * tried again, and Supabase logged a repeated sign-up.
  */
 const FAILURES: Record<string, string> = {
-  Provider: "Google did not complete the sign-in. Please try again.",
-  NoCode: "The sign-in response was incomplete. Please try again.",
-  Exchange: "The sign-in expired before it could finish. Please try again.",
+  Provider: "Could not reach Google right now. Try again in a moment.",
+  NoCode: "The sign-in response was incomplete. Try again.",
+  Exchange: "The sign-in expired before it could finish. Try again.",
   InvalidLink: "That link is not valid. Request a new one.",
-  LinkExpired: "That link has expired or was already used. Request a new one.",
+  LinkExpired: "That link has expired. Request a new one.",
 };
 
 function LoginLanding() {
@@ -42,9 +42,9 @@ function LoginLanding() {
       hasHandledRef.current = true;
       router.replace("/");
       toast({
-        title: "Check your email",
+        title: "Check your inbox",
         description:
-          "We sent a link to confirm your address. Open it to finish signing up. Already have an account? Sign in instead.",
+          "We sent a link to confirm your address. Open it on this device to come straight back here. Already have an account? Sign in instead.",
         // An instruction the user has to act on, not a notice: long enough to
         // read before it closes (the default is 5s).
         duration: 15000,
@@ -57,8 +57,8 @@ function LoginLanding() {
       hasHandledRef.current = true;
       router.replace("/");
       toast({
-        title: "Login failed",
-        description: FAILURES[error] ?? "Something went wrong signing you in. Please try again.",
+        title: "Sign-in didn't finish",
+        description: FAILURES[error] ?? "Something went wrong signing you in. Try again.",
         variant: "destructive",
       });
       return;
@@ -85,8 +85,8 @@ function LoginLanding() {
       hasHandledRef.current = true;
       router.replace("/");
       toast({
-        title: "Login timed out",
-        description: "Sign in took too long. Please try again.",
+        title: "This is taking longer than usual",
+        description: "Check your connection and try again.",
         variant: "destructive",
       });
     }, 10000);
