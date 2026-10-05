@@ -39,12 +39,23 @@ import {
   type BondReadiness,
 } from "@/lib/bond-readiness";
 import { classifyLaunchFailure, technicalDetail } from "@/lib/launch-errors";
+import { enableAsset } from "@/lib/enable-asset";
+import {
+  forgetLaunch,
+  recalledLaunch,
+  rememberLaunch,
+  type InFlightLaunch,
+} from "@/lib/launch-in-flight";
 import { EXPLORER_BASE } from "@/lib/network";
 import { rpc } from "@stellar/stellar-sdk";
 import { BondBlockerDialog } from "./BondBlockerDialog";
 import { LaunchBlockedDialog } from "./LaunchBlockedDialog";
 import { LaunchReviewDialog, type LaunchReview } from "./LaunchReviewDialog";
-import { findDeployedVault, resolveSubmittedLaunch } from "@/lib/vault-deploy-guard";
+import {
+  findDeployedVault,
+  resolveSubmittedLaunch,
+  type SubmittedOutcome,
+} from "@/lib/vault-deploy-guard";
 import { factoryClient as factoryReader, simulate } from "@/lib/stellar-clients";
 import { useToast } from "@/hooks/use-toast";
 import { useRouter } from "next/navigation";
@@ -68,7 +79,15 @@ import { freighterSigner, FreighterDeclined } from "@/lib/freighter-signer";
 import { LISTING_LIMITS, charCount } from "@/lib/listing-limits";
 
 const MIN_DEADLINE_MS = () => Date.now() + 24 * 60 * 60 * 1000;
-const DEFAULT_DEADLINE_MS = () => Date.now() + 30 * 24 * 60 * 60 * 1000;
+/**
+ * Thirty days out, on a whole minute. The date field shows minutes, so a
+ * default carrying seconds and milliseconds was never quite what the builder
+ * saw: both of QA's 1 Oct vaults went on-chain with deadlines like 10:57:09.307.
+ */
+const DEFAULT_DEADLINE_MS = () => {
+  const ms = Date.now() + 30 * 24 * 60 * 60 * 1000;
+  return ms - (ms % 60_000);
+};
 
 const NETWORK_PASSPHRASE = "Test SDF Network ; September 2015";
 const SOROBAN_RPC_URL = "https://soroban-testnet.stellar.org";
@@ -131,9 +150,11 @@ const formSchema = z.object({
   currencyType: z.enum(CURRENCIES, {
     required_error: "Currency type is required.",
   }),
+  // NaN when the date field is empty or half-typed: see handleDeadlineChange.
+  // The minimum is read at validation time, not once when the module loads.
   fundingDeadline: z.coerce
-    .number()
-    .min(MIN_DEADLINE_MS(), "Deadline must be at least 1 day in the future."),
+    .number({ invalid_type_error: "Choose a funding deadline." })
+    .refine((ms) => ms >= MIN_DEADLINE_MS(), "Deadline must be at least 1 day in the future."),
   image: z
     .any()
     .refine(
@@ -173,13 +194,15 @@ function CharacterCount({ value, max, id }: { value: string; max: number; id?: s
 }
 
 /**
- * A refusal in plain words, with the network's own text folded underneath.
+ * A toast's body: one plain sentence, a link to the transaction when there is
+ * one, and the network's own text folded underneath.
  *
- * The raw text used to be the whole message: "HostError: Error(Contract,
- * #10)", a SendFailed JSON dump, or a TypeError about reading 'switch'. It is
- * still there for whoever has to debug it, just not in the builder's way.
+ * For a refusal, the raw text used to be the whole message: "HostError:
+ * Error(Contract, #10)", a SendFailed JSON dump, or a TypeError about reading
+ * 'switch'. It is still there for whoever has to debug it, just not in the
+ * builder's way.
  */
-function Refusal({ message, detail, txUrl }: { message: string; detail?: string; txUrl?: string }) {
+function ToastDetail({ message, detail, txUrl }: { message: string; detail?: string; txUrl?: string }) {
   return (
     <span className="block space-y-1.5">
       <span className="block">{message}</span>
@@ -260,8 +283,10 @@ export function ListingForm() {
   // boolean, because "you have never held USDC", "you hold too little" and
   // "this wallet was never funded" need different instructions.
   const [bondBlocker, setBondBlocker] = useState<BondReadiness | null>(null);
-  const [deadlineInputValue, setDeadlineInputValue] = useState<string>(
-    msToDatetimeLocal(DEFAULT_DEADLINE_MS()),
+  // Read once, so the field and the form start from the same instant.
+  const [initialDeadline] = useState(DEFAULT_DEADLINE_MS);
+  const [deadlineInputValue, setDeadlineInputValue] = useState<string>(() =>
+    msToDatetimeLocal(initialDeadline),
   );
   // The list is admin-editable, so it is fetched rather than compiled in.
   // projectCategories stays as the fallback: a builder should still be able to
@@ -301,7 +326,7 @@ export function ListingForm() {
       location: "",
       fundingGoal: 100,
       currencyType: "USDC",
-      fundingDeadline: DEFAULT_DEADLINE_MS(),
+      fundingDeadline: initialDeadline,
       image: undefined,
     },
   });
@@ -468,6 +493,27 @@ export function ListingForm() {
 
   const selectedCurrency = form.watch("currencyType");
 
+  // The exact asset behind the chosen currency, asked of its token contract.
+  // One wallet can hold several assets all called USDC (QA's test wallet had
+  // three), and only the vault's own issuer counts.
+  const [currencyAsset, setCurrencyAsset] = useState<BondAsset | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setCurrencyAsset(null);
+    let token: string | null = null;
+    try {
+      token = tokenAddressFor(selectedCurrency);
+    } catch {
+      return;
+    }
+    bondAssetFor(token).then((asset) => {
+      if (!cancelled) setCurrencyAsset(asset);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedCurrency]);
+
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
@@ -480,13 +526,20 @@ export function ListingForm() {
     }
   };
 
+  /**
+   * The date field and the value the launch submits, kept as one.
+   *
+   * An empty or half-typed date used to leave the form value alone, so the
+   * field showed what the builder typed while the launch went out with
+   * whatever was there before -- the 30-day default, in practice. Now an
+   * unusable date clears the value and the launch stops on "Choose a funding
+   * deadline" instead.
+   */
   const handleDeadlineChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     setDeadlineInputValue(val);
-    const ms = new Date(val).getTime();
-    if (!isNaN(ms)) {
-      form.setValue("fundingDeadline", ms, { shouldValidate: true });
-    }
+    const ms = val ? new Date(val).getTime() : NaN;
+    form.setValue("fundingDeadline", ms, { shouldValidate: true });
   };
 
   const onAiAnalyze = async () => {
@@ -556,6 +609,7 @@ export function ListingForm() {
   };
 
   const announceLaunched = (vaultAddr: string, activeAddress: string) => {
+    forgetLaunch();
     toast({
       title: "Vault Deployed Successfully!",
       description: `Spawned funding vault at ${vaultAddr.slice(0, 6)}...${vaultAddr.slice(-4)} on-chain.`,
@@ -569,7 +623,116 @@ export function ListingForm() {
     router.push("/projects");
   };
 
-  const handleOnChainSubmit = (values: FormSchema, verifiedAddress?: string) => {
+  // ── A launch from before a reload ─────────────────────────────────────────
+
+  /** The title of a remembered launch being checked; Launch waits for it. */
+  const [priorLaunchTitle, setPriorLaunchTitle] = useState<string | null>(null);
+
+  /**
+   * Say what became of a remembered launch, and forget it once the answer is
+   * final. Returns whether a new launch may go ahead.
+   */
+  const settlePriorLaunch = (prior: InFlightLaunch, outcome: SubmittedOutcome): boolean => {
+    const txUrl = `${EXPLORER_BASE}/tx/${prior.hash}`;
+    const name = `“${prior.title}”`;
+    switch (outcome.status) {
+      case "SUCCESS":
+        forgetLaunch(prior.hash);
+        toast({
+          title: "Your last launch went through",
+          description: (
+            <ToastDetail
+              message={`${name} is on-chain. Its listing appears once the platform has read it, usually within a minute.`}
+              txUrl={txUrl}
+            />
+          ),
+        });
+        refreshAfterTx(prior.creator);
+        return false;
+      case "FAILED":
+        forgetLaunch(prior.hash);
+        toast({
+          title: "Your last launch didn't go through",
+          description: (
+            <ToastDetail
+              message={`The network refused ${name}, so no vault was created and no bond was taken; only the network fee was charged.`}
+              txUrl={txUrl}
+            />
+          ),
+          variant: "destructive",
+        });
+        return true;
+      case "EXPIRED":
+        forgetLaunch(prior.hash);
+        toast({
+          title: "Your last launch was never applied",
+          description: `${name} expired before the network took it, so no vault was created and nothing was charged. You can launch again.`,
+        });
+        return true;
+      default:
+        toast({
+          title: "Your last launch isn't confirmed yet",
+          description: (
+            <ToastDetail
+              message={`The network couldn't be reached to confirm ${name}. Check the transaction before launching again, so you don't create a second vault.`}
+              txUrl={txUrl}
+            />
+          ),
+          variant: "destructive",
+        });
+        return false;
+    }
+  };
+
+  // On arrival, settle a launch a reload or a closed tab left unconfirmed.
+  useEffect(() => {
+    const prior = recalledLaunch();
+    if (!prior) return;
+    let cancelled = false;
+    setPriorLaunchTitle(prior.title);
+    resolveSubmittedLaunch(prior.hash, prior.expiresAtMs)
+      .then((outcome) => {
+        if (!cancelled) settlePriorLaunch(prior, outcome);
+      })
+      .finally(() => {
+        if (!cancelled) setPriorLaunchTitle(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // Once, on arrival; settlePriorLaunch only reads stable helpers.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // While a launch is in Freighter's hands or the network's, leaving would
+  // drop the page's only record of it. The browser asks first.
+  useEffect(() => {
+    if (launchStage !== "signing" && launchStage !== "submitting" && launchStage !== "confirming") {
+      return;
+    }
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [launchStage]);
+
+  /**
+   * Ask Freighter to add the vault's asset, from the bond dialog. Throws the
+   * message to show in the dialog if it doesn't happen.
+   */
+  const handleEnableAsset = async (asset: BondAsset) => {
+    if (!freighterWalletAddress) throw new Error("Connect your wallet first.");
+    await enableAsset(freighterWalletAddress, asset);
+    setBondBlocker(null);
+    toast({
+      title: `${asset.code} added to your wallet`,
+      description: "Press Launch Campaign again to continue.",
+    });
+  };
+
+  const handleOnChainSubmit =(values: FormSchema, verifiedAddress?: string) => {
     if (isSubmittingRef.current) return;
 
     const activeAddress = verifiedAddress || freighterWalletAddress;
@@ -621,6 +784,17 @@ export function ListingForm() {
    * simulation, the builder's review, Freighter, the network.
    */
   const launch = async (values: FormSchema, activeAddress: string) => {
+    // 0. A launch this wallet sent before a reload, still unaccounted for.
+    // Until the network says it failed or expired, another one could be a
+    // second vault and a second bond -- and the duplicate check below cannot
+    // see it, because a reloaded form pins different metadata.
+    const prior = recalledLaunch();
+    if (prior && prior.creator === activeAddress) {
+      setLaunchStage("deduping");
+      const outcome = await resolveSubmittedLaunch(prior.hash, prior.expiresAtMs);
+      if (!settlePriorLaunch(prior, outcome)) return;
+    }
+
     // 1. KYC validation check
     setLaunchStage("verifying");
     try {
@@ -880,7 +1054,7 @@ export function ListingForm() {
               ? "Couldn't reach the network"
               : "The launch didn't go through",
         description: (
-          <Refusal
+          <ToastDetail
             message={
               failure.kind === "rule"
                 ? `${failure.message} Nothing was charged.`
@@ -897,10 +1071,11 @@ export function ListingForm() {
 
     /** A launch the network applied and then failed. Only its fee was charged. */
     const reportFailedOnChain = (hash: string | null) => {
+      if (hash) forgetLaunch(hash);
       toast({
         title: "The network refused the launch",
         description: (
-          <Refusal
+          <ToastDetail
             message="No vault was created and no bond or listing fee was taken; only the network fee was charged. Check the form and try again."
             txUrl={hash ? `${EXPLORER_BASE}/tx/${hash}` : undefined}
           />
@@ -986,6 +1161,7 @@ export function ListingForm() {
         bond: numericBond,
         platformFee,
         networkFeeXlm,
+        deadlineMs: values.fundingDeadline,
       });
       if (!approved) {
         toast({
@@ -1001,6 +1177,17 @@ export function ListingForm() {
             sent.hash = submitted?.hash ?? null;
             const maxTime = Number(tx.signed?.timeBounds?.maxTime ?? 0);
             sent.expiresAtMs = maxTime > 0 ? maxTime * 1000 : null;
+            // From here the transaction exists outside this page. Written
+            // down now, so a reload still knows to ask what became of it.
+            if (sent.hash) {
+              rememberLaunch({
+                hash: sent.hash,
+                expiresAtMs: sent.expiresAtMs,
+                creator: activeAddress,
+                title: values.title,
+                sentAt: Date.now(),
+              });
+            }
             setLaunchStage("confirming");
           },
         },
@@ -1039,6 +1226,7 @@ export function ListingForm() {
           if (outcome.vaultAddress) {
             announceLaunched(outcome.vaultAddress, activeAddress);
           } else {
+            forgetLaunch(sent.hash);
             toast({ title: "Vault Deployed Successfully!", description: "The launch went through." });
             refreshAfterTx(activeAddress);
             router.push("/projects");
@@ -1046,6 +1234,7 @@ export function ListingForm() {
           return;
         }
         if (outcome.status === "EXPIRED") {
+          forgetLaunch(sent.hash);
           toast({
             title: "Launch expired before it was confirmed",
             description:
@@ -1063,8 +1252,8 @@ export function ListingForm() {
                 <a href={txUrl} target="_blank" rel="noopener noreferrer" className="underline">
                   Check the transaction
                 </a>{" "}
-                before trying again — Launch Campaign looks for an earlier launch of
-                this draft first, so it will not create a second vault.
+                before trying again. Launch Campaign checks on this one first, even
+                after a reload, so it won&apos;t create a second vault.
               </span>
             ),
             variant: "destructive",
@@ -1295,6 +1484,16 @@ export function ListingForm() {
                       this asset. The vault is fixed to it permanently — it cannot
                       be changed after the project is created.
                     </FormDescription>
+                    {currencyAsset?.issuer && (
+                      <p className="text-xs text-muted-foreground">
+                        This is {currencyAsset.code} issued by{" "}
+                        <span className="font-mono" title={currencyAsset.issuer}>
+                          {currencyAsset.issuer.slice(0, 4)}…{currencyAsset.issuer.slice(-4)}
+                        </span>
+                        . Your wallet needs this exact asset; {currencyAsset.code} from another
+                        issuer won&apos;t count.
+                      </p>
+                    )}
                     <FormMessage />
                   </FormItem>
                 )}
@@ -1536,7 +1735,13 @@ export function ListingForm() {
                       min-w holds the resting width so nothing reflows. */}
                   <Button
                     type="submit"
-                    disabled={isSubmitPending || isCooldown || isSubmittingRef.current || !isBondValid}
+                    disabled={
+                      isSubmitPending ||
+                      isCooldown ||
+                      isSubmittingRef.current ||
+                      !isBondValid ||
+                      priorLaunchTitle !== null
+                    }
                     aria-busy={isSubmitPending}
                     className="gap-2 min-w-[168px]"
                   >
@@ -1554,6 +1759,15 @@ export function ListingForm() {
                     {LAUNCH_STATUS[launchStage]}
                   </p>
                 )}
+                {!isSubmitPending && priorLaunchTitle !== null && (
+                  <p
+                    role="status"
+                    aria-live="polite"
+                    className="text-sm text-muted-foreground sm:text-right"
+                  >
+                    Checking on your last launch of “{priorLaunchTitle}” before you start another…
+                  </p>
+                )}
               </div>
             </form>
           </Form>
@@ -1567,7 +1781,11 @@ export function ListingForm() {
         />
       )}
 
-      <BondBlockerDialog blocker={bondBlocker} onClose={() => setBondBlocker(null)} />
+      <BondBlockerDialog
+        blocker={bondBlocker}
+        onClose={() => setBondBlocker(null)}
+        onEnableAsset={handleEnableAsset}
+      />
       <LaunchBlockedDialog problems={launchProblems} onClose={() => setLaunchProblems(null)} />
       <LaunchReviewDialog review={launchReview} onDecide={decideReview} />
     </>
