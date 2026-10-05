@@ -20,12 +20,13 @@ import { Avatar, AvatarFallback, AvatarImage } from "../ui/avatar";
 import { FundDialog } from "./FundDialog";
 import { Progress } from "../ui/progress";
 import { useProjectDetails } from "@/context/ProjectDetailsContext";
-import { MilestoneVoting, type MilestoneVaultState } from "./MilestoneVoting";
+import { MilestonePlan, MilestoneVoting, type MilestoneVaultState } from "./MilestoneVoting";
 import { MilestoneProofDialog, MilestoneProofView, parseProof } from "./MilestoneProof";
 import { ProjectLocation } from "./ProjectLocation";
 import { RestrictionNotice } from "./RestrictionNotice";
 import { ProjectRestrictionControls } from "../admin/ProjectRestrictionControls";
 import { ScrollArea } from "../ui/scroll-area";
+import { ExpandableText, useIsClamped } from "../ui/expandable-text";
 import {
   RefreshCw,
   AlertTriangle,
@@ -92,6 +93,25 @@ const WHAT_HAPPENS_TO_MY_MONEY = [
   "Once the goal is reached, the builder is paid stage by stage, each time stakeholders vote yes.",
   "If a stage fails the vote, what's left and the builder's deposit come back to stakeholders.",
 ];
+
+/**
+ * Statuses of a vault that reached its goal, so its stages have votes and
+ * proof. A Failed vault never reached it: no vote ever opens there.
+ */
+const STAGE_VOTE_STATUSES: readonly string[] = ["funded", "active", "completed", "refunding"];
+
+/** The line above the stage plan: how far the vault is from its first vote. */
+function stagePlanNote(status: StatusView): string {
+  switch (status.key) {
+    case "goal-reached":
+      return "The goal is reached. The builder opens each stage to a stakeholder vote, one at a time.";
+    case "deadline-passed":
+    case "goal-not-reached":
+      return "The goal wasn't reached by the deadline, so these stages won't start.";
+    default:
+      return "The builder is paid in these stages, one at a time, each after stakeholders vote yes. Voting opens once the goal is reached.";
+  }
+}
 
 /**
  * The one status pill, with its tooltip. The same words as the card, because
@@ -192,6 +212,11 @@ export function ProjectDetailsDialog() {
       return null;
     }
   };
+
+  // The header holds two lines of the title and never grows past them. When
+  // they cut the title short, the body opens with all of it.
+  const [titleEl, setTitleEl] = useState<HTMLHeadingElement | null>(null);
+  const isTitleClamped = useIsClamped(titleEl, project?.title, !!project);
 
   const [isClosePending, setIsClosePending] = useState(false);
   const [isRefundClaimPending, setIsRefundClaimPending] = useState(false);
@@ -656,6 +681,8 @@ export function ProjectDetailsDialog() {
     project.fundingDeadline > 0 &&
     Date.now() >= project.fundingDeadline;
 
+  const hasStageVotes = !!project && STAGE_VOTE_STATUSES.includes(project.status);
+
   const showsTechnicalDetails = !!(creatorAddress || project?.vaultAddress || canCloseNow);
   const ledgerUrl = project?.vaultAddress
     ? `${EXPLORER_BASE}/contract/${project.vaultAddress}`
@@ -672,18 +699,16 @@ export function ProjectDetailsDialog() {
           {/* overflow-wrap:anywhere, not break-all. break-all split ordinary
               words at the edge ("Restaurant an / d Bakeshop"); this wraps at
               spaces and still breaks a long unbroken string, without letting
-              it widen the dialog. */}
-          <DialogTitle className="text-xl sm:text-2xl font-bold font-headline leading-tight [overflow-wrap:anywhere] line-clamp-3 text-left">
+              it widen the dialog. Two lines and no tagline: with three lines
+              of title and four of tagline this header, which does not scroll,
+              took a third of the dialog. */}
+          <DialogTitle
+            ref={setTitleEl}
+            title={isTitleClamped ? project?.title : undefined}
+            className="text-xl sm:text-2xl font-bold font-headline leading-tight [overflow-wrap:anywhere] line-clamp-2 text-left"
+          >
             {project?.title || "Reading the vault…"}
           </DialogTitle>
-          <DialogDescription className="text-sm sm:text-base leading-snug [overflow-wrap:anywhere] text-left line-clamp-3 sm:line-clamp-4">
-            {/* A loaded project with no tagline is not a project still loading.
-                The old copy said "Fetching details..." forever whenever the
-                metadata carried no description. */}
-            {project
-              ? project.tagline || "No description was published for this project."
-              : "Reading the vault…"}
-          </DialogDescription>
           {project && status && (
             <div className="flex flex-wrap items-center gap-x-3 gap-y-2 pt-1 text-left">
               <StatusPill status={status} />
@@ -721,18 +746,31 @@ export function ProjectDetailsDialog() {
           {isLoading && !project ? (
             <div className="flex flex-col justify-center items-center h-96 gap-3">
               <CubeSpinner size="large" />
-              <p className="text-sm text-muted-foreground">Reading the vault…</p>
+              <DialogDescription>Reading the vault…</DialogDescription>
             </div>
           ) : error && !project ? (
             <div className="flex flex-col items-center justify-center h-96 gap-4 text-center px-6">
               <AlertTriangle className="h-12 w-12 text-destructive" aria-hidden="true" />
               <h3 className="text-xl font-semibold">We couldn&apos;t open this project</h3>
-              <p className="text-muted-foreground">{liveFiguresError}</p>
+              <DialogDescription className="text-base">{liveFiguresError}</DialogDescription>
             </div>
           ) : (
             project && status && raisedView && goalView && (
               <div className="space-y-4 p-4 sm:p-6">
                 <RestrictionNotice restriction={project.restriction} />
+                <div className="space-y-1">
+                  {isTitleClamped && (
+                    <p className="font-headline text-lg font-semibold leading-snug [overflow-wrap:anywhere]">
+                      {project.title}
+                    </p>
+                  )}
+                  <DialogDescription className="text-sm sm:text-base leading-snug [overflow-wrap:anywhere]">
+                    {/* A loaded project with no tagline is not a project still
+                        loading. The old copy said "Fetching details..."
+                        forever whenever the metadata carried no description. */}
+                    {project.tagline || "No description was published for this project."}
+                  </DialogDescription>
+                </div>
                 <div className="relative h-60 w-full mb-4 rounded-md overflow-hidden">
                   <ImageWithFallback
                     src={project.imageUrl}
@@ -811,32 +849,45 @@ export function ProjectDetailsDialog() {
                   </ul>
                 </Disclosure>
 
-                <div className="prose prose-sm dark:prose-invert max-w-none pt-2 pr-6">
-                  <div className="max-h-40 overflow-auto break-words">
-                    <p>{project.description}</p>
+                {project.description?.trim() && (
+                  <div className="prose prose-sm dark:prose-invert max-w-none pt-2">
+                    <ExpandableText text={project.description.trim()} lines={6} />
                   </div>
-                </div>
+                )}
 
                 {/* Stages sat in the footer, which does not scroll. With a vote
                     open they filled a 768px-high window and left the body
-                    above, proof included, zero pixels tall. Proof only exists
-                    once a vault has reached its goal, which is when this
-                    section shows. */}
-                {project.vaultAddress &&
-                  ["funded", "active", "completed", "refunding"].includes(project.status) && (
+                    above, proof included, zero pixels tall. Votes and proof
+                    only exist once a vault has reached its goal; before that
+                    the plan shows, so a visitor can see how the money will be
+                    released before staking any. */}
+                {project.vaultAddress && hasStageVotes ? (
+                  <div className="border-t pt-4">
+                    <h4 className="font-semibold mb-2">Stages</h4>
+                    <MilestoneVoting
+                      vaultAddress={project.vaultAddress}
+                      currency={project.currencyType ?? "USDC"}
+                      creatorAddress={project.creatorAddress ?? project.creator}
+                      platformLocked={isLocked}
+                      details={project.milestones}
+                      renderProof={renderMilestoneProof}
+                      onChange={() => refreshProject(project.id)}
+                    />
+                  </div>
+                ) : (
+                  project.milestones &&
+                  project.milestones.length > 0 && (
                     <div className="border-t pt-4">
                       <h4 className="font-semibold mb-2">Stages</h4>
-                      <MilestoneVoting
-                        vaultAddress={project.vaultAddress}
-                        currency={project.currencyType ?? "USDC"}
-                        creatorAddress={project.creatorAddress ?? project.creator}
-                        platformLocked={isLocked}
+                      <MilestonePlan
                         details={project.milestones}
-                        renderProof={renderMilestoneProof}
-                        onChange={() => refreshProject(project.id)}
+                        currency={project.currencyType ?? "USDC"}
+                        goal={project.fundingGoal}
+                        note={stagePlanNote(status)}
                       />
                     </div>
-                  )}
+                  )
+                )}
 
                 {(project.location || project.locationLat != null) && (
                   <div className="border-t pt-4">
