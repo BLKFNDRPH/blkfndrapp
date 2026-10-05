@@ -99,7 +99,7 @@ Soroban charges rent. Every contract instance, persistent entry and uploaded was
 - The treasury and Operations Vault extend their instance to ~7 days (`LEDGER_BUMP = 120_960`) when fewer than ~1 day remains.
 - Idle shared entries therefore expire. The vault wasm, unused for weeks after its upload, once made every launch pay to restore it.
 
-[src/lib/ttl-keeper.ts](../src/lib/ttl-keeper.ts) keeps the shared entries alive. The `keep-alive-cron` compose service calls `POST /api/keep-alive` daily. It restores anything archived and tops up anything under 21 days to 60. It covers the factory, both registries, the admin roster, the treasury, the Operations Vault and the vault wasm the factory deploys. Restoring and extending are permissionless; the configured key only pays the fee. Per-project vault instances are not on the list: each is extended by its own calls, and its rent belongs to the project.
+[src/lib/ttl-keeper.ts](../src/lib/ttl-keeper.ts) keeps the shared entries alive. The `keep-alive-cron` compose service calls `POST /api/keep-alive` daily. It restores anything archived and tops up anything under 40 days to 60. The contracts' own `extend_ttl(518_400, 518_400)` tops an entry up to 30 days whenever a call finds less than that left, charging the caller for every day since the last top-up, so the keeper keeps the shared entries above 30 days. It covers the factory, both registries, the admin roster, the treasury, the Operations Vault and the vault wasm the factory deploys. Restoring and extending are permissionless; the configured key only pays the fee. Per-project vault instances are not on the list: each is extended by its own calls, and its rent belongs to the project.
 
 ---
 

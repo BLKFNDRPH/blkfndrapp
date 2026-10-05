@@ -41,19 +41,37 @@ import { instanceKey, vaultWasmHashFromFactory } from "@/lib/factory-vault-hash"
  * So the platform keeps it alive instead. Daily, this reads the TTL of every
  * shared instance and code entry -- the factory, both registries, the admin
  * roster, the treasury, the Operations Vault, and the vault code the factory
- * deploys -- restores anything archived and tops up anything with less than 21
+ * deploys -- restores anything archived and tops up anything with less than 40
  * days left to 60. Both operations are permissionless; the key only pays the
  * fee, as with settle-stalled and ops-funding.
+ *
+ * Why 40 and not less: lapsing is not the only way a caller ends up paying.
+ * The contracts call `extend_ttl(518_400, 518_400)`, so any call that finds an
+ * entry with under 30 days left tops it back up to 30 and pays for every day
+ * since the last top-up. With this threshold at 21 days, the factory and the
+ * vault code spent most of their lives between 21 and 30 days, and the first
+ * launch or stake after a quiet spell paid the platform's rent: Helios-1's
+ * launch on 1 Oct paid 5.41 XLM, almost all of it three days of rent on the
+ * factory's code and instance; AquaPure's, 2h40m later, paid 0.55. Kept above
+ * 30 days, those calls extend nothing. The extra 10 days cover missed runs.
  *
  * Project vault instances are not on the list. Each one is extended by its own
  * calls, and its rent is its project's, not the platform's.
  */
 
 const LEDGERS_PER_DAY = 17_280; // 5-second ledgers
-/** Anything with less than this left is topped up. */
-const THRESHOLD_LEDGERS = 21 * LEDGERS_PER_DAY;
+/**
+ * The contracts' own `LEDGERS_TO_LIVE`: a call that finds less than this left
+ * extends the entry to it, at the caller's expense. The highest of any
+ * contract on the list (the treasury and Operations Vault only extend under a
+ * day).
+ */
+const CONTRACT_SELF_EXTEND_LEDGERS = 518_400;
+/** Anything with less than this left is topped up: 30 days plus 10 of margin. */
+const THRESHOLD_LEDGERS = CONTRACT_SELF_EXTEND_LEDGERS + 10 * LEDGERS_PER_DAY;
 /** ...to this. */
 const TARGET_LEDGERS = 60 * LEDGERS_PER_DAY;
+const days = (ledgers: number) => ledgers / LEDGERS_PER_DAY;
 /**
  * Per-transaction read budget. Extending reads every entry it touches, and
  * the network caps disk reads per transaction, so large code entries are
@@ -281,7 +299,7 @@ export async function runKeepAlive(
     return {
       label: t.label,
       state,
-      daysLeft: state === "archived" ? null : Math.round(((t.liveUntil - latest) / LEDGERS_PER_DAY) * 10) / 10,
+      daysLeft: state === "archived" ? null : Math.round(days(t.liveUntil - latest) * 10) / 10,
       bytes: t.bytes,
     };
   });
@@ -290,7 +308,7 @@ export async function runKeepAlive(
   const due = tracked.filter((t) => stateOf(t, latest) !== "live");
 
   if (due.length === 0) {
-    return { status: options.dryRun ? "dry-run" : "skipped", detail: `All ${tracked.length} shared entries have at least 21 days left.`, entries, restored: 0, extended: 0, feeXlm: 0 };
+    return { status: options.dryRun ? "dry-run" : "skipped", detail: `All ${tracked.length} shared entries have at least ${days(THRESHOLD_LEDGERS)} days left.`, entries, restored: 0, extended: 0, feeXlm: 0 };
   }
 
   if (options.dryRun) {
@@ -325,7 +343,7 @@ export async function runKeepAlive(
 
   return {
     status: "done",
-    detail: `Restored ${archived.length} and extended ${due.length} of ${tracked.length} shared entries to ${TARGET_LEDGERS / LEDGERS_PER_DAY} days.`,
+    detail: `Restored ${archived.length} and extended ${due.length} of ${tracked.length} shared entries to ${days(TARGET_LEDGERS)} days.`,
     entries,
     restored: archived.length,
     extended: due.length,
