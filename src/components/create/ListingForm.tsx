@@ -31,10 +31,16 @@ import {
   type Currency,
 } from "@/lib/currencies";
 import {
+  bondAssetFor,
   checkBondReadiness,
-  looksLikeMissingTrustline,
+  spendableXlm,
+  tokenBalance,
+  type BondAsset,
   type BondReadiness,
 } from "@/lib/bond-readiness";
+import { classifyLaunchFailure, technicalDetail } from "@/lib/launch-errors";
+import { EXPLORER_BASE } from "@/lib/network";
+import { rpc } from "@stellar/stellar-sdk";
 import { BondBlockerDialog } from "./BondBlockerDialog";
 import { LaunchBlockedDialog } from "./LaunchBlockedDialog";
 import { LaunchReviewDialog, type LaunchReview } from "./LaunchReviewDialog";
@@ -163,6 +169,32 @@ function CharacterCount({ value, max, id }: { value: string; max: number; id?: s
       {count.toLocaleString()} / {max.toLocaleString()}
       {over > 0 && ` · ${over.toLocaleString()} too many`}
     </p>
+  );
+}
+
+/**
+ * A refusal in plain words, with the network's own text folded underneath.
+ *
+ * The raw text used to be the whole message: "HostError: Error(Contract,
+ * #10)", a SendFailed JSON dump, or a TypeError about reading 'switch'. It is
+ * still there for whoever has to debug it, just not in the builder's way.
+ */
+function Refusal({ message, detail, txUrl }: { message: string; detail?: string; txUrl?: string }) {
+  return (
+    <span className="block space-y-1.5">
+      <span className="block">{message}</span>
+      {txUrl && (
+        <a href={txUrl} target="_blank" rel="noopener noreferrer" className="block underline">
+          See the transaction
+        </a>
+      )}
+      {detail && (
+        <details className="text-xs opacity-80">
+          <summary className="cursor-pointer">Technical details</summary>
+          <span className="mt-1 block break-all font-mono">{detail}</span>
+        </details>
+      )}
+    </span>
   );
 }
 
@@ -633,20 +665,42 @@ export function ListingForm() {
       return;
     }
 
+    // The vault is fixed to this token for its whole life, so it must be the
+    // currency the builder actually chose. tokenAddressFor throws on a
+    // currency this deployment has no token for, rather than handing
+    // create_vault an empty string.
+    const tokenAddress = (() => {
+      try {
+        return tokenAddressFor(values.currencyType);
+      } catch {
+        return null;
+      }
+    })();
+    if (!tokenAddress) {
+      toast({
+        title: `${values.currencyType} isn't available`,
+        description: "This currency isn't set up on the platform right now. Choose another one.",
+        variant: "destructive",
+      });
+      return;
+    }
+    // The flat listing fee leaves the wallet in the same call as the bond, in
+    // the same asset, so the pre-flight and the review both need it.
+    const platformFeeStroops = await simulate(() => factoryReader().get_platform_fee(), "get_platform_fee");
+    const platformFee = Number(platformFeeStroops ?? platformInfo?.platformFeeStroops ?? 0) / 10_000_000;
+
     // 2. Bond pre-flight.
     //
-    // The vault pulls the bond in the same call that creates it, so a builder
-    // who cannot part with it has no vault. Until now they found that out from
-    // a raw host diagnostic after signing, with nothing to act on. Runs before
-    // the uploads below so a blocked builder does not pin files they cannot
-    // use, and fails open: a check that cannot reach the network must not be
-    // the thing standing between a builder and a vault they can deploy.
+    // The vault pulls the bond and the listing fee in the same call that
+    // creates it, so a builder who cannot part with both has no vault. Until
+    // now they found that out from a raw host diagnostic after signing, with
+    // nothing to act on. Runs before the uploads below so a blocked builder
+    // does not pin files they cannot use, and fails open: a check that cannot
+    // reach the network must not be the thing standing between a builder and a
+    // vault they can deploy. The simulation further down refuses an
+    // uncoverable launch anyway, and that refusal gets the same dialog.
     try {
-      const readiness = await checkBondReadiness(
-        activeAddress,
-        tokenAddressFor(values.currencyType),
-        numericBond,
-      );
+      const readiness = await checkBondReadiness(activeAddress, tokenAddress, numericBond, platformFee);
       if (!readiness.ok) {
         setBondBlocker(readiness);
         return;
@@ -787,6 +841,74 @@ export function ListingForm() {
       return;
     }
 
+    /**
+     * A launch refused before anything reached the network, in words.
+     *
+     * A wallet that cannot cover the bond and fee gets the same dialog the
+     * pre-flight shows, with the real asset and, where it can be read, the
+     * real balance. Anything else gets one plain sentence, with the network's
+     * own text folded underneath.
+     */
+    const reportRefusal = async (text: string) => {
+      const failure = classifyLaunchFailure(text, tokenAddress, FACTORY_ID);
+      if (failure.kind === "token") {
+        const asset: BondAsset = (await bondAssetFor(tokenAddress)) ?? {
+          code: values.currencyType,
+          issuer: null,
+          isNative: values.currencyType === "XLM",
+        };
+        if (failure.reason === "insufficient") {
+          const balance = await tokenBalance(tokenAddress, activeAddress);
+          setBondBlocker({
+            ok: false,
+            reason: "insufficient",
+            asset,
+            held: balance.status === "ok" ? Number(balance.raw) / 10_000_000 : null,
+            bond: numericBond,
+            fee: platformFee,
+          });
+        } else {
+          setBondBlocker({ ok: false, reason: failure.reason, asset });
+        }
+        return;
+      }
+      toast({
+        title:
+          failure.kind === "rule"
+            ? "This launch can't go ahead"
+            : failure.kind === "network"
+              ? "Couldn't reach the network"
+              : "The launch didn't go through",
+        description: (
+          <Refusal
+            message={
+              failure.kind === "rule"
+                ? `${failure.message} Nothing was charged.`
+                : failure.kind === "network"
+                  ? "Nothing was sent. Check your connection and try again."
+                  : "No vault was created and nothing was charged. Try again in a moment; if it keeps happening, send the technical details below to the BLKFNDR team."
+            }
+            detail={technicalDetail(text)}
+          />
+        ),
+        variant: "destructive",
+      });
+    };
+
+    /** A launch the network applied and then failed. Only its fee was charged. */
+    const reportFailedOnChain = (hash: string | null) => {
+      toast({
+        title: "The network refused the launch",
+        description: (
+          <Refusal
+            message="No vault was created and no bond or listing fee was taken; only the network fee was charged. Check the form and try again."
+            txUrl={hash ? `${EXPLORER_BASE}/tx/${hash}` : undefined}
+          />
+        ),
+        variant: "destructive",
+      });
+    };
+
     // 5. Simulate, 6. let the builder review it, 7. sign and send.
     setLaunchStage("preparing");
     // An object rather than a variable, so the watcher can set it from inside
@@ -812,39 +934,58 @@ export function ListingForm() {
         },
       });
 
-      // The vault is fixed to this token for its whole life, so it must be the
-      // currency the builder actually chose. This read `USDC_ID` regardless of
-      // the selection, which made the dropdown decorative: a project listed in
-      // XLM escrowed USDC. tokenAddressFor throws on an unconfigured currency
-      // rather than passing an empty string to create_vault, which is what the
-      // old `|| ""` fallback would have deployed.
-      const tokenAddress = tokenAddressFor(values.currencyType);
+      // tokenAddress is the builder's chosen currency (resolved above). This
+      // used to read `USDC_ID` regardless of the selection, which made the
+      // dropdown decorative: a project listed in XLM escrowed USDC.
+      const tx = await factoryClient.create_vault({
+        config: {
+          creator: activeAddress,
+          token: tokenAddress,
+          goal: goalStroops,
+          deadline: deadlineTimestamp,
+          bond_amount: bondStroops,
+          milestones: formattedMilestones,
+          metadata_cid: metadataCid,
+        },
+      });
 
-      const [tx, platformFeeStroops] = await Promise.all([
-        factoryClient.create_vault({
-          config: {
-            creator: activeAddress,
-            token: tokenAddress,
-            goal: goalStroops,
-            deadline: deadlineTimestamp,
-            bond_amount: bondStroops,
-            milestones: formattedMilestones,
-            metadata_cid: metadataCid,
-          },
-        }),
-        simulate(() => factoryReader().get_platform_fee(), "get_platform_fee"),
-      ]);
+      // A refused simulation does not throw here: the SDK raises it only once
+      // signing is asked for. Left alone, the review opened on a launch the
+      // network had already refused, quoting 0.00001 XLM -- the base fee of a
+      // transaction that was never going to run -- and the refusal arrived
+      // after "Sign in Freighter", as raw host text.
+      if (tx.simulation && rpc.Api.isSimulationError(tx.simulation)) {
+        await reportRefusal(tx.simulation.error);
+        return;
+      }
 
       // The network fee is the simulated one -- the same figure Freighter is
       // about to show. QA Trial #3 met it for the first time inside Freighter.
+      // It is paid in XLM whatever the vault's asset, and never from the
+      // reserve, so a wallet holding the bond can still be unable to send.
+      const networkFeeXlm = Number(tx.built?.fee ?? 0) / 10_000_000;
+      const spendable = await spendableXlm(activeAddress);
+      if (spendable !== null) {
+        const leftForFee = spendable - (values.currencyType === "XLM" ? numericBond + platformFee : 0);
+        if (leftForFee < networkFeeXlm) {
+          setBondBlocker({
+            ok: false,
+            reason: "network-fee",
+            spendable: Math.max(0, leftForFee),
+            needed: networkFeeXlm,
+          });
+          return;
+        }
+      }
+
       setLaunchStage("review");
       const approved = await askForReview({
         title: values.title,
         currency: values.currencyType,
         goal: values.fundingGoal,
         bond: numericBond,
-        platformFee: Number(platformFeeStroops ?? platformInfo?.platformFeeStroops ?? 0) / 10_000_000,
-        networkFeeXlm: Number(tx.built?.fee ?? 0) / 10_000_000,
+        platformFee,
+        networkFeeXlm,
       });
       if (!approved) {
         toast({
@@ -864,6 +1005,17 @@ export function ListingForm() {
           },
         },
       });
+
+      // A transaction the network applied and then failed comes back here
+      // rather than as an error, and reading `.result` on it threw "Cannot
+      // read properties of undefined (reading 'switch')" -- QA's DEFECT-002
+      // message by a second route, since the result it parses is not there.
+      // The status says whether there is a result to read.
+      const final = response.getTransactionResponse;
+      if (final && final.status !== rpc.Api.GetTransactionStatus.SUCCESS) {
+        reportFailedOnChain(sent.hash ?? response.sendTransactionResponse?.hash ?? null);
+        return;
+      }
       const vaultAddr = response.result;
 
       if (!vaultAddr) {
@@ -881,7 +1033,7 @@ export function ListingForm() {
       if (sent.hash) {
         setLaunchStage("confirming");
         const outcome = await resolveSubmittedLaunch(sent.hash, sent.expiresAtMs);
-        const txUrl = `https://stellar.expert/explorer/testnet/tx/${sent.hash}`;
+        const txUrl = `${EXPLORER_BASE}/tx/${sent.hash}`;
 
         if (outcome.status === "SUCCESS") {
           if (outcome.vaultAddress) {
@@ -919,15 +1071,12 @@ export function ListingForm() {
           });
           return;
         }
-        // FAILED: the network refused it. Reported like any other failure.
+        if (outcome.status === "FAILED") {
+          reportFailedOnChain(sent.hash);
+          return;
+        }
       }
 
-      // The pre-flight above catches this before signing in the ordinary
-      // case, but it fails open — so if the chain refuses for want of a
-      // trustline anyway, say so in words rather than showing the builder a
-      // host diagnostic. Matched on the host's own text, never on the bare
-      // error number: #13 means TrustlineMissingError in the token contract
-      // and MilestoneNotFound in ours, so the code alone says nothing.
       // Declining in Freighter, or closing its window, is a decision rather
       // than a fault. It used to reach here as an unreadable TypeError about
       // reading 'switch', reported under "Vault Deployment Failed" as though
@@ -937,19 +1086,12 @@ export function ListingForm() {
           title: "Signing cancelled",
           description: error.message,
         });
-      } else if (looksLikeMissingTrustline(error)) {
-        setBondBlocker({
-          ok: false,
-          reason: "no-trustline",
-          asset: { code: selectedCurrency, issuer: null, isNative: false },
-        });
-      } else {
-        toast({
-          title: "Vault Deployment Failed",
-          description: error.message || "Failed to submit transaction to the factory.",
-          variant: "destructive",
-        });
+        return;
       }
+      // Everything else -- a refusal that slipped past the checks above, a
+      // network that could not be reached, a rejected submission -- in words,
+      // with the raw text folded underneath instead of as the whole message.
+      await reportRefusal(error instanceof Error ? error.message : String(error));
     }
   };
 
