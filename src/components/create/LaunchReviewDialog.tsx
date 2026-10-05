@@ -36,10 +36,30 @@ export interface LaunchReview {
   platformFee: number;
   /** Total network fee for the transaction, in XLM. */
   networkFeeXlm: number;
+  /** The funding deadline being sent, in epoch milliseconds. */
+  deadlineMs: number;
 }
 
 function amount(value: number, unit: string) {
   return `${value.toLocaleString(undefined, { maximumFractionDigits: 7 })} ${unit}`;
+}
+
+/**
+ * The deadline in the builder's own time, and in UTC, which is what the
+ * contract counts in. QA could not tell from anything on screen which
+ * deadline a launch had actually sent.
+ */
+function deadline(ms: number) {
+  const local = new Date(ms).toLocaleString(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+  const utc = new Date(ms).toLocaleString("en-GB", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "UTC",
+  });
+  return { local, utc: `${utc} UTC` };
 }
 
 export function LaunchReviewDialog({
@@ -82,6 +102,15 @@ export function LaunchReviewDialog({
                   <div className="flex justify-between gap-4 px-3 py-2">
                     <dt className="text-muted-foreground">Funding goal</dt>
                     <dd className="font-medium tabular-nums">{amount(review.goal, review.currency)}</dd>
+                  </div>
+                  <div className="flex justify-between gap-4 px-3 py-2">
+                    <dt className="text-muted-foreground">Funding deadline</dt>
+                    <dd className="text-right font-medium tabular-nums">
+                      {deadline(review.deadlineMs).local}
+                      <span className="block text-xs font-normal text-muted-foreground">
+                        {deadline(review.deadlineMs).utc}
+                      </span>
+                    </dd>
                   </div>
                   <div className="flex justify-between gap-4 px-3 py-2">
                     <dt className="text-muted-foreground">Performance bond, locked in the vault</dt>

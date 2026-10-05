@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Shield } from "lucide-react";
 import {
   AlertDialog,
@@ -10,14 +11,18 @@ import {
   AlertDialogFooter,
   AlertDialogAction,
 } from "@/components/ui/alert-dialog";
-import type { BondReadiness } from "@/lib/bond-readiness";
+import { Button } from "@/components/ui/button";
+import { CubeSpinner } from "@/components/ui/CubeSpinner";
+import type { BondAsset, BondReadiness } from "@/lib/bond-readiness";
 
 /**
  * Why this builder cannot post their bond, and what to do about it.
  *
- * Nothing is signed or submitted on the builder's behalf. Adding an asset
- * changes their own wallet, so it belongs in Freighter where they can see what
- * they are agreeing to — this says what is wrong and exactly where to fix it.
+ * Nothing is signed on the builder's behalf. For a missing trustline the
+ * dialog can ask Freighter to add exactly the asset the vault uses, issuer
+ * included; the builder approves it there, where they see what it changes.
+ * The manual steps stay alongside, for anyone who would rather do it
+ * themselves.
  *
  * Replaces the raw host diagnostic that used to appear after signing, which
  * ended in "VM call trapped" and gave no indication that the answer was a
@@ -29,14 +34,49 @@ const amount = (value: number, code: string) =>
 export function BondBlockerDialog({
   blocker,
   onClose,
+  onEnableAsset,
 }: {
   blocker: BondReadiness | null;
   onClose: () => void;
+  /**
+   * Ask the wallet to add the asset. Resolves once it is added, and the
+   * dialog closes; a rejection's message is shown in the dialog.
+   */
+  onEnableAsset?: (asset: BondAsset) => Promise<void>;
 }) {
   const problem = blocker && !blocker.ok ? blocker : null;
+  const [enabling, setEnabling] = useState(false);
+  const [enableError, setEnableError] = useState<string | null>(null);
+
+  // A fresh problem starts without the last attempt's error.
+  useEffect(() => {
+    setEnabling(false);
+    setEnableError(null);
+  }, [blocker]);
+
+  const canEnable =
+    problem?.reason === "no-trustline" && !!problem.asset.issuer && !!onEnableAsset;
+
+  const enable = async () => {
+    if (problem?.reason !== "no-trustline" || !onEnableAsset) return;
+    setEnabling(true);
+    setEnableError(null);
+    try {
+      await onEnableAsset(problem.asset);
+    } catch (error) {
+      setEnableError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setEnabling(false);
+    }
+  };
 
   return (
-    <AlertDialog open={problem !== null} onOpenChange={(open) => { if (!open) onClose(); }}>
+    <AlertDialog
+      open={problem !== null}
+      onOpenChange={(open) => {
+        if (!open && !enabling) onClose();
+      }}
+    >
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle className="flex items-center gap-2">
@@ -47,7 +87,7 @@ export function BondBlockerDialog({
                 ? `Not enough ${problem.asset.code} for the bond and listing fee`
                 : problem?.reason === "network-fee"
                   ? "Not enough XLM for the network fee"
-                  : `Add ${problem?.asset.code ?? "the asset"} in Freighter first`}
+                  : `Add ${problem?.asset.code ?? "the asset"} to your wallet first`}
           </AlertDialogTitle>
           <AlertDialogDescription asChild>
             <div className="space-y-3 text-sm text-left">
@@ -58,7 +98,21 @@ export function BondBlockerDialog({
                     created. Your wallet cannot hold {problem.asset.code} yet, so there is nowhere
                     for that bond to come from and the deployment would fail on-chain.
                   </p>
-                  <p className="font-medium text-foreground">To fix it in Freighter:</p>
+                  {canEnable && (
+                    <p>
+                      Adding it is one approval in Freighter. It sets aside 0.5 XLM on your
+                      account while you hold {problem.asset.code}, and you get it back if you
+                      remove it later.
+                    </p>
+                  )}
+                  {enableError && (
+                    <p role="alert" className="font-medium text-destructive">
+                      {enableError}
+                    </p>
+                  )}
+                  <p className="font-medium text-foreground">
+                    {canEnable ? "Or do it yourself in Freighter:" : "To fix it in Freighter:"}
+                  </p>
                   <ol className="list-decimal space-y-1 pl-5">
                     <li>Open the Freighter extension.</li>
                     <li>Go to <span className="font-medium">Manage Assets</span>.</li>
@@ -166,7 +220,27 @@ export function BondBlockerDialog({
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogAction onClick={onClose}>Got it</AlertDialogAction>
+          {canEnable && problem?.reason === "no-trustline" ? (
+            <>
+              <Button type="button" variant="outline" onClick={onClose} disabled={enabling}>
+                Not now
+              </Button>
+              {/* A plain button, not AlertDialogAction: that one closes the
+                  dialog on click, before Freighter has answered. */}
+              <Button
+                type="button"
+                onClick={enable}
+                disabled={enabling}
+                aria-busy={enabling}
+                className="min-w-[200px]"
+              >
+                {enabling && <CubeSpinner />}
+                {enabling ? "Approve in Freighter…" : `Add ${problem.asset.code} in Freighter`}
+              </Button>
+            </>
+          ) : (
+            <AlertDialogAction onClick={onClose}>Got it</AlertDialogAction>
+          )}
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
