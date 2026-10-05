@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { PinataSDK } from "pinata";
 import { requireCaller } from "@/lib/supabase/auth";
 import { getSecret } from "@/lib/secrets";
+import { listingTextProblems } from "@/lib/listing-limits";
 
 const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
 
@@ -142,14 +143,21 @@ export async function POST(request: NextRequest) {
   if (file.type === "application/json") {
     // Must actually parse, so this cannot be used to pin arbitrary bytes under
     // a JSON label.
+    let metadata: unknown;
     try {
-      JSON.parse(new TextDecoder().decode(bytes));
+      metadata = JSON.parse(new TextDecoder().decode(bytes));
       sniffed = "application/json";
     } catch {
       return NextResponse.json(
         { error: "That file is not valid JSON." },
         { status: 415 },
       );
+    }
+    // The only JSON pinned here is a listing's metadata. The form keeps its
+    // text within the limits, but the form runs in the builder's browser.
+    const problems = listingTextProblems(metadata);
+    if (problems.length > 0) {
+      return NextResponse.json({ error: problems.join(" ") }, { status: 400 });
     }
   } else {
     sniffed = sniffImageType(bytes);
