@@ -21,6 +21,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
+import { ExpandableText } from "@/components/ui/expandable-text";
 import { useToast } from "@/hooks/use-toast";
 import { useFreighterWallet } from "@/context/FreighterWalletContext";
 import { useStellarContract, type MilestoneWallets } from "@/hooks/use-stellar-contract";
@@ -55,7 +56,9 @@ interface VaultMilestone {
 export interface MilestoneDetail {
   id: number;
   title?: string;
-  /** Whole units, shown only when the vault could not be read. */
+  /** What the builder said this stage delivers. */
+  description?: string;
+  /** Whole units, shown when the vault could not be read or has no vote yet. */
   amount: number;
   released: boolean;
 }
@@ -85,7 +88,10 @@ interface Props {
    * settling a lapsed one stay with the stakeholders, lock or no lock.
    */
   platformLocked?: boolean;
-  /** Titles from the listing, and the cards to fall back on if the vault can't be read. */
+  /**
+   * Titles and deliverables from the listing, and the cards to fall back on if
+   * the vault can't be read.
+   */
   details?: MilestoneDetail[];
   /**
    * Rendered in each milestone's card, under its heading: the builder's proof
@@ -198,6 +204,95 @@ function MilestoneHeading({
         {badge}
       </div>
       <span className="text-sm text-muted-foreground">{amount}</span>
+    </div>
+  );
+}
+
+/**
+ * What the builder promised a stage delivers, from the listing. It is what a
+ * stakeholder judges the proof against, so it sits right under the heading.
+ */
+function Deliverable({ text }: { text?: string }) {
+  const body = text?.trim();
+  if (!body) return null;
+  return <ExpandableText text={body} lines={3} className="mt-2 text-sm text-muted-foreground" />;
+}
+
+const wholeUnits = (amount: number) =>
+  amount.toLocaleString(undefined, { maximumFractionDigits: 2 });
+
+/**
+ * Each stage's whole-number share of the goal. When the stages add up to the
+ * goal, so do the shares: rounding each one alone showed three equal stages as
+ * 33% apiece, which reads as a percent gone missing.
+ */
+function sharesOfGoal(amounts: number[], goal: number): (number | null)[] {
+  if (!(goal > 0)) return amounts.map(() => null);
+  const exact = amounts.map((a) => (a / goal) * 100);
+  const total = amounts.reduce((sum, a) => sum + a, 0);
+  if (Math.abs(total - goal) > goal * 1e-9) return exact.map((x) => Math.round(x));
+
+  // Largest remainder: floor every share, then hand the missing points to the
+  // shares that lost the most to the floor.
+  const shares = exact.map((x) => Math.floor(x));
+  let missing = 100 - shares.reduce((sum, x) => sum + x, 0);
+  const byRemainder = exact
+    .map((x, i) => ({ i, remainder: x - Math.floor(x) }))
+    .sort((a, b) => b.remainder - a.remainder);
+  for (const { i } of byRemainder) {
+    if (missing <= 0) break;
+    shares[i] += 1;
+    missing -= 1;
+  }
+  return shares;
+}
+
+/**
+ * The stages as the listing sets them out, before any vote can open: what each
+ * one pays, its share of the goal and what it delivers. It needs nothing from
+ * the network, so a visitor deciding whether to stake sees how the money will
+ * be released while the vault is still raising.
+ */
+export function MilestonePlan({
+  details,
+  currency,
+  goal,
+  note,
+}: {
+  details: MilestoneDetail[];
+  currency: string;
+  /** The goal in whole units, for each stage's share of it. */
+  goal: number;
+  /** One sentence above the stages on where the vault is. */
+  note: string;
+}) {
+  const shares = sharesOfGoal(
+    details.map((d) => d.amount),
+    goal,
+  );
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-muted-foreground">{note}</p>
+      {details.map((d, index) => {
+        const share = shares[index];
+        return (
+          <div key={d.id} className="rounded-lg border p-4">
+            <MilestoneHeading
+              id={d.id}
+              title={d.title}
+              badge={
+                d.released ? (
+                  <Badge variant={PHASE_VARIANT.released}>{PHASE_LABEL.released}</Badge>
+                ) : (
+                  <Badge variant="outline">Not started</Badge>
+                )
+              }
+              amount={`${wholeUnits(d.amount)} ${currency}${share !== null ? ` · ${share}% of the goal` : ""}`}
+            />
+            <Deliverable text={d.description} />
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -337,8 +432,8 @@ export function MilestoneVoting({
     return currencyForToken(token) ?? `${token.slice(0, 4)}…${token.slice(-4)}`;
   }, [token, listedCurrency]);
 
-  const titles = useMemo(
-    () => new Map((details ?? []).map((d) => [d.id, d.title])),
+  const listed = useMemo(
+    () => new Map((details ?? []).map((d) => [d.id, d])),
     [details],
   );
 
@@ -401,8 +496,9 @@ export function MilestoneVoting({
                   <Badge variant={PHASE_VARIANT.released}>{PHASE_LABEL.released}</Badge>
                 ) : undefined
               }
-              amount={`${d.amount.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${currency}`}
+              amount={`${wholeUnits(d.amount)} ${currency}`}
             />
+            <Deliverable text={d.description} />
             {renderProof?.({ id: d.id, released: d.released, failed: false, voteOpened: null })}
           </div>
         ))}
@@ -506,12 +602,13 @@ export function MilestoneVoting({
           <div key={m.id} className="rounded-lg border p-4">
             <MilestoneHeading
               id={m.id}
-              title={titles.get(m.id)}
+              title={listed.get(m.id)?.title}
               badge={<Badge variant={PHASE_VARIANT[phase]}>{PHASE_LABEL[phase]}</Badge>}
               amount={`${fromStroops(BigInt(m.amount)).toLocaleString(undefined, {
                 maximumFractionDigits: 2,
               })} ${currency}`}
             />
+            <Deliverable text={listed.get(m.id)?.description} />
 
             {renderProof?.({
               id: m.id,
