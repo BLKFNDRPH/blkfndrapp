@@ -23,6 +23,9 @@ import type { BondReadiness } from "@/lib/bond-readiness";
  * ended in "VM call trapped" and gave no indication that the answer was a
  * two-minute change in the wallet.
  */
+const amount = (value: number, code: string) =>
+  `${value.toLocaleString(undefined, { maximumFractionDigits: 7 })} ${code}`;
+
 export function BondBlockerDialog({
   blocker,
   onClose,
@@ -41,8 +44,10 @@ export function BondBlockerDialog({
             {problem?.reason === "no-account"
               ? "This wallet has not been funded yet"
               : problem?.reason === "insufficient"
-                ? `Not enough ${problem.asset.code} for the bond`
-                : `Add ${problem?.asset.code ?? "the asset"} in Freighter first`}
+                ? `Not enough ${problem.asset.code} for the bond and listing fee`
+                : problem?.reason === "network-fee"
+                  ? "Not enough XLM for the network fee"
+                  : `Add ${problem?.asset.code ?? "the asset"} in Freighter first`}
           </AlertDialogTitle>
           <AlertDialogDescription asChild>
             <div className="space-y-3 text-sm text-left">
@@ -76,24 +81,65 @@ export function BondBlockerDialog({
               {problem?.reason === "insufficient" && (
                 <>
                   <p>
-                    The performance bond is locked into the vault as it is created, and your wallet
-                    does not hold enough {problem.asset.code} to cover it.
+                    The performance bond is locked into the vault as it is created, and the flat
+                    listing fee is paid in the same step, both in {problem.asset.code}. Your wallet
+                    does not hold enough to cover them.
                   </p>
-                  <p>
-                    You hold{" "}
-                    <span className="font-semibold text-foreground">
-                      {Number(problem.held).toLocaleString()} {problem.asset.code}
-                    </span>
-                    , and the bond needs{" "}
-                    <span className="font-semibold text-foreground">
-                      {Number(problem.needed).toLocaleString()} {problem.asset.code}
-                    </span>
-                    .
-                  </p>
+                  <dl className="divide-y rounded-lg border text-foreground">
+                    <div className="flex justify-between gap-4 px-3 py-1.5">
+                      <dt className="text-muted-foreground">Performance bond</dt>
+                      <dd className="tabular-nums">{amount(problem.bond, problem.asset.code)}</dd>
+                    </div>
+                    <div className="flex justify-between gap-4 px-3 py-1.5">
+                      <dt className="text-muted-foreground">Listing fee</dt>
+                      <dd className="tabular-nums">{amount(problem.fee, problem.asset.code)}</dd>
+                    </div>
+                    <div className="flex justify-between gap-4 px-3 py-1.5 font-medium">
+                      <dt>Needed</dt>
+                      <dd className="tabular-nums">{amount(problem.bond + problem.fee, problem.asset.code)}</dd>
+                    </div>
+                    {problem.held !== null && (
+                      <>
+                        <div className="flex justify-between gap-4 px-3 py-1.5">
+                          <dt className="text-muted-foreground">
+                            {problem.asset.isNative ? "You can spend" : "You hold"}
+                          </dt>
+                          <dd className="tabular-nums">{amount(problem.held, problem.asset.code)}</dd>
+                        </div>
+                        <div className="flex justify-between gap-4 px-3 py-1.5 font-semibold">
+                          <dt>Short by</dt>
+                          <dd className="tabular-nums">
+                            {amount(Math.max(0, problem.bond + problem.fee - problem.held), problem.asset.code)}
+                          </dd>
+                        </div>
+                      </>
+                    )}
+                  </dl>
                   <p>
                     Top the wallet up in Freighter, or lower the bond — it only has to reach the
                     minimum shown on the form.
                   </p>
+                </>
+              )}
+
+              {problem?.reason === "network-fee" && (
+                <>
+                  <p>
+                    Every launch pays a network fee in XLM, whatever the vault&apos;s currency, and
+                    the network won&apos;t take it from the XLM it keeps in reserve on your
+                    account.
+                  </p>
+                  <dl className="divide-y rounded-lg border text-foreground">
+                    <div className="flex justify-between gap-4 px-3 py-1.5">
+                      <dt className="text-muted-foreground">Network fee, at most</dt>
+                      <dd className="tabular-nums">{amount(Number(problem.needed.toFixed(4)), "XLM")}</dd>
+                    </div>
+                    <div className="flex justify-between gap-4 px-3 py-1.5">
+                      <dt className="text-muted-foreground">You can spend</dt>
+                      <dd className="tabular-nums">{amount(Number(problem.spendable.toFixed(4)), "XLM")}</dd>
+                    </div>
+                  </dl>
+                  <p>Add XLM to the wallet in Freighter, then press Launch Campaign again.</p>
                 </>
               )}
 
@@ -104,8 +150,15 @@ export function BondBlockerDialog({
                     nothing. Stellar accounts have to be funded with XLM before they can be used.
                   </p>
                   <p>
-                    Fund it from Freighter, then add {problem.asset.code} under{" "}
-                    <span className="font-medium">Manage Assets</span> and try again.
+                    Fund it from Freighter
+                    {problem.asset.isNative ? (
+                      ", then try again."
+                    ) : (
+                      <>
+                        , then add {problem.asset.code} under{" "}
+                        <span className="font-medium">Manage Assets</span> and try again.
+                      </>
+                    )}
                   </p>
                 </>
               )}

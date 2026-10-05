@@ -22,8 +22,10 @@ import {
  * used to appear for the first time inside Freighter -- QA Trial #3 met a
  * 172 XLM figure there with no warning and no explanation.
  *
- * The fee is the simulated one, the same number Freighter will show. It is an
- * estimate only in that the network can move between now and submission.
+ * The fee is the simulated one, the same number Freighter will show. It is the
+ * most the launch can charge: the network takes what it actually uses and
+ * refunds the rest, so the charge is usually lower (QA saw a maximum about
+ * twice the 5.42 XLM charged).
  */
 
 export interface LaunchReview {
@@ -90,7 +92,10 @@ export function LaunchReviewDialog({
                     <dd className="font-medium tabular-nums">{amount(review.platformFee, review.currency)}</dd>
                   </div>
                   <div className="flex justify-between gap-4 px-3 py-2">
-                    <dt className="text-muted-foreground">Network fee, paid to Stellar</dt>
+                    <dt className="text-muted-foreground">
+                      Network fee, at most
+                      <span className="block text-xs">Paid to Stellar. Unused fee is refunded.</span>
+                    </dt>
                     <dd className="font-medium tabular-nums">{amount(Number(review.networkFeeXlm.toFixed(4)), "XLM")}</dd>
                   </div>
                 </dl>

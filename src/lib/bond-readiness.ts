@@ -42,7 +42,27 @@ export type BondReadiness =
   | { ok: true }
   | { ok: false; reason: "no-account"; asset: BondAsset }
   | { ok: false; reason: "no-trustline"; asset: BondAsset }
-  | { ok: false; reason: "insufficient"; asset: BondAsset; held: string; needed: string };
+  | {
+      ok: false;
+      reason: "insufficient";
+      asset: BondAsset;
+      /** What the wallet holds, or null when only the network's refusal is known. */
+      held: number | null;
+      bond: number;
+      /** The flat listing fee, taken in the same asset in the same call. */
+      fee: number;
+    }
+  | {
+      ok: false;
+      reason: "network-fee";
+      /** XLM the wallet can spend: its balance less the reserve the network holds back. */
+      spendable: number;
+      /** The most the launch can charge in XLM, as Freighter will show it. */
+      needed: number;
+    };
+
+/** The XLM asset, for messages about the network fee. */
+export const XLM_ASSET: BondAsset = { code: "XLM", issuer: null, isNative: true };
 
 /**
  * All-zero ed25519 key. Simulation needs a source account but never charges or
@@ -123,7 +143,7 @@ export type TokenBalance =
  * The contract refuses rather than answering 0 when the wallet has no
  * trustline for the asset, or no account at all. Both are told apart by the
  * host's diagnostic text, never by the bare error number, for the reason given
- * on `looksLikeMissingTrustline`. Anything else, network failures included, is
+ * in src/lib/launch-errors.ts. Anything else, network failures included, is
  * "unknown", which callers treat as "cannot tell" rather than "has nothing".
  */
 export async function tokenBalance(
@@ -159,26 +179,31 @@ async function accountMissing(holder: string): Promise<boolean> {
 }
 
 /**
- * Whether the builder holds the asset, and enough of it, to post the bond.
+ * Whether the builder holds the asset, and enough of it, to post the bond and
+ * pay the flat listing fee.
+ *
+ * Both leave the wallet in the same call, in the vault's asset. Checking the
+ * bond alone passed a wallet that held the bond but not bond plus fee, which
+ * then failed on the network with the token's balance error.
  *
  * Fails open. If the RPC or Horizon cannot answer, this reports ready and lets
  * the chain decide: a check that cannot reach the network should not be the
  * thing standing between a builder and a vault they are perfectly able to
- * deploy. It exists to explain a specific, predictable dead end, not to become
- * a second gate that can fail on its own.
+ * deploy. The simulation that follows refuses an uncoverable launch anyway,
+ * and its refusal is put into the same words (src/lib/launch-errors.ts).
  */
 export async function checkBondReadiness(
   publicKey: string,
   tokenAddress: string,
   bondAmount: number,
+  platformFee = 0,
 ): Promise<BondReadiness> {
   const asset = await bondAssetFor(tokenAddress);
   if (!asset) return { ok: true };
 
-  let balances: Array<Record<string, string>>;
+  let account: HorizonAccount;
   try {
-    const account = await horizonClient.loadAccount(publicKey);
-    balances = account.balances as unknown as Array<Record<string, string>>;
+    account = await horizonClient.loadAccount(publicKey);
   } catch (error) {
     // An unfunded wallet has no ledger entry at all, which is a different
     // problem from a missing trustline and needs different words.
@@ -188,6 +213,7 @@ export async function checkBondReadiness(
     return { ok: true };
   }
 
+  const balances = account.balances as unknown as Array<Record<string, string>>;
   const held = balances.find((b) =>
     asset.isNative
       ? b.asset_type === "native"
@@ -196,27 +222,49 @@ export async function checkBondReadiness(
 
   if (!held) return { ok: false, reason: "no-trustline", asset };
 
-  if (Number(held.balance) < bondAmount) {
-    return {
-      ok: false,
-      reason: "insufficient",
-      asset,
-      held: held.balance,
-      needed: String(bondAmount),
-    };
+  // For XLM, what can move is the balance less the reserve, not the balance.
+  const available = asset.isNative ? spendableNative(held, accountReserve(account)) : Number(held.balance);
+  if (available < bondAmount + platformFee) {
+    return { ok: false, reason: "insufficient", asset, held: available, bond: bondAmount, fee: platformFee };
   }
 
   return { ok: true };
 }
 
+/** Base reserve on Stellar, in XLM, per ledger entry an account owns. */
+const BASE_RESERVE_XLM = 0.5;
+
+type HorizonAccount = Awaited<ReturnType<typeof horizonClient.loadAccount>>;
+
+/** The XLM the network holds back from an account: two base reserves, plus one per entry it owns. */
+function accountReserve(account: HorizonAccount): number {
+  const a = account as unknown as {
+    subentry_count?: number;
+    num_sponsoring?: number;
+    num_sponsored?: number;
+  };
+  const entries = 2 + (a.subentry_count ?? 0) + (a.num_sponsoring ?? 0) - (a.num_sponsored ?? 0);
+  return entries * BASE_RESERVE_XLM;
+}
+
+function spendableNative(line: Record<string, string>, reserve: number): number {
+  const selling = Number(line.selling_liabilities ?? 0);
+  return Math.max(0, Number(line.balance) - reserve - selling);
+}
+
 /**
- * Whether a failed deployment failed for want of a trustline.
+ * XLM this wallet can spend right now, or null when that cannot be read.
  *
- * Keyed on the host's own diagnostic text, never on the bare error number: a
- * contract error code only means anything alongside the contract that raised
- * it, and #13 is MilestoneNotFound in the vault.
+ * Every launch pays its network fee in XLM, whatever the vault's asset, and
+ * the network will not dip into the reserve to pay it.
  */
-export function looksLikeMissingTrustline(error: unknown): boolean {
-  const text = error instanceof Error ? `${error.message}` : String(error);
-  return /trustline/i.test(text);
+export async function spendableXlm(publicKey: string): Promise<number | null> {
+  try {
+    const account = await horizonClient.loadAccount(publicKey);
+    const balances = account.balances as unknown as Array<Record<string, string>>;
+    const native = balances.find((b) => b.asset_type === "native");
+    return native ? spendableNative(native, accountReserve(account)) : null;
+  } catch {
+    return null;
+  }
 }
