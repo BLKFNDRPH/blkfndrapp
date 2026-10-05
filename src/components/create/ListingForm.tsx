@@ -15,6 +15,7 @@ import {
   FormLabel,
   FormMessage,
   FormDescription,
+  useFormField,
 } from "@/components/ui/form";
 import {
   Select,
@@ -58,6 +59,7 @@ import { Combobox } from "../ui/combobox";
 import { projectCategories } from "@/lib/categories";
 import { getCategoriesAction } from "@/actions/categories";
 import { freighterSigner, FreighterDeclined } from "@/lib/freighter-signer";
+import { LISTING_LIMITS, charCount } from "@/lib/listing-limits";
 
 const MIN_DEADLINE_MS = () => Date.now() + 24 * 60 * 60 * 1000;
 const DEFAULT_DEADLINE_MS = () => Date.now() + 30 * 24 * 60 * 60 * 1000;
@@ -79,15 +81,34 @@ const msToDatetimeLocal = (ms: number): string => {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
 
+/**
+ * Within a limit from LISTING_LIMITS, counted as the database counts. zod's own
+ * `.max()` counts UTF-16 units, so an emoji would use up two.
+ */
+const withinLimit = (max: number, label: string) =>
+  [
+    (value: string) => charCount(value) <= max,
+    `${label} must be ${max.toLocaleString()} characters or fewer.`,
+  ] as const;
+
+// Trimmed first, so a title of nothing but spaces is empty rather than long
+// enough, and what is pinned and counted is what a visitor will read.
 const formSchema = z.object({
-  title: z.string().min(5, "Title must be at least 5 characters long."),
+  title: z
+    .string()
+    .trim()
+    .min(5, "Title must be at least 5 characters long.")
+    .refine(...withinLimit(LISTING_LIMITS.title, "Title")),
   tagline: z
     .string()
+    .trim()
     .min(10, "Tagline must be at least 10 characters long.")
-    .max(100, "Tagline must be less than 100 characters."),
+    .refine(...withinLimit(LISTING_LIMITS.tagline, "Tagline")),
   description: z
     .string()
-    .min(50, "Description must be at least 50 characters long."),
+    .trim()
+    .min(50, "Description must be at least 50 characters long.")
+    .refine(...withinLimit(LISTING_LIMITS.description, "Description")),
   category: z.string().min(1, "Category is required."),
   // Required. These are real-world assets, and a listing that names no place
   // gives a backer nothing to verify against — location is frequently the most
@@ -96,7 +117,7 @@ const formSchema = z.object({
     .string()
     .trim()
     .min(3, "Location is required.")
-    .max(160, "Location must be under 160 characters."),
+    .refine(...withinLimit(LISTING_LIMITS.location, "Location")),
   fundingGoal: z.coerce.number().min(1, "Funding goal must be at least 1."),
   // Derived from CURRENCIES rather than restated. A hand-maintained copy drifts,
   // and the drift is silent: this list accepted three currencies that had no
@@ -118,6 +139,38 @@ const formSchema = z.object({
 });
 
 type FormSchema = z.infer<typeof formSchema>;
+
+/**
+ * "42 / 80" under a field, red with how many to cut once it is over.
+ *
+ * The field itself has no maxLength. A hard cap silently cuts off pasted text
+ * mid-word, and the browser counts an emoji as two against it. Instead the
+ * builder sees the whole paste, how far over it is, and a launch that stops
+ * until it fits. It counts what will be saved: the text without the spaces
+ * around it, which the checks trim too.
+ */
+function CharacterCount({ value, max, id }: { value: string; max: number; id?: string }) {
+  const count = charCount(value.trim());
+  const over = count - max;
+  return (
+    <p
+      id={id}
+      className={cn(
+        "text-right text-xs tabular-nums text-muted-foreground",
+        over > 0 && "font-medium text-destructive",
+      )}
+    >
+      {count.toLocaleString()} / {max.toLocaleString()}
+      {over > 0 && ` · ${over.toLocaleString()} too many`}
+    </p>
+  );
+}
+
+/** A CharacterCount that is its form field's description, so the input announces it. */
+function FieldCharacterCount({ value, max }: { value: string; max: number }) {
+  const { formDescriptionId } = useFormField();
+  return <CharacterCount id={formDescriptionId} value={value} max={max} />;
+}
 
 /**
  * Where a launch is.
@@ -269,7 +322,6 @@ export function ListingForm() {
   const { platformInfo } = usePlatformInfo();
   const bondPct = platformInfo?.bondPercentage !== undefined ? platformInfo.bondPercentage / 10000 : 0.05;
 
-  const projectTitle = form.watch("title") || "Project";
   const milestoneSum = milestones.reduce((sum, m) => sum + Number(m.amount), 0);
   const minBondRequired = milestoneSum * bondPct;
   const recommendedBond = milestoneSum * Math.max(0.10, bondPct * 2);
@@ -351,13 +403,29 @@ export function ListingForm() {
       }
 
       if (missing.length > 0) {
-        byId[m.id] = problem;
         const list =
           missing.length === 1
             ? missing[0]
             : `${missing.slice(0, -1).join(", ")} and ${missing[missing.length - 1]}`;
         described.push(`Milestone ${index + 1} needs ${list}.`);
       }
+
+      const titleLength = charCount(m.title.trim());
+      if (titleLength > LISTING_LIMITS.milestoneTitle) {
+        problem.title = `Keep this title to ${LISTING_LIMITS.milestoneTitle} characters or fewer.`;
+        described.push(
+          `Milestone ${index + 1}'s title is ${titleLength.toLocaleString()} characters; the limit is ${LISTING_LIMITS.milestoneTitle}.`,
+        );
+      }
+      const descriptionLength = charCount(m.description.trim());
+      if (descriptionLength > LISTING_LIMITS.milestoneDescription) {
+        problem.description = `Keep this description to ${LISTING_LIMITS.milestoneDescription} characters or fewer.`;
+        described.push(
+          `Milestone ${index + 1}'s description is ${descriptionLength.toLocaleString()} characters; the limit is ${LISTING_LIMITS.milestoneDescription}.`,
+        );
+      }
+
+      if (Object.keys(problem).length > 0) byId[m.id] = problem;
     });
 
     setMilestoneErrors(byId);
@@ -658,8 +726,8 @@ export function ListingForm() {
         return {
           id: m.id,
           amount,
-          title: m.title || `Milestone ${m.id}`,
-          description: m.description || "",
+          title: m.title.trim() || `Milestone ${m.id}`,
+          description: m.description.trim(),
         };
       }),
     };
@@ -678,9 +746,11 @@ export function ListingForm() {
         uploadCacheRef.current = { ...uploadCacheRef.current, metadataJson, metadataCid };
       } catch (uploadErr: any) {
         console.error("Pinata metadata upload failed:", uploadErr);
+        // The route says why it refused, e.g. a field over its length limit.
         toast({
           title: "Metadata Upload Failed",
-          description: "Failed to upload project specification details to IPFS.",
+          description:
+            uploadErr?.message || "Failed to upload project specification details to IPFS.",
           variant: "destructive",
         });
         return;
@@ -967,6 +1037,7 @@ export function ListingForm() {
                     <FormControl>
                       <Input placeholder="e.g., My Awesome Stellar Project" {...field} />
                     </FormControl>
+                    <FieldCharacterCount value={field.value} max={LISTING_LIMITS.title} />
                     <FormMessage />
                   </FormItem>
                 )}
@@ -981,6 +1052,7 @@ export function ListingForm() {
                     <FormControl>
                       <Input placeholder="A short, catchy phrase for your project" {...field} />
                     </FormControl>
+                    <FieldCharacterCount value={field.value} max={LISTING_LIMITS.tagline} />
                     <FormMessage />
                   </FormItem>
                 )}
@@ -999,6 +1071,7 @@ export function ListingForm() {
                         rows={6}
                       />
                     </FormControl>
+                    <FieldCharacterCount value={field.value} max={LISTING_LIMITS.description} />
                     <FormMessage />
                   </FormItem>
                 )}
@@ -1192,13 +1265,22 @@ export function ListingForm() {
 
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         <div className="sm:col-span-2 space-y-1">
+                          {/* Fixed examples. These used to repeat the project
+                              title, so a long or messy title made a hint that
+                              was clipped and read as nonsense. */}
                           <Input
-                            placeholder={`e.g. ${projectTitle} Phase ${index + 1}`}
+                            placeholder={`e.g. Phase ${index + 1}: Hardware procurement`}
                             value={milestone.title}
                             onChange={(e) => handleUpdateMilestone(milestone.id, "title", e.target.value)}
                             required
+                            aria-describedby={`milestone-${milestone.id}-title-count`}
                             aria-invalid={!!milestoneErrors[milestone.id]?.title}
                             data-milestone-error={!!milestoneErrors[milestone.id]?.title}
+                          />
+                          <CharacterCount
+                            id={`milestone-${milestone.id}-title-count`}
+                            value={milestone.title}
+                            max={LISTING_LIMITS.milestoneTitle}
                           />
                           {milestoneErrors[milestone.id]?.title && (
                             <p className="text-xs font-medium text-destructive">
@@ -1226,13 +1308,19 @@ export function ListingForm() {
                       </div>
 
                       <Textarea
-                        placeholder={`e.g. Deliverables for ${projectTitle} Phase ${index + 1}`}
+                        placeholder="e.g. What this stage delivers, and how stakeholders can check it"
                         value={milestone.description}
                         onChange={(e) => handleUpdateMilestone(milestone.id, "description", e.target.value)}
                         rows={2}
                         required
+                        aria-describedby={`milestone-${milestone.id}-description-count`}
                         aria-invalid={!!milestoneErrors[milestone.id]?.description}
                         data-milestone-error={!!milestoneErrors[milestone.id]?.description}
+                      />
+                      <CharacterCount
+                        id={`milestone-${milestone.id}-description-count`}
+                        value={milestone.description}
+                        max={LISTING_LIMITS.milestoneDescription}
                       />
                       {milestoneErrors[milestone.id]?.description && (
                         <p className="text-xs font-medium text-destructive">

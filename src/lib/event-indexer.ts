@@ -13,6 +13,7 @@ import { getIPFSFetchUrls } from "./pinata-client";
 import { SOROBAN_RPC_URL, FACTORY_ID } from "./stellar-clients";
 import { readVaultState } from "./vault-state";
 import { currencyForToken } from "./currencies";
+import { LISTING_LIMITS, clampText } from "./listing-limits";
 import { getCursor, setCursor, recordEvent, markProcessed } from "./data/events";
 import { upsertProjectFromChain, upsertMilestones } from "./data/projects";
 import { createAdminClient } from "./supabase/admin";
@@ -189,26 +190,36 @@ async function syncVault(vaultAddress: string, ledger?: number) {
   );
 }
 
-/** The project copy a resolved metadata document supplies. */
+/**
+ * The project copy a resolved metadata document supplies.
+ *
+ * Creator-supplied and never verified, so every text field is bounded here
+ * rather than trusted. The form and the upload route keep a listing within
+ * LISTING_LIMITS, but the factory is permissionless: anyone can pin their own
+ * document and deploy a vault for it without either.
+ */
 function metadataFields(metadata: any) {
   return {
-    title: String(metadata.title ?? "").trim() || undefined,
-    tagline: String(metadata.tagline ?? ""),
-    description: String(metadata.description ?? ""),
+    title: clampText(String(metadata.title ?? "").trim(), LISTING_LIMITS.title) || undefined,
+    tagline: clampText(String(metadata.tagline ?? ""), LISTING_LIMITS.tagline),
+    description: clampText(String(metadata.description ?? ""), LISTING_LIMITS.description),
     category: String(metadata.category ?? "") || "General",
     imageUrl: String(metadata.imageUrl ?? ""),
-    // Creator-supplied and never verified, so it is bounded here rather than
-    // trusted: the column takes whatever IPFS returns, and IPFS returns
-    // whatever the creator pinned.
-    location: String(metadata.location ?? "").slice(0, 160),
+    location: clampText(String(metadata.location ?? ""), LISTING_LIMITS.location),
   };
 }
 
 function milestoneCopy(metadata: any, milestoneId: number) {
   const meta = (metadata?.milestones ?? []).find((x: any) => Number(x.id) === milestoneId);
   return {
-    ...(meta?.title ? { title: String(meta.title) } : {}),
-    ...(meta?.description ? { description: String(meta.description) } : {}),
+    ...(meta?.title
+      ? { title: clampText(String(meta.title), LISTING_LIMITS.milestoneTitle) }
+      : {}),
+    ...(meta?.description
+      ? {
+          description: clampText(String(meta.description), LISTING_LIMITS.milestoneDescription),
+        }
+      : {}),
   };
 }
 
