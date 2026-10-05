@@ -79,8 +79,10 @@ vault code once added about 60 XLM to every project launch.
 instance and code entry: the factory, identity registry, attestation registry,
 admin roster, Operations Vault, the treasury (read from the factory's fee
 wallet), and the vault code the factory currently deploys. It restores anything
-archived and extends anything with under 21 days left to 60 days. When nothing
-is due it sends nothing and returns `skipped`. Project vault instances are not
+archived and extends anything with under 40 days left to 60 days. The threshold
+sits above the contracts' own 30-day top-up, which otherwise charges the first
+launch or stake after a quiet spell for the days since the last one. When
+nothing is due it sends nothing and returns `skipped`. Project vault instances are not
 included; each one is extended by its own calls.
 
 A dry run reports what is due and the simulated cost, and sends nothing:
