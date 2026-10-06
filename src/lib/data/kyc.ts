@@ -155,7 +155,7 @@ export async function submitOwnKyc(input: unknown) {
       if (error.code === "23505") {
         throw new Error("That wallet already has an identity check on another account.");
       }
-      // Until 20261006170000_kyc_wallet_optional_at_submit is applied, the
+      // Until 20261006155050_kyc_wallet_optional_at_submit is applied, the
       // column is required and the policy compares it with the linked wallet,
       // so a check with no wallet is refused by one or the other.
       if (!parsed.stellarAddress && (error.code === "23502" || error.code === "42501")) {
