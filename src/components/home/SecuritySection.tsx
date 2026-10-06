@@ -38,7 +38,7 @@ const PROTECTIONS = [
   {
     icon: Users,
     title: "The builder can't pay themselves.",
-    body: "Each stage is paid only by a stakeholder vote; no single vote counts for more than 20%, so it always takes at least three people.",
+    body: "Each stage is paid only by a stakeholder vote. No single vote counts for more than 20%, and a payout needs at least three stakeholders, or all of them when fewer staked, who between them put in most of the money.",
   },
   {
     icon: Timer,
@@ -76,7 +76,7 @@ const BAD_BUILDER = [
   {
     needs: "One big stakeholder willing to wave a payout through",
     blkfndr:
-      "No single vote counts for more than 20%, and a payout needs at least three people to say yes.",
+      "No single vote counts for more than 20%, and a payout needs at least three stakeholders to say yes, or all of them when fewer staked. One stakeholder can never wave it through over the others.",
   },
   {
     needs: "Stakeholders who stop paying attention",
