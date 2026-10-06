@@ -152,6 +152,7 @@ Without a Gateway Key, the dedicated gateway (`PINATA_GATEWAY_URL`, `nft.blkfndr
 Redeploy the factory, attestation, identity and admin with `scripts/deploy-contracts.sh`.
 
 - **Deploy order is proven live.** Attestation goes before the factory, then one `add_factory`. The reference deployment ran it on 2026-10-06 and the script's read-back checks passed.
+- **Continue the project ids.** Pass `--first-project-id` set to the live factory's `get_project_count` + 1 (12 on 2026-10-06). `projects.project_id` is unique, so a new factory starting at 1 would collide with project #1 and its first project would fail to index.
 - **New addresses:** update `NEXT_PUBLIC_BLKFNDR_{FACTORY,ATTESTATION,IDENTITY,ADMIN}_CONTRACT_ID` and **rebuild**. These are build args.
 - **Re-attest** existing KYC into the new identity registry.
 - **Redeploy the treasury again in the same pass.** Its `factory` is fixed at construction. Deploy the factory with an interim fee wallet, then the treasury against it, then call `update_fee_wallet`.

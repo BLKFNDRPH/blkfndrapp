@@ -32,6 +32,7 @@ FEE_WALLET=""
 PLATFORM_FEE="100000000"      # 10 units at 7 decimals
 MIN_CONTRIBUTION="50000000"   # 5 units — the SOW entry point
 VOTING_WINDOW="604800"        # 7 days in seconds
+FIRST_PROJECT_ID="1"          # a replacement factory continues its predecessor's ids
 OUT_FILE="deployed-contracts.env"
 
 usage() {
@@ -44,6 +45,9 @@ Deploy the BLKFNDR contract set.
   --platform-fee <stroops>  Flat per-project fee (default: ${PLATFORM_FEE})
   --min-contribution <n>    Minimum contribution in stroops (default: ${MIN_CONTRIBUTION})
   --voting-window <secs>    Milestone voting window (default: ${VOTING_WINDOW})
+  --first-project-id <n>    Id of the first project this factory creates (default: ${FIRST_PROJECT_ID}).
+                            When replacing a factory, pass its get_project_count + 1:
+                            the app keys projects by id, so ids must not repeat.
   --out <file>              Where to write the resulting IDs (default: ${OUT_FILE})
 USAGE
 }
@@ -56,6 +60,7 @@ while [[ $# -gt 0 ]]; do
     --platform-fee)     PLATFORM_FEE="$2"; shift 2 ;;
     --min-contribution) MIN_CONTRIBUTION="$2"; shift 2 ;;
     --voting-window)    VOTING_WINDOW="$2"; shift 2 ;;
+    --first-project-id) FIRST_PROJECT_ID="$2"; shift 2 ;;
     --out)              OUT_FILE="$2"; shift 2 ;;
     -h|--help)          usage; exit 0 ;;
     *) echo "Unknown option: $1" >&2; usage; exit 1 ;;
@@ -81,6 +86,7 @@ echo "network      ${NETWORK}"
 echo "admin        ${ADMIN}"
 echo "fee wallet   ${FEE_WALLET}"
 echo "platform fee ${PLATFORM_FEE} stroops (flat, per project, paid by the builder)"
+echo "first project id ${FIRST_PROJECT_ID}"
 echo
 
 # ── Build ──────────────────────────────────────────────────────────────────
@@ -148,7 +154,8 @@ FACTORY_ID=$(deploy blkfndr_factory \
   --identity_registry "${IDENTITY_ID}" \
   --attestation_registry "${ATTESTATION_ID}" \
   --voting_window_secs "${VOTING_WINDOW}" \
-  --min_contribution "${MIN_CONTRIBUTION}")
+  --min_contribution "${MIN_CONTRIBUTION}" \
+  --first_project_id "${FIRST_PROJECT_ID}")
 echo "  factory     ${FACTORY_ID}"
 
 # ── Wire the one edge a constructor cannot: attestation trusts the factory ──

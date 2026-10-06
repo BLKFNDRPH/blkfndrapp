@@ -191,6 +191,8 @@ export interface Client {
 
   /**
    * Construct and simulate a get_project_count transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+   * The last project id issued: the number of projects only when the
+   * factory started at 1, and `first_project_id - 1` before its first vault.
    */
   get_project_count: (options?: MethodOptions) => Promise<AssembledTransaction<u64>>
 
@@ -198,7 +200,7 @@ export interface Client {
 export class Client extends ContractClient {
   static async deploy<T = Client>(
         /** Constructor/Initialization Args for the contract's `__constructor` method */
-        {admin, vault_wasm_hash, fee_wallet, platform_fee, identity_registry, attestation_registry, voting_window_secs, min_contribution}: {admin: string, vault_wasm_hash: Buffer, fee_wallet: string, platform_fee: i128, identity_registry: string, attestation_registry: string, voting_window_secs: u64, min_contribution: i128},
+        {admin, vault_wasm_hash, fee_wallet, platform_fee, identity_registry, attestation_registry, voting_window_secs, min_contribution, first_project_id}: {admin: string, vault_wasm_hash: Buffer, fee_wallet: string, platform_fee: i128, identity_registry: string, attestation_registry: string, voting_window_secs: u64, min_contribution: i128, first_project_id: u64},
     /** Options for initializing a Client as well as for calling a method, with extras specific to deploying. */
     options: MethodOptions &
       Omit<ContractClientOptions, "contractId"> & {
@@ -210,7 +212,7 @@ export class Client extends ContractClient {
         format?: "hex" | "base64";
       }
   ): Promise<AssembledTransaction<T>> {
-    return ContractClient.deploy({admin, vault_wasm_hash, fee_wallet, platform_fee, identity_registry, attestation_registry, voting_window_secs, min_contribution}, options)
+    return ContractClient.deploy({admin, vault_wasm_hash, fee_wallet, platform_fee, identity_registry, attestation_registry, voting_window_secs, min_contribution, first_project_id}, options)
   }
   constructor(public readonly options: ContractClientOptions) {
     super(
@@ -219,7 +221,7 @@ export class Client extends ContractClient {
         "AAAAAQAAAHJXaGF0IHRoZSB2YXVsdCBpcyBjb25zdHJ1Y3RlZCB3aXRoLiBFdmVyeSBwbGF0Zm9ybSBhZGRyZXNzIGhlcmUgY29tZXMgZnJvbQpmYWN0b3J5IHN0b3JhZ2UsIG5ldmVyIGZyb20gdGhlIGNhbGxlci4AAAAAAAAAAAAPVmF1bHRJbml0Q29uZmlnAAAAAA8AAAAAAAAAFGF0dGVzdGF0aW9uX3JlZ2lzdHJ5AAAAEwAAAAAAAAALYm9uZF9hbW91bnQAAAAACwAAAAAAAAAHY3JlYXRvcgAAAAATAAAAAAAAAAhkZWFkbGluZQAAAAYAAAAAAAAAB2ZhY3RvcnkAAAAAEwAAAAAAAAASZmVlX3dhbGxldF9hZGRyZXNzAAAAAAATAAAAAAAAAARnb2FsAAAACwAAAAAAAAARaWRlbnRpdHlfcmVnaXN0cnkAAAAAAAATAAAAAAAAAAxtZXRhZGF0YV9jaWQAAAAQAAAAAAAAAAptaWxlc3RvbmVzAAAAAAPqAAAH0AAAAA5NaWxlc3RvbmVJbnB1dAAAAAAAAAAAABBtaW5fY29udHJpYnV0aW9uAAAACwAAAAAAAAAMcGxhdGZvcm1fZmVlAAAACwAAAAAAAAAKcHJvamVjdF9pZAAAAAAABgAAAAAAAAAFdG9rZW4AAAAAAAATAAAAAAAAABJ2b3Rpbmdfd2luZG93X3NlY3MAAAAAAAY=",
         "AAAAAQAAAFxXaGF0IGEgYnVpbGRlciBzdXBwbGllcy4gRGVsaWJlcmF0ZWx5IGhhcyBubyBmaWVsZCBmb3IgdGhlIGlkZW50aXR5IG9yCmF0dGVzdGF0aW9uIHJlZ2lzdHJ5LgAAAAAAAAARQ3JlYXRlVmF1bHRDb25maWcAAAAAAAAHAAAAAAAAAAtib25kX2Ftb3VudAAAAAALAAAAAAAAAAdjcmVhdG9yAAAAABMAAAAAAAAACGRlYWRsaW5lAAAABgAAAAAAAAAEZ29hbAAAAAsAAAAAAAAADG1ldGFkYXRhX2NpZAAAABAAAAAAAAAACm1pbGVzdG9uZXMAAAAAA+oAAAfQAAAADk1pbGVzdG9uZUlucHV0AAAAAAAAAAAABXRva2VuAAAAAAAAEw==",
         "AAAAAgAAAAAAAAAAAAAAB0RhdGFLZXkAAAAADAAAAAAAAAAAAAAABUFkbWluAAAAAAAAAAAAAAAAAAANVmF1bHRXYXNtSGFzaAAAAAAAAAEAAAAAAAAAD1Byb2plY3RWYXVsdE1hcAAAAAABAAAABgAAAAAAAAAAAAAADlByb2plY3RDb3VudGVyAAAAAAAAAAAAAAAAABBGZWVXYWxsZXRBZGRyZXNzAAAAAAAAADFGbGF0IGZlZSBjaGFyZ2VkIG9uY2UgdG8gdGhlIGJ1aWxkZXIsIGluIHN0cm9vcHMuAAAAAAAAC1BsYXRmb3JtRmVlAAAAAAAAAAAAAAAAEU1pbkJvbmRQZXJjZW50YWdlAAAAAAAAAAAAAAAAAAAQSWRlbnRpdHlSZWdpc3RyeQAAAAAAAAAAAAAAE0F0dGVzdGF0aW9uUmVnaXN0cnkAAAAAAAAAAAAAAAAQVm90aW5nV2luZG93U2VjcwAAAAAAAAAAAAAAD01pbkNvbnRyaWJ1dGlvbgAAAAABAAAAMk1hcmtzIGFuIGFkZHJlc3MgYXMgYSB2YXVsdCB0aGlzIGZhY3RvcnkgZGVwbG95ZWQuAAAAAAAHSXNWYXVsdAAAAAABAAAAEw==",
-        "AAAAAAAAAeBDb25maWd1cmUgdGhlIGZhY3RvcnksIGF0b21pY2FsbHkgYXQgZGVwbG95LgoKQSBjb25zdHJ1Y3RvciBydW5zIGluc2lkZSB0aGUgZGVwbG95IHRyYW5zYWN0aW9uLCBzbyBhCmRlcGxveWVkLWJ1dC11bmNvbmZpZ3VyZWQgZmFjdG9yeSBjYW4gbmV2ZXIgYmUgY2xhaW1lZCBieSB3aG9ldmVyIHNwb3RzCml0IGZpcnN0IGFuZCBuYW1lZCB3aXRoIGl0cyBvd24gYWRtaW4sIGZlZSB3YWxsZXQgYW5kIHRydXN0ZWQKcmVnaXN0cmllcy4gSXQgdGFrZXMgdGhlIGlkZW50aXR5IGFuZCBhdHRlc3RhdGlvbiByZWdpc3RyeSBhZGRyZXNzZXMKaGVyZSwgd2hpY2ggaXMgd2h5IGJvdGggbXVzdCBiZSBkZXBsb3llZCBmaXJzdDsgdGhlIGF0dGVzdGF0aW9uIHJlZ2lzdHJ5CmlzIHRoZW4gdG9sZCB0byB0cnVzdCB0aGlzIGZhY3Rvcnkgd2l0aCBhIHBvc3QtZGVwbG95IGBhZGRfZmFjdG9yeWAuCmBhZG1pbmAgbXVzdCBhdXRob3Jpc2UgdGhlIGRlcGxveS4AAAANX19jb25zdHJ1Y3RvcgAAAAAAAAgAAAAAAAAABWFkbWluAAAAAAAAEwAAAAAAAAAPdmF1bHRfd2FzbV9oYXNoAAAAA+4AAAAgAAAAAAAAAApmZWVfd2FsbGV0AAAAAAATAAAAAAAAAAxwbGF0Zm9ybV9mZWUAAAALAAAAAAAAABFpZGVudGl0eV9yZWdpc3RyeQAAAAAAABMAAAAAAAAAFGF0dGVzdGF0aW9uX3JlZ2lzdHJ5AAAAEwAAAAAAAAASdm90aW5nX3dpbmRvd19zZWNzAAAAAAAGAAAAAAAAABBtaW5fY29udHJpYnV0aW9uAAAACwAAAAA=",
+        "AAAAAAAAAuZDb25maWd1cmUgdGhlIGZhY3RvcnksIGF0b21pY2FsbHkgYXQgZGVwbG95LgoKQSBjb25zdHJ1Y3RvciBydW5zIGluc2lkZSB0aGUgZGVwbG95IHRyYW5zYWN0aW9uLCBzbyBhCmRlcGxveWVkLWJ1dC11bmNvbmZpZ3VyZWQgZmFjdG9yeSBjYW4gbmV2ZXIgYmUgY2xhaW1lZCBieSB3aG9ldmVyIHNwb3RzCml0IGZpcnN0IGFuZCBuYW1lZCB3aXRoIGl0cyBvd24gYWRtaW4sIGZlZSB3YWxsZXQgYW5kIHRydXN0ZWQKcmVnaXN0cmllcy4gSXQgdGFrZXMgdGhlIGlkZW50aXR5IGFuZCBhdHRlc3RhdGlvbiByZWdpc3RyeSBhZGRyZXNzZXMKaGVyZSwgd2hpY2ggaXMgd2h5IGJvdGggbXVzdCBiZSBkZXBsb3llZCBmaXJzdDsgdGhlIGF0dGVzdGF0aW9uIHJlZ2lzdHJ5CmlzIHRoZW4gdG9sZCB0byB0cnVzdCB0aGlzIGZhY3Rvcnkgd2l0aCBhIHBvc3QtZGVwbG95IGBhZGRfZmFjdG9yeWAuCmBhZG1pbmAgbXVzdCBhdXRob3Jpc2UgdGhlIGRlcGxveS4KCmBmaXJzdF9wcm9qZWN0X2lkYCBpcyB0aGUgaWQgdGhpcyBmYWN0b3J5IGdpdmVzIGl0cyBmaXJzdCB2YXVsdC4gQQpyZXBsYWNlbWVudCBmYWN0b3J5IHN0YXJ0cyBhZnRlciB0aGUgbGFzdCBpZCBpdHMgcHJlZGVjZXNzb3IgaXNzdWVkLCBzbwpwcm9qZWN0IGlkcyBzdGF5IHVuaXF1ZSBhY3Jvc3MgYm90aDogdGhlIGFwcCBrZXlzIHByb2plY3RzIGJ5IHRoZW0sIGFuZAphIHNlY29uZCBwcm9qZWN0ICMxIHdvdWxkIGNvbGxpZGUgd2l0aCB0aGUgZmlyc3QuAAAAAAANX19jb25zdHJ1Y3RvcgAAAAAAAAkAAAAAAAAABWFkbWluAAAAAAAAEwAAAAAAAAAPdmF1bHRfd2FzbV9oYXNoAAAAA+4AAAAgAAAAAAAAAApmZWVfd2FsbGV0AAAAAAATAAAAAAAAAAxwbGF0Zm9ybV9mZWUAAAALAAAAAAAAABFpZGVudGl0eV9yZWdpc3RyeQAAAAAAABMAAAAAAAAAFGF0dGVzdGF0aW9uX3JlZ2lzdHJ5AAAAEwAAAAAAAAASdm90aW5nX3dpbmRvd19zZWNzAAAAAAAGAAAAAAAAABBtaW5fY29udHJpYnV0aW9uAAAACwAAAAAAAAAQZmlyc3RfcHJvamVjdF9pZAAAAAYAAAAA",
         "AAAAAAAAAFFEZXBsb3kgYSB2YXVsdCBmb3IgYSBwcm9qZWN0IGFuZCBsb2NrIHRoZSBidWlsZGVyJ3MgYm9uZCBpbiB0aGUgc2FtZQp0cmFuc2FjdGlvbi4AAAAAAAAMY3JlYXRlX3ZhdWx0AAAAAQAAAAAAAAAGY29uZmlnAAAAAAfQAAAAEUNyZWF0ZVZhdWx0Q29uZmlnAAAAAAAAAQAAABM=",
         "AAAAAAAAAHtXaGV0aGVyIHRoaXMgZmFjdG9yeSBkZXBsb3llZCB0aGUgZ2l2ZW4gYWRkcmVzcy4gVGhlIGF0dGVzdGF0aW9uCnJlZ2lzdHJ5IGNhbGxzIHRoaXMgdG8gZGVjaWRlIHdoZXRoZXIgYSByZWNvcmQgaXMgZ2VudWluZS4AAAAACGlzX3ZhdWx0AAAAAQAAAAAAAAAHYWRkcmVzcwAAAAATAAAAAQAAAAE=",
         "AAAAAAAAAAAAAAAJZ2V0X3ZhdWx0AAAAAAAAAQAAAAAAAAAKcHJvamVjdF9pZAAAAAAABgAAAAEAAAAT",
@@ -239,7 +241,7 @@ export class Client extends ContractClient {
         "AAAAAAAAAAAAAAAYZ2V0X2F0dGVzdGF0aW9uX3JlZ2lzdHJ5AAAAAAAAAAEAAAAT",
         "AAAAAAAAAAAAAAARZ2V0X3ZvdGluZ193aW5kb3cAAAAAAAAAAAAAAQAAAAY=",
         "AAAAAAAAAAAAAAAUZ2V0X21pbl9jb250cmlidXRpb24AAAAAAAAAAQAAAAs=",
-        "AAAAAAAAAAAAAAARZ2V0X3Byb2plY3RfY291bnQAAAAAAAAAAAAAAQAAAAY=" ]),
+        "AAAAAAAAAIlUaGUgbGFzdCBwcm9qZWN0IGlkIGlzc3VlZDogdGhlIG51bWJlciBvZiBwcm9qZWN0cyBvbmx5IHdoZW4gdGhlCmZhY3Rvcnkgc3RhcnRlZCBhdCAxLCBhbmQgYGZpcnN0X3Byb2plY3RfaWQgLSAxYCBiZWZvcmUgaXRzIGZpcnN0IHZhdWx0LgAAAAAAABFnZXRfcHJvamVjdF9jb3VudAAAAAAAAAAAAAABAAAABg==" ]),
       options
     )
   }

@@ -270,11 +270,11 @@ The indexer ([src/lib/event-indexer.ts](../src/lib/event-indexer.ts)) treats eve
 
 ## blkfndr-factory
 
-Deploys vaults and is the single place that decides what code a vault runs and which platform addresses it trusts. It has no role in moving money: it cannot release a tranche, block a refund or touch a vault's balance. **15 tests** (six of them deploy the compiled vault wasm and skip when it is absent).
+Deploys vaults and is the single place that decides what code a vault runs and which platform addresses it trusts. It has no role in moving money: it cannot release a tranche, block a refund or touch a vault's balance. **17 tests** (seven of them deploy the compiled vault wasm and skip when it is absent).
 
 | Function | Who | Effect |
 |---|---|---|
-| `__constructor(admin, vault_wasm_hash, fee_wallet, platform_fee, identity_registry, attestation_registry, voting_window_secs, min_contribution)` | Deployer, at deploy | Configures the factory inside the deploy transaction. The fee must be 0 to 10,000 units (`MAX_PLATFORM_FEE`), the window non-zero, the minimum contribution positive. The live factory takes the same arguments through `initialize` |
+| `__constructor(admin, vault_wasm_hash, fee_wallet, platform_fee, identity_registry, attestation_registry, voting_window_secs, min_contribution, first_project_id)` | Deployer, at deploy | Configures the factory inside the deploy transaction. The fee must be 0 to 10,000 units (`MAX_PLATFORM_FEE`), the window non-zero, the minimum contribution positive, and `first_project_id` at least 1. A replacement factory is given its predecessor's `get_project_count` + 1, so project ids never repeat: the app keys projects by them. The live factory takes the same arguments, less `first_project_id`, through `initialize` |
 | `create_vault(config)` | Builder | Checks the bond against the minimum, increments the project counter, deploys a vault from the pinned wasm hash, registers it with `is_vault`, then calls the vault's `initialize` with the factory-held addresses and parameters |
 | `update_wasm_hash` / `update_fee_wallet` / `update_platform_fee` / `update_bond_percentage` / `update_identity_registry` / `update_voting_window` / `update_min_contribution` | Admin | Policy for **future** vaults. Existing vaults keep what they were created with |
 | `transfer_admin(new_admin)` | Admin | Hands over factory admin, for example to the treasury |
@@ -286,9 +286,9 @@ struct CreateVaultConfig {
 }
 ```
 
-A builder supplies no registry, fee wallet, fee, window or minimum. Those come from factory storage. The bond must be at least `goal × bond_bps / 10_000` (default 500 bps). The project id is the counter, and the vault's deploy salt is the SHA-256 of that counter.
+A builder supplies no registry, fee wallet, fee, window or minimum. Those come from factory storage. The bond must be at least `goal × bond_bps / 10_000` (default 500 bps). The project id is the counter, which starts at `first_project_id`, and the vault's deploy salt is the SHA-256 of that counter.
 
-Reads: `is_vault(address)`, `get_vault(project_id)`, `get_admin`, `get_fee_wallet`, `get_platform_fee`, `get_bond_percentage`, `get_identity_registry`, `get_attestation_registry`, `get_voting_window`, `get_min_contribution`, `get_project_count`. There is no getter for the vault wasm hash (see [The vault wasm hash](#the-vault-wasm-hash)).
+Reads: `is_vault(address)`, `get_vault(project_id)`, `get_admin`, `get_fee_wallet`, `get_platform_fee`, `get_bond_percentage`, `get_identity_registry`, `get_attestation_registry`, `get_voting_window`, `get_min_contribution`, `get_project_count` (the last project id issued, which is the number of projects only for a factory that started at 1). There is no getter for the vault wasm hash (see [The vault wasm hash](#the-vault-wasm-hash)).
 
 - **Storage keys:** `Admin`, `VaultWasmHash`, `ProjectCounter`, `FeeWalletAddress`, `PlatformFee`, `MinBondPercentage`, `IdentityRegistry`, `AttestationRegistry`, `VotingWindowSecs`, `MinContribution` (instance); `ProjectVaultMap(id)`, `IsVault(address)` (persistent).
 - **Events:** `FACTORY INIT`, `FACTORY DEPLOY` (project id, vault, creator, metadata CID), `FACTORY UPGRADE`, `FACTORY WALLET`, `FACTORY FEE`, `FACTORY BOND_PCT`, `FACTORY IDENTITY`, `FACTORY VOTEWIN`, `FACTORY MINCONTR`, `FACTORY ADMIN_TX`.
