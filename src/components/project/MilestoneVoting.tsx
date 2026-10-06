@@ -24,7 +24,11 @@ import { ExpandableText } from "@/components/ui/expandable-text";
 import { useAuth } from "@/context/AuthContext";
 import { useFreighterWallet } from "@/context/FreighterWalletContext";
 import { MoneyActionPanel } from "@/components/money-action/MoneyActionPanel";
-import { useStellarContract, type MilestoneWallets } from "@/hooks/use-stellar-contract";
+import {
+  useStellarContract,
+  type MilestoneStake,
+  type MilestoneWallets,
+} from "@/hooks/use-stellar-contract";
 import { currencyForToken, fromStroops } from "@/lib/currencies";
 import { describeMoney } from "@/lib/money";
 
@@ -38,10 +42,12 @@ import { describeMoney } from "@/lib/money";
  * their large contribution counts for less than they expect will assume the
  * cap is a bug.
  *
- * Two rules are live. Vaults deployed before the wallet floor release on more
- * than half the raw raise. Current vaults release on more than half the capped
+ * Three rules exist. Vaults deployed before the wallet floor release on more
+ * than half the raw raise. Later vaults release on more than half the capped
  * total, from at least three approving wallets or every contributor when there
- * are fewer. The panel asks the vault which one it runs rather than guessing.
+ * are fewer. The newest also need the approvers to have put in more than half
+ * the raise between them. The panel asks the vault which one it runs rather
+ * than guessing.
  */
 
 interface VaultMilestone {
@@ -117,21 +123,29 @@ type Phase =
 /**
  * Whether a milestone's vote has carried. Mirrors the contract's `carried`.
  *
- * Null when a read it depends on failed. The weight bar alone can say no, but
- * only the wallet count can say yes on a vault with the floor, so an unknown
- * count is never read as a met one.
+ * Every condition the vault runs must hold. Any one can say no, but yes needs
+ * all of them, so a condition whose read failed is never taken as met: the
+ * answer is null instead.
  */
 function carriedOf(
   approved: bigint,
   required: bigint | null,
   walletFloor: boolean | null,
   count: MilestoneWallets | null | undefined,
+  moneyMajority: boolean | null,
+  stake: MilestoneStake | null | undefined,
 ): boolean | null {
-  if (required === null) return null;
-  if (approved < required) return false;
-  if (walletFloor === false) return true;
-  if (count?.supported) return count.approvals >= count.required;
-  return null;
+  const weight = required === null ? null : approved >= required;
+  // A vault from before the wallet floor releases on weight alone.
+  if (walletFloor === false) return weight;
+  const wallets = count?.supported ? count.approvals >= count.required : null;
+  // One from before the money majority releases on weight and wallets.
+  const money =
+    moneyMajority === false ? true : stake?.supported ? stake.approved >= stake.required : null;
+  const conditions = [weight, wallets, money];
+  if (conditions.includes(false)) return false;
+  if (conditions.includes(null)) return null;
+  return true;
 }
 
 function phaseOf(m: VaultMilestone, windowEndsAt: number, carried: boolean | null): Phase {
@@ -148,6 +162,15 @@ function walletsLine({ approvals, required }: { approvals: number; required: num
   return approvals <= required
     ? `${approvals} of the ${required} ${required === 1 ? "stakeholder" : "stakeholders"} needed have said yes`
     : `${approvals} stakeholders have said yes (${required} needed)`;
+}
+
+/**
+ * What the yes-voters put in, against the whole raise, as formatted figures.
+ * Stated as "more than half" rather than as the contract's bar, which is half
+ * plus one base unit and would print as exactly half.
+ */
+function stakeLine(approved: string, raised: string) {
+  return `Those saying yes put in ${approved} of the ${raised} staked; more than half is needed`;
 }
 
 const PHASE_LABEL: Record<Phase, string> = {
@@ -315,6 +338,7 @@ export function MilestoneVoting({
     hasVoted,
     getMilestoneVote,
     getMilestoneWallets,
+    getMilestoneStake,
     prepareOpenMilestoneVote,
     prepareApproveMilestone,
     prepareReleaseMilestone,
@@ -328,6 +352,7 @@ export function MilestoneVoting({
   // The vault's own bar, not one computed here: it differs between the rules.
   const [requiredWeight, setRequiredWeight] = useState<bigint | null>(null);
   const [wallets, setWallets] = useState<Record<number, MilestoneWallets | null>>({});
+  const [stakes, setStakes] = useState<Record<number, MilestoneStake | null>>({});
   const [myWeight, setMyWeight] = useState(0n);
   const [voted, setVoted] = useState<Record<number, boolean>>({});
   const [loading, setLoading] = useState(true);
@@ -370,15 +395,19 @@ export function MilestoneVoting({
       const live = list.filter((m) => !m.released && !m.failed && m.vote_opens_at !== 0n);
       const counted = live.length > 0 ? live : list.slice(0, 1);
 
-      const [vote, counts] = await Promise.all([
+      const [vote, counts, staked] = await Promise.all([
         // The bar is the same for every milestone of a vault; one read serves all.
         list.length > 0 ? getMilestoneVote(vaultAddress, list[0].id) : null,
         Promise.all(
           counted.map(async (m) => [m.id, await getMilestoneWallets(vaultAddress, m.id)] as const),
         ),
+        Promise.all(
+          counted.map(async (m) => [m.id, await getMilestoneStake(vaultAddress, m.id)] as const),
+        ),
       ]);
       setRequiredWeight(vote ? vote[1] : null);
       setWallets(Object.fromEntries(counts));
+      setStakes(Object.fromEntries(staked));
 
       if (myAddress) {
         const weight = await getVotingWeight(vaultAddress, myAddress);
@@ -406,6 +435,7 @@ export function MilestoneVoting({
     hasVoted,
     getMilestoneVote,
     getMilestoneWallets,
+    getMilestoneStake,
   ]);
 
   useEffect(() => {
@@ -428,6 +458,14 @@ export function MilestoneVoting({
     if (answers.some((a) => a?.supported === true)) return true;
     return null;
   }, [wallets]);
+
+  // Whether this vault also needs a majority of the money, settled the same way.
+  const moneyMajority = useMemo(() => {
+    const answers = Object.values(stakes);
+    if (answers.some((a) => a?.supported === false)) return false;
+    if (answers.some((a) => a?.supported === true)) return true;
+    return null;
+  }, [stakes]);
 
   // Every figure below is money the vault is about to move, so name the asset
   // the vault actually holds. Fall back to the listing's label only until the
@@ -507,7 +545,9 @@ export function MilestoneVoting({
   const canTrigger = !!user && (isStakeholder || isBuilder);
 
   const rule =
-    walletFloor === true
+    walletFloor === true && moneyMajority === true
+      ? `A payout needs more than half of all stakes behind it, from at least three stakeholders, or every stakeholder when there are fewer, and those saying yes must have put in more than half the money between them. No one person counts for more than 20%. Each vote stays open for ${windowDays} days. If it ends short, the stage fails and refunds open, with a share of the builder's deposit.`
+      : walletFloor === true
       ? `A payout needs more than half of all stakes behind it, from at least three stakeholders, or every stakeholder when there are fewer. No one person counts for more than 20%. Each vote stays open for ${windowDays} days. If it ends short, the stage fails and refunds open, with a share of the builder's deposit.`
       : walletFloor === false
         ? `A payout needs more than half of all stakes behind it. No one person counts for more than 20%, so it always takes at least three stakeholders. Each vote stays open for ${windowDays} days. If it ends short, the stage fails and refunds open, with a share of the builder's deposit.`
@@ -551,7 +591,8 @@ export function MilestoneVoting({
         const endsAt = opensAt === 0 ? 0 : opensAt + windowSecs;
         const approved = BigInt(m.approved_weight ?? 0);
         const count = wallets[m.id];
-        const carried = carriedOf(approved, requiredWeight, walletFloor, count);
+        const stake = stakes[m.id];
+        const carried = carriedOf(approved, requiredWeight, walletFloor, count, moneyMajority, stake);
         const phase = phaseOf(m, endsAt, carried);
         const pct =
           requiredWeight && requiredWeight > 0n
@@ -560,6 +601,8 @@ export function MilestoneVoting({
         // The vault has the floor, or may have, and this stage's count did
         // not come back. Say so rather than show a tally missing its other half.
         const countUnread = walletFloor !== false && !count;
+        // Likewise for the money majority, which only a vault with the floor can have.
+        const stakeUnread = walletFloor !== false && moneyMajority !== false && !stake;
         const alreadyVoted = voted[m.id];
         const stageName = `Stage ${m.id}`;
         const amount = BigInt(m.amount);
@@ -615,12 +658,17 @@ export function MilestoneVoting({
                 {count?.supported && (
                   <p className="text-xs text-muted-foreground">{walletsLine(count)}</p>
                 )}
+                {stake?.supported && (
+                  <p className="text-xs text-muted-foreground">
+                    {stakeLine(money(stake.approved), money(raised))}
+                  </p>
+                )}
                 {phase === "voting" && (
                   <p className="text-xs text-muted-foreground">
                     If it isn&apos;t approved by {endsText}, the stage fails and refunds open.
                   </p>
                 )}
-                {(requiredWeight === null || countUnread) && (
+                {(requiredWeight === null || countUnread || stakeUnread) && (
                   <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
                     Part of this vote couldn&apos;t be read right now.
                     {retry}

@@ -93,6 +93,18 @@ export type MilestoneWallets =
   | { supported: false };
 
 /**
+ * What a milestone's approvers put in between them, counted whole, against
+ * the least a release needs: more than half the raise.
+ *
+ * `supported: false` is a definite answer: the vault predates the money
+ * majority and releases on weight and wallets alone. A failed read is `null`
+ * from the hook instead, for the same reason as `MilestoneWallets`.
+ */
+export type MilestoneStake =
+  | { supported: true; approved: bigint; required: bigint }
+  | { supported: false };
+
+/**
  * The simulation reached the contract and the contract has no such function.
  *
  * Soroban reports this as `Error(WasmVm, MissingValue)`, with a diagnostic
@@ -436,6 +448,37 @@ export function useStellarContract() {
     [],
   );
 
+  /**
+   * The approvers' combined stake behind a milestone and the least a release
+   * needs. Read like `getMilestoneWallets`, so a vault without the money
+   * majority is told apart from one that did not answer. Null means unknown.
+   */
+  const getMilestoneStake = useCallback(
+    async (vaultAddress: string, milestoneId: number): Promise<MilestoneStake | null> => {
+      const label = `get_milestone_stake(${vaultAddress}, ${milestoneId})`;
+      try {
+        const tx = await vaultClient(vaultAddress).get_milestone_stake({
+          milestone_id: milestoneId,
+        });
+        const result: unknown = tx.result;
+        if (!Array.isArray(result)) {
+          console.warn(`[stellar] ${label} returned`, result);
+          return null;
+        }
+        return {
+          supported: true,
+          approved: BigInt(result[0]),
+          required: BigInt(result[1]),
+        };
+      } catch (error) {
+        if (isMissingFunction(error)) return { supported: false };
+        console.warn(`[stellar] ${label} failed:`, error);
+        return null;
+      }
+    },
+    [],
+  );
+
   const getPlatformTerms = useCallback(async () => {
     const factory = factoryClient();
     const [fee, minContribution, votingWindow, bondBps] = await Promise.all([
@@ -565,6 +608,7 @@ export function useStellarContract() {
     hasVoted,
     getMilestoneVote,
     getMilestoneWallets,
+    getMilestoneStake,
     getPlatformTerms,
     // attestor roster
     getIdentityAdmin,

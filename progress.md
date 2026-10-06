@@ -127,7 +127,7 @@ Until this is done, every new vault still gets the old bar (more than half the r
   - The 20% cap never drops below one base unit, so a raise under 5 base units can still release.
 
 - ✅ **Decided 2026-10-06: the dual majority.** Under #99 alone, a builder with just over 20% of the raise spread across three wallets could out-vote one backer holding the rest. A release now also needs the approvers' *uncapped* stake to exceed half the raise. A wallet holding more than half the raise can block a release but never make one alone. With it, `main` builds the vault to `e9009410…` on the maintainer's machine, and the reference deployment runs that hash.
-- **Before switching:** the vote panel must show the money condition. It reads `get_milestone_stake(id)` and needs the regenerated vault binding. Otherwise the panel can show a vote as carried while the release is refused.
+- ✅ **The vote panel shows the money condition.** It reads `get_milestone_stake(id)` from the regenerated binding, counts it toward "Approved", and shows what the approvers put in against the raise. Older vaults have no such function, and the panel reads that as their rule rather than as a failed read. The admin View Vault names the rule the same way.
 - **Then:** upload the wasm and call `update_wasm_hash` with the factory admin key. The commands are in [deployment.md](docs/deployment.md#switching-the-vault-code). The homepage hash updates within 5 minutes.
 - Old and new bindings decode both vault shapes, so app and contract can switch in either order.
 - If item 4 happens first, the new factory can be constructed with the new hash instead.
@@ -217,7 +217,7 @@ These were verified with harnesses, but not with a real wallet or account:
 ## Next
 1. Finish the Operations Vault cutover (item 1): two owner votes.
 2. Apply the two migrations (item 3): a one-command push, in order. Set the gateway key on the host (item 3b), a one-variable stack update.
-3. Show the money condition in the vote panel, then switch the factory's vault wasm (item 2). Or fold the switch into the coordinated redeploy (item 4).
+3. Switch the factory's vault wasm (item 2) once the host runs the vote-panel change. Or fold the switch into the coordinated redeploy (item 4).
 4. Start Phase 1 of the [Web3-accessibility redesign](docs/design/web3-accessibility-redesign.md): copy, information architecture and flow, with no chain changes. #103 was its first item.
 
 _Per-finding audit detail is in the security-audit PDF. Per-PR detail is in the PR descriptions._

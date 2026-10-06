@@ -259,6 +259,12 @@ export function AdminDashboard() {
   const [selectedVaultHasWalletFloor, setSelectedVaultHasWalletFloor] = useState<
     boolean | null
   >(null);
+  // Whether it also needs approvers holding more than half the raise. Only a
+  // vault with the floor can; those before the money majority have no
+  // get_milestone_stake. Null when the read could not tell.
+  const [selectedVaultHasMoneyMajority, setSelectedVaultHasMoneyMajority] = useState<
+    boolean | null
+  >(null);
   const [isLoadingVaultInfo, setIsLoadingVaultInfo] = useState(false);
   const [vaultInfoError, setVaultInfoError] = useState<string | null>(null);
   const [liveBondAmounts, setLiveBondAmounts] = useState<Record<string, number>>({});
@@ -312,6 +318,7 @@ export function AdminDashboard() {
     setSelectedVaultProject(project);
     setSelectedVaultInfo(null);
     setSelectedVaultHasWalletFloor(null);
+    setSelectedVaultHasMoneyMajority(null);
     setVaultInfoError(null);
     if (!project.vaultAddress) {
       setVaultInfoError("No vault address found for this project.");
@@ -344,6 +351,15 @@ export function AdminDashboard() {
           setSelectedVaultHasWalletFloor(true);
         } catch (walletsErr) {
           setSelectedVaultHasWalletFloor(isMissingFunction(walletsErr) ? false : null);
+        }
+        try {
+          const stakeTx = await vaultClient.get_milestone_stake({
+            milestone_id: parsedInfo.milestones[0].id,
+          });
+          void stakeTx.result; // throws when the simulation failed
+          setSelectedVaultHasMoneyMajority(true);
+        } catch (stakeErr) {
+          setSelectedVaultHasMoneyMajority(isMissingFunction(stakeErr) ? false : null);
         }
       }
     } catch (err: any) {
@@ -1198,7 +1214,9 @@ export function AdminDashboard() {
                         Contributor vote, no admin key
                       </span>
                       <span className="text-muted-foreground text-[11px] leading-relaxed">
-                        {selectedVaultHasWalletFloor === true
+                        {selectedVaultHasWalletFloor === true && selectedVaultHasMoneyMajority === true
+                          ? "Over 50% of the capped weight from 3+ wallets (or every backer) holding over 50% of the raise, "
+                          : selectedVaultHasWalletFloor === true
                           ? "Over 50% of the capped weight from 3+ wallets (or every backer), "
                           : selectedVaultHasWalletFloor === false
                             ? "Over 50% of the raise (pre-floor vault), "
