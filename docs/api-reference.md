@@ -70,7 +70,7 @@ These take no authorizing caller. A carried vote, an elapsed window or a time ga
 | | `execute_proposal`, `settle_lapsed_cycle` | A carried proposal; a cycle that closed below threshold |
 | `blkfndr-operations` | `execute` | A carried proposal |
 
-The vault rule these follow is in [Smart Contracts](smart-contracts.md). That page also lists where the deployed vault differs from source: the #99 release rule is on `main` but not live, because the factory still deploys vault wasm `70e5f3a8…`.
+The vault rule these follow is in [Smart Contracts](smart-contracts.md). That page also lists which vaults run which rule: projects created since 2026-10-06 run the current source (`e9009410…`), with the #99 release rule and the money majority, and older projects keep the code they were created with.
 
 ### Server-signed transactions
 

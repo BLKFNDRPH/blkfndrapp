@@ -228,25 +228,30 @@ Flows in `src/ai/flows/`, registered with `ai.defineFlow()`, running on Gemini 2
 
 ## The vault release rule
 
-This is the rule in `main`'s [contracts/blkfndr-vault/src/lib.rs](../contracts/blkfndr-vault/src/lib.rs) (#99).
+This is the rule in `main`'s [contracts/blkfndr-vault/src/lib.rs](../contracts/blkfndr-vault/src/lib.rs) (#99, with the money majority from #119).
 
 - **Weight.** A stakeholder's weight is their contribution, capped at a fifth of the raise: `cap = floor(raise × 2,000 / 10,000)`. The cap is fixed once the raise closes.
 - **Capped total.** The sum of every stakeholder's capped weight. Only the four largest balances can exceed the cap, so the vault tracks those four and subtracts their excess from the raise.
-- **A milestone carries** when both hold:
-  1. approving weight × 10,000 > capped total × 5,000, that is more than half the capped total, and
-  2. at least three distinct wallets approved, or every stakeholder when there are fewer than three.
+- **A milestone carries** when all three hold:
+  1. approving weight × 10,000 > capped total × 5,000, that is more than half the capped total;
+  2. at least three distinct wallets approved, or every stakeholder when there are fewer than three;
+  3. the approvers' uncapped stakes add up to more than half the raise.
 - **Release** is permissionless once the vote carries. `settle_lapsed_milestone` refuses a carried milestone.
-- **Reads.** `get_milestone_vote(id)` returns the approving weight, the weight needed and whether the window is open. `get_milestone_wallets(id)` returns approvals and the number needed. A vault without `get_milestone_wallets` is on the old rule.
+- **Reads.**
+  - `get_milestone_vote(id)` returns the approving weight, the weight needed and whether the window is open.
+  - `get_milestone_wallets(id)` returns approvals and the number needed.
+  - `get_milestone_stake(id)` returns the approvers' stake and the stake needed.
+  - A vault without `get_milestone_wallets` is on the raw-raise rule. One without `get_milestone_stake` lacks the money condition.
 
-**Not live yet.** The rule reaches only vaults the factory creates after its `update_wasm_hash` is called. As of 2026-10-02 that has not been done: the factory (`CDIXGE5M…`) still deploys vault wasm `70e5f3a8…`, which predates #99 and needs more than half of the raw raise. Existing vaults are immutable and keep the rule they were created with. `/api/vault-wasm-hash` shows the hash the factory currently deploys.
+**Live for new projects since 2026-10-06.** That day the factory (`CDIXGE5M…`) was switched with `update_wasm_hash` to vault wasm `e9009410…`. Projects created before then keep the rule they were created with: vault wasm `70e5f3a8…` needs more than half of the raw raise. `/api/vault-wasm-hash` shows the hash the factory currently deploys.
 
-### Known gap in deployed vaults
+### Known gap in older vaults
 
-PR #99's two review fixes (commit `d212b37`, pushed to the PR branch after it merged) have since landed on `main`. In source, `settle_stalled` refuses a carried milestone, as `settle_lapsed_milestone` already did, and the 20% cap never drops below one base unit, so a raise under 5 base units still releases when every backer approves. They reach only vaults the factory creates after its vault wasm is switched.
+PR #99's two review fixes (commit `d212b37`, pushed to the PR branch after it merged) have since landed on `main`. `settle_stalled` refuses a carried milestone, as `settle_lapsed_milestone` already did, and the 20% cap never drops below one base unit, so a raise under 5 base units still releases when every backer approves. They run in vaults created since the factory switched to `e9009410…` on 2026-10-06.
 
-Until then, and in every existing vault, **`settle_stalled` can fail a carried milestone.** It refuses only while a vote window is open, and opening a vote does not reset the 90-day stall clock. So once a carried milestone's window closes without a release, and 90 days have passed since funding or the last release, anyone can call `settle_stalled`, fail that milestone and forfeit the bond. `settle-stalled-cron` does this automatically wherever it would succeed.
+In every vault created before then, **`settle_stalled` can fail a carried milestone.** It refuses only while a vote window is open, and opening a vote does not reset the 90-day stall clock. So once a carried milestone's window closes without a release, and 90 days have passed since funding or the last release, anyone can call `settle_stalled`, fail that milestone and forfeit the bond. `settle-stalled-cron` does this automatically wherever it would succeed.
 
-The open product decision on Sybil wallets against a large stakeholder is described in [Smart Contracts](smart-contracts.md).
+Sybil wallets against a large stakeholder are handled by the money condition, as described in [Smart Contracts](smart-contracts.md).
 
 ## Roles
 
