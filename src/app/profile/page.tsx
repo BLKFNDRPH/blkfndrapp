@@ -46,6 +46,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import Link from "next/link";
+import { projectHref } from "@/lib/project-href";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
@@ -72,22 +73,10 @@ import {
   usePlatformInfo,
   useUserFunds,
 } from "@/context/BlockchainContext";
-import { useStellarContract } from "@/hooks/use-stellar-contract";
 import { Client as VaultClient } from "@/packages/blkfndr_vault/src";
 
 const NETWORK_PASSPHRASE = "Test SDF Network ; September 2015";
 const SOROBAN_RPC_URL = "https://soroban-testnet.stellar.org";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
 import {
   Dialog,
   DialogContent,
@@ -715,15 +704,10 @@ function StellarRecentActivityCard({ address }: { address: string }) {
 function ReceiptCard({
   receipts: groupReceipts,
   project,
-  onBurned,
 }: {
   receipts: FundReceipt[];
   project?: Project;
-  onBurned: (id: string) => void;
 }) {
-  const { toast } = useToast();
-  const { claimRefund } = useStellarContract();
-  const [refundingId, setRefundingId] = useState<string | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   const [vaultBalance, setVaultBalance] = useState<number | null>(null);
   const { freighterWalletAddress } = useFreighterWallet();
@@ -777,44 +761,6 @@ function ReceiptCard({
 
   const explorerUrl = `${EXPLORER_BASE}/contract/${project?.vaultAddress ?? ""}`;
 
-  const handleRefund = async (receipt: FundReceipt) => {
-    if (!project || !project.vaultAddress) {
-      toast({
-        title: "Refund Failed",
-        description: "Vault address is missing for this project.",
-        variant: "destructive",
-      });
-      return;
-    }
-    setRefundingId(receipt.fund_id);
-    try {
-      const result = await claimRefund({
-        vaultAddress: project.vaultAddress,
-      });
-
-      const txStatus = (result as any)?.getTransactionResponse?.status;
-      if (txStatus !== "SUCCESS") {
-        throw new Error("Your refund didn't go through. Nothing was moved.");
-      }
-
-      toast({
-        title: "Refund Successful",
-        description: "Your stake is back in your wallet.",
-      });
-      // Receipt is burned on-chain as part of the refund, remove it from UI
-      onBurned(receipt.fund_id);
-    } catch (error: any) {
-      console.error("Refund failed:", error);
-      toast({
-        title: "Refund Failed",
-        description: error.message || "Couldn't collect your refund. Try again.",
-        variant: "destructive",
-      });
-    } finally {
-      setRefundingId(null);
-    }
-  };
-
   const ReceiptActions = ({
     receipt,
     size = "sm",
@@ -822,14 +768,7 @@ function ReceiptCard({
     receipt: FundReceipt;
     size?: "sm" | "default";
   }) => {
-    const humanAmt = (Number(receipt.amount) / decimals).toLocaleString(
-      undefined,
-      {
-        maximumFractionDigits: 4,
-      },
-    );
-    const receiptCurrency = (receipt.currency_type ?? "XLM").toUpperCase();
-
+    void receipt;
     return (
       <div className="flex items-center gap-1 shrink-0">
         <a
@@ -850,49 +789,28 @@ function ReceiptCard({
           </Button>
         </a>
 
-        {isExpired && (
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button
-                variant="ghost"
-                size={size}
-                className={cn(
-                  "text-green-600 hover:text-green-600 hover:bg-green-500/10",
-                  size === "sm" && "h-6 px-2",
-                )}
-                disabled={refundingId === receipt.fund_id || vaultBalance === 0}
-              >
-                {refundingId === receipt.fund_id ? (
-                  <CubeSpinner />
-                ) : (
-                  <>
-                    <ArrowDownCircle className="h-3 w-3 mr-1" />
-                    {vaultBalance === 0 ? "Refunded" : "Refund"}
-                  </>
-                )}
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Claim Refund?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  This project expired without reaching its goal. You can claim
-                  back your{" "}
-                  <strong>
-                    {humanAmt} {receiptCurrency}
-                  </strong>
-                  . Your receipt will be burned automatically in the same
-                  transaction.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={() => handleRefund(receipt)}>
-                  Yes, claim refund
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+        {/* The refund itself happens on the project page, which works out the
+            exact amount from the vault: a vault refunds a whole stake at once,
+            by its own formula, so a per-receipt figure here could be wrong. */}
+        {isExpired && project && (
+          vaultBalance === 0 ? (
+            <span className="px-2 text-xs text-muted-foreground">Refund collected</span>
+          ) : (
+            <Button
+              asChild
+              variant="ghost"
+              size={size}
+              className={cn(
+                "text-green-600 hover:text-green-600 hover:bg-green-500/10",
+                size === "sm" && "h-6 px-2",
+              )}
+            >
+              <Link href={projectHref(project.id, { tab: "stages" })}>
+                <ArrowDownCircle className="h-3 w-3 mr-1" />
+                Collect your refund
+              </Link>
+            </Button>
+          )
         )}
       </div>
     );
@@ -917,7 +835,7 @@ function ReceiptCard({
         {isExpired && (
           <div className="absolute top-2 left-2">
             <Badge className="bg-orange-500/90 text-white border-0">
-              Expired — Refund Available
+              {vaultBalance === 0 ? "Refund collected" : "Money coming back to you"}
             </Badge>
           </div>
         )}
@@ -1168,14 +1086,9 @@ export default function ProfilePage() {
     }
   }, [tab, activeStellarAddress, refreshTrigger, getAllInvestmentReceipts]);
 
-  const [burnedReceiptIds, setBurnedReceiptIds] = useState<string[]>([]);
-  const handleReceiptBurned = (id: string) => {
-    setBurnedReceiptIds((prev) => [...prev, id]);
-  };
-
-  const activeReceipts = useMemo(() => {
-    return receipts.filter((r) => !burnedReceiptIds.includes(r.fund_id));
-  }, [receipts, burnedReceiptIds]);
+  // Nothing is minted for a stake, so nothing is burned on a refund: the
+  // receipts list is the indexed stakes, kept as history after a refund too.
+  const activeReceipts = receipts;
 
   const [fundedSort, setFundedSort] = useState<
     "date-desc" | "date-asc" | "amount-desc" | "amount-asc"
@@ -1477,7 +1390,6 @@ export default function ProfilePage() {
                   key={group.projectId}
                   receipts={group.receipts}
                   project={projects.find((p) => p.id === group.projectId)}
-                  onBurned={handleReceiptBurned}
                 />
               ))}
             </div>
