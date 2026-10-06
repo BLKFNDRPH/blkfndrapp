@@ -756,8 +756,8 @@ export function MilestoneVoting({
               {/* ── Approved, not yet sent ── */}
               {phase === "passed" && (
                 <p className="text-sm text-muted-foreground">
-                  Stakeholders approved this payout. It isn&apos;t sent automatically yet: anyone can
-                  send it now, and nobody can hold it back.
+                  Stakeholders approved this payout. BLKFNDR sends it automatically, usually within
+                  the hour, and nobody can hold it back. Anyone can also send it now.
                 </p>
               )}
               {phase === "passed" && canTrigger && open !== "payout" && (
@@ -783,7 +783,8 @@ export function MilestoneVoting({
               {phase === "lapsed" && (
                 <p className="text-sm text-muted-foreground">
                   The vote closed without enough yes votes. Closing the stage opens refunds, with a
-                  share of the builder&apos;s deposit. Anyone can do it, for a small network fee.
+                  share of the builder&apos;s deposit. BLKFNDR does it automatically, usually within
+                  the hour; anyone can also do it now, for a small network fee.
                 </p>
               )}
               {phase === "lapsed" && canTrigger && open !== "close" && (

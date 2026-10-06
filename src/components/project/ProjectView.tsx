@@ -605,9 +605,10 @@ export function ProjectView({
       ? "Sign in with Google or email, then approve in a wallet you control. We'll walk you through it."
       : "Approve in a wallet you control. We'll walk you through it.";
 
-  // Recording a passed deadline on the vault. No scheduler does this today,
-  // and refunds work without it (the vault works out its own state), so it is
-  // a small tidy-up kept under Technical details. Never shown to a visitor.
+  // Recording a passed deadline on the vault. The governance keeper does this
+  // on its own (src/lib/governance-keeper.ts), and refunds work without it
+  // (the vault works out its own state), so it is a small tidy-up kept under
+  // Technical details for anyone who wants it sooner. Never shown to a visitor.
   const canCloseNow =
     !!project.vaultAddress &&
     !!user &&

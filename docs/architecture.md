@@ -13,7 +13,7 @@ graph TB
 
     subgraph "Docker Compose stack"
         APP[blkfndr-app<br/>Server Actions + route handlers<br/>server-only data layer]
-        CRON[indexer-cron · ops-funding-cron<br/>settle-stalled-cron · keep-alive-cron]
+        CRON[indexer-cron · ops-funding-cron<br/>settle-stalled-cron · keep-alive-cron<br/>governance-keeper-cron]
     end
 
     subgraph Stellar
@@ -148,7 +148,7 @@ The console's health view shows the cursor and when it last moved, which is the 
 
 ## Scheduled jobs
 
-Soroban has no cron, and nothing in the app triggers itself. [docker-compose.yml](../docker-compose.yml) therefore runs four small `curlimages/curl` services beside the app. Each waits for the app's healthcheck, then calls one route over the stack's internal network (`http://blkfndr-app:3000`) with `Authorization: Bearer $INDEXER_SECRET`, sleeps, and repeats.
+Soroban has no cron, and nothing in the app triggers itself. [docker-compose.yml](../docker-compose.yml) therefore runs five small `curlimages/curl` services beside the app. Each waits for the app's healthcheck, then calls one route over the stack's internal network (`http://blkfndr-app:3000`) with `Authorization: Bearer $INDEXER_SECRET`, sleeps, and repeats.
 
 | Service | Calls | Default interval | What it does |
 |---|---|---|---|
@@ -156,12 +156,13 @@ Soroban has no cron, and nothing in the app triggers itself. [docker-compose.yml
 | `ops-funding-cron` | `POST /api/ops-funding` | 1 day (`OPS_FUNDING_INTERVAL_SECONDS`) | Resolves the treasury from the factory's fee wallet. Skips unless ops funding is set, 30 days have passed and there is something above the reserved balance; otherwise calls `fund_operations` |
 | `settle-stalled-cron` | `POST /api/settle-stalled` | 1 day (`SETTLE_STALLED_INTERVAL_SECONDS`) | For each project indexed as `funded` or `active`, builds `settle_stalled` (which simulates it) and submits only the ones that would succeed |
 | `keep-alive-cron` | `POST /api/keep-alive` | 1 day (`KEEP_ALIVE_INTERVAL_SECONDS`) | Restores and extends shared contract storage. See below |
+| `governance-keeper-cron` | `POST /api/governance-keeper` | 15 min (`GOVERNANCE_KEEPER_INTERVAL_SECONDS`) | For each project not yet closed out, reads the vault and sends `release_milestone` for a carried stage, `settle_lapsed_milestone` for one whose window ended short, and `settle` for a missed goal not yet on the record, each only if its simulation succeeds |
 
-The three that transact are signed by `OPS_FUNDING_SUBMITTER_SECRET`, a funded account that pays fees and holds no authority: every call is permissionless, and the gate lives in the contract or the TTL. Without that secret, each returns a skip. Extra calls are harmless.
+The four that transact are signed by `OPS_FUNDING_SUBMITTER_SECRET`, a funded account that pays fees and holds no authority: every call is permissionless, and the gate lives in the contract or the TTL. Without that secret, each returns a skip. Extra calls are harmless.
 
 As of 2026-10-02 the treasury's ops funding is unset (`get_ops_funding` returns nothing), so `ops-funding-cron` skips until the owners vote `SetOpsFunding`.
 
-`settle-stalled-cron` submits `settle_stalled` wherever the contract allows it. In vaults created before 2026-10-06 that includes a vault whose carried milestone was never released (see [Known gap in older vaults](#known-gap-in-older-vaults)), so a carried milestone should be released promptly.
+`settle-stalled-cron` submits `settle_stalled` wherever the contract allows it. In vaults created before 2026-10-06 that includes a vault whose carried milestone was never released (see [Known gap in older vaults](#known-gap-in-older-vaults)), so a carried milestone should be released promptly. `governance-keeper-cron` does that: it releases a carried milestone within about 15 minutes of the vote carrying, long before the 90-day clock can matter.
 
 ### Keeping shared contract storage alive
 
@@ -359,6 +360,7 @@ blkfndrapp/
 │   │   ├── ttl-keeper.ts       # Shared storage keep-alive
 │   │   ├── ops-funding.ts      # Monthly treasury → Operations Vault trigger
 │   │   ├── settle-stalled.ts   # Abandoned-vault keeper
+│   │   ├── governance-keeper.ts # Sends carried payouts, closes lapsed stages
 │   │   ├── managed-wallet.ts   # Managed attestor keys (server-only)
 │   │   ├── bond-readiness.ts   # Launch bond pre-flight
 │   │   └── vault-deploy-guard.ts # Duplicate-launch guard

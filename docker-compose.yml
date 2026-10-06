@@ -143,15 +143,18 @@ services:
 
       # ── Indexer auth (required, SECRET) ──────────────────────────────────
       # Bearer token for the cron endpoints: POST /api/indexer, /api/ops-funding,
-      # /api/settle-stalled and /api/keep-alive. Shared with the cron services below.
+      # /api/settle-stalled, /api/keep-alive and /api/governance-keeper. Shared
+      # with the cron services below.
       - INDEXER_SECRET=${INDEXER_SECRET:-}
 
       # ── Operations funding submitter (optional, SECRET) ──────────────────
-      # A funded classic account that pays the network fees for three
+      # A funded classic account that pays the network fees for four
       # permissionless jobs: the monthly fund_operations call, settle_stalled on
-      # abandoned vaults, and the storage keep-alive. It holds no authority over
-      # any funds — the ops transfer is authorised by the owners' SetOpsFunding
-      # vote — so it only needs XLM for gas. Unset means those endpoints skip.
+      # abandoned vaults, the storage keep-alive, and the governance keeper
+      # (approved payouts, lapsed stages, missed goals). It holds no authority
+      # over any funds — the ops transfer is authorised by the owners'
+      # SetOpsFunding vote, and every vault call is gated by the vault — so it
+      # only needs XLM for gas. Unset means those endpoints skip.
       - OPS_FUNDING_SUBMITTER_SECRET=${OPS_FUNDING_SUBMITTER_SECRET:-}
 
       # ── Genkit / Gemini (optional) ───────────────────────────────────────
@@ -323,6 +326,42 @@ services:
     labels:
       - "app.name=blkfndr3-keep-alive"
       - "app.description=Keeps shared contract storage from expiring"
+
+  # Carries out what vault votes have already decided: sends a payout once its
+  # vote has carried, closes a stage whose vote window ended short (refunds
+  # open), and records a missed goal on the builder's public record. Each call
+  # is permissionless and gated by the vault, so this key decides nothing; it
+  # only saves a stakeholder pressing the button. A run with nothing due sends
+  # nothing. Every 15 minutes, so the app can say "usually within the hour".
+  # Paid by the same OPS_FUNDING_SUBMITTER_SECRET gas payer; without it the
+  # endpoint skips.
+  governance-keeper-cron:
+    image: curlimages/curl:8.11.1
+    restart: unless-stopped
+    depends_on:
+      blkfndr-app:
+        condition: service_healthy
+    environment:
+      - INDEXER_SECRET=${INDEXER_SECRET:-}
+      - GOVERNANCE_KEEPER_INTERVAL_SECONDS=${GOVERNANCE_KEEPER_INTERVAL_SECONDS:-900}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "governance-keeper-cron: polling every $${GOVERNANCE_KEEPER_INTERVAL_SECONDS}s"
+        while true; do
+          curl --silent --show-error --fail --max-time 300 \
+            -X POST http://blkfndr-app:3000/api/governance-keeper \
+            -H "Authorization: Bearer $${INDEXER_SECRET}" \
+            -H "Content-Type: application/json" \
+            -d '{}' \
+            || echo "governance-keeper-cron: run failed at $$(date -u +%FT%TZ)"
+          sleep "$${GOVERNANCE_KEEPER_INTERVAL_SECONDS}"
+        done
+    networks:
+      - blkfndr-network
+    labels:
+      - "app.name=blkfndr3-governance-keeper"
+      - "app.description=Sends approved payouts and closes lapsed stages"
 
 volumes:
   next-cache:

@@ -30,15 +30,16 @@ Defined in [docker-compose.yml](../docker-compose.yml).
 | `ops-funding-cron` | `curlimages/curl:8.11.1` | Every `OPS_FUNDING_INTERVAL_SECONDS` (default 86400, daily) | `POST /api/ops-funding` | `INDEXER_SECRET`; the app needs `OPS_FUNDING_SUBMITTER_SECRET` |
 | `settle-stalled-cron` | `curlimages/curl:8.11.1` | Every `SETTLE_STALLED_INTERVAL_SECONDS` (default 86400, daily) | `POST /api/settle-stalled` | `INDEXER_SECRET`; the app needs `OPS_FUNDING_SUBMITTER_SECRET` |
 | `keep-alive-cron` | `curlimages/curl:8.11.1` | Every `KEEP_ALIVE_INTERVAL_SECONDS` (default 86400, daily) | `POST /api/keep-alive` | `INDEXER_SECRET`; the app needs `OPS_FUNDING_SUBMITTER_SECRET` |
+| `governance-keeper-cron` | `curlimages/curl:8.11.1` | Every `GOVERNANCE_KEEPER_INTERVAL_SECONDS` (default 900, 15 minutes) | `POST /api/governance-keeper` | `INDEXER_SECRET`; the app needs `OPS_FUNDING_SUBMITTER_SECRET` |
 
 Each cron waits until the app passes its healthcheck, then loops. It calls
 `http://blkfndr-app:3000` over the stack's internal network, sending
 `Authorization: Bearer $INDEXER_SECRET` and an empty JSON body. `curl --fail`
 makes an HTTP error visible: the log shows `<name>: run failed at <time>`. A
 successful run prints the route's JSON reply. The request timeout is 120 seconds,
-or 600 seconds for keep-alive.
+or 600 seconds for keep-alive and 300 for the governance keeper.
 
-All four routes check the bearer token with a constant-time compare. If
+All five routes check the bearer token with a constant-time compare. If
 `INDEXER_SECRET` is unset in the app, they refuse every request and the app logs
 `INDEXER_SECRET is not set — rejecting request.`
 
@@ -98,6 +99,34 @@ docker exec <keep-alive-cron container> sh -c \
 In Portainer, run the `curl` part from the container's console. Without
 `OPS_FUNDING_SUBMITTER_SECRET` a dry run still lists the entries, but cannot
 estimate the cost.
+
+### governance-keeper-cron
+
+Carries out what vault votes have already decided, so a payout or a refund
+never waits for someone to press a button. For every project not yet
+`completed`, `failed` or `refunding` in Postgres it reads the vault's own state
+and stages from the ledger, then:
+
+- sends `release_milestone` for a stage whose vote has carried;
+- sends `settle_lapsed_milestone` for a stage whose voting window ended short,
+  which opens refunds;
+- sends `settle` for a vault that missed its goal and isn't on the builder's
+  record yet (`attested` is false).
+
+Each call is simulated first and sent only if the vault accepts it, so a run
+with nothing due sends nothing. All three are permissionless and gated by the
+vault: the key decides timing only, never an outcome. At most 20 are sent per
+run. See [src/lib/governance-keeper.ts](../src/lib/governance-keeper.ts).
+
+A dry run lists what is due and sends nothing:
+
+```bash
+docker exec <governance-keeper-cron container> sh -c \
+  'curl -s -X POST http://blkfndr-app:3000/api/governance-keeper \
+     -H "Authorization: Bearer $INDEXER_SECRET" \
+     -H "Content-Type: application/json" \
+     -d "{\"dryRun\": true}"'
+```
 
 ### The gas payer
 
@@ -178,7 +207,7 @@ stellar contract id asset --asset USDC:<ISSUER_G_ADDRESS> --network testnet
 | `PINATA_GATEWAY_URL` | No | [pinata-client.ts](../src/lib/pinata-client.ts), [upload-image/route.ts](../src/app/api/upload-image/route.ts) | Dedicated gateway host, e.g. `nft.blkfndr.com`. Only the hostname is used. The indexer tries it first, then `gateway.pinata.cloud` |
 | `PINATA_GATEWAY_KEY` | With a dedicated gateway | [pinata-client.ts](../src/lib/pinata-client.ts) | The dedicated gateway's Gateway Key (Pinata → Gateways → Access Controls → Gateway Keys), **not** the JWT. See the note below |
 | `PINATA_GROUP_BLKDFNDR` | No | [upload-image/route.ts](../src/app/api/upload-image/route.ts) | Pinata group id that uploads are added to. The spelling is the one the code reads |
-| `OPS_FUNDING_SUBMITTER_SECRET` | No | [ops-funding.ts](../src/lib/ops-funding.ts), [settle-stalled.ts](../src/lib/settle-stalled.ts), [ttl-keeper.ts](../src/lib/ttl-keeper.ts) | Stellar secret seed of a funded, gas-only account. See [The gas payer](#the-gas-payer) |
+| `OPS_FUNDING_SUBMITTER_SECRET` | No | [ops-funding.ts](../src/lib/ops-funding.ts), [settle-stalled.ts](../src/lib/settle-stalled.ts), [ttl-keeper.ts](../src/lib/ttl-keeper.ts), [governance-keeper.ts](../src/lib/governance-keeper.ts) | Stellar secret seed of a funded, gas-only account. See [The gas payer](#the-gas-payer) |
 | `APP_URLS` | No | [auth/app-origin.ts](../src/lib/auth/app-origin.ts) | Extra origins, comma separated. See [Serving from more than one domain](#serving-from-more-than-one-domain) |
 | `GEMINI_API_KEY` | No | The `@genkit-ai/googleai` plugin, set up in [src/ai/genkit.ts](../src/ai/genkit.ts) | AI listing review. The plugin reads `GEMINI_API_KEY`, then `GOOGLE_API_KEY`, then `GOOGLE_GENAI_API_KEY`. Compose passes only `GEMINI_API_KEY` |
 | `RESEND_API_KEY` | No | [secrets.ts](../src/lib/secrets.ts) | Env fallback for the `resend_api_key` Vault secret. Nothing sends email yet, so nothing uses it. Compose does not pass it |

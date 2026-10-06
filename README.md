@@ -36,7 +36,7 @@ Release authority is contribution-weighted rather than held by appointed signers
 | TypeScript contract bindings | ✅ Generated from source. The factory, attestation, identity and admin bindings are ahead of their deployed contracts until the redeploy in [progress.md](progress.md) |
 | Listing moderation — owner-consensus approval, platform-level hide and lock | ✅ Live |
 | Per-milestone delivery proof, shown to stakeholders before they vote | ✅ Live |
-| Event indexer, stalled-vault keeper, storage keep-alive (compose crons) | ✅ Live |
+| Event indexer, stalled-vault keeper, storage keep-alive, governance keeper that sends carried payouts and closes lapsed stages (compose crons) | ✅ Live |
 | Mainnet | 🔜 Planned, not deployed |
 | AI listing quality analysis | ✅ Live (Genkit + Gemini 2.5 Flash) |
 | AI query analysis & sentiment tracking | 📝 Documented, not implemented |
