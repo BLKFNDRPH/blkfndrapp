@@ -128,7 +128,7 @@ Projects created before then run `70e5f3a8…` or the earlier `9c20bca3…`.
 A reviewer checks any project's vault against that hash. The landing page's "Check it yourself" box reads the factory's current hash live from [`/api/vault-wasm-hash`](https://testnetv2.blkfndr.com/api/vault-wasm-hash) rather than quoting a constant. `scripts/build-contracts.sh` builds it from source; the wasm embeds absolute dependency paths in its panic locations, so a matching hash needs the same build paths (a pinned Docker build would remove that caveat).
 
 Platform parameters as deployed, read from the factory on 2026-10-02:
-- **Flat fee:** 300 base units (0.00003 of the project's token). This is almost certainly a leftover 3% from the earlier percentage model. `scripts/deploy-contracts.sh` defaults to 10 units.
+- **Flat fee:** 300 base units (0.00003 of the project's token). This is almost certainly a leftover 3% from the earlier percentage model. `scripts/deploy-contracts.sh` defaults to 1 unit.
 - **Minimum contribution:** 5 units.
 - **Voting window:** 7 days.
 - **Minimum bond:** 5% of the goal.
@@ -256,7 +256,9 @@ blkfndrapp/
 │   └── migrations/             # Tracked SQL, schema plus RLS
 ├── scripts/
 │   ├── build-contracts.sh      # Builds wasm, prints build hashes
-│   └── deploy-contracts.sh     # Deploys and wires the contract set
+│   ├── deploy-contracts.sh     # Deploys and wires the contract set
+│   ├── migrate-kyc.mjs         # Copies approved KYC into a new identity registry
+│   └── reference-scenario.sh   # Test transactions on the reference deployment
 ├── src/
 │   ├── actions/                # Server actions: admins, moderation, restrictions, secrets…
 │   ├── ai/                     # Genkit flows and configuration
@@ -295,6 +297,7 @@ blkfndrapp/
 | `npm run genkit:dev` | Genkit developer UI (`genkit:watch` reloads on change) |
 | `bash scripts/build-contracts.sh` | Compile contracts to wasm, print sha256 hashes |
 | `bash scripts/deploy-contracts.sh --source <key>` | Deploy and wire the contract set, verifying the result |
+| `node --env-file=.env.local scripts/migrate-kyc.mjs --registry <C…> --source <key>` | Copy every approved KYC into a new identity registry. A dry run unless `--send` is given |
 | `cargo test --workspace` | Contract test suite |
 | `cargo clippy --workspace --all-targets -- -D warnings` | Contract lints |
 

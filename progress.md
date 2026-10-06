@@ -160,7 +160,7 @@ Redeploy the factory, attestation, identity and admin with `scripts/deploy-contr
   - reads every piece back.
 
   A throwaway testnet run on 2026-10-07 passed all 12 checks.
-- **Re-attest** existing KYC into the new identity registry.
+- **Re-attest existing KYC** into the new identity registry with `scripts/migrate-kyc.mjs`, before the cutover. The command is in [deployment.md](docs/deployment.md#migrating-kyc). A dry run on 2026-10-07 found 3 approved builders, all matching the live registry.
 - **Keep-alive:** nothing to add. #125 tracks the env contracts, and every contract and code an existing vault depends on.
 - This is an on-chain action. It needs the deployer key and an explicit go-ahead.
 
