@@ -12,6 +12,7 @@ import {
   type Signer,
 } from "@/lib/stellar-clients";
 import { freighterSigner } from "@/lib/freighter-signer";
+import { LedgerFailedError } from "@/lib/explain-error";
 import { checkVaultLockAction } from "@/actions/project-restrictions";
 
 /**
@@ -107,6 +108,49 @@ export function isMissingFunction(error: unknown): boolean {
   );
 }
 
+/** Where a prepared money action is, for the sheet narrating it. */
+export type SendPhase = "waiting-for-wallet" | "sending" | "confirming";
+
+/** A transaction the vault has already simulated, waiting for the wallet. */
+export interface PreparedAction {
+  /** The network fee the wallet will be asked to pay, in XLM base units. */
+  feeRaw: bigint | null;
+  /** Ask the wallet to approve it, send it, and wait for the ledger. */
+  send: (onPhase?: (phase: SendPhase) => void) => Promise<{ hash: string | null }>;
+}
+
+/**
+ * Wrap a simulated transaction so the caller sees each phase: the wallet
+ * window, the send, the wait for the ledger. Throws LedgerFailedError when the
+ * ledger ran it and it failed (the fee was charged), and the SDK's own errors
+ * otherwise, for explainError to word.
+ */
+function toPrepared<T>(assembled: AssembledTransaction<T>): PreparedAction {
+  // Building a call does not throw when the contract refuses it: the SDK keeps
+  // the failed simulation and only raises it when the result is read, which
+  // used to be at signing, after the person had been shown a confirm card.
+  // Reading it here raises the vault's refusal (minimum, deadline, goal, an
+  // empty wallet) and archived-storage errors before any wallet window, with
+  // the host's own text for explainError.
+  void assembled.simulationData;
+  const fee = assembled.built?.fee;
+  return {
+    feeRaw: fee !== undefined && /^\d+$/.test(String(fee)) ? BigInt(fee) : null,
+    send: async (onPhase) => {
+      onPhase?.("waiting-for-wallet");
+      await assembled.sign();
+      onPhase?.("sending");
+      const sent = await assembled.send({
+        onSubmitted: () => onPhase?.("confirming"),
+      });
+      const hash = sent.sendTransactionResponse?.hash ?? null;
+      const status = sent.getTransactionResponse?.status;
+      if (status !== "SUCCESS") throw new LedgerFailedError(hash, status);
+      return { hash };
+    },
+  };
+}
+
 async function signAndSend<T>(assembled: AssembledTransaction<T>) {
   const tx = assembled as AssembledTransaction<T> & {
     signAndSend?: () => Promise<unknown>;
@@ -140,6 +184,23 @@ export function useStellarContract() {
       const vault = vaultClient(vaultAddress, signerFor(address));
       const tx = await vault.contribute({ contributor: address, amount });
       return signAndSend(tx);
+    },
+    [requireWallet],
+  );
+
+  /**
+   * A stake, simulated by the vault before the wallet is asked anything, so a
+   * refusal (below the minimum, past the deadline, over the goal, not enough
+   * in the wallet) surfaces before any popup. The platform lock is asked
+   * fresh here too.
+   */
+  const prepareContribute = useCallback(
+    async ({ vaultAddress, amount, contributor }: ContributeParams): Promise<PreparedAction> => {
+      const address = requireWallet(contributor);
+      await refuseIfLocked(vaultAddress, "New stakes are paused");
+      const vault = vaultClient(vaultAddress, signerFor(address));
+      const tx = await vault.contribute({ contributor: address, amount });
+      return toPrepared(tx);
     },
     [requireWallet],
   );
@@ -417,6 +478,7 @@ export function useStellarContract() {
   return {
     // back
     contribute,
+    prepareContribute,
     claimRefund,
     // vote
     openMilestoneVote,
