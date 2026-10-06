@@ -288,6 +288,18 @@ export function SecuritySection() {
                   upgradeable: projects created before this rule keep the
                   earlier one.
                 </p>
+                <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+                  The stakeholders who say yes must also have put in more than
+                  half the money between them, counted in full. Wallets cost
+                  nothing to make, so without this, three wallets of 70 could
+                  clear the bar over a stakeholder of 790 who counts for 200.
+                  They hold 21% of the money, so nothing moves. A vote every
+                  stakeholder approves always carries —{" "}
+                  <code className="break-all rounded bg-muted px-1.5 py-0.5 font-code text-xs">
+                    small_wallets_cannot_outvote_most_of_the_money
+                  </code>
+                  .
+                </p>
               </div>
 
               {/* Verify it yourself */}
@@ -360,7 +372,7 @@ export function SecuritySection() {
                   {IS_PRACTICE_NETWORK
                     ? "Deployed to Stellar testnet. "
                     : "Deployed to the Stellar public network. "}
-                  The vault&apos;s release rules alone are pinned by 52 passing
+                  The vault&apos;s release rules alone are pinned by 56 passing
                   tests, with the treasury and operations vault adding 45 and 25
                   more.
                   {IS_PRACTICE_NETWORK

@@ -48,13 +48,27 @@ A vault trusts only the addresses the factory pinned into it at creation, so a p
 
 The factory is the source of truth for the others: its `get_fee_wallet`, `get_identity_registry` and `get_attestation_registry` return the treasury, identity and attestation addresses above. The app reads the treasury from `get_fee_wallet` rather than from configuration, so repointing fees repoints the app.
 
+### Reference deployment
+
+A second, standalone set runs the current source. It was deployed on 2026-10-06 with `scripts/deploy-contracts.sh`, the first live run of the #75 constructor deploy order. The app and its indexer do not use it, and it shares nothing with the set above. Every on-chain wasm hash-matches a local build. Test transactions for deposits, threshold approval, release, refunds, bond forfeiture and attestation are recorded in [the deliverable evidence](deliverables/contribution-threshold-attestation.md).
+
+| Contract | Address |
+|---|---|
+| Factory | [`CBYDZWQQ…RYHXEV3ZK6`](https://stellar.expert/explorer/testnet/contract/CBYDZWQQLVJJZCVLNR4VDXAO42CSQECKYYOL5ONUGYUYS5RYHXEV3ZK6) |
+| Attestation registry | [`CDKERKLK…HLO2PI4UG`](https://stellar.expert/explorer/testnet/contract/CDKERKLK54FF4Y5OU7NIULEZZHY424OPFZ5FHMYNL24JGZVHLO2PI4UG) |
+| Identity registry | [`CBOWJT4X…4EJN2FDTZH`](https://stellar.expert/explorer/testnet/contract/CBOWJT4XKEOA4IAA675FG6K67V3UVN7ESN6M4HPUEQSGRC4EJN2FDTZH) |
+| Admin roster | [`CAT4WDHO…KOPIMH6JXR`](https://stellar.expert/explorer/testnet/contract/CAT4WDHO4SE3OVJIJU6RHNFIMDKHWIJCZCKQFMZ5E7YA32KOPIMH6JXR) |
+| Vault wasm | `e9009410b9cbb4c5bfb7cca747812dcad6a044d09c648a1e392a84fe7e182d95` |
+
+The IDs are in [deployments/testnet-reference/contracts.env](../deployments/testnet-reference/contracts.env).
+
 ### Deployed vs source
 
 | Contract | What testnet runs | Source on `main` adds |
 |---|---|---|
-| Vault | wasm `70e5f3a8…` for projects created since the hardening redeploy (#71). Older projects run `9c20bca3…` | The #99 release rule: capped-total bar, three-wallet floor, `get_milestone_wallets` |
+| Vault | wasm `70e5f3a8…` for projects created since the hardening redeploy (#71). Older projects run `9c20bca3…` | The #99 release rule: capped-total bar, three-wallet floor, `get_milestone_wallets`. The money majority: `get_milestone_stake` |
 | Factory | `initialize` | #75: `__constructor` |
-| Attestation | `initialize(admin, factory)`; records keyed by `project_id`; `get_builder_projects` | #73 H-07: records keyed by vault address, `get_builder_vaults`. #73 M-04: `disable_factory`. #75: `__constructor(admin)` |
+| Attestation | `initialize(admin, factory)`; records keyed by `project_id`; `get_builder_projects` | #73 H-07: records keyed by vault address, `get_builder_vaults`. #73 M-04: `disable_factory`. #75: `__constructor(admin)`. `ATTEST RECORDED` carries the builder as a topic |
 | Identity | `initialize` | #73 M-02: permissionless `bump_kyc` / `bump_attestor`, and approvals re-extended when read. #75: `__constructor` |
 | Admin | `initialize` | #75: `__constructor` |
 | Treasury | Current source (wasm `3dc2b67d…`) | — |
@@ -105,7 +119,7 @@ Soroban charges rent. Every contract instance, persistent entry and uploaded was
 
 ## blkfndr-vault
 
-One vault per project. It holds every stake and the builder's performance bond in the same contract, runs the milestone votes that release money, and returns money when a project misses its goal, fails a milestone or is abandoned. **52 tests.**
+One vault per project. It holds every stake and the builder's performance bond in the same contract, runs the milestone votes that release money, and returns money when a project misses its goal, fails a milestone or is abandoned. **56 tests.**
 
 ### Lifecycle
 
@@ -147,23 +161,25 @@ struct MilestoneInput { id: u32, amount: i128 }
 | `settle()` | Anyone | Persists the deadline transition. A failed raise writes a `FailedToFund` record |
 | `return_bond()` | Anyone | Returns the bond to the builder after a failed raise |
 | `open_milestone_vote(id)` | Builder | Opens the fixed voting window on one milestone, once |
-| `approve_milestone(contributor, id)` | Contributor | Casts the contributor's capped weight for the milestone, once, inside the window |
+| `approve_milestone(contributor, id)` | Contributor | Casts the contributor's capped weight for the milestone, once, inside the window, and counts their whole stake toward the money majority |
 | `release_milestone(id)` | **Anyone** | Pays a carried milestone to the builder. Inside or after the window. The last release also returns the bond and writes a `Completed` record |
 | `settle_lapsed_milestone(id)` | Anyone | After the window, fails a milestone that did not carry. Forfeits the bond and moves to `Refunding` |
 | `settle_stalled()` | Anyone | After 90 days with no release since funding or the last release (`BUILDER_STALL_WINDOW`), and with no milestone window open, fails the first unreleased milestone. Forfeits the bond and moves to `Refunding` |
 | `claim_refund(contributor)` | Contributor | In `Failed`: the whole stake back. In `Refunding`: a pro-rata share of the unreleased funds plus the forfeited bond. The last claimant sweeps rounding dust |
 
-Reads: `get_state`, `get_info`, `get_balance(contributor)`, `get_contributors(offset, limit)` (clamped to `MAX_PAGE = 100`), `contributor_count`, `get_voting_weight(contributor)`, `has_voted(id, contributor)`, `get_milestone_vote(id)`, `get_milestone_wallets(id)`.
+Reads: `get_state`, `get_info`, `get_balance(contributor)`, `get_contributors(offset, limit)` (clamped to `MAX_PAGE = 100`), `contributor_count`, `get_voting_weight(contributor)`, `has_voted(id, contributor)`, `get_milestone_vote(id)`, `get_milestone_wallets(id)`, `get_milestone_stake(id)`.
 
 - `get_milestone_vote(id)` returns `(approved_weight, required_weight, window_open)`. `required_weight` is `floor(capped total / 2) + 1`.
 - `get_milestone_wallets(id)` returns `(approving_wallets, required_wallets)`. It rejects an unknown milestone id.
+- `get_milestone_stake(id)` returns `(approved_stake, required_stake)`: what the approvers put in between them, counted whole, and `floor(raise / 2) + 1`. It rejects an unknown milestone id.
 
 ### The release rule
 
-A milestone carries when **both** of these hold:
+A milestone carries when **all three** of these hold:
 
 1. **Weight.** The approving weight is more than half of the **capped total**: `approved × 10_000 > capped_total × 5_000` (`RELEASE_THRESHOLD_BPS`, strict, so a tie does not carry).
 2. **Wallets.** At least three distinct wallets have approved, or every contributor when there are fewer than three (`MIN_APPROVING_WALLETS = 3`).
+3. **Money.** The approvers put in more than half the raise between them, each stake counted whole: `approved_stake × 10_000 > raise × 5_000`.
 
 The terms:
 
@@ -171,10 +187,11 @@ The terms:
 - **Capped total.** The sum of every contributor's weight after the cap. When nobody is over the cap, it equals the raise.
 - **How it is computed.** The vault tracks the four largest balances (`DataKey::Largest`). At most four balances can exceed a fifth of the raise, since five would sum to more than the raise. So the capped total is the raise less the excess of those four over the cap. No call walks the contributor list.
 - **Counting wallets.** `DataKey::ContributorCount` counts distinct contributors, and `DataKey::Approvals(id)` counts distinct approving wallets per milestone.
+- **Counting money.** `DataKey::ApprovedStake(id)` sums the approvers' uncapped stakes per milestone. It is kept outside `Milestone` so that struct's shape, and every binding that decodes it, is unchanged.
 
 The raise, the balances and the capped total are fixed while a vote runs. Contributions close when the goal is met, and refunds open only once the vault leaves `Funded`/`Active`.
 
-Worked shapes, all on a 300 raise:
+Worked shapes, all on a 300 raise. The money condition changes none of these outcomes:
 
 | Stakes | Capped total | Bar | Result |
 |---|---|---|---|
@@ -185,20 +202,20 @@ Worked shapes, all on a 300 raise:
 
 What this guarantees, with the tests that pin it:
 
-- **A vote every contributor approves always carries.** Concentration never deadlocks a vault. `a_sole_backer_releases_with_one_vote`, `two_backers_release_when_both_approve`, `a_concentrated_raise_releases_when_every_backer_approves`.
+- **A vote every contributor approves always carries.** Concentration never deadlocks a vault. `a_sole_backer_releases_with_one_vote`, `two_backers_release_when_both_approve`, `a_concentrated_raise_releases_when_every_backer_approves`, and `a_unanimous_vote_always_carries` across five skewed raises.
 - **No release is carried over a dissenting contributor by fewer than three wallets,** and a dominant contributor cannot release alone. `a_majority_contributor_cannot_release_alone`, `release_requires_at_least_three_distinct_wallets`, `a_concentrated_raise_carries_without_its_last_backer`.
+- **No release carries with a minority of the money behind it,** however many wallets it is split across. `small_wallets_cannot_outvote_most_of_the_money`, `a_majority_holder_can_block_a_release_but_never_make_one_alone`, `a_minority_of_the_money_no_longer_carries_over_capped_backers`.
 - **The capped total is computed correctly** without walking contributors. `a_late_whale_is_counted_in_the_capped_total`, `the_capped_total_matches_a_direct_sum`.
 - **Silence returns money, never releases it.** A lapsed window fails the milestone and makes funds claimable. It can never pay the builder. `silence_never_releases_funds`, `a_window_that_met_threshold_cannot_be_declared_failed`.
 
-**Trade-off.** Weight above the cap counts neither for nor against a release. So a release can carry with less than half of the money when another stake is capped: on a 1,000 raise, three wallets of 140 (42%) outvote two backers of 290, who count for 200 each. The cap and the floor count wallets, not people, because contributions are not identity-gated (M-01 in [progress.md](../progress.md)).
+**Trade-off.** A wallet holding more than half the raise can block a release, though it can never make one alone. It could do the same under the original raw-raise bar. The cap and the floor count wallets, not people, because contributions are not identity-gated (M-01 in [progress.md](../progress.md)). The money condition is what keeps that from mattering for a release.
 
-### Open security decision: Sybil wallets against a large backer
+### Sybil wallets against a large backer (resolved)
 
-Found in the adversarial review of #99 and still open. It is the reason the factory has not been switched to the new wasm.
+Found in the adversarial review of #99. The product owner adopted the fix on 2026-10-06, and it is in source. It reaches production vaults only when the factory is switched to the new wasm.
 
-- **The attack.** Raise 1,000. One honest backer puts in 790, capped at 200. The builder puts 70 into each of three fresh wallets (210). The capped total is 410, so the bar is more than 205. The builder's three wallets carry every tranche while the 790 backer can only stay silent. Likewise 60/10/10/10/10 lets four small wallets override a 60% holder. The old rule did not allow this.
-- **Proposed fix: a dual majority.** Also require the approvers' **uncapped** contributions to exceed half the raise. Unanimity still always carries and every worked shape above keeps its outcome. A wallet holding more than half the raise could then block a release but not make one alone, and the "minority of the money" trade-off disappears.
-- **Status.** Awaiting the product owner, because it gives any wallet over 50% a veto. Not in source.
+- **The attack.** Raise 1,000. One honest backer puts in 790, capped at 200. The builder puts 70 into each of three fresh wallets (210). The capped total is 410, so the weight bar is more than 205, and the three wallets clear it and the floor. Likewise 60/10/10/10/10 let four small wallets override a 60% holder, and three wallets of 140 (42%) outvoted two backers of 290, who count for 200 each.
+- **The fix: a dual majority.** The approvers' uncapped stakes must also exceed half the raise (condition 3 above). In each case above the approvers hold 21%, 40% or 42% of the money, so nothing moves. Unanimity still always carries, and every worked shape above keeps its outcome.
 
 ### Known issue in deployed vaults
 
@@ -222,6 +239,7 @@ Vaults are not upgradeable. Vaults created from `70e5f3a8…` (and the earlier `
 | `Largest` | Instance | The four largest balances |
 | `ContributorCount` | Instance | Distinct contributors |
 | `Approvals(id)` | Instance | Distinct approving wallets per milestone |
+| `ApprovedStake(id)` | Instance | The approvers' uncapped stakes per milestone |
 | `ContributorBalance(addr)` | Persistent | Each contributor's stake. Removed on refund |
 | `Contributors` | Persistent | The contributor list, for paging |
 | `Vote(id, addr)` | Persistent | Whether a contributor approved a milestone |
@@ -280,7 +298,7 @@ Reads: `is_vault(address)`, `get_vault(project_id)`, `get_admin`, `get_fee_walle
 
 ## blkfndr-attestation
 
-An append-only record of every project a builder has closed. There is **no update entrypoint and no delete entrypoint**, and `attest` refuses to overwrite a record, so a bad outcome cannot be scrubbed before the next raise. **14 tests.**
+An append-only record of every project a builder has closed. There is **no update entrypoint and no delete entrypoint**, and `attest` refuses to overwrite a record, so a bad outcome cannot be scrubbed before the next raise. **16 tests.**
 
 A write needs the vault's own auth, a factory the registry trusts, and that factory's confirmation (`is_vault`) that the caller is one of its vaults. `MAX_FACTORIES = 16`, `MAX_PAGE = 100`.
 
@@ -296,8 +314,9 @@ A write needs the vault's own auth, a factory the registry trusts, and that fact
 
 Reads: `get_record(vault)`, `has_record(vault)`, `get_builder_vaults(builder)`, `get_builder_history(builder, offset, limit)`, `get_builder_summary(builder) -> (completed, failed_with_forfeiture, failed_to_fund)`, `get_factories`, `is_factory_trusted(factory)`, `get_admin`.
 
-- **Storage keys:** `Admin`, `Factories` (instance); `Record(vault)`, `BuilderVaults(builder)` (persistent). Keyed by vault address, which is unique across factories (#73 H-07).
-- **Events:** `ATTEST INIT`, `ATTEST FACTORY`, `ATTEST DISABLE`, `ATTEST ADMIN_TX`, `ATTEST RECORDED`.
+- **Storage keys:** `Admin`, `Factories` (instance); `Record(vault)`, `BuilderVaults(builder)` (persistent). Keyed by vault address, which is unique across factories (#73 H-07), and indexed by builder.
+- **Events:** `ATTEST INIT`, `ATTEST FACTORY`, `ATTEST DISABLE`, `ATTEST ADMIN_TX`, and `ATTEST RECORDED` with topics `(ATTEST, RECORDED, builder)` and data `(vault, project_id, outcome, total_raised, bond_posted, milestones_total, milestones_approved, closed_at)`. The builder topic lets Soroban RPC `getEvents` filter to one builder. RPC keeps events for about a week; the record in storage is the permanent copy.
+- **Reading from another contract.** Any contract can call `get_builder_summary` or `get_builder_history` and gate on the result. `another_contract_can_gate_on_a_builders_record` does this from a stand-in grant programme.
 - **Errors:** `NotInitialized` 2, `NotAVault` 3, `AlreadyAttested` 4, `RecordNotFound` 5, `InvalidRecord` 6, `UntrustedFactory` 7, `FactoryAlreadyTrusted` 8, `TooManyFactories` 9, `FactoryNotTrusted` 10.
 
 **The deployed registry is older.** It is configured by `initialize(admin, factory)`, keys records by `project_id` (`get_record(project_id)`, `has_record(project_id)`, `get_builder_projects`), has no `disable_factory` and so cannot stop trusting a factory, and keeps error 1 as `AlreadyInitialized`. Because project ids restart at 1 in every factory, a second trusted factory would collide with the first. The app's `attestationClient` binding follows the source, not this deployment; nothing in the app calls it today.

@@ -1,5 +1,7 @@
 use soroban_sdk::{
-    contract, contractimpl, testutils::Address as _, Address, Env, Vec,
+    contract, contractimpl, symbol_short,
+    testutils::{Address as _, Events},
+    vec, Address, Env, IntoVal, Val, Vec,
 };
 
 use crate::{AttestationRegistry, AttestationRegistryClient, Outcome};
@@ -309,4 +311,80 @@ fn the_admin_can_be_handed_over() {
     let successor = Address::generate(&s.env);
     s.registry.transfer_admin(&successor);
     assert_eq!(s.registry.get_admin(), successor);
+}
+
+/// The record is also an event. The builder is a topic, so an indexer can
+/// filter Soroban RPC's getEvents to one builder's records.
+#[test]
+fn a_record_is_emitted_as_an_event_filterable_by_builder() {
+    let s = setup();
+    s.registry.attest(
+        &s.vault, &s.factory_id, &s.builder, &7u64,
+        &Outcome::Completed, &300i128, &15i128, &3u32, &2u32,
+    );
+    let last = s.env.events().all().last().unwrap();
+
+    let closed_at = s.registry.get_record(&s.vault).closed_at;
+    let expected: (Address, Vec<Val>, Val) = (
+        s.registry.address.clone(),
+        (symbol_short!("ATTEST"), symbol_short!("RECORDED"), s.builder.clone())
+            .into_val(&s.env),
+        (s.vault.clone(), 7u64, 0u32, 300i128, 15i128, 3u32, 2u32, closed_at)
+            .into_val(&s.env),
+    );
+    assert_eq!(vec![&s.env, last], vec![&s.env, expected]);
+}
+
+/// A grant programme, lender or launchpad: a separate contract that reads a
+/// builder's record from the registry by cross-contract call and decides
+/// whether to take them on.
+#[contract]
+pub struct GrantProgram;
+
+#[contractimpl]
+impl GrantProgram {
+    /// Accept a builder with at least one completed project, no forfeiture,
+    /// and at least `min_bonded` posted as bond across their completions.
+    pub fn accepts(env: Env, registry: Address, builder: Address, min_bonded: i128) -> bool {
+        let records = AttestationRegistryClient::new(&env, &registry);
+        let (completed, forfeited, _) = records.get_builder_summary(&builder);
+        if completed == 0 || forfeited > 0 {
+            return false;
+        }
+        let mut bonded: i128 = 0;
+        for record in records.get_builder_history(&builder, &0u32, &100u32).iter() {
+            if record.outcome == Outcome::Completed {
+                bonded += record.bond_posted;
+            }
+        }
+        bonded >= min_bonded
+    }
+}
+
+#[test]
+fn another_contract_can_gate_on_a_builders_record() {
+    let s = setup();
+    let grants = GrantProgramClient::new(&s.env, &s.env.register(GrantProgram, ()));
+    let registry = s.registry.address.clone();
+    let vaults = vaults_on(&s.env, &s.factory_id, 3);
+
+    assert!(!grants.accepts(&registry, &s.builder, &0i128), "no record, no grant");
+
+    s.registry.attest(
+        &vaults.get(0).unwrap(), &s.factory_id, &s.builder, &1u64,
+        &Outcome::Completed, &300i128, &15i128, &3u32, &3u32,
+    );
+    assert!(grants.accepts(&registry, &s.builder, &15i128));
+    assert!(!grants.accepts(&registry, &s.builder, &16i128), "bonded less than asked");
+
+    let other = Address::generate(&s.env);
+    s.registry.attest(
+        &vaults.get(1).unwrap(), &s.factory_id, &other, &2u64,
+        &Outcome::Completed, &300i128, &15i128, &3u32, &3u32,
+    );
+    s.registry.attest(
+        &vaults.get(2).unwrap(), &s.factory_id, &other, &3u64,
+        &Outcome::FailedWithForfeiture, &300i128, &15i128, &3u32, &1u32,
+    );
+    assert!(!grants.accepts(&registry, &other, &0i128), "a forfeiture disqualifies");
 }

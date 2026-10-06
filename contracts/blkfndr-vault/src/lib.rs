@@ -21,6 +21,9 @@
 //!   * and at least three distinct approving wallets, or every contributor when
 //!     there are fewer than three — so no wallet releases alone over anyone,
 //!     and a project with one or two backers can still release;
+//!   * and approving wallets that between them put in more than half the raise,
+//!     so a handful of small wallets cannot carry a release over the backers
+//!     who hold most of the money;
 //!   * each milestone opens a fixed voting window, set at project creation;
 //!   * a window that closes below threshold fails the milestone — contributor
 //!     silence returns money, it never releases it.
@@ -198,6 +201,10 @@ pub enum DataKey {
     ContributorCount,
     /// Number of distinct contributors who have approved a given milestone.
     Approvals(u32),
+    /// Sum of the uncapped contributions of a milestone's approvers. Kept
+    /// apart from `Milestone` so the struct's shape, and every binding that
+    /// decodes it, stays unchanged.
+    ApprovedStake(u32),
 }
 
 #[contractclient(name = "IdentityRegistryClient")]
@@ -373,8 +380,31 @@ fn approvals(env: &Env, milestone_id: u32) -> u32 {
         .unwrap_or(0)
 }
 
+fn approved_stake(env: &Env, milestone_id: u32) -> i128 {
+    env.storage()
+        .instance()
+        .get(&DataKey::ApprovedStake(milestone_id))
+        .unwrap_or(0)
+}
+
+/// True when a milestone's approvers put in more than half the raise between
+/// them, counting each contribution whole.
+///
+/// The capped-total bar drops whenever someone is capped, and the wallet floor
+/// counts addresses, not people. Together those let a few small wallets — one
+/// person's, quite possibly — outvote a capped backer holding most of the
+/// money: on a 1,000 raise, three wallets of 70 clear a capped total of 410
+/// over a silent 790. Requiring a majority of the money as well closes that.
+/// A unanimous vote still always carries. The price is that a wallet holding
+/// more than half the raise can block a release, though never make one alone,
+/// which it could equally do under the original raw-raise bar.
+fn stake_majority(approved_stake: i128, raised_amount: i128) -> bool {
+    threshold_met(approved_stake, raised_amount)
+}
+
 /// Whether a milestone's vote has carried: more than half the capped total
-/// behind it, from at least `required_wallets` distinct contributors.
+/// behind it, from at least `required_wallets` distinct contributors, who put
+/// in more than half the raise between them.
 ///
 /// Contributions close when the goal is met and refunds open only once the
 /// vault has left Funded/Active, so the raise, the balances and the capped
@@ -382,6 +412,7 @@ fn approvals(env: &Env, milestone_id: u32) -> u32 {
 fn carried(env: &Env, milestone: &Milestone, raised_amount: i128) -> bool {
     threshold_met(milestone.approved_weight, total_weight(env, raised_amount))
         && approvals(env, milestone.id) >= required_wallets(env)
+        && stake_majority(approved_stake(env, milestone.id), raised_amount)
 }
 
 /// Keep `DataKey::Largest` holding the `LARGEST_TRACKED` largest balances after
@@ -827,8 +858,8 @@ impl BlkfndrVault {
     }
 
     /// Vote to release a milestone. Weight is the amount contributed, capped at
-    /// 20% of the total raise, and each vote also counts toward the three-wallet
-    /// floor.
+    /// 20% of the total raise. Each vote also counts toward the three-wallet
+    /// floor, and its whole contribution toward the majority of the money.
     pub fn approve_milestone(env: Env, contributor: Address, milestone_id: u32) {
         extend_instance_ttl(&env);
         let state = sync_state(&env);
@@ -882,6 +913,12 @@ impl BlkfndrVault {
         env.storage().instance().set(
             &DataKey::Approvals(milestone_id),
             &(approvals(&env, milestone_id) + 1),
+        );
+        env.storage().instance().set(
+            &DataKey::ApprovedStake(milestone_id),
+            &approved_stake(&env, milestone_id)
+                .checked_add(contribution)
+                .unwrap(),
         );
         info.milestones.set(index, milestone);
         save_info(&env, &info);
@@ -1279,7 +1316,7 @@ impl BlkfndrVault {
 
     /// Weight behind a milestone, the weight a release needs, and whether the
     /// window is still open. A release also needs `get_milestone_wallets`'
-    /// distinct approvals.
+    /// distinct approvals and `get_milestone_stake`'s majority of the money.
     pub fn get_milestone_vote(env: Env, milestone_id: u32) -> (i128, i128, bool) {
         let info = load_info(&env);
         let index = Self::milestone_index(&env, &info, milestone_id);
@@ -1300,6 +1337,18 @@ impl BlkfndrVault {
         // Reject an unknown id rather than report zero approvals for it.
         Self::milestone_index(&env, &info, milestone_id);
         (approvals(&env, milestone_id), required_wallets(&env))
+    }
+
+    /// What a milestone's approvers put in between them, counted whole, and
+    /// the smallest such sum a release needs: more than half the raise.
+    pub fn get_milestone_stake(env: Env, milestone_id: u32) -> (i128, i128) {
+        let info = load_info(&env);
+        // Reject an unknown id rather than report zero stake for it.
+        Self::milestone_index(&env, &info, milestone_id);
+        (
+            approved_stake(&env, milestone_id),
+            required_weight(info.raised_amount),
+        )
     }
 
     fn milestone_index(env: &Env, info: &ProjectInfo, milestone_id: u32) -> u32 {

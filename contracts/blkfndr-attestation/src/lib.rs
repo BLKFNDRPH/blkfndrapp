@@ -309,14 +309,17 @@ impl AttestationRegistry {
             .persistent()
             .extend_ttl(&index_key, LEDGERS_TO_LIVE, LEDGERS_TO_LIVE);
 
+        // The builder is a topic, not just data, so an indexer can ask Soroban
+        // RPC's getEvents for one builder's records without scanning everyone's.
         env.events().publish(
-            (symbol_short!("ATTEST"), symbol_short!("RECORDED")),
+            (symbol_short!("ATTEST"), symbol_short!("RECORDED"), builder),
             (
-                builder,
+                record.vault,
                 project_id,
                 outcome as u32,
                 total_raised,
                 bond_posted,
+                milestones_total,
                 milestones_approved,
                 record.closed_at,
             ),
