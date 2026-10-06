@@ -7,7 +7,7 @@ import {
 } from "@/ai/flows/improve-listing-quality";
 import { requireCaller, requireAdmin, requireWalletOwnerOrAdmin, authFailure } from "@/lib/auth/guards";
 import { setMilestoneProof, getProjectByVault } from "@/lib/data/projects";
-import { notifyAdmins } from "@/lib/data/notifications";
+import { notify, notifyAdmins } from "@/lib/data/notifications";
 import {
   submitOwnKyc,
   attachOwnKycWallet,
@@ -61,6 +61,34 @@ export async function submitKycRequest(
         error: error instanceof Error ? error.message : "Could not submit.",
       }
     );
+  }
+}
+
+/**
+ * "Remind me on a computer", from a phone, where wallets don't work yet: a note
+ * in the caller's own notifications that links back to the wallet setup, so it
+ * is waiting in the bell when they sign in on a computer. There is no mailer,
+ * so this is the honest version of "email me the link".
+ *
+ * Only ever to the caller, and only to a path on this site: a link that starts
+ * with one slash and carries no scheme or host.
+ */
+export async function remindMeToSetUpWallet(
+  path: string,
+): Promise<{ success: true } | { success: false; error: string }> {
+  try {
+    const caller = await requireCaller();
+    const url =
+      typeof path === "string" && /^\/(?!\/)[A-Za-z0-9/_?=&.%-]*$/.test(path) ? path : "/profile?tab=wallet";
+    await notify({
+      userId: caller.userId,
+      title: "Set up your wallet on a computer",
+      caption: "Open BLKFNDR on a computer and follow this link to finish setting up your wallet.",
+      url,
+    });
+    return { success: true as const };
+  } catch (error) {
+    return authFailure(error) ?? { success: false, error: "Couldn't save the reminder. Try again." };
   }
 }
 

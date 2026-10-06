@@ -193,7 +193,7 @@ export function BeforeYouBegin({
     >
       {!address && (
         <Button asChild size="sm">
-          <Link href="/profile?tab=wallet">Set up your wallet</Link>
+          <Link href="/profile?tab=wallet&for=vault">Set up your wallet</Link>
         </Button>
       )}
     </Row>

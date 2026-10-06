@@ -165,7 +165,7 @@ export function MoneyActionPanel({
             Continue
           </Button>
         ) : (
-          <WalletPanel />
+          <WalletPanel purpose="to confirm this" />
         )}
         <Button type="button" variant="ghost" className="h-9 w-full" onClick={onClose}>
           Not now

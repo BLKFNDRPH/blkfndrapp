@@ -1557,7 +1557,7 @@ export function ListingForm() {
       case "no-wallet":
         out.push({
           text: "Set up a wallet you control.",
-          actions: [{ label: "Set up", href: "/profile?tab=wallet" }],
+          actions: [{ label: "Set up", href: "/profile?tab=wallet&for=vault" }],
         });
         break;
       case "no-account":

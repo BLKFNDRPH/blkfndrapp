@@ -32,16 +32,18 @@ import {
 } from "lucide-react";
 import { EXPLORER_BASE, EXPLORER_EXPLAINER, IS_PRACTICE_NETWORK } from "@/lib/network";
 import { isWalletNotDetected } from "@/lib/freighter-connect";
+import { WalletSetupFlow } from "@/components/wallet/WalletSetupFlow";
 
 /**
- * The wallet panel: the Phase 1 shell of the wallet setup wizard, shared by
- * the header's wallet dialog and the Settings page.
+ * The wallet panel, shared by the header's wallet dialog, the profile's Wallet
+ * tab, Settings, and every sheet that needs a wallet to confirm something.
  *
- * It wraps today's Freighter connect in the words the brief asks for. One
- * action has one name: "Set up your wallet" the first time, "Reconnect" when
- * the account already has a wallet linked. The wallet brand name appears only
- * on the install checklist and the button that opens it. Nothing here moves
- * money; connecting proves control of a wallet and links it to the account.
+ * Someone with no wallet on their account gets the guided setup
+ * (WalletSetupFlow, the Phase 1 shell of the brief's wizard). Someone whose
+ * wallet is linked but not connected in this browser gets one button,
+ * "Reconnect". Connected, it shows the account ID and the way to disconnect.
+ * Nothing here moves money; connecting proves control of a wallet and links it
+ * to the account.
  */
 
 export const WALLET_EXPLAINER =
@@ -84,9 +86,22 @@ type Failure =
 interface WalletPanelProps {
   /** Offer the link to the profile's wallet tab (the header dialog does). */
   showProfileLink?: boolean;
+  /** What the wallet is for, shown in the setup flow's header: "to stake in Solar Pump". */
+  purpose?: string;
+  /** "Do this later" in the setup flow, where there is somewhere to go back to. */
+  onLater?: () => void;
+  /** Where the setup flow's last step continues to, and its label. */
+  doneHref?: string;
+  doneLabel?: string;
 }
 
-export function WalletPanel({ showProfileLink = false }: WalletPanelProps) {
+export function WalletPanel({
+  showProfileLink = false,
+  purpose,
+  onLater,
+  doneHref,
+  doneLabel,
+}: WalletPanelProps) {
   const { user, login, refreshUser } = useAuth();
   const {
     freighterWalletAddress,
@@ -98,6 +113,10 @@ export function WalletPanel({ showProfileLink = false }: WalletPanelProps) {
   const [failure, setFailure] = useState<Failure | null>(null);
   const [showFullId, setShowFullId] = useState(false);
   const [copied, setCopied] = useState(false);
+  // Held from the moment the wallet's windows open until the person leaves the
+  // last step: linking sets the address mid-flow, and without this the panel
+  // would swap to its connected view and skip "done".
+  const [flowHeld, setFlowHeld] = useState(false);
   // A phone has no browser extensions, so the install checklist would be a
   // dead end there. Touch without hover is the closest the browser can say.
   const isPhone = useMediaQuery("(hover: none) and (pointer: coarse)");
@@ -253,6 +272,20 @@ export function WalletPanel({ showProfileLink = false }: WalletPanelProps) {
     );
   }
 
+  // ── First setup: the guided flow ────────────────────────────────────────
+  if (flowHeld || (!hasLinkedWallet && !activeAddress)) {
+    return (
+      <WalletSetupFlow
+        purpose={purpose}
+        onLater={onLater}
+        onStart={() => setFlowHeld(true)}
+        onFinish={() => setFlowHeld(false)}
+        doneHref={doneHref}
+        doneLabel={doneLabel}
+      />
+    );
+  }
+
   // ── Connected ───────────────────────────────────────────────────────────
   if (activeAddress) {
     const lastFour = activeAddress.slice(-4);
@@ -352,7 +385,7 @@ export function WalletPanel({ showProfileLink = false }: WalletPanelProps) {
     );
   }
 
-  // ── Not set up, or linked but not connected right now ───────────────────
+  // ── Linked to the account but not connected in this browser ─────────────
   const actionLabel = hasLinkedWallet ? "Reconnect" : "Set up your wallet";
 
   return (

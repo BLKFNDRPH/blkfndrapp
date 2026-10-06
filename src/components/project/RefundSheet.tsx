@@ -169,7 +169,7 @@ export function RefundSheet({ project, onClose }: { project: Project; onClose: (
             Try again
           </Button>
         ) : (
-          <WalletPanel />
+          <WalletPanel purpose="to collect your refund" />
         )}
       </div>,
     );

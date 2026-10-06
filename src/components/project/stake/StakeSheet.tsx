@@ -659,7 +659,7 @@ export function StakeSheet({ project, onClose }: { project: Project; onClose: ()
                   ? "Reconnect your wallet to confirm"
                   : "You'll need a wallet to confirm this; we'll guide you."}
               </p>
-              <WalletPanel />
+              <WalletPanel purpose={`to stake in ${project.title}`} />
             </div>
           ) : terms.token ? (
             <WalletReadinessCard
