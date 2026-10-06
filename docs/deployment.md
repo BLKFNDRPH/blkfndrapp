@@ -452,6 +452,13 @@ Docker build would fix this; there is none yet.
 bash scripts/deploy-contracts.sh --network testnet --source <cli-identity> [--fee-wallet <address>]
 ```
 
+To replace the live set, also carry over the project numbering, the treasury's
+shareholders, the admin roster and the KYC attestors:
+
+```bash
+bash scripts/deploy-contracts.sh --network testnet --source ba-escrow-deployer --first-project-id <live get_project_count + 1> --shareholders-from <live treasury> --roster-admins <G…,G…> --attestors <G…,G…>
+```
+
 [deploy-contracts.sh](../scripts/deploy-contracts.sh) builds, uploads the vault
 wasm, and deploys the rest with constructors. Each contract is configured inside
 its own deploy transaction, so there is no window in which anyone could
@@ -460,24 +467,33 @@ initialise it first. The order matters:
 1. Upload the vault wasm. It is not deployed; the factory instantiates one vault
    per project from its hash.
 2. Deploy identity, admin and attestation. Attestation takes no factory at
-   construction, which breaks the old factory↔attestation cycle.
+   construction, which breaks the old factory↔attestation cycle. With
+   `--attestors` and `--roster-admins`, add the identity registry's attestors
+   and the roster's admins, signed by the source as their admin and owner.
 3. Deploy the factory with both registry addresses, the vault wasm hash, the fee
-   wallet, platform fee (default 100,000,000 stroops), voting window (default 7
-   days) and minimum contribution (default 50,000,000 stroops).
+   wallet, platform fee (default 10,000,000 stroops, 1 unit of the project's
+   token), voting window (default 7 days), minimum contribution (default
+   50,000,000 stroops) and first project id (default 1).
 4. Call `add_factory` on attestation. This is the one post-deploy step, and it
    is admin-gated.
-5. Read the wiring back, and exit non-zero if anything is wrong.
+5. With `--shareholders` or `--shareholders-from`, deploy a treasury against
+   the new factory and make it the factory's fee wallet. Until then the factory
+   pays fees to an interim wallet, but it has created no vaults yet.
+6. Read the wiring back, and exit non-zero if anything is wrong. The checks
+   cover:
+   - the registries, admin, fee, next project id and fee wallet;
+   - the treasury's factory and shareholders;
+   - each attestor and roster admin.
 
 The IDs go to `deployed-contracts.env` (gitignored). Copy them into the
 `NEXT_PUBLIC_BLKFNDR_*` variables and **rebuild**.
 
-The script does not deploy the **treasury** or the **Operations Vault**. Both are
-deployed separately with their own constructors (see
-[smart-contracts.md](smart-contracts.md)). The treasury's `factory` is fixed at
-construction, so a new factory needs a new treasury. Deploy the factory with an
-interim fee wallet, deploy the treasury against it, then call the factory's
-`update_fee_wallet`. The app, ops-funding and keep-alive all read the treasury
-from the factory's fee wallet, so nothing else needs the address.
+The treasury's `factory` is fixed at construction, so a new factory needs a new
+treasury, which is why the script deploys it last. The app, ops-funding and
+keep-alive all read the treasury from the factory's fee wallet, so nothing else
+needs its address. The script does not deploy the **Operations Vault**, which
+references neither the factory nor the treasury (see
+[smart-contracts.md](smart-contracts.md)).
 
 ### Switching the vault code
 

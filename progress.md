@@ -154,9 +154,14 @@ Redeploy the factory, attestation, identity and admin with `scripts/deploy-contr
 - **Deploy order is proven live.** Attestation goes before the factory, then one `add_factory`. The reference deployment ran it on 2026-10-06 and the script's read-back checks passed.
 - **Continue the project ids.** Pass `--first-project-id` set to the live factory's `get_project_count` + 1 (12 on 2026-10-06). `projects.project_id` is unique, so a new factory starting at 1 would collide with project #1 and its first project would fail to index.
 - **New addresses:** update `NEXT_PUBLIC_BLKFNDR_{FACTORY,ATTESTATION,IDENTITY,ADMIN}_CONTRACT_ID` and **rebuild**. These are build args.
+- **The script carries the rest over.** Pass `--shareholders-from` the live treasury, `--roster-admins` and `--attestors`. It then:
+  - deploys the treasury against the new factory and repoints the fee wallet, since the treasury's `factory` is fixed at construction;
+  - seeds the roster and the attestors;
+  - reads every piece back.
+
+  A throwaway testnet run on 2026-10-07 passed all 12 checks.
 - **Re-attest** existing KYC into the new identity registry.
-- **Redeploy the treasury again in the same pass.** Its `factory` is fixed at construction. Deploy the factory with an interim fee wallet, then the treasury against it, then call `update_fee_wallet`.
-- **Keep-alive:** add the new contracts to its set.
+- **Keep-alive:** nothing to add. #125 tracks the env contracts, and every contract and code an existing vault depends on.
 - This is an on-chain action. It needs the deployer key and an explicit go-ahead.
 
 ### 4b. Hand the factory admin to the treasury
