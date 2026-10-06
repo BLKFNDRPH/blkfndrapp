@@ -28,7 +28,7 @@ import { cn } from "@/lib/utils";
 import { PcbPattern } from "./PcbPattern";
 import { Avatar, AvatarImage, AvatarFallback } from "../ui/avatar";
 import { Separator } from "../ui/separator";
-import { useProjectDetails } from "@/context/ProjectDetailsContext";
+import { projectHref } from "@/lib/project-href";
 import { AppearanceSettings } from "../settings/AppearanceSettings";
 import { NotificationBell } from "./NotificationBell";
 import { HeaderSearch } from "./HeaderSearch";
@@ -57,7 +57,6 @@ export default function Header() {
   const [isSheetOpen, setIsSheetOpen] = React.useState(false);
   const [isClient, setIsClient] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
-  const { openProjectDetails } = useProjectDetails();
   const { projects } = useProjects();
   const { userFunds } = useUserFunds(
     freighterWalletAddress ?? undefined,
@@ -116,15 +115,13 @@ export default function Header() {
 
   const closeSheet = () => setIsSheetOpen(false);
 
-  /** A project row in the sheet's "Your stakes" / "Your projects" lists. */
+  /** A project row in the sheet's "Your stakes" / "Your projects" lists: a link to the project's page. */
   const renderProjectRow = (project: Project) => (
-    <div
+    <Link
       key={project.id}
-      onClick={() => {
-        openProjectDetails(project);
-        closeSheet();
-      }}
-      className="flex items-center gap-3 p-2 rounded-md text-md h-12 hover:bg-secondary menu-item-ripple cursor-pointer"
+      href={projectHref(project.id)}
+      onClick={closeSheet}
+      className="flex items-center gap-3 p-2 rounded-md text-md h-12 hover:bg-secondary menu-item-ripple"
       onMouseMove={handleRippleEffect}
     >
       <Avatar className="h-7 w-7 border-2 border-primary/50">
@@ -137,7 +134,7 @@ export default function Header() {
       </Avatar>
       <span className="truncate">{project.title}</span>
       <span className="ripple-span"></span>
-    </div>
+    </Link>
   );
 
   if (!isClient) {

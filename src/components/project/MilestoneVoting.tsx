@@ -26,6 +26,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useFreighterWallet } from "@/context/FreighterWalletContext";
 import { useStellarContract, type MilestoneWallets } from "@/hooks/use-stellar-contract";
 import { currencyForToken, fromStroops } from "@/lib/currencies";
+import { describeMoney } from "@/lib/money";
 
 /**
  * Milestone release, from the contributor's side.
@@ -198,7 +199,7 @@ function MilestoneHeading({
     <div className="flex flex-wrap items-start justify-between gap-2">
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         <h5 className="min-w-0 break-words font-semibold">
-          Milestone {id}
+          Stage {id}
           {name && `: ${name}`}
         </h5>
         {badge}
@@ -217,9 +218,6 @@ function Deliverable({ text }: { text?: string }) {
   if (!body) return null;
   return <ExpandableText text={body} lines={3} className="mt-2 text-sm text-muted-foreground" />;
 }
-
-const wholeUnits = (amount: number) =>
-  amount.toLocaleString(undefined, { maximumFractionDigits: 2 });
 
 /**
  * Each stage's whole-number share of the goal. When the stages add up to the
@@ -287,7 +285,7 @@ export function MilestonePlan({
                   <Badge variant="outline">Not started</Badge>
                 )
               }
-              amount={`${wholeUnits(d.amount)} ${currency}${share !== null ? ` · ${share}% of the goal` : ""}`}
+              amount={`${describeMoney(d.amount, currency).primary}${share !== null ? ` · ${share}% of the goal` : ""}`}
             />
             <Deliverable text={d.description} />
           </div>
@@ -496,7 +494,7 @@ export function MilestoneVoting({
                   <Badge variant={PHASE_VARIANT.released}>{PHASE_LABEL.released}</Badge>
                 ) : undefined
               }
-              amount={`${wholeUnits(d.amount)} ${currency}`}
+              amount={describeMoney(d.amount, currency).primary}
             />
             <Deliverable text={d.description} />
             {renderProof?.({ id: d.id, released: d.released, failed: false, voteOpened: null })}

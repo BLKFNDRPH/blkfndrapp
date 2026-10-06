@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
@@ -19,7 +20,7 @@ import { ScrollArea } from '../ui/scroll-area';
 import { cn } from '@/lib/utils';
 import { Badge } from '../ui/badge';
 import Link from 'next/link';
-import { useProjectDetails } from '@/context/ProjectDetailsContext';
+import { projectHref } from '@/lib/project-href';
 import {
   AlertDialog,
   AlertDialogContent,
@@ -29,17 +30,17 @@ import {
   AlertDialogFooter,
   AlertDialogCancel,
 } from "@/components/ui/alert-dialog";
-import { useProjects } from '@/context/BlockchainContext';
-import { getProjectById } from '@/lib/data.client';
 
 const POLL_INTERVAL = 60_000; // 60 seconds
 
 export function NotificationBell() {
   const { user } = useAuth();
+  const router = useRouter();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
-  const { openProjectDetails } = useProjectDetails();
-  const { getProjectById: getProjectFromContext } = useProjects();
+  // Controlled so a "View Project" press can close the panel as it navigates;
+  // the row's handlers stop the event that would otherwise close it.
+  const [isOpen, setIsOpen] = useState(false);
   const [isReasonDialogOpen, setIsReasonDialogOpen] = useState(false);
   const [selectedNotification, setSelectedNotification] = useState<Notification | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -112,6 +113,7 @@ export function NotificationBell() {
   }, [fetchNotifications]);
 
   const handleOpenChange = async (open: boolean) => {
+    setIsOpen(open);
     if (open && unreadCount > 0) {
       const unreadIds = notifications.filter(n => !n.isRead).map(n => n.id);
       try {
@@ -156,11 +158,15 @@ export function NotificationBell() {
     }
   };
 
-  const handleViewProject = async (e: React.MouseEvent, objectId: string) => {
+  // The notification's object is the project id, so the button is a real link
+  // to the project's page. A plain click navigates in place and closes the
+  // panel; a modified click (new tab) is left to the link itself.
+  const handleViewProject = (e: React.MouseEvent, objectId: string) => {
     e.stopPropagation();
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     e.preventDefault();
-    const project = getProjectFromContext(objectId) || await getProjectById(objectId);
-    if (project) openProjectDetails(project);
+    router.push(projectHref(objectId));
+    setIsOpen(false);
   };
 
   const handleViewReason = (e: React.MouseEvent, notif: Notification) => {
@@ -204,7 +210,7 @@ export function NotificationBell() {
 
   return (
     <>
-      <DropdownMenu onOpenChange={handleOpenChange}>
+      <DropdownMenu open={isOpen} onOpenChange={handleOpenChange}>
         <DropdownMenuTrigger asChild>
           <div className="relative">
             <Button variant="default" size="icon" className="rounded-full nav-button">
@@ -252,7 +258,7 @@ export function NotificationBell() {
                         <div className="flex items-center gap-2 pt-1">
                           {notif.object && (
                             <Button asChild variant="secondary" size="sm" className="h-7 group-focus:bg-primary/20 group-focus:text-accent-foreground group-focus:hover:bg-primary/30" onClick={(e) => handleViewProject(e, notif.object!)}>
-                              <Link href="#">
+                              <Link href={projectHref(notif.object)}>
                                 <Briefcase className="mr-2 h-3 w-3" />
                                 View Project
                               </Link>
