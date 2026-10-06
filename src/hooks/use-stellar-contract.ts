@@ -205,6 +205,72 @@ export function useStellarContract() {
     [requireWallet],
   );
 
+  // The same simulate-first shape for every other money action, so each one
+  // can show its refusal before a wallet window and narrate its phases.
+
+  /** A stakeholder's yes vote on a stage. */
+  const prepareApproveMilestone = useCallback(
+    async ({ vaultAddress, milestoneId, contributor }: ApproveMilestoneParams): Promise<PreparedAction> => {
+      const address = requireWallet(contributor);
+      const vault = vaultClient(vaultAddress, signerFor(address));
+      return toPrepared(
+        await vault.approve_milestone({ contributor: address, milestone_id: milestoneId }),
+      );
+    },
+    [requireWallet],
+  );
+
+  /** The builder opens a stage to its 7-day vote. Paused by a platform lock. */
+  const prepareOpenMilestoneVote = useCallback(
+    async ({ vaultAddress, milestoneId }: MilestoneParams): Promise<PreparedAction> => {
+      const address = requireWallet();
+      await refuseIfLocked(vaultAddress, "Opening stage votes is paused");
+      const vault = vaultClient(vaultAddress, signerFor(address));
+      return toPrepared(await vault.open_milestone_vote({ milestone_id: milestoneId }));
+    },
+    [requireWallet],
+  );
+
+  /** Send an approved payout. Permissionless: the carried vote is the authority. */
+  const prepareReleaseMilestone = useCallback(
+    async ({ vaultAddress, milestoneId }: MilestoneParams): Promise<PreparedAction> => {
+      const address = requireWallet();
+      const vault = vaultClient(vaultAddress, signerFor(address));
+      return toPrepared(await vault.release_milestone({ milestone_id: milestoneId }));
+    },
+    [requireWallet],
+  );
+
+  /** Record a vote that ended short, which opens refunds. Permissionless. */
+  const prepareSettleLapsedMilestone = useCallback(
+    async ({ vaultAddress, milestoneId }: MilestoneParams): Promise<PreparedAction> => {
+      const address = requireWallet();
+      const vault = vaultClient(vaultAddress, signerFor(address));
+      return toPrepared(await vault.settle_lapsed_milestone({ milestone_id: milestoneId }));
+    },
+    [requireWallet],
+  );
+
+  /** Record a passed deadline on the vault. Permissionless. */
+  const prepareSettleVault = useCallback(
+    async (vaultAddress: string): Promise<PreparedAction> => {
+      const address = requireWallet();
+      const vault = vaultClient(vaultAddress, signerFor(address));
+      return toPrepared(await vault.settle());
+    },
+    [requireWallet],
+  );
+
+  /** A stakeholder collects their refund. Only their own wallet can. */
+  const prepareClaimRefund = useCallback(
+    async ({ vaultAddress, contributor }: { vaultAddress: string; contributor?: string }): Promise<PreparedAction> => {
+      const address = requireWallet(contributor);
+      const vault = vaultClient(vaultAddress, signerFor(address));
+      return toPrepared(await vault.claim_refund({ contributor: address }));
+    },
+    [requireWallet],
+  );
+
   const claimRefund = useCallback(
     async ({ vaultAddress, contributor }: { vaultAddress: string; contributor?: string }) => {
       const address = requireWallet(contributor);
@@ -480,6 +546,12 @@ export function useStellarContract() {
     contribute,
     prepareContribute,
     claimRefund,
+    prepareClaimRefund,
+    prepareApproveMilestone,
+    prepareOpenMilestoneVote,
+    prepareReleaseMilestone,
+    prepareSettleLapsedMilestone,
+    prepareSettleVault,
     // vote
     openMilestoneVote,
     approveMilestone,
