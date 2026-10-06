@@ -1,0 +1,42 @@
+utc	step	transaction
+2026-10-06T14:07:33Z	setup: send 5 USDC to ref-builder	827aa33b6fd8659e6bf469e549d1d80ec45e1e1c094f38d091bd5db158018b8f
+2026-10-06T14:07:45Z	setup: send 15 USDC to ref-c1	54150e3a957146caf7828a7650a6b2fe0db1c894581ace0d45eb49cc046b5e02
+2026-10-06T14:07:57Z	setup: send 10 USDC to ref-c2	c96d1d11dd6c68faf9865281ccc82235a6fdd5e658bcca5a791fa9dd9aa4f6ae
+2026-10-06T14:08:08Z	setup: send 10 USDC to ref-c3	77c1b2a9734aa842719c911c96c94130a728fb96befb2d0b776027052eaf19a6
+2026-10-06T14:08:18Z	setup: send 10 USDC to ref-c4	e2c45359b3f1ec380ef09193d968f714779d40be851294e38f634c3ee0a6e4c3
+2026-10-06T14:08:29Z	setup: send 10 USDC to ref-c5	3424fe749a508a2116c4eb3c0ea7753f163f3e9901f0a973831cfd51ded79153
+2026-10-06T14:08:38Z	setup: KYC-approve the builder	b104ac7a8fe49458b5cdb401b25a660c46ba446611339b46ae7e17f9d55c3006
+2026-10-06T14:09:19Z	A: create vault, lock 3 USDC bond, pay 1 USDC flat fee	ca0f0455ba707aacccc5e7737e3452f97583dc1ba7177582a873cc06075e50ca
+2026-10-06T14:09:23Z	A: deposit of 4.99 USDC refused (BelowMinimumContribution)	refused in simulation: Error(Contract, #24)
+2026-10-06T14:09:34Z	A: deposit 10 USDC (c1)	15b348b6abdcdc895948bae12487832d1ac234d38bd8d375b4a92397f90ece60
+2026-10-06T14:09:47Z	A: deposit 5 USDC (c2)	07dbb58b7e4255602bd361fcaf65a3532ea3e35c59b0e300e7cc8b6f619c7a84
+2026-10-06T14:09:58Z	A: deposit 5 USDC (c3)	f0cf5d1fcaad14575549dc477deb5b972b84cb912ed82b641a4add1d8e34813c
+2026-10-06T14:10:08Z	A: deposit 5 USDC (c4)	92f956ea737849d4ca0c728c822d960c5478aa2011486992a8644b38a21a9fc0
+2026-10-06T14:10:18Z	A: deposit 5 USDC (c5)	3797f5383fd1a7854b79c7e2a9468fc6f5100f0ef1e8c832855510fb1efb87a4
+2026-10-06T14:10:33Z	A: open milestone 1 vote (builder; window 7 days)	031a72fcec2cc1fbc52ca4b9c94c22b5af61437180b055bdb5dc632244dea82a
+2026-10-06T14:10:49Z	A: approve milestone 1 (c1, weight 6)	52e2e0468f8bc4e2e47b1f4a7baa4d4bae9885df4de9cb7d6e18c3e9098eba4a
+2026-10-06T14:10:58Z	A: approve milestone 1 (c2, weight 5)	d2f2b00da1a54c67c9a68b1f6684a6909b60997afd7915f7d59423e992ac7add
+2026-10-06T14:11:00Z	A: release milestone 1 on two approvals refused (ThresholdNotMet)	refused in simulation: Error(Contract, #20)
+2026-10-06T14:11:08Z	A: approve milestone 1 (c3, weight 5)	0b69770eb91a37a3bc43eb3921cf588709eaa17629e7910e01481c1154c40c33
+2026-10-06T14:11:18Z	A: release milestone 1, 18 USDC, by an unrelated account	d12da3481af4c52e7aabc18475bee2ceb9d573e335ab9848ffbd01daba579572
+2026-10-06T14:11:30Z	A: open milestone 2 vote (builder)	65e6be7d82c599cadb36799504578635ccb2748117c7b7a1c3752be188121eda
+2026-10-06T14:11:48Z	A: approve milestone 2 (c3, weight 5)	c7cafb8683dbf3c18e6b7f42b240ca54b196d85871ae951197a3a04b115298c0
+2026-10-06T14:11:58Z	A: approve milestone 2 (c4, weight 5)	62a44f3e374d045be6c12c6756837c7753bae6dd5694a23dfad0824c80d9a573
+2026-10-06T14:12:08Z	A: approve milestone 2 (c5, weight 5)	444a8e2c073c06fcd34b862d0c252a924f731c88b0b76afae5fec24936565e51
+2026-10-06T14:12:12Z	A: release milestone 2 on half the money refused (ThresholdNotMet)	refused in simulation: Error(Contract, #20)
+2026-10-06T14:12:23Z	A: approve milestone 2 (c1, weight 6)	c014f98a8e356afc95169fbb8dfff77307dd3f1c30e97f05e3115269be601d20
+2026-10-06T14:12:35Z	A: release milestone 2, 12 USDC + bond back, attestation written	99e01fee822412e1c7790ec3d80d7b1d8eedea7b2648efd90d90543125e7bf93
+2026-10-06T14:13:04Z	B: create vault, lock 2.5 USDC bond, pay 1 USDC flat fee	58413a7d8ffed4930a69263d20ea6409967f2b334f1abc1352d632fbbf205b5f
+2026-10-06T14:13:14Z	B: deposit 5 USDC (c1)	64cc04f75d12f20b6c4ff26a4dcf08049ccad24d55cd61e419a0eb4a85824eb3
+2026-10-06T14:13:23Z	B: deposit 5 USDC (c2)	a83a4058fe9aea449bcd8325c67066fd6cd8500a4a917c50076508b17f529e9d
+2026-10-06T14:13:33Z	B: deposit 5 USDC (c3)	fc43fa69cb2dd912b4e4d1cd6f33d607fcf12bb1d70b5dc7c0a30b815621392a
+2026-10-06T14:13:43Z	B: deposit 5 USDC (c4)	648917aff72505ebf7854e90bafb7efb002e592627094ff9ecd78f3fe74399e2
+2026-10-06T14:13:52Z	B: deposit 5 USDC (c5)	27697db5972d7b625e844d38312b88cbda0e8b1e84b5792e8dca95a58080dcae
+2026-10-06T14:14:04Z	B: open milestone 1 vote (builder)	544c38d711195c912c8f39f2624e1bc84d1217ba27234b68e7325f4e7dcf15ea
+2026-10-06T14:14:13Z	B: approve milestone 1 (c1)	aa0e0c7dd94c5d77e18bebb1f8bb31f7d71f4fa5504dc805a34551c7df16b85a
+2026-10-06T14:14:22Z	B: approve milestone 1 (c2)	a0fc58807fb9d76554ba9b2cf4c44d0a14270bca8c795a986c3699b7331f5838
+2026-10-06T14:14:33Z	B: approve milestone 1 (c3)	8d7a3ee484871b185f8ef903ee4acf16c52d32c8dfc06dfa784dbe73fe26c984
+2026-10-06T14:14:44Z	B: release milestone 1, 15 USDC, by an unrelated account	abc952576abd4a439318eefeebed501210f0ec59a4607ae525b5806bbc81ae9d
+2026-10-06T14:14:53Z	B: open milestone 2 vote (builder; window 7 days)	335fe37eee015785d745489f55b562d696e3ce41e74a81334e3a79e001fe6726
+2026-10-06T14:15:05Z	B: approve milestone 2 (c1 only)	2b7cb2d60601b2f9e11b608f72402840c94c19ed7f422155a753a56fce57c2ff
+2026-10-06T14:15:06Z	B: settling milestone 2 early refused (VotingWindowNotElapsed)	refused in simulation: Error(Contract, #22)

@@ -98,7 +98,7 @@ Every app-layer change below is live, because the host was rebuilt from `main`. 
 
 **Merged, not active:**
 
-- **Vault #99 release rule.** Waiting on `update_wasm_hash` (item 2).
+- **Vault #99 release rule and the money majority.** Waiting on `update_wasm_hash` (item 2).
 - **Factory, attestation, identity, admin.** They carry #73 and #75. Read from testnet on 2026-10-02:
   - all four still expose `initialize`;
   - attestation still keys records by `project_id` and has no `disable_factory`;
@@ -106,6 +106,8 @@ Every app-layer change below is live, because the host was rebuilt from `main`. 
 - **Migrations** `20260809160000_profiles_column_grants` and `20261001160000_kyc_filed_against_linked_wallet`.
 
 Current hashes come from a fresh `bash scripts/build-contracts.sh`. The wasm embeds absolute build paths, so a hash only reproduces on the same paths (see item 8).
+
+**Reference deployment (2026-10-06), not used by the app:** a standalone factory, attestation, identity and admin built from source, with the vault's money majority. It holds the test transactions for the contribution, threshold-release and attestation deliverable. Contract IDs, hashes and transactions are in [docs/deliverables/contribution-threshold-attestation.md](docs/deliverables/contribution-threshold-attestation.md). Its Project B finishes after 2026-10-13 14:14:52 UTC with `bash scripts/reference-scenario.sh project-b-finish`.
 
 ---
 
@@ -124,8 +126,8 @@ Until this is done, every new vault still gets the old bar (more than half the r
   - `settle_stalled` now spares a carried milestone. The deployed `70e5f3a8…` vaults still don't: once an *approved* milestone's window closes past the 90-day stall clock, anyone can fail it and forfeit the bond. Opening a vote does not reset that clock, so a dissenter can race the release. `settle-stalled-cron` submits `settle_stalled` wherever it simulates successfully, so a carried but unreleased milestone should be released promptly.
   - The 20% cap never drops below one base unit, so a raise under 5 base units can still release.
 
-  `main` now builds the vault to `436e8b46…` on the maintainer's machine, the hash #99 quotes.
-- **Decide: Sybil wallets against a large backer.** Under the new rule, a builder with just over 20% of the raise spread across three wallets can out-vote one backer holding the rest, whose weight is capped at 20%. The proposed fix is a dual majority: the approvers' *uncapped* stake must also exceed half the raise. That gives any wallet holding more than half a veto, so it is a product call. It is not in source yet.
+- ✅ **Decided 2026-10-06: the dual majority.** Under #99 alone, a builder with just over 20% of the raise spread across three wallets could out-vote one backer holding the rest. A release now also needs the approvers' *uncapped* stake to exceed half the raise. A wallet holding more than half the raise can block a release but never make one alone. With it, `main` builds the vault to `e9009410…` on the maintainer's machine, and the reference deployment runs that hash.
+- **Before switching:** the vote panel must show the money condition. It reads `get_milestone_stake(id)` and needs the regenerated vault binding. Otherwise the panel can show a vote as carried while the release is refused.
 - **Then:** upload the wasm and call `update_wasm_hash` with the factory admin key. The commands are in [deployment.md](docs/deployment.md#switching-the-vault-code). The homepage hash updates within 5 minutes.
 - Old and new bindings decode both vault shapes, so app and contract can switch in either order.
 - If item 4 happens first, the new factory can be constructed with the new hash instead.
@@ -146,7 +148,7 @@ Without a Gateway Key, the dedicated gateway (`PINATA_GATEWAY_URL`, `nft.blkfndr
 ### 4. Redeploy the factory and registries (#73 + #75)
 Redeploy the factory, attestation, identity and admin with `scripts/deploy-contracts.sh`.
 
-- **Deploy order is unproven live.** Attestation goes before the factory, then one `add_factory`. That order is unit-tested only. Constructor deploys themselves are proven by the treasury and ops redeploy.
+- **Deploy order is proven live.** Attestation goes before the factory, then one `add_factory`. The reference deployment ran it on 2026-10-06 and the script's read-back checks passed.
 - **New addresses:** update `NEXT_PUBLIC_BLKFNDR_{FACTORY,ATTESTATION,IDENTITY,ADMIN}_CONTRACT_ID` and **rebuild**. These are build args.
 - **Re-attest** existing KYC into the new identity registry.
 - **Redeploy the treasury again in the same pass.** Its `factory` is fixed at construction. Deploy the factory with an interim fee wallet, then the treasury against it, then call `update_fee_wallet`.
@@ -168,7 +170,7 @@ The live factory's admin is still the deployer key `GDR4TPUF…`.
 - **Fix:** add the missing migration and align the filenames to the live versions. This needs the Supabase CLI to verify.
 
 ### 6. M-01 — contributor Sybil resistance
-The 20% cap and the three-wallet floor count addresses, not people. The open policy decision is whether to gate staking on the identity registry (one verified person, one cap). This interacts with item 2's decision.
+The 20% cap and the three-wallet floor count addresses, not people. The open policy decision is whether to gate staking on the identity registry (one verified person, one cap). Item 2's money majority already makes splitting a stake useless for carrying a release.
 
 ### 7. Unwired features — wire up or delete
 #95 kept these because each is the only way into a feature that is otherwise built. Each needs a call from the owner.
@@ -215,7 +217,7 @@ These were verified with harnesses, but not with a real wallet or account:
 ## Next
 1. Finish the Operations Vault cutover (item 1): two owner votes.
 2. Apply the two migrations (item 3): a one-command push, in order. Set the gateway key on the host (item 3b), a one-variable stack update.
-3. Decide the dual-majority question, then switch the factory's vault wasm (item 2). Or fold the switch into the coordinated redeploy (item 4).
+3. Show the money condition in the vote panel, then switch the factory's vault wasm (item 2). Or fold the switch into the coordinated redeploy (item 4).
 4. Start Phase 1 of the [Web3-accessibility redesign](docs/design/web3-accessibility-redesign.md): copy, information architecture and flow, with no chain changes. #103 was its first item.
 
 _Per-finding audit detail is in the security-audit PDF. Per-PR detail is in the PR descriptions._
