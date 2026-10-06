@@ -111,6 +111,8 @@ export type FundReceipt = {
   fund_date: number;
   timestamp?: string;
   currency_type?: string;
+  /** The vault the stake went into, as /api/user/funds reports it. */
+  vault_address?: string;
 };
 
 export type Notification = {

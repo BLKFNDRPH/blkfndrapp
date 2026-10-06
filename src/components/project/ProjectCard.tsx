@@ -68,7 +68,11 @@ export function builderDisplayName(project: Pick<Project, "creatorName" | "creat
   return name;
 }
 
-/** The status pill with its tooltip sentence. Needs a TooltipProvider above it. */
+/**
+ * The status pill with its tooltip sentence. Brings its own TooltipProvider,
+ * so it renders anywhere (the profile's stake rows, a legend), not only inside
+ * a card: without one, Radix throws and takes the whole page down.
+ */
 export function StatusPill({
   status,
   className,
@@ -77,6 +81,7 @@ export function StatusPill({
   className?: string;
 }) {
   return (
+    <TooltipProvider delayDuration={150}>
     <Tooltip>
       <TooltipTrigger asChild>
         <span
@@ -95,6 +100,7 @@ export function StatusPill({
         {status.tooltip}
       </TooltipContent>
     </Tooltip>
+    </TooltipProvider>
   );
 }
 

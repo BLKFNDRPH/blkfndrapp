@@ -1,4 +1,4 @@
-import { Horizon, xdr } from "@stellar/stellar-sdk";
+import { Address, Horizon, xdr } from "@stellar/stellar-sdk";
 import {
   HORIZON_URL,
   SOROBAN_RPC_URL,
@@ -43,6 +43,8 @@ export interface StellarAccountActivityItem {
   label: string;
   /** The contract function it called, for contract calls. */
   contract_function?: string;
+  /** The contract it called (a vault, the factory), for contract calls. */
+  contract_id?: string;
   created_at: string;
   transaction_hash: string;
   successful: boolean;
@@ -97,6 +99,20 @@ const contractFunctionName = (operation: any): string | undefined => {
   if (symbol?.type !== "Sym") return undefined;
   try {
     return xdr.ScVal.fromXDR(symbol.value, "base64").sym().toString();
+  } catch {
+    return undefined;
+  }
+};
+
+/** The contract an invoke-contract operation called: its first parameter. */
+const contractIdOf = (operation: any): string | undefined => {
+  if (!String(operation.function ?? "").includes("InvokeContract")) {
+    return undefined;
+  }
+  const target = operation.parameters?.[0];
+  if (target?.type !== "Address") return undefined;
+  try {
+    return Address.fromScVal(xdr.ScVal.fromXDR(target.value, "base64")).toString();
   } catch {
     return undefined;
   }
@@ -211,6 +227,7 @@ export const getRecentAccountOperations = async (
       type: operation.type,
       label: operationLabel(operation, contractFunction),
       contract_function: contractFunction,
+      contract_id: contractIdOf(operation),
       created_at: operation.created_at,
       transaction_hash: operation.transaction_hash,
       successful,
