@@ -495,6 +495,27 @@ needs its address. The script does not deploy the **Operations Vault**, which
 references neither the factory nor the treasury (see
 [smart-contracts.md](smart-contracts.md)).
 
+### Migrating KYC
+
+A new identity registry starts empty, and a builder it does not approve cannot
+launch. Before the app points at a new registry, copy every approved builder
+into it with [migrate-kyc.mjs](../scripts/migrate-kyc.mjs):
+
+```bash
+node --env-file=.env.local scripts/migrate-kyc.mjs --registry <new identity> --from <live identity> --source ba-escrow-deployer
+```
+
+It reads the approved rows of `kyc_requests` with the service-role key.
+
+- **Each row** is attested with its `details_hash`, signed by `--source`, which
+  must be the registry's admin or an attestor. The key stays in the Stellar CLI.
+- **With `--from`,** a row the live registry does not approve, or approves with
+  a different hash, is reported and skipped. Copying it could re-approve a
+  revoked builder. `--include-unattested` migrates the unapproved ones anyway.
+- **It is a dry run** until you add `--send`. Every write is read back.
+- **It is safe to re-run:** rows already present are left alone, and a row
+  whose hash conflicts with the target is reported, never overwritten.
+
 ### Switching the vault code
 
 The factory deploys new vaults from a stored wasm hash, and its admin can change
