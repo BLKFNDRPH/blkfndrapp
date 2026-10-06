@@ -115,7 +115,7 @@ The treasury is the factory's fee wallet, so the app reads its address from the 
 
 The factory, attestation, identity and admin contracts above predate the #73 and #75 source fixes (constructor-based configuration, attestation records keyed by vault, identity TTL). Those reach testnet with the coordinated redeploy tracked in [progress.md](progress.md#4-redeploy-the-factory-and-registries-73--75), which mints new addresses.
 
-Shared contract storage on Soroban expires when nobody pays its rent, and the next caller pays to restore it. The `keep-alive-cron` service checks the factory, both registries, the admin roster, the treasury, the Operations Vault and the code they and every vault run from on a schedule, restoring anything archived and topping up anything under 40 days to 60. The contracts top themselves up to 30 days at the caller's expense, so keeping them above that means a launch or a stake never pays the platform's rent.
+Shared contract storage on Soroban expires when nobody pays its rent, and the next caller pays to restore it. The `keep-alive-cron` service checks the factory, both registries, the admin roster, the treasury, the Operations Vault, the code they run and the code every existing vault runs, plus any older factory or registry an existing vault still depends on, on a schedule, restoring anything archived and topping up anything under 40 days to 60. The contracts top themselves up to 30 days at the caller's expense, so keeping them above that means a launch or a stake never pays the platform's rent.
 
 The **vault is not deployed as a contract**. Its wasm is uploaded and the factory instantiates one instance per project from that hash. Since 2026-10-06 it is:
 

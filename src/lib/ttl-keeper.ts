@@ -1,6 +1,7 @@
 import "server-only";
 
 import {
+  Address,
   BASE_FEE,
   Keypair,
   Operation,
@@ -21,6 +22,7 @@ import {
   simulate,
 } from "@/lib/stellar-clients";
 import { instanceKey, vaultWasmHashFromFactory } from "@/lib/factory-vault-hash";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 /**
  * Keeps the platform's shared contract storage alive.
@@ -55,6 +57,14 @@ import { instanceKey, vaultWasmHashFromFactory } from "@/lib/factory-vault-hash"
  * factory's code and instance; AquaPure's, 2h40m later, paid 0.55. Kept above
  * 30 days, those calls extend nothing. The extra 10 days cover missed runs.
  *
+ * The existing vaults' dependencies are kept too, read from the vaults
+ * themselves: the code each one runs, and the factory and attestation registry
+ * pinned into it at creation, which it calls when it closes. A vault never
+ * changes code, so once the factory deploys newer code, or the platform moves
+ * to new registries, nothing else names what older projects still run on. On 6
+ * Oct the factory switched to `e9009410…` and `70e5f3a8…`, the code of every
+ * project before it, dropped off this list.
+ *
  * Project vault instances are not on the list. Each one is extended by its own
  * calls, and its rent is its project's, not the platform's.
  */
@@ -78,6 +88,8 @@ const days = (ledgers: number) => ledgers / LEDGERS_PER_DAY;
  * batched apart.
  */
 const MAX_BATCH_BYTES = 64 * 1024;
+/** Most keys Soroban RPC's getLedgerEntries accepts in one call. */
+const MAX_KEYS_PER_READ = 200;
 
 type EntryState = "live" | "due" | "archived";
 
@@ -128,9 +140,80 @@ async function sharedContracts(): Promise<Array<[string, string]>> {
   return named.filter((n): n is [string, string] => Boolean(n[1]));
 }
 
+/** The factory and attestation registry a vault was created with, from its `Info`. */
+function pinnedContracts(instance: xdr.ScContractInstance): {
+  factory?: string;
+  attestation?: string;
+} {
+  for (const entry of instance.storage() ?? []) {
+    const k = entry.key();
+    if (
+      k.switch().name !== "scvVec" ||
+      k.vec()?.length !== 1 ||
+      k.vec()![0].switch().name !== "scvSymbol" ||
+      k.vec()![0].sym().toString() !== "Info" ||
+      entry.val().switch().name !== "scvMap"
+    ) {
+      continue;
+    }
+    const fields = entry.val().map() ?? [];
+    const address = (name: string) => {
+      const field = fields.find(
+        (f) => f.key().switch().name === "scvSymbol" && f.key().sym().toString() === name,
+      );
+      return field && field.val().switch().name === "scvAddress"
+        ? Address.fromScVal(field.val()).toString()
+        : undefined;
+    };
+    return { factory: address("factory"), attestation: address("attestation_registry") };
+  }
+  return {};
+}
+
+/**
+ * What the existing vaults run on: their code, and the factory and attestation
+ * registry pinned into each, read from every vault the indexer has recorded.
+ * Code is keyed by hash, contracts by address, each with a label.
+ */
+async function vaultDependencies(
+  server: rpc.Server,
+): Promise<{ contracts: Map<string, string>; codes: Map<string, string> }> {
+  const { data, error } = await createAdminClient().from("projects").select("vault_address");
+  if (error) throw new Error(`Could not list the vaults: ${error.message}`);
+  const vaults = [...new Set((data ?? []).map((r) => r.vault_address).filter(Boolean))];
+
+  const contracts = new Map<string, string>();
+  const codes = new Map<string, string>();
+  for (let i = 0; i < vaults.length; i += MAX_KEYS_PER_READ) {
+    const { entries } = await server.getLedgerEntries(
+      ...vaults.slice(i, i + MAX_KEYS_PER_READ).map(instanceKey),
+    );
+    for (const entry of entries) {
+      const instance = entry.val.contractData().val().instance();
+      const executable = instance.executable();
+      if (executable.switch().name === "contractExecutableWasm") {
+        codes.set(executable.wasmHash().toString("hex"), "existing vault code");
+      }
+      const pinned = pinnedContracts(instance);
+      if (pinned.factory) contracts.set(pinned.factory, "earlier factory");
+      if (pinned.attestation) contracts.set(pinned.attestation, "earlier attestation registry");
+    }
+  }
+  return { contracts, codes };
+}
+
 /** Read the instances, follow them to their code, and record every TTL. */
 async function collect(server: rpc.Server): Promise<Tracked[]> {
-  const contracts = await sharedContracts();
+  const [named, pinned] = await Promise.all([sharedContracts(), vaultDependencies(server)]);
+  // A contract the platform still names keeps its name; one only older vaults
+  // reach is added under theirs.
+  const ids = new Set(named.map(([, id]) => id));
+  const contracts = [
+    ...named,
+    ...[...pinned.contracts]
+      .filter(([id]) => !ids.has(id))
+      .map(([id, label]): [string, string] => [label, id]),
+  ];
   const instances = await server.getLedgerEntries(...contracts.map(([, id]) => instanceKey(id)));
   const byKey = new Map(instances.entries.map((e) => [e.key.toXDR("base64"), e]));
 
@@ -161,6 +244,9 @@ async function collect(server: rpc.Server): Promise<Tracked[]> {
       const vaultHash = vaultWasmHashFromFactory(instance);
       if (vaultHash) codes.set(vaultHash.toString("hex"), "vault code");
     }
+  }
+  for (const [hex, label] of pinned.codes) {
+    if (!codes.has(hex)) codes.set(hex, label);
   }
 
   const codeKeys = [...codes.keys()].map((hex) => codeKey(Buffer.from(hex, "hex")));
