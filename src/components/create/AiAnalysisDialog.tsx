@@ -24,10 +24,10 @@ export function AiAnalysisDialog({ open, onOpenChange, result }: AiAnalysisDialo
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Star className="text-yellow-400" />
-            AI Listing Quality Analysis
+            Quality check
           </DialogTitle>
           <DialogDescription>
-            Here are some suggestions to improve your project listing.
+            An automatic read of your words and picture, with ideas to make the listing clearer. Nothing is changed for you.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-6">

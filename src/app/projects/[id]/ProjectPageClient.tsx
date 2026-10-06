@@ -136,9 +136,20 @@ function ProjectPageInner({ id }: { id: string }) {
           <BackToProjects />
           <div className="mt-16 flex flex-col items-center gap-3 text-center">
             <h1 className="text-xl font-semibold">We can&apos;t find that project.</h1>
-            <Button asChild variant="outline">
-              <Link href={PROJECTS_PATH}>Back to projects</Link>
-            </Button>
+            {/* The link a builder gets the moment their vault opens can arrive
+                here before BLKFNDR has read the new vault. */}
+            <p className="max-w-md text-sm text-muted-foreground">
+              Just opened this vault? It shows here within a minute or two, once BLKFNDR has read it.
+            </p>
+            <div className="flex flex-wrap justify-center gap-2">
+              <Button type="button" variant="outline" onClick={() => loadProject(id)}>
+                <RefreshCw className="mr-1.5 h-4 w-4" aria-hidden="true" />
+                Check again
+              </Button>
+              <Button asChild variant="outline">
+                <Link href={PROJECTS_PATH}>Back to projects</Link>
+              </Button>
+            </div>
           </div>
         </div>
       );

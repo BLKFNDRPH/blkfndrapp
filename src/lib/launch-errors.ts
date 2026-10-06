@@ -58,14 +58,14 @@ export type LaunchFailure =
 /** Factory errors a launch can meet (contracts/blkfndr-factory/src/lib.rs). */
 const FACTORY_RULES: Record<number, string> = {
   1: "This wallet isn't allowed to make that change.",
-  12: "The performance bond is below the platform's minimum. Raise it to at least the minimum shown on the form.",
-  13: "Something in this launch doesn't meet the platform's rules, such as the goal, the milestones or the deadline. Check the form and try again.",
+  12: "Your deposit is below the minimum. Raise it to at least the minimum shown on the form.",
+  13: "Something in this listing doesn't meet the rules for a vault, such as the goal, the stages or the deadline. Check the form and try again.",
 };
 
 /** Vault errors raised while a new vault sets itself up (contracts/blkfndr-vault/src/lib.rs). */
 const VAULT_RULES: Record<number, string> = {
-  6: "Something in this launch doesn't meet the platform's rules, such as the goal, the milestones or the deadline. Check the form and try again.",
-  7: "The funding deadline has to be in the future.",
+  6: "Something in this listing doesn't meet the rules for a vault, such as the goal, the stages or the deadline. Check the form and try again.",
+  7: "The deadline has to be in the future.",
   12: "Your identity verification isn't active for this wallet. Check it on your profile, then try again.",
 };
 
