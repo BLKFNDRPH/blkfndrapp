@@ -158,6 +158,11 @@ impl BlkfndrFactory {
     /// here, which is why both must be deployed first; the attestation registry
     /// is then told to trust this factory with a post-deploy `add_factory`.
     /// `admin` must authorise the deploy.
+    ///
+    /// `first_project_id` is the id this factory gives its first vault. A
+    /// replacement factory starts after the last id its predecessor issued, so
+    /// project ids stay unique across both: the app keys projects by them, and
+    /// a second project #1 would collide with the first.
     pub fn __constructor(
         env:                  Env,
         admin:                Address,
@@ -168,12 +173,14 @@ impl BlkfndrFactory {
         attestation_registry: Address,
         voting_window_secs:   u64,
         min_contribution:     i128,
+        first_project_id:     u64,
     ) {
         admin.require_auth();
 
         if !(0..=MAX_PLATFORM_FEE).contains(&platform_fee)
             || voting_window_secs == 0
             || min_contribution <= 0
+            || first_project_id == 0
         {
             panic_with_error!(&env, Error::InvalidConfiguration);
         }
@@ -181,7 +188,8 @@ impl BlkfndrFactory {
         let storage = env.storage().instance();
         storage.set(&DataKey::Admin, &admin);
         storage.set(&DataKey::VaultWasmHash, &vault_wasm_hash);
-        storage.set(&DataKey::ProjectCounter, &0u64);
+        // The counter holds the last id issued, so it starts one below the first.
+        storage.set(&DataKey::ProjectCounter, &(first_project_id - 1));
         storage.set(&DataKey::FeeWalletAddress, &fee_wallet);
         storage.set(&DataKey::PlatformFee, &platform_fee);
         storage.set(&DataKey::IdentityRegistry, &identity_registry);
@@ -463,6 +471,8 @@ impl BlkfndrFactory {
         load_or_fail(&env, &DataKey::MinContribution)
     }
 
+    /// The last project id issued: the number of projects only when the
+    /// factory started at 1, and `first_project_id - 1` before its first vault.
     pub fn get_project_count(env: Env) -> u64 {
         env.storage()
             .instance()

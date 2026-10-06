@@ -9,6 +9,8 @@ const UNIT: i128 = 10_000_000;
 const PLATFORM_FEE: i128 = 10 * UNIT;
 const MIN_CONTRIBUTION: i128 = 5 * UNIT;
 const VOTING_WINDOW: u64 = 7 * 24 * 60 * 60;
+/// A factory deployed from scratch numbers its projects from 1.
+const FIRST_PROJECT_ID: u64 = 1;
 
 struct Setup {
     env: Env,
@@ -42,6 +44,7 @@ fn setup() -> Setup {
                 attestation.clone(),
                 VOTING_WINDOW,
                 MIN_CONTRIBUTION,
+                FIRST_PROJECT_ID,
             ),
         ),
     );
@@ -82,6 +85,7 @@ fn construction_requires_the_admins_signature() {
             Address::generate(&env),
             VOTING_WINDOW,
             MIN_CONTRIBUTION,
+            FIRST_PROJECT_ID,
         ),
     );
 }
@@ -102,6 +106,29 @@ fn rejects_a_platform_fee_above_the_ceiling() {
             Address::generate(&env),
             VOTING_WINDOW,
             MIN_CONTRIBUTION,
+            FIRST_PROJECT_ID,
+        ),
+    );
+}
+
+/// Refused as InvalidConfiguration, not left to underflow the counter.
+#[test]
+#[should_panic(expected = "Error(Contract, #13)")]
+fn rejects_a_first_project_id_of_zero() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.register(
+        BlkfndrFactory,
+        (
+            Address::generate(&env),
+            BytesN::<32>::random(&env),
+            Address::generate(&env),
+            PLATFORM_FEE,
+            Address::generate(&env),
+            Address::generate(&env),
+            VOTING_WINDOW,
+            MIN_CONTRIBUTION,
+            0u64,
         ),
     );
 }
@@ -211,6 +238,10 @@ mod deployment {
     }
 
     fn deploy_setup() -> DeploySetup {
+        deploy_setup_from(FIRST_PROJECT_ID)
+    }
+
+    fn deploy_setup_from(first_project_id: u64) -> DeploySetup {
         let env = Env::default();
         env.mock_all_auths();
         env.ledger().set_timestamp(1_000_000);
@@ -248,6 +279,7 @@ mod deployment {
                 registry_id.clone(),
                 VOTING_WINDOW,
                 MIN_CONTRIBUTION,
+                first_project_id,
             ),
         );
         let factory = BlkfndrFactoryClient::new(&env, &factory_id);
@@ -331,6 +363,30 @@ mod deployment {
         assert_eq!(s.factory.get_vault(&1u64), first);
         assert_eq!(s.factory.get_vault(&2u64), second);
         assert_eq!(s.factory.get_project_count(), 2);
+    }
+
+    /// A replacement factory continues its predecessor's numbering, so project
+    /// ids stay unique across both. The id reaches the vault and its record.
+    #[test]
+    fn a_replacement_factory_continues_the_numbering() {
+        let s = deploy_setup_from(12);
+        assert_eq!(s.factory.get_project_count(), 11, "nothing issued yet");
+        assert!(s.factory.try_get_vault(&11u64).is_err());
+
+        let first = s.factory.create_vault(&config(&s));
+        let second = s.factory.create_vault(&config(&s));
+        assert_eq!(s.factory.get_vault(&12u64), first);
+        assert_eq!(s.factory.get_vault(&13u64), second);
+        assert_eq!(s.factory.get_project_count(), 13);
+        assert!(s.factory.try_get_vault(&1u64).is_err(), "no project 1 here");
+
+        let info = vault_wasm::Client::new(&s.env, &first).get_info();
+        assert_eq!(info.project_id, 12);
+
+        let now = s.env.ledger().timestamp();
+        s.env.ledger().set_timestamp(now + 31 * 24 * 60 * 60);
+        vault_wasm::Client::new(&s.env, &first).settle();
+        assert_eq!(s.registry.get_record(&first).project_id, 12);
     }
 
     /// End to end: a vault this factory deployed can write its record, and the
