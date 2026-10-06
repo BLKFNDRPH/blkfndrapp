@@ -21,8 +21,10 @@
 export type MoneyAction =
   | "stake"
   | "vote"
+  | "open-vote"
   | "payout"
   | "close"
+  | "close-vault"
   | "refund"
   | "enable-dollars"
   | "activate";
@@ -112,8 +114,10 @@ const MAYBE_MOVED =
 const NOUN: Record<MoneyAction, string> = {
   stake: "Stake",
   vote: "Vote",
+  "open-vote": "Vote request",
   payout: "Payout",
   close: "Stage close",
+  "close-vault": "Vault close",
   refund: "Refund",
   "enable-dollars": "Dollars",
   activate: "Wallet",
@@ -167,6 +171,7 @@ const VAULT = {
   MilestoneNotFound: 13,
   MilestoneAlreadyReleased: 14,
   VotingNotOpen: 15,
+  VotingAlreadyOpen: 16,
   VotingClosed: 17,
   AlreadyVoted: 18,
   NotAContributor: 19,
@@ -203,13 +208,22 @@ const VAULT_CODES: Record<MoneyAction, number[]> = {
     VAULT.NotAContributor,
     VAULT.MilestoneFailed,
   ],
+  "open-vote": [
+    VAULT.InvalidStatus,
+    VAULT.MilestoneNotFound,
+    VAULT.MilestoneAlreadyReleased,
+    VAULT.MilestoneFailed,
+    VAULT.VotingAlreadyOpen,
+  ],
   payout: [
     VAULT.InvalidStatus,
     VAULT.MilestoneNotFound,
     VAULT.MilestoneAlreadyReleased,
+    VAULT.VotingNotOpen,
     VAULT.ThresholdNotMet,
     VAULT.MilestoneFailed,
   ],
+  "close-vault": [VAULT.InvalidStatus],
   close: [
     VAULT.InvalidStatus,
     VAULT.MilestoneNotFound,
@@ -228,9 +242,12 @@ const VAULT_CODES: Record<MoneyAction, number[]> = {
 const TOKEN_CODES: Record<MoneyAction, number[]> = {
   stake: [TOKEN.AccountMissing, TOKEN.Balance, TOKEN.BalanceDeauthorized, TOKEN.TrustlineMissing],
   vote: [],
+  "open-vote": [],
   payout: [],
   close: [],
-  refund: [],
+  "close-vault": [],
+  // A refund pays the stakeholder's own wallet, which must be able to hold it.
+  refund: [TOKEN.TrustlineMissing],
   "enable-dollars": [],
   activate: [],
 };
@@ -319,6 +336,13 @@ function fromVaultCode(code: number, ctx: ExplainContext, technical: string): Ou
       return outcome("already-voted", ctx, technical, {
         title: "Vote already counted",
         body: "You've already voted on this stage. One vote per stakeholder.",
+        primary: CLOSE,
+        secondary: undefined,
+        tone: "neutral",
+      });
+    case VAULT.VotingAlreadyOpen:
+      return outcome("vote-not-open", ctx, technical, {
+        body: "This stage's vote is already open.",
         primary: CLOSE,
         secondary: undefined,
         tone: "neutral",

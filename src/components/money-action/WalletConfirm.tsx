@@ -38,7 +38,7 @@ export function WalletConfirm({
   /** "You're moving $50 into the Riverside Clinic vault." */
   sentence: string;
   rows: ConfirmRow[];
-  /** What the wallet window will display, for the preview: "50 USDC". */
+  /** What the wallet window will display, completing "It shows …": "the amount, 50 USDC". */
   walletShows: string;
   /** Null before the press; then where the action is. */
   phase: SendPhase | null;
@@ -73,7 +73,7 @@ export function WalletConfirm({
           </p>
           <ol className="space-y-1.5 text-sm text-foreground">
             <li>
-              <span className="text-muted-foreground">1.</span> It shows the amount:{" "}
+              <span className="text-muted-foreground">1.</span> It shows{" "}
               <span className="font-semibold">{walletShows}</span>.
             </li>
             {IS_PRACTICE_NETWORK && (
@@ -85,7 +85,7 @@ export function WalletConfirm({
             <li className="flex items-start gap-1.5">
               <span className="text-muted-foreground">{IS_PRACTICE_NETWORK ? "3." : "2."}</span>
               <span>
-                Check the amount, then press <span className="font-semibold">Approve</span>.
+                Check it, then press <span className="font-semibold">Approve</span>.
               </span>
               <MousePointerClick className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" aria-hidden="true" />
             </li>

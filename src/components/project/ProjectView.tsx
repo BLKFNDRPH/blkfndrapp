@@ -11,6 +11,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FundDialog } from "./FundDialog";
+import { RefundSheet } from "./RefundSheet";
+import { MoneyActionPanel } from "@/components/money-action/MoneyActionPanel";
+import { useStellarContract } from "@/hooks/use-stellar-contract";
 import { Progress } from "@/components/ui/progress";
 import { useProjectDetails } from "@/context/ProjectDetailsContext";
 import { MilestonePlan, MilestoneVoting, type MilestoneVaultState } from "./MilestoneVoting";
@@ -31,7 +34,6 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/context/AuthContext";
-import { CubeSpinner } from "@/components/ui/CubeSpinner";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useEffect, useRef, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
@@ -47,7 +49,6 @@ import { useFreighterWallet } from "@/context/FreighterWalletContext";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { getUserByCreatorId } from "@/lib/data.client";
 import { Client as VaultClient } from "@/packages/blkfndr_vault/src";
-import { freighterSigner } from "@/lib/freighter-signer";
 import { describeMoney, describeRateAge, formatToken } from "@/lib/money";
 import { useXlmRate } from "@/lib/xlm-rate";
 import {
@@ -61,19 +62,8 @@ import { projectHref, PROJECTS_PATH, type ProjectTab } from "@/lib/project-href"
 import type { Project } from "@/lib/types";
 import { SOROBAN_RPC_URL, NETWORK_PASSPHRASE } from "@/lib/stellar";
 
-// Signing goes through freighterSigner, which checks what the wallet actually
-// returned. Passing the wallet's raw result to the SDK meant a dismissed popup
-// surfaced as "Cannot read properties of undefined (reading 'switch')".
-const getSignerOptions = (publicKey: string) => freighterSigner(publicKey);
-
 /** The vault counts in stroops; a person reads whole tokens. */
 const STROOPS = 10_000_000;
-
-const SIGN_IN_TOAST = {
-  title: "Sign in first",
-  description: "Sign in to continue.",
-  variant: "destructive" as const,
-};
 
 /** A Stellar account or contract address, which must never stand in for a name. */
 const looksLikeAddress = (s: string) => /^[GC][A-Z2-7]{55}$/.test(s);
@@ -248,46 +238,25 @@ export function ProjectView({
     refreshProject,
     isLoading,
     error,
-    signInToContinue,
   } = useProjectDetails();
 
-  const { user, refreshUser } = useAuth();
+  const { user } = useAuth();
   const { toast } = useToast();
   const router = useRouter();
   const refreshAfterTx = useRefreshAfterTx();
+  const { prepareSettleVault } = useStellarContract();
   const { userFunds, refreshUserFunds, refreshProjects, projects } = useBlockchain();
   const { rate: xlmUsd, updatedAt: rateUpdatedAt } = useXlmRate();
   const isDesktop = useMediaQuery("(min-width: 1024px)");
 
-  const { freighterWalletAddress, login: connectFreighter } = useFreighterWallet();
+  // Money actions on this page set up or reconnect the wallet inside their own
+  // panels (MoneyActionPanel, the stake and refund sheets), so the page itself
+  // only reads which wallet is connected.
+  const { freighterWalletAddress } = useFreighterWallet();
 
-  const handleConnectWallet = async (): Promise<string | null> => {
-    if (!user) {
-      toast(SIGN_IN_TOAST);
-      signInToContinue();
-      return null;
-    }
-    try {
-      const address = await connectFreighter();
-      await refreshUser();
-      toast({
-        title: "Your wallet is linked",
-        description: "Your wallet is linked to your account.",
-      });
-      return address || null;
-    } catch (err: any) {
-      console.error("[ProjectView] wallet connection failed:", err);
-      toast({
-        title: "Couldn't reach your wallet",
-        description: err.message || "We couldn't connect your wallet. Try again.",
-        variant: "destructive",
-      });
-      return null;
-    }
-  };
-
-  const [isClosePending, setIsClosePending] = useState(false);
-  const [isRefundClaimPending, setIsRefundClaimPending] = useState(false);
+  // The refund sheet and the vault-close panel open in place, like the stake sheet.
+  const [isRefundOpen, setIsRefundOpen] = useState(false);
+  const [isCloseVaultOpen, setIsCloseVaultOpen] = useState(false);
   const [creatorName, setCreatorName] = useState<string | null>(null);
   const [creatorAvatar, setCreatorAvatar] = useState<string | null>(null);
 
@@ -533,128 +502,18 @@ export function ProjectView({
     };
   }, [project, creatorAddress]);
 
-  // On a phone the stake sheet opens in the flow of the page, under the money
-  // block, so bring it into view when it does.
+  // On a phone the stake and refund sheets open in the flow of the page, under
+  // the money block, so bring them into view when they do.
+  const isSheetOpen = isFundFlow || isRefundOpen;
   useEffect(() => {
-    if (isFundFlow && !isDesktop) {
+    if (isSheetOpen && !isDesktop) {
       inlineActionRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
-  }, [isFundFlow, isDesktop]);
+  }, [isSheetOpen, isDesktop]);
 
   // handlePostBond is gone: the builder's deposit is transferred during
   // create_vault, so a vault either exists with its deposit locked or does not
   // exist.
-
-  // "Close it now": settle a vault whose deadline has passed. Permissionless in
-  // the contract; here it is kept under Technical details for a signed-in
-  // stakeholder or the builder, because BLKFNDR's cron does the same thing.
-  const handleCloseNow = async () => {
-    if (!user) {
-      toast(SIGN_IN_TOAST);
-      signInToContinue();
-      return;
-    }
-    if (!project || !project.vaultAddress) return;
-
-    let signingAddress = freighterWalletAddress;
-    if (!signingAddress) {
-      const connectedAddress = await handleConnectWallet();
-      if (!connectedAddress) return;
-      signingAddress = connectedAddress;
-    }
-
-    setIsClosePending(true);
-    try {
-      const client = new VaultClient({
-        contractId: project.vaultAddress,
-        rpcUrl: SOROBAN_RPC_URL,
-        networkPassphrase: NETWORK_PASSPHRASE,
-        ...getSignerOptions(signingAddress),
-      });
-
-      const tx = await client.settle();
-      await tx.signAndSend();
-
-      toast({
-        title: "Vault closed to new stakes",
-        description: "The vault has recorded what happens next.",
-      });
-
-      refreshProject(project.id);
-      await refreshAfterTx(signingAddress);
-    } catch (err: any) {
-      console.error("Close now failed:", err);
-      toast({
-        title: "Couldn't close the vault",
-        description: err.message || String(err),
-        variant: "destructive",
-      });
-    } finally {
-      setIsClosePending(false);
-    }
-  };
-
-  const handleCollectRefund = async () => {
-    if (!user) {
-      toast(SIGN_IN_TOAST);
-      signInToContinue();
-      return;
-    }
-    if (!project || !project.vaultAddress) return;
-
-    let signingAddress = freighterWalletAddress;
-    if (!signingAddress) {
-      const connectedAddress = await handleConnectWallet();
-      if (!connectedAddress) return;
-      signingAddress = connectedAddress;
-    }
-
-    setIsRefundClaimPending(true);
-    try {
-      const client = new VaultClient({
-        contractId: project.vaultAddress,
-        rpcUrl: SOROBAN_RPC_URL,
-        networkPassphrase: NETWORK_PASSPHRASE,
-        ...getSignerOptions(signingAddress),
-      });
-
-      const tx = await client.claim_refund({
-        contributor: signingAddress,
-      });
-
-      await tx.signAndSend();
-
-      toast({
-        title: "Refund collected",
-        description: "Your stake is back in your wallet.",
-      });
-
-      refreshProject(project.id);
-      await refreshAfterTx(signingAddress);
-    } catch (err: any) {
-      console.error("Collect refund failed:", err);
-      const simError = (err.simulation as any)?.error;
-      const errMsg = simError || err.message || String(err);
-      const isAlreadyClaimed = String(errMsg).includes("#9") || String(errMsg).includes("NoFundsToRefund") || String(errMsg).includes("Contract, #9");
-
-      if (isAlreadyClaimed) {
-        toast({
-          title: "Nothing to collect",
-          description:
-            "This refund was already collected, or this wallet has no stake in the vault.",
-          variant: "destructive",
-        });
-      } else {
-        toast({
-          title: "Couldn't collect your refund",
-          description: String(errMsg),
-          variant: "destructive",
-        });
-      }
-    } finally {
-      setIsRefundClaimPending(false);
-    }
-  };
 
   if (!project) return null;
 
@@ -746,8 +605,9 @@ export function ProjectView({
       ? "Sign in with Google or email, then approve in a wallet you control. We'll walk you through it."
       : "Approve in a wallet you control. We'll walk you through it.";
 
-  // Manual close, for a vault past its deadline that the cron has not yet
-  // settled. Never shown to a visitor.
+  // Recording a passed deadline on the vault. No scheduler does this today,
+  // and refunds work without it (the vault works out its own state), so it is
+  // a small tidy-up kept under Technical details. Never shown to a visitor.
   const canCloseNow =
     !!project.vaultAddress &&
     !!user &&
@@ -766,8 +626,19 @@ export function ProjectView({
     ? "We couldn't read this vault's live figures. Try again."
     : null;
 
+  // Returning money: a stage failed, the builder went quiet, or the deadline
+  // passed short of the goal. The last can still be listed as raising until
+  // the vault is next touched; the vault itself already counts it as failed,
+  // and the refund sheet reads the vault, not the listing.
+  const missedGoal =
+    project.status === "raising" &&
+    typeof project.fundingDeadline === "number" &&
+    project.fundingDeadline > 0 &&
+    Date.now() >= project.fundingDeadline &&
+    project.currentFunding < project.fundingGoal;
   const canCollectRefund =
-    isStakeholder && (project.status === "failed" || project.status === "refunding");
+    isStakeholder &&
+    (project.status === "failed" || project.status === "refunding" || missedGoal);
 
   const showsStageVoting =
     !!project.vaultAddress &&
@@ -862,17 +733,25 @@ export function ProjectView({
     </section>
   );
 
-  // ---- The primary action, exactly as the dialog's footer rendered it ----
+  // ---- Collecting a refund: a button, then the refund sheet in its place ----
+  const openRefund = () => {
+    // A stakeholder who pressed it in the Stages tab sees the sheet open in the
+    // action area, so bring that into view on a phone.
+    setIsRefundOpen(true);
+  };
   const refundButton = canCollectRefund ? (
-    <Button
-      onClick={handleCollectRefund}
-      disabled={isRefundClaimPending || isRefundClaimed}
-      variant={isRefundClaimed ? "outline" : "destructive"}
-      className="w-full sm:w-auto whitespace-nowrap shrink-0"
-    >
-      {isRefundClaimPending && <CubeSpinner />}
-      {isRefundClaimed ? "Refund collected" : "Collect your refund"}
-    </Button>
+    isRefundOpen ? (
+      <RefundSheet project={project} onClose={() => setIsRefundOpen(false)} />
+    ) : (
+      <Button
+        onClick={openRefund}
+        disabled={isRefundClaimed}
+        variant={isRefundClaimed ? "outline" : "default"}
+        className="w-full sm:w-auto whitespace-nowrap shrink-0"
+      >
+        {isRefundClaimed ? "Refund collected" : "Collect your refund"}
+      </Button>
+    )
   ) : null;
 
   const actionArea = (
@@ -966,20 +845,37 @@ export function ProjectView({
         )}
         {canCloseNow && (
           <div className="space-y-1.5 border-t border-border/60 pt-3">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={handleCloseNow}
-              disabled={isClosePending}
-            >
-              {isClosePending && <CubeSpinner />}
-              Close it now
-            </Button>
-            <p className="text-xs text-muted-foreground">
-              Anyone can do this; it costs a small network fee from
-              your wallet. BLKFNDR does it automatically within a day.
-            </p>
+            {isCloseVaultOpen ? (
+              <MoneyActionPanel
+                context={{ action: "close-vault" }}
+                title="Record the deadline on the vault"
+                sentence="This writes on the vault that its deadline has passed, so its status catches up everywhere. Refunds already work without it. Nothing leaves your wallet except a small network fee."
+                rows={[]}
+                walletShows="a request to update the vault, with no money moving"
+                prepare={() => prepareSettleVault(project.vaultAddress!)}
+                successTitle="The vault has recorded its deadline."
+                onSuccess={() => {
+                  refreshProject(project.id);
+                  refreshAfterTx(freighterWalletAddress ?? undefined);
+                }}
+                onClose={() => setIsCloseVaultOpen(false)}
+              />
+            ) : (
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsCloseVaultOpen(true)}
+                >
+                  Close it now
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  Records on the vault that its deadline has passed. Refunds work without it. Anyone
+                  can do this for a small network fee from their wallet.
+                </p>
+              </>
+            )}
           </div>
         )}
       </dl>
@@ -990,7 +886,7 @@ export function ProjectView({
     <div
       className={cn(
         "container mx-auto px-4 pt-6 sm:px-6 lg:px-8 lg:pb-12",
-        !isDesktop && hasAction && !isFundFlow ? "pb-36" : "pb-12",
+        !isDesktop && hasAction && !isSheetOpen ? "pb-36" : "pb-12",
       )}
     >
       {/* ---- Header ---- */}
@@ -1048,7 +944,7 @@ export function ProjectView({
           {!isDesktop && (
             <>
               {moneyBlock}
-              {isFundFlow && hasAction && (
+              {isSheetOpen && hasAction && (
                 <div ref={inlineActionRef} className="rounded-lg border bg-card p-4">
                   {actionArea}
                 </div>
@@ -1139,6 +1035,7 @@ export function ProjectView({
                   details={project.milestones}
                   renderProof={renderMilestoneProof}
                   onChange={() => refreshProject(project.id)}
+                  onCollectRefund={canCollectRefund ? openRefund : undefined}
                 />
               ) : (project.milestones?.length ?? 0) > 0 ? (
                 <MilestonePlan
@@ -1151,9 +1048,15 @@ export function ProjectView({
                 <p className="text-sm text-muted-foreground">This project has no stages yet.</p>
               )}
 
-              {refundButton && (
+              {/* A vault that missed its goal shows the plan, not the votes, so
+                  its refund button sits here. A failed stage carries its own
+                  button in the stage card. The sheet itself opens in the
+                  action area, never twice. */}
+              {canCollectRefund && !showsStageVoting && !isRefundOpen && !isRefundClaimed && (
                 <div className="border-t pt-4">
-                  {refundButton}
+                  <Button onClick={openRefund} className="w-full sm:w-auto">
+                    Collect your refund
+                  </Button>
                 </div>
               )}
             </TabsContent>
@@ -1231,7 +1134,7 @@ export function ProjectView({
       </div>
 
       {/* ---- Phone: the action pinned to the bottom ---- */}
-      {!isDesktop && hasAction && !isFundFlow && (
+      {!isDesktop && hasAction && !isSheetOpen && (
         <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur supports-[backdrop-filter]:bg-background/80">
           <div className="container mx-auto px-1 sm:px-3">{actionArea}</div>
         </div>
