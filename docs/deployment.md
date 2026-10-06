@@ -484,8 +484,10 @@ from the factory's fee wallet, so nothing else needs the address.
 The factory deploys new vaults from a stored wasm hash, and its admin can change
 it. Existing vaults are immutable and keep the code they were created with.
 
-The commands for the #99 release rule, with the factory admin key (the CLI
-identity `ba-escrow-deployer`, address `GDR4TPUF…`):
+The commands, with the factory admin key (the CLI identity
+`ba-escrow-deployer`, address `GDR4TPUF…`). Run them from the maintainer's
+machine, which holds that key. The Portainer stack has neither the Stellar CLI
+nor the admin key, and should not:
 
 ```bash
 bash scripts/build-contracts.sh
@@ -493,9 +495,14 @@ stellar contract upload --wasm target/wasm32-unknown-unknown/release/blkfndr_vau
 stellar contract invoke --id CDIXGE5MWFAYXA7FKLB4CDRSSQZ6VQSGHT6O6OY3TFTWVF6F7BGKR7D5 --source-account ba-escrow-deployer --network testnet -- update_wasm_hash --new_hash <hash printed by the upload>
 ```
 
-Built from `main` on the maintainer's machine, that wasm hashes `436e8b46…`.
+Built from `main` on the maintainer's machine, that wasm hashes `e9009410…`.
 Another machine gives a different hash (see the build caveat above). Use the hash
-the upload prints.
+the upload prints. If that code is already on testnet, the upload only reprints
+its hash.
+
+Last switch: 2026-10-06, from `70e5f3a8…` to `e9009410…` (the #99 release rule
+plus the money majority), in transaction
+[`9dd7ed93…`](https://stellar.expert/explorer/testnet/tx/9dd7ed938ad0ef0db7e357cc6567e70c1620abb296a7baa301932888d7a13508).
 
 To check, `GET /api/vault-wasm-hash` reads the hash straight from the factory's
 storage and caches it for 5 minutes. The homepage's "check it yourself" box shows
@@ -508,9 +515,9 @@ exception: its structs are unchanged, so either order works.
 
 ## Pending live operations
 
-Merged is not the same as live. The Operations Vault cutover votes, the #99
-vault wasm switch, two unapplied migrations and the factory and registry
-redeploy are tracked in **[progress.md](../progress.md)** under "Not yet done".
+Merged is not the same as live. The Operations Vault cutover votes, two
+unapplied migrations and the factory and registry redeploy are tracked in
+**[progress.md](../progress.md)** under "Not yet done".
 They are not repeated here.
 
 ## Verifying a deployment

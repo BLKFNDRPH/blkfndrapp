@@ -26,7 +26,7 @@ Release authority is contribution-weighted rather than held by appointed signers
 
 | Area | State |
 |---|---|
-| Bonded vault with contributor-weighted release | ✅ Deployed to testnet, 56 tests passing. The capped-total release rule (#99) and the money majority are merged but **not yet live in the app**: they reach new projects once the factory's vault wasm hash is updated. A standalone [reference deployment](docs/deliverables/contribution-threshold-attestation.md) runs them on testnet now |
+| Bonded vault with contributor-weighted release | ✅ Deployed to testnet, 56 tests passing. The capped-total release rule (#99) and the money majority are live for projects created since 2026-10-06. Earlier projects keep the rule they were created with. Test transactions are in the [deliverable evidence](docs/deliverables/contribution-threshold-attestation.md) |
 | Builder attestation registry | ✅ Deployed to testnet, 16 tests passing |
 | Platform treasury + owner-voted governance (fee, bond, ops funding) | ✅ Deployed to testnet, 45 tests passing |
 | Operations Vault (governed gas budget) + managed KYC-attestor keys | ✅ Deployed to testnet, 25 tests passing |
@@ -49,7 +49,7 @@ See [the rebuild PR](https://github.com/BLKFNDRPH/blkfndrapp/pull/1) for what ch
 2. **Stakeholders take a position,** from $5 USDC upward. The stake held is the voting weight it carries, and it stays the stakeholder's to reclaim. No fee is deducted from a stake.
 3. **The goal closes the raise.** Reaching it moves the vault to `Funded`; missing it by the deadline returns every contribution in full and the bond to the builder.
 4. **The builder opens a milestone vote,** which runs for a fixed window set at project creation.
-5. **Contributors vote.** No single wallet counts for more than 20% of the raise, however much it put in. A release needs more than half of the vault's capped total — every backer's weight after the cap — behind it, from at least three distinct wallets, or from every backer when there are fewer than three.
+5. **Contributors vote.** No single wallet counts for more than 20% of the raise, however much it put in. A release needs more than half of the vault's capped total — every backer's weight after the cap — behind it, from at least three distinct wallets, or from every backer when there are fewer than three. The approving wallets must also have put in more than half the raise between them.
 6. **Release is permissionless.** Once the vote carries, anyone can execute it; nobody can withhold it.
 7. **A lapsed window fails the milestone.** Contributor silence returns money — it never releases it. Remaining funds and the forfeited bond become claimable pro-rata.
 8. **Close writes a permanent record** to the attestation registry: builder, project, outcome, raise, bond, milestones approved, timestamp.
@@ -70,9 +70,9 @@ A backer holding two thirds of the raise still counts for 60 and still cannot re
 
 With fewer than three backers, every backer must approve. A sole backer of the whole 300 counts for 60 of a capped total of 60, so their one vote releases. Covered by `a_sole_backer_releases_with_one_vote` and `two_backers_release_when_both_approve`.
 
-The trade-off: weight above the cap counts neither for nor against a release, so a release can carry with less than half of the money when another stake is capped. On a 1,000 raise, three wallets of 140 (42%) outvote two backers of 290, because each of those counts for only 200. The three-wallet floor bounds this by wallets, not people — contributions are not identity-gated.
+Wallets cost nothing to make, so the approvers must also hold more than half the money. Without that, three wallets of 70 could clear the capped bar over a 790 backer on a 1,000 raise, who counts for only 200. A wallet holding more than half the raise can block a release but never make one alone. Covered by `small_wallets_cannot_outvote_most_of_the_money` and `a_majority_holder_can_block_a_release_but_never_make_one_alone`.
 
-This rule applies to vaults the factory creates after its wasm hash is updated. **As of 2026-10-02 that has not happened**: the factory still deploys wasm `70e5f3a8…`, so every vault on testnet — new ones included — runs the old bar, more than half of the raw raise, under which a raise with one or two backers, or one concentrated in a single wallet, cannot release. Vaults are not upgradeable, so vaults created before the switch keep the old bar for good. The switch is waiting on one open decision, a dual-majority guard against a builder splitting a small stake across three wallets; see [progress.md](progress.md#2-switch-the-factory-to-the-99-vault-wasm).
+This rule applies to vaults the factory creates after its wasm hash was switched to `e9009410…` on 2026-10-06 ([transaction](https://stellar.expert/explorer/testnet/tx/9dd7ed938ad0ef0db7e357cc6567e70c1620abb296a7baa301932888d7a13508)). Vaults are not upgradeable, so the projects created before then keep the old bar for good: more than half of the raw raise, under which a raise with one or two backers, or one concentrated in a single wallet, cannot release.
 
 ## Tech Stack
 
@@ -117,11 +117,13 @@ The factory, attestation, identity and admin contracts above predate the #73 and
 
 Shared contract storage on Soroban expires when nobody pays its rent, and the next caller pays to restore it. The `keep-alive-cron` service checks the factory, both registries, the admin roster, the treasury, the Operations Vault and the code they and every vault run from on a schedule, restoring anything archived and topping up anything under 40 days to 60. The contracts top themselves up to 30 days at the caller's expense, so keeping them above that means a launch or a stake never pays the platform's rent.
 
-The **vault is not deployed as a contract**. Its wasm is uploaded and the factory instantiates one instance per project from that hash:
+The **vault is not deployed as a contract**. Its wasm is uploaded and the factory instantiates one instance per project from that hash. Since 2026-10-06 it is:
 
 ```
-blkfndr_vault.wasm  sha256:70e5f3a81a3d66155b46780f0c7bc1bd7574721d5477865f7a2cd471d9746b53
+blkfndr_vault.wasm  sha256:e9009410b9cbb4c5bfb7cca747812dcad6a044d09c648a1e392a84fe7e182d95
 ```
+
+Projects created before then run `70e5f3a8…` or the earlier `9c20bca3…`.
 
 A reviewer checks any project's vault against that hash. The landing page's "Check it yourself" box reads the factory's current hash live from [`/api/vault-wasm-hash`](https://testnetv2.blkfndr.com/api/vault-wasm-hash) rather than quoting a constant. `scripts/build-contracts.sh` builds it from source; the wasm embeds absolute dependency paths in its panic locations, so a matching hash needs the same build paths (a pinned Docker build would remove that caveat).
 

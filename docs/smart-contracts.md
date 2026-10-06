@@ -66,7 +66,7 @@ The IDs are in [deployments/testnet-reference/contracts.env](../deployments/test
 
 | Contract | What testnet runs | Source on `main` adds |
 |---|---|---|
-| Vault | wasm `70e5f3a8…` for projects created since the hardening redeploy (#71). Older projects run `9c20bca3…` | The #99 release rule: capped-total bar, three-wallet floor, `get_milestone_wallets`. The money majority: `get_milestone_stake` |
+| Vault | wasm `e9009410…` for projects created since 2026-10-06: the current source, with the #99 release rule and the money majority. Projects created since the hardening redeploy (#71) run `70e5f3a8…`, and older ones `9c20bca3…` | Nothing |
 | Factory | `initialize` | #75: `__constructor` |
 | Attestation | `initialize(admin, factory)`; records keyed by `project_id`; `get_builder_projects` | #73 H-07: records keyed by vault address, `get_builder_vaults`. #73 M-04: `disable_factory`. #75: `__constructor(admin)`. `ATTEST RECORDED` carries the builder as a topic |
 | Identity | `initialize` | #73 M-02: permissionless `bump_kyc` / `bump_attestor`, and approvals re-extended when read. #75: `__constructor` |
@@ -78,17 +78,17 @@ Interfaces were read from testnet with `stellar contract info interface`, and th
 
 ### The vault wasm hash
 
-The vault is **not** deployed as a contract of its own. Its wasm is uploaded once and the factory instantiates one instance per project from that hash. As of 2026-10-02 the factory deploys:
+The vault is **not** deployed as a contract of its own. Its wasm is uploaded once and the factory instantiates one instance per project from that hash. Since 2026-10-06 the factory deploys:
 
 ```
-blkfndr_vault.wasm  sha256:70e5f3a81a3d66155b46780f0c7bc1bd7574721d5477865f7a2cd471d9746b53
+blkfndr_vault.wasm  sha256:e9009410b9cbb4c5bfb7cca747812dcad6a044d09c648a1e392a84fe7e182d95
 ```
+
+The factory admin switched it from `70e5f3a8…` with `update_wasm_hash` in transaction [`9dd7ed93…`](https://stellar.expert/explorer/testnet/tx/9dd7ed938ad0ef0db7e357cc6567e70c1620abb296a7baa301932888d7a13508). It is the vault on `main`, with the #99 release rule and the money majority, and the same code the [reference deployment](#reference-deployment) runs. Existing vaults are immutable and keep the code they were created with (see [Older vaults](#older-vaults)).
 
 The factory has no getter for this hash. [src/lib/factory-vault-hash.ts](../src/lib/factory-vault-hash.ts) reads it from the factory's instance storage, and `/api/vault-wasm-hash` serves it (cached five minutes) to the homepage's "Check it yourself" box.
 
-`70e5f3a8…` is **not** the vault on `main`. It predates #99, so it runs the old release rule (see [Older vaults](#older-vaults)). The #99 rule reaches only vaults the factory creates after the factory admin uploads the new wasm and calls `update_wasm_hash`. Existing vaults are immutable and keep the code they were created with.
-
-A build of `main` does not have one canonical hash. The wasm embeds absolute cargo-registry paths in panic locations, so the hash depends on the machine that built it (the checkout directory does not matter). On the maintainer's machine, `main` builds the vault to `436e8b46…`, the hash quoted in #99. Before commit `d212b37` landed it built to `1aeec93e…`, without the fixes described in [Known issue in deployed vaults](#known-issue-in-deployed-vaults). Neither is uploaded to testnet yet. Another machine will likely produce a different value. Compare a deployed vault against a build made on the same paths, or against the hash the factory reports.
+A build of `main` does not have one canonical hash. The wasm embeds absolute cargo-registry paths in panic locations, so the hash depends on the machine that built it (the checkout directory does not matter). `e9009410…` is the maintainer's build. Another machine will likely produce a different value. Compare a deployed vault against a build made on the same paths, or against the hash the factory reports.
 
 ## Platform parameters
 
@@ -212,23 +212,23 @@ What this guarantees, with the tests that pin it:
 
 ### Sybil wallets against a large backer (resolved)
 
-Found in the adversarial review of #99. The product owner adopted the fix on 2026-10-06, and it is in source. It reaches production vaults only when the factory is switched to the new wasm.
+Found in the adversarial review of #99. The product owner adopted the fix on 2026-10-06. It runs in every vault created since the factory switched to `e9009410…` that day.
 
 - **The attack.** Raise 1,000. One honest backer puts in 790, capped at 200. The builder puts 70 into each of three fresh wallets (210). The capped total is 410, so the weight bar is more than 205, and the three wallets clear it and the floor. Likewise 60/10/10/10/10 let four small wallets override a 60% holder, and three wallets of 140 (42%) outvoted two backers of 290, who count for 200 each.
 - **The fix: a dual majority.** The approvers' uncapped stakes must also exceed half the raise (condition 3 above). In each case above the approvers hold 21%, 40% or 42% of the money, so nothing moves. Unanimity still always carries, and every worked shape above keeps its outcome.
 
 ### Known issue in deployed vaults
 
-Two fixes from the #99 review were pushed to its branch 17 minutes after it merged, in commit `d212b37`, and have since landed on `main`. The tests `a_carried_vote_cannot_be_stalled_out` and `a_tiny_raise_still_releases_when_every_backer_approves` pin them. They reach only vaults the factory creates after its vault wasm is switched:
+Two fixes from the #99 review were pushed to its branch 17 minutes after it merged, in commit `d212b37`, and have since landed on `main`. The tests `a_carried_vote_cannot_be_stalled_out` and `a_tiny_raise_still_releases_when_every_backer_approves` pin them. They run in vaults created since the factory switched to `e9009410…` on 2026-10-06:
 
 - **`settle_stalled` spares a carried milestone**, as `settle_lapsed_milestone` already did.
 - **The weight cap never drops below one base unit**, so a raise under five base units still releases when every backer approves. The live 5-unit minimum contribution already makes such a raise impossible.
 
-Every existing vault, including those created from the deployed `70e5f3a8…`, keeps the first defect: **`settle_stalled` can fail a carried milestone.** It refuses only while a window is open. Opening a vote does not reset the 90-day stall clock. So once a carried milestone's window closes unreleased, and 90 days have passed since funding or the last release, anyone can call `settle_stalled`, fail that milestone and forfeit the bond of a builder whose work was approved. The platform's `settle-stalled-cron` submits `settle_stalled` for any vault where it would succeed. Releasing a carried milestone promptly avoids it.
+Every vault created before the switch, including those from `70e5f3a8…`, keeps the first defect: **`settle_stalled` can fail a carried milestone.** It refuses only while a window is open. Opening a vote does not reset the 90-day stall clock. So once a carried milestone's window closes unreleased, and 90 days have passed since funding or the last release, anyone can call `settle_stalled`, fail that milestone and forfeit the bond of a builder whose work was approved. The platform's `settle-stalled-cron` submits `settle_stalled` for any vault where it would succeed. Releasing a carried milestone promptly avoids it.
 
 ### Older vaults
 
-Vaults are not upgradeable. Vaults created from `70e5f3a8…` (and the earlier `9c20bca3…`) measure the bar against the **raw raise**: a release needs approving capped weight above `floor(raise / 2) + 1`, with no wallet floor. They do not expose `get_milestone_wallets`, and the UI treats its missing-function error as "old rule". Under that rule a raise with one or two backers, or any raise whose capped weights sum to half the raise or less (for example 210/50/40 on 300), can never release, and its milestones can only lapse. `9c20bca3…` vaults also predate `settle_stalled`.
+Vaults are not upgradeable. Vaults created from `70e5f3a8…` (and the earlier `9c20bca3…`) measure the bar against the **raw raise**: a release needs approving capped weight above `floor(raise / 2) + 1`, with no wallet floor and no money majority. They expose neither `get_milestone_wallets` nor `get_milestone_stake`, and the UI treats each missing-function error as "older rule". Under that rule a raise with one or two backers, or any raise whose capped weights sum to half the raise or less (for example 210/50/40 on 300), can never release, and its milestones can only lapse. `9c20bca3…` vaults also predate `settle_stalled`.
 
 ### Storage keys
 

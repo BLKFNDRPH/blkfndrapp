@@ -23,7 +23,7 @@ Read-only checks, not inferred from merges: the deployed `/_next/static` bundle,
 | **App** | ✅ The host runs `main` through at least #103. The deployed bundle contains #102 and #103, and its Operations Vault address is `CCVXM3YP…`. #104 is server-only, so the bundle can't show whether it is deployed |
 | **Google sign-in** | ✅ Fixed on the host. Since 2026-10-01 its redirects use `https://`, and the PKCE exchanges complete |
 | **Indexer** | ✅ Current. The cursor was updated 2026-10-02, and all 7 live projects carry their real titles except the three test rows (#1–3) |
-| **Vault release rule (#99)** | ❌ Not live. The factory still deploys vault wasm `70e5f3a8…`, as `/api/vault-wasm-hash` confirms |
+| **Vault release rule (#99) and money majority** | ✅ Live for new projects since 2026-10-06. The factory deploys vault wasm `e9009410…`, as `/api/vault-wasm-hash` confirms ([item 2](#2-switch-the-factory-to-the-99-vault-wasm)) |
 | **Operations Vault cutover** | ⚠️ Half done. The app points at the new vault, but the old one still holds 25 XLM, the new one 0, and the treasury's ops funding is unset |
 | **`profiles` column grants (#70)** | ❌ Not applied. `authenticated` can still `UPDATE profiles.stellar_public_key` |
 | **KYC linked-wallet policy (#89)** | ❌ Not applied, and it has to follow the grants above |
@@ -59,7 +59,7 @@ Every app-layer change below is live, because the host was rebuilt from `main`. 
 | #96 | Profile | Recent Activity reads Horizon `/operations` and labels contract calls ("Fund vault", "Open milestone vote") with signed amounts | ✅ |
 | #97, #103 | Milestones | Each milestone shows its own proof (description and photo) in the project dialog. The builder adds or edits proof per milestone, and the server decides from the live vault (funded or active, milestone not released or failed). Proof is capped at 4,000 characters, photos at 8 MB (PNG, JPEG, WebP, GIF) | ✅ |
 | #98 | Admin | **View Vault** shows the real release authority (contributor vote, no admin key) and the flat fee | ✅ |
-| #99 | **Contract** | **Release rule.** A release needs more than half of the *capped* total, from at least three wallets (or every backer when there are fewer than three). The homepage reads the vault hash live from the factory. The PR's last commit (`d212b37`: `settle_stalled` sparing approved milestones, the cap floor, +5 tests) was pushed after the merge and landed on `main` separately on 2026-10-03. Vault tests on `main`: 52 ([item 2](#2-switch-the-factory-to-the-99-vault-wasm)) | ✅ App · ❌ **contract not switched** |
+| #99 | **Contract** | **Release rule.** A release needs more than half of the *capped* total, from at least three wallets (or every backer when there are fewer than three). The homepage reads the vault hash live from the factory. The PR's last commit (`d212b37`: `settle_stalled` sparing approved milestones, the cap floor, +5 tests) was pushed after the merge and landed on `main` separately on 2026-10-03. Vault tests on `main`: 52 ([item 2](#2-switch-the-factory-to-the-99-vault-wasm)) | ✅ App · ✅ contract switched 2026-10-06, with the money majority (#119) |
 | #100 | Design | [Web3-accessibility redesign brief](docs/design/web3-accessibility-redesign.md): the friction map, 14 Claude Design prompts and four delivery phases | — |
 | #101 | Stake flow | Removed the phantom 3% fee from the stake dialog. Stakes were never charged a fee | ✅ |
 | #102 | Stake flow | Sign-in opens above the project dialog. After sign-in (Google reload or password remount), the project reopens, in the fund flow when that was the intent | ✅ |
@@ -92,13 +92,12 @@ Every app-layer change below is live, because the host was rebuilt from `main`. 
 **Live on testnet:**
 
 - **App:** everything on `main` through #103, including the #68 fixes, the #70 reviewer gate, the keeper (#72), the keep-alive (#86) and the hide/lock migration (#85).
-- **Vault** wasm `70e5f3a8…`. The factory deploys it, so new projects get H-02, M-03 and M-07. Vaults are immutable, so older vaults keep their original code.
+- **Vault** wasm `e9009410…`, since 2026-10-06. The factory deploys it, so new projects get the #99 release rule, the money majority (#119) and the `d212b37` fixes, along with H-02, M-03 and M-07. Vaults are immutable, so older vaults keep their original code: `70e5f3a8…` or `9c20bca3…`.
 - **Treasury** [`CDA5XDY5…M44COAXU`](https://stellar.expert/explorer/testnet/contract/CDA5XDY564RV2OSZNF2S6CXQYCABFASBOHUCXJEGII6M232VM44COAXU), redeployed 2026-09-28. The factory routes fees to it.
 - **Operations Vault** [`CCVXM3YP…NQG7FDSN`](https://stellar.expert/explorer/testnet/contract/CCVXM3YPPEMWG4INHFTZ4NBJ3PQW3ZUNYIZMBJBNYQOMSNOENQG7FDSN), which the app now points at. It is unfunded until [item 1](#1-finish-the-operations-vault-cutover) is done.
 
 **Merged, not active:**
 
-- **Vault #99 release rule and the money majority.** Waiting on `update_wasm_hash` (item 2).
 - **Factory, attestation, identity, admin.** They carry #73 and #75. Read from testnet on 2026-10-02:
   - all four still expose `initialize`;
   - attestation still keys records by `project_id` and has no `disable_factory`;
@@ -120,7 +119,13 @@ The host step is done: the app addresses `CCVXM3YP…`. Two owner votes remain:
 2. **`SetOpsFunding`** on the treasury, pointing at `CCVXM3YP…`. `get_ops_funding` returns `null` today, so the monthly gas transfer has nothing to send to. This can be done from the panel now.
 
 ### 2. Switch the factory to the #99 vault wasm
-Until this is done, every new vault still gets the old bar (more than half the raw raise), under which a raise with one or two backers can never release.
+✅ **Done 2026-10-06.** The factory admin ran `update_wasm_hash` to `e9009410…` in [`9dd7ed93…`](https://stellar.expert/explorer/testnet/tx/9dd7ed938ad0ef0db7e357cc6567e70c1620abb296a7baa301932888d7a13508), after the host was running the #121 vote panel. Checks:
+- Both `/api/vault-wasm-hash` and the factory's storage read the new hash.
+- The new vault's `VaultInitConfig` matches the live factory's field for field.
+- Its `attest` call matches the live registry's signature and `Outcome` values.
+- A simulated launch on the production factory, sent with `--send=no`, deployed a vault from the new code and ran its `initialize` as far as the KYC check.
+
+Projects created before the switch keep the old bar (more than half the raw raise), under which a raise with one or two backers can never release.
 
 - ✅ **`d212b37` has landed.** #99's final commit was pushed 17 minutes after the merge and landed on `main` separately on 2026-10-03:
   - `settle_stalled` now spares a carried milestone. The deployed `70e5f3a8…` vaults still don't: once an *approved* milestone's window closes past the 90-day stall clock, anyone can fail it and forfeit the bond. Opening a vote does not reset that clock, so a dissenter can race the release. `settle-stalled-cron` submits `settle_stalled` wherever it simulates successfully, so a carried but unreleased milestone should be released promptly.
@@ -128,9 +133,7 @@ Until this is done, every new vault still gets the old bar (more than half the r
 
 - ✅ **Decided 2026-10-06: the dual majority.** Under #99 alone, a builder with just over 20% of the raise spread across three wallets could out-vote one backer holding the rest. A release now also needs the approvers' *uncapped* stake to exceed half the raise. A wallet holding more than half the raise can block a release but never make one alone. With it, `main` builds the vault to `e9009410…` on the maintainer's machine, and the reference deployment runs that hash.
 - ✅ **The vote panel shows the money condition.** It reads `get_milestone_stake(id)` from the regenerated binding, counts it toward "Approved", and shows what the approvers put in against the raise. Older vaults have no such function, and the panel reads that as their rule rather than as a failed read. The admin View Vault names the rule the same way.
-- **Then:** upload the wasm and call `update_wasm_hash` with the factory admin key. The commands are in [deployment.md](docs/deployment.md#switching-the-vault-code). The homepage hash updates within 5 minutes.
-- Old and new bindings decode both vault shapes, so app and contract can switch in either order.
-- If item 4 happens first, the new factory can be constructed with the new hash instead.
+- ✅ **Switched**, with the commands in [deployment.md](docs/deployment.md#switching-the-vault-code). The code was already on testnet from the reference deployment, so no upload was needed.
 
 ### 3. Apply the two pending migrations, in order
 1. `20260809160000_profiles_column_grants`. Without it, anyone signed in can set their own linked wallet without a signature.
@@ -217,7 +220,7 @@ These were verified with harnesses, but not with a real wallet or account:
 ## Next
 1. Finish the Operations Vault cutover (item 1): two owner votes.
 2. Apply the two migrations (item 3): a one-command push, in order. Set the gateway key on the host (item 3b), a one-variable stack update.
-3. Switch the factory's vault wasm (item 2) once the host runs the vote-panel change. Or fold the switch into the coordinated redeploy (item 4).
+3. After 2026-10-13 14:14:52 UTC, finish the reference deployment's Project B (`bash scripts/reference-scenario.sh project-b-finish`) and add its transactions to the deliverable evidence.
 4. Start Phase 1 of the [Web3-accessibility redesign](docs/design/web3-accessibility-redesign.md): copy, information architecture and flow, with no chain changes. #103 was its first item.
 
 _Per-finding audit detail is in the security-audit PDF. Per-PR detail is in the PR descriptions._

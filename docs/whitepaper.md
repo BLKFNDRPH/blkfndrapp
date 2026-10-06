@@ -112,7 +112,7 @@ The minimum stake is 5 units of the project's token (USDC or XLM).
 
 To release a tranche, approving weight must exceed **50% of the capped total**: the sum of every stakeholder's voting weight after the cap described in 4.3. In the contract this is `RELEASE_THRESHOLD_BPS = 5_000`, evaluated as a strict inequality, so an exact tie does not release. When no wallet is over the cap, the capped total is simply the total raised.
 
-It is a majority of capped weight, not of voters, and because weight above the cap counts neither for nor against a release, it is not always a majority of the money. With 230 from one stakeholder and 10 from each of seven others on a 300 raise, the capped total is 130, and the seven small stakeholders (70, under a quarter of the money) release over the large stakeholder's objection.
+It is a majority of capped weight, not of voters. Weight above the cap counts neither for nor against a release, so on its own this bar is not always a majority of the money. With 230 from one stakeholder and 10 from each of seven others on a 300 raise, the capped total is 130, and the seven small stakeholders (70, under a quarter of the money) would clear it. The contract therefore also requires a majority of the money (4.3), which they do not have.
 
 The bar is measured against the capped total rather than the raw raise because weight above the cap is weight nobody can cast. Against the raw raise, a sole stakeholder would count for 20% of the vote and two stakeholders for 40% at most. A project with one or two stakeholders, or one where a single wallet holds most of the raise, could never release anything, even with everyone in favour. Every milestone would lapse and forfeit the bond of a builder who delivered.
 
@@ -121,6 +121,8 @@ The bar is measured against the capped total rather than the raw raise because w
 However much a single wallet staked, its voting weight is capped at **20% of the raise** (`WEIGHT_CAP_BPS = 2_000`). This is the provision that makes the majority threshold meaningful. Without it, one wallet holding most of a raise would outweigh every other stakeholder combined — and the cheapest way to obtain that is for the builder to fund their own project.
 
 The cap alone does not fix how many wallets a release takes: measured against the capped total, the bar drops whenever someone is capped, and one or two wallets could clear it. So the contract also counts approving wallets. A release needs **at least three distinct approving wallets** (`MIN_APPROVING_WALLETS = 3`), or every stakeholder when there are fewer than three. Two properties follow. No release is ever carried over a dissenting stakeholder by fewer than three wallets. And a vote every stakeholder approves always carries, so concentration can never deadlock a vault.
+
+Wallets cost nothing to make, though, so a count of wallets is not a count of people. The contract adds a third condition: the approving wallets must have put in **more than half the raise** between them, each stake counted whole. On a 1,000 raise where one stakeholder put in 790, a builder who spreads 210 across three fresh wallets clears the capped bar (210 of a capped total of 410) and the wallet floor, but holds 21% of the money, so nothing moves (`small_wallets_cannot_outvote_most_of_the_money`). A wallet holding more than half the raise can therefore block a release, but never make one alone. A unanimous vote still always carries.
 
 #### Worked example
 
@@ -138,9 +140,7 @@ With fewer than three stakeholders, every one must approve. Had a single stakeho
 
 #### Which vaults run this rule
 
-**None on testnet yet.** The rule in 4.2 and 4.3 is in the contract source. It reaches a vault only when the factory is pointed at the new code with `update_wasm_hash`, and as of 2026-10-02 the factory still deploys the earlier vault wasm (`70e5f3a8…`). Vaults are not upgradeable, so every existing vault keeps the old bar: approving capped weight above half of the **raw raise**, with no wallet floor. Under that bar a raise with one or two stakeholders, or one concentrated in a single wallet, cannot release, and its milestones can only lapse.
-
-The switch is waiting on two things. One is an open security decision, described in [Section 7](#7-what-this-does-not-protect-against). The other is two fixes from the rule's review that are written but not yet merged (see 4.5).
+**Every project created on testnet since 2026-10-06.** That day the factory was pointed at the new vault code (`e9009410…`) with `update_wasm_hash`. Vaults are not upgradeable, so projects created before then keep the old bar: approving capped weight above half of the **raw raise**, with no wallet floor and no money condition. Under that bar a raise with one or two stakeholders, or one concentrated in a single wallet, cannot release, and its milestones can only lapse.
 
 ### **4.4 Execution is permissionless**
 
@@ -156,7 +156,7 @@ Contributor apathy is the normal failure mode of on-chain governance, and most d
 
 A builder who goes silent is covered too. A funded vault moves forward only when the builder opens the next vote. If 90 days pass with no release since funding or since the last release, and no vote is open, anyone can call `settle_stalled`. It fails the next milestone, forfeits the bond and opens refunds. The platform runs a daily job that does this for any vault where it would succeed, so an abandoned project's money is not stranded by a lost key.
 
-**Known defect in deployed vaults.** In the deployed vault code, `settle_stalled` refuses only while a vote window is open, and opening a vote does not reset the 90-day clock. So a milestone stakeholders approved but nobody released before its window closed can still be failed once the clock runs out, forfeiting the bond of a builder whose work was approved. Executing a carried release promptly avoids it. The source is fixed: `settle_stalled` now spares a carried milestone. The fix reaches only vaults created after the factory is switched to the new vault code.
+**Known defect in older vaults.** In vaults created before 2026-10-06, `settle_stalled` refuses only while a vote window is open, and opening a vote does not reset the 90-day clock. So a milestone stakeholders approved but nobody released before its window closed can still be failed once the clock runs out, forfeiting the bond of a builder whose work was approved. Executing a carried release promptly avoids it. The current vault code fixes it: `settle_stalled` spares a carried milestone in every vault created since the factory was switched to that code on 2026-10-06.
 
 ### **4.6 The bond**
 
@@ -256,13 +256,13 @@ Any vault's code can be fetched from the network and compared with that hash. `s
 A protocol that claimed to eliminate risk would be lying, and the omissions are more useful to a reader than the guarantees.
 
 - **The oracle problem.** No contract can see a building. The chain enforces *who decides* a milestone was met; it cannot itself verify that concrete was poured. Stakeholders are the oracle, and their diligence is the protocol's real quality bound. A builder can attach proof to each milestone in the app, but the vote is what counts.
-- **Collusion and Sybil wallets.** The three-wallet floor forces any release carried over a dissenting stakeholder to involve at least three distinct wallets. It cannot establish that those wallets are three distinct *people*: stakes are not identity-gated. Measuring the bar against the capped total has a cost of its own. A large stakeholder's weight above the cap counts neither for nor against a release, so a coordinated group can carry a release with less than half the money. On a 1,000 raise, three wallets of 140 (42%) outvote two honest stakeholders of 290, because each of those counts for only 200.
-- **The open decision.** The sharpest form of that attack is the reason the new rule is not yet live. On a 1,000 raise, one honest stakeholder puts in 790, capped at 200. A builder who puts 70 into each of three fresh wallets holds 210 of a capped total of 410, clears the bar, and releases every tranche while the 790 stakeholder can only object. The proposed fix is a dual majority: the approvers' *uncapped* stake must also exceed half the raise. Unanimity would still always carry and the worked examples above would keep their outcomes, but any wallet holding more than half the raise would gain a veto. That is a product decision, and it is waiting on the owner.
+- **Collusion and Sybil wallets.** The three-wallet floor forces any release carried over a dissenting stakeholder to involve at least three distinct wallets. It cannot establish that those wallets are three distinct *people*: stakes are not identity-gated. The money condition in 4.3 means splitting a stake across wallets gains nothing toward a release: the approvers still need more than half the money between them. What collusion can still do is carry a release with a group that genuinely holds a majority of the money, which is the rule working as intended.
+- **A majority holder's veto.** The price of the money condition is that a stakeholder holding more than half the raise can block every release, though never make one alone. A blocked vote lapses, refunds open and the builder forfeits the bond, so one large stakeholder can end a project. The original raw-raise bar gave such a stakeholder the same power.
 - **Self-funding.** Because a vote every stakeholder approves always carries, a builder who funds their own project from a single wallet can release it to themselves. That moves only their own money, but it does earn a `Completed` record, so a record backed by one or two stakeholders says little about a builder.
 - **Stakeholder apathy has a price.** Timeouts resolve safely, toward refunds. But a project where nobody votes fails, which is a poor outcome for an honest builder who did the work.
 - **Off-chain and legal risk.** Nothing here guarantees a permit is genuine, a title is clean, or a jurisdiction will recognize a stakeholder's interest in a physical asset. On-chain funds are protected; a building is not an on-chain object.
 - **Smart contract risk.** The contracts are tested, and one known defect is described in 4.5. They have not been through a third-party audit. Treat testnet as a live rehearsal, not a place to commit funds you need back.
-- **Not yet on mainnet.** Everything described here is deployed to Stellar testnet, and the release rule in 4.2–4.3 is not yet live there.
+- **Not yet on mainnet.** Everything described here is deployed to Stellar testnet. The release rule in 4.2–4.3 applies to projects created there since 2026-10-06.
 
 ---
 
@@ -278,8 +278,8 @@ Read from the testnet factory on 2026-10-02, except where a row names a contract
 | Milestone voting window | 7 days |
 | Milestones per project | 1 to 20, summing exactly to the goal (`MAX_MILESTONES`) |
 | Per-wallet weight cap | 20% of total raised (`WEIGHT_CAP_BPS = 2_000`) |
-| Release threshold, new rule | > 50% of the capped total (`RELEASE_THRESHOLD_BPS = 5_000`), from at least 3 wallets or every stakeholder when there are fewer (`MIN_APPROVING_WALLETS = 3`). Not yet live |
-| Release threshold, live vaults | > 50% of the raw raise, counted in capped weight |
+| Release threshold, projects since 2026-10-06 | > 50% of the capped total (`RELEASE_THRESHOLD_BPS = 5_000`), from at least 3 wallets or every stakeholder when there are fewer (`MIN_APPROVING_WALLETS = 3`), with approvers holding > 50% of the raise |
+| Release threshold, earlier projects | > 50% of the raw raise, counted in capped weight |
 | Builder stall window | 90 days without a release (`BUILDER_STALL_WINDOW`) |
 | Treasury and Operations Vault votes | Two-thirds of owners by headcount, 7-day window |
 
