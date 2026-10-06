@@ -161,7 +161,7 @@ The three that transact are signed by `OPS_FUNDING_SUBMITTER_SECRET`, a funded a
 
 As of 2026-10-02 the treasury's ops funding is unset (`get_ops_funding` returns nothing), so `ops-funding-cron` skips until the owners vote `SetOpsFunding`.
 
-`settle-stalled-cron` submits `settle_stalled` wherever the contract allows it. On the deployed vault code that includes a vault whose carried milestone was never released (see [Known gap in deployed vaults](#known-gap-in-deployed-vaults)), so a carried milestone should be released promptly.
+`settle-stalled-cron` submits `settle_stalled` wherever the contract allows it. In vaults created before 2026-10-06 that includes a vault whose carried milestone was never released (see [Known gap in older vaults](#known-gap-in-older-vaults)), so a carried milestone should be released promptly.
 
 ### Keeping shared contract storage alive
 
