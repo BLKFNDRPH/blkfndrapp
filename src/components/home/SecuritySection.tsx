@@ -106,7 +106,19 @@ const CAP_EXAMPLE = [
   },
 ];
 
-const FACTORY_ID = "CDIXGE5MWFAYXA7FKLB4CDRSSQZ6VQSGHT6O6OY3TFTWVF6F7BGKR7D5";
+/*
+ * The contracts named here come from the same build-time variables the app
+ * runs on, so the list follows a redeploy. Hard-coded, it went on showing the
+ * previous factory and registries after the 2026-10-07 cutover.
+ */
+const FACTORY_ID = process.env.NEXT_PUBLIC_BLKFNDR_FACTORY_CONTRACT_ID ?? "";
+
+/*
+ * Not a build variable: the app reads the treasury from the factory's fee
+ * wallet. It changes only when the treasury is redeployed, which a new factory
+ * forces, since the treasury takes its factory at construction.
+ */
+const TREASURY_ID = "CAGMEGMS6MS6ENADUWDRW3GQ4XRBDYFFKHMRFVDEBHFCZW7NRO3TQPZW";
 
 const CONTRACTS = [
   {
@@ -115,25 +127,25 @@ const CONTRACTS = [
   },
   {
     label: "Attestation registry",
-    id: "CDLL2A4RBSQPKSPTEE3O4HNSDICSJEGCHAWIGUYVRPGOKVEPJSNB2SO7",
+    id: process.env.NEXT_PUBLIC_BLKFNDR_ATTESTATION_CONTRACT_ID ?? "",
   },
   {
     label: "Identity registry",
-    id: "CCDBWBFEK3YVXD2CDTJ4NFDPO7DB3OLB4YVX7BZI22M7QM4RWZT27TGW",
+    id: process.env.NEXT_PUBLIC_BLKFNDR_IDENTITY_CONTRACT_ID ?? "",
   },
   {
     label: "Treasury (fee destination + governance)",
-    id: "CDA5XDY564RV2OSZNF2S6CXQYCABFASBOHUCXJEGII6M232VM44COAXU",
+    id: TREASURY_ID,
   },
   {
     label: "Operations Vault (governed gas budget)",
-    id: "CCVXM3YPPEMWG4INHFTZ4NBJ3PQW3ZUNYIZMBJBNYQOMSNOENQG7FDSN",
+    id: process.env.NEXT_PUBLIC_BLKFNDR_OPERATIONS_CONTRACT_ID ?? "",
   },
   {
     label: "Admin roster (not in the release path)",
-    id: "CAHAOAX52JAQ75C3INJIDVKT7EITWDVPYP2K27NJTD4CPYZUAU6WAGOG",
+    id: process.env.NEXT_PUBLIC_BLKFNDR_ADMIN_CONTRACT_ID ?? "",
   },
-];
+].filter(({ id }) => id);
 
 export function SecuritySection() {
   return (
