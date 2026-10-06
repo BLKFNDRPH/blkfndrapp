@@ -8,9 +8,10 @@
  * disabled-button reason reads it from here, so the words are the same on the
  * card, the project page and the profile.
  *
- * The contract has no "refunding" state in practice: after the deadline a vault
- * that missed its goal is `failed` too (effective_state in the vault contract),
- * so the two refund reasons are told apart by whether the goal was reached.
+ * The vault's two refund states mean different things: `failed` is a vault
+ * whose deadline passed short of its goal (every stake comes back whole), and
+ * `refunding` is one whose stage failed its vote or whose builder went quiet
+ * (stakeholders share what is left plus the builder's deposit).
  *
  * Pure functions, no React, safe on the server.
  */
@@ -158,10 +159,10 @@ export function describeStatus(project: StatusInput, now: number = Date.now()): 
     case "completed":
       return COMPLETED;
     case "failed":
-      return goalReached ? RETURNING_MONEY : GOAL_NOT_REACHED;
-    case "refunding":
     case "expired":
       return GOAL_NOT_REACHED;
+    case "refunding":
+      return RETURNING_MONEY;
     case "hidden":
       return UNLISTED;
     case "rejected":

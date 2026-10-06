@@ -5,7 +5,6 @@ import {
   useEffect,
   useMemo,
   useState,
-  useTransition,
   type ReactNode,
 } from "react";
 import {
@@ -22,8 +21,9 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { ExpandableText } from "@/components/ui/expandable-text";
-import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/context/AuthContext";
 import { useFreighterWallet } from "@/context/FreighterWalletContext";
+import { MoneyActionPanel } from "@/components/money-action/MoneyActionPanel";
 import {
   useStellarContract,
   type MilestoneStake,
@@ -106,6 +106,8 @@ interface Props {
    */
   renderProof?: (milestone: MilestoneVaultState) => ReactNode;
   onChange?: () => void;
+  /** Open the refund sheet, for a stakeholder of a stage that failed. */
+  onCollectRefund?: () => void;
 }
 
 /** `unconfirmed`: the window has closed, but a failed read left the outcome unknown. */
@@ -155,33 +157,30 @@ function phaseOf(m: VaultMilestone, windowEndsAt: number, carried: boolean | nul
   return carried === false ? "lapsed" : "unconfirmed";
 }
 
-const fmt = (stroops: bigint) =>
-  fromStroops(stroops).toLocaleString(undefined, { maximumFractionDigits: 2 });
-
 /** Distinct approvals against the floor, in the same shape as the weight line. */
 function walletsLine({ approvals, required }: { approvals: number; required: number }) {
   return approvals <= required
-    ? `${approvals} of ${required} stakeholder ${required === 1 ? "approval" : "approvals"} needed`
-    : `${approvals} stakeholder approvals (${required} needed)`;
+    ? `${approvals} of the ${required} ${required === 1 ? "stakeholder" : "stakeholders"} needed have said yes`
+    : `${approvals} stakeholders have said yes (${required} needed)`;
 }
 
 /**
- * What the approvers put in, against the raise. Stated as "more than half"
- * rather than as the contract's bar, which is half plus one base unit and
- * would print as exactly half.
+ * What the yes-voters put in, against the whole raise, as formatted figures.
+ * Stated as "more than half" rather than as the contract's bar, which is half
+ * plus one base unit and would print as exactly half.
  */
-function stakeLine(approved: bigint, raised: bigint, currency: string) {
-  return `Approving stakeholders put in ${fmt(approved)} of ${fmt(raised)} ${currency}; more than half is needed`;
+function stakeLine(approved: string, raised: string) {
+  return `Those saying yes put in ${approved} of the ${raised} staked; more than half is needed`;
 }
 
 const PHASE_LABEL: Record<Phase, string> = {
-  locked: "Not open",
-  voting: "Voting open",
-  passed: "Approved",
-  released: "Released",
-  failed: "Failed",
-  lapsed: "Window closed",
-  unconfirmed: "Unconfirmed",
+  locked: "Not yet up for a vote",
+  voting: "Vote open",
+  passed: "Approved · payout ready",
+  released: "Paid to the builder",
+  failed: "Stage failed · refunds open",
+  lapsed: "Vote ended short",
+  unconfirmed: "Result not confirmed",
 };
 
 const PHASE_VARIANT: Record<Phase, "default" | "secondary" | "destructive" | "outline"> = {
@@ -318,6 +317,9 @@ export function MilestonePlan({
   );
 }
 
+/** Which money action a stage card has open, if any. */
+type StageAction = { id: number; kind: "approve" | "open" | "payout" | "close" };
+
 export function MilestoneVoting({
   vaultAddress,
   currency: listedCurrency,
@@ -326,8 +328,9 @@ export function MilestoneVoting({
   details,
   renderProof,
   onChange,
+  onCollectRefund,
 }: Props) {
-  const { toast } = useToast();
+  const { user } = useAuth();
   const { freighterWalletAddress } = useFreighterWallet();
   const {
     getVaultInfo,
@@ -336,10 +339,10 @@ export function MilestoneVoting({
     getMilestoneVote,
     getMilestoneWallets,
     getMilestoneStake,
-    openMilestoneVote,
-    approveMilestone,
-    releaseMilestone,
-    settleLapsedMilestone,
+    prepareOpenMilestoneVote,
+    prepareApproveMilestone,
+    prepareReleaseMilestone,
+    prepareSettleLapsedMilestone,
   } = useStellarContract();
 
   const [milestones, setMilestones] = useState<VaultMilestone[]>([]);
@@ -354,13 +357,18 @@ export function MilestoneVoting({
   const [voted, setVoted] = useState<Record<number, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [readFailed, setReadFailed] = useState(false);
-  const [busyId, setBusyId] = useState<number | null>(null);
-  const [, startTransition] = useTransition();
+  const [active, setActive] = useState<StageAction | null>(null);
   // Re-renders the countdown without refetching.
   const [, setTick] = useState(0);
 
-  const isCreator =
-    Boolean(freighterWalletAddress) && freighterWalletAddress === creatorAddress;
+  // Whose stake and vote to read: the account's linked wallet, so a
+  // stakeholder is recognised as one whether or not the wallet happens to be
+  // connected in this browser right now. Acting still needs that wallet
+  // connected; the action panel asks for it.
+  const myAddress = user?.stellarPublicKey || freighterWalletAddress || "";
+  const isBuilder =
+    !!creatorAddress &&
+    (myAddress === creatorAddress || freighterWalletAddress === creatorAddress);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -401,14 +409,14 @@ export function MilestoneVoting({
       setWallets(Object.fromEntries(counts));
       setStakes(Object.fromEntries(staked));
 
-      if (freighterWalletAddress) {
-        const weight = await getVotingWeight(vaultAddress, freighterWalletAddress);
+      if (myAddress) {
+        const weight = await getVotingWeight(vaultAddress, myAddress);
         setMyWeight(BigInt((weight as bigint | null) ?? 0n));
 
         const results = await Promise.all(
           list.map(async (m: VaultMilestone) => [
             m.id,
-            Boolean(await hasVoted(vaultAddress, m.id, freighterWalletAddress)),
+            Boolean(await hasVoted(vaultAddress, m.id, myAddress)),
           ]),
         );
         setVoted(Object.fromEntries(results));
@@ -421,7 +429,7 @@ export function MilestoneVoting({
     }
   }, [
     vaultAddress,
-    freighterWalletAddress,
+    myAddress,
     getVaultInfo,
     getVotingWeight,
     hasVoted,
@@ -473,52 +481,37 @@ export function MilestoneVoting({
     [details],
   );
 
-  const run = (id: number, label: string, action: () => Promise<unknown>) => {
-    setBusyId(id);
-    startTransition(async () => {
-      try {
-        await action();
-        toast({ title: label, description: "Confirmed." });
-        await load();
-        onChange?.();
-      } catch (error: any) {
-        toast({
-          title: `${label} failed`,
-          description: error?.message ?? String(error),
-          variant: "destructive",
-        });
-      } finally {
-        setBusyId(null);
-      }
-    });
+  /** "$1,500" for a dollar vault, "≈ $320" for XLM with a rate, else "1,500 XLM". */
+  const money = (stroops: bigint) => describeMoney(fromStroops(stroops), currency).primary;
+  /** The exact figure the wallet window shows. */
+  const exact = (stroops: bigint) =>
+    `${fromStroops(stroops).toLocaleString("en-US", { maximumFractionDigits: 7 })} ${currency}`;
+
+  const windowDays = Math.max(1, Math.round(windowSecs / 86_400));
+  const afterAction = () => {
+    load();
+    onChange?.();
   };
 
   if (loading) {
     return (
-      <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
+      <div role="status" className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
         <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-        Loading milestones…
+        Loading stages…
       </div>
     );
   }
 
   // The vault couldn't be read, so nothing about the vote is known. The
-  // listing's copy of each milestone still carries the builder's proof, which
+  // listing's copy of each stage still carries the builder's proof, which
   // whoever is deciding needs to see whether or not the network answers.
   if (readFailed) {
     return (
       <div className="space-y-4">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border p-3 text-sm">
           <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" aria-hidden="true" />
-          <span>We couldn&apos;t read the vote right now, so voting is unavailable.</span>
-          <Button
-            variant="link"
-            size="sm"
-            className="h-auto p-0"
-            onClick={() => {
-              load();
-            }}
-          >
+          <span>We couldn&apos;t read the vote right now.</span>
+          <Button variant="link" size="sm" className="h-auto p-0" onClick={() => load()}>
             Try again
           </Button>
         </div>
@@ -543,25 +536,26 @@ export function MilestoneVoting({
   }
 
   if (milestones.length === 0) {
-    return (
-      <p className="py-6 text-sm text-muted-foreground">
-        This project has no milestones.
-      </p>
-    );
+    return <p className="py-6 text-sm text-muted-foreground">This project has no stages yet.</p>;
   }
 
-  const isContributor = myWeight > 0n;
+  const isStakeholder = myWeight > 0n;
+  // Someone with a reason to press a permissionless button: never a visitor,
+  // who would pay a network fee to move someone else's money.
+  const canTrigger = !!user && (isStakeholder || isBuilder);
+
+  const rule =
+    walletFloor === true && moneyMajority === true
+      ? `A payout needs more than half of all stakes behind it, from at least three stakeholders, or every stakeholder when there are fewer, and those saying yes must have put in more than half the money between them. No one person counts for more than 20%. Each vote stays open for ${windowDays} days. If it ends short, the stage fails and refunds open, with a share of the builder's deposit.`
+      : walletFloor === true
+      ? `A payout needs more than half of all stakes behind it, from at least three stakeholders, or every stakeholder when there are fewer. No one person counts for more than 20%. Each vote stays open for ${windowDays} days. If it ends short, the stage fails and refunds open, with a share of the builder's deposit.`
+      : walletFloor === false
+        ? `A payout needs more than half of all stakes behind it. No one person counts for more than 20%, so it always takes at least three stakeholders. Each vote stays open for ${windowDays} days. If it ends short, the stage fails and refunds open, with a share of the builder's deposit.`
+        : `Each payout goes to a vote of the stakeholders, and no one person counts for more than 20%. Each vote stays open for ${windowDays} days. If it ends short, the stage fails and refunds open, with a share of the builder's deposit.`;
 
   const retry = (
-    <Button
-      variant="link"
-      size="sm"
-      className="h-auto p-0 text-xs"
-      onClick={() => {
-        load();
-      }}
-    >
-      Retry
+    <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={() => load()}>
+      Try again
     </Button>
   );
 
@@ -571,58 +565,22 @@ export function MilestoneVoting({
         <div className="flex items-start gap-2">
           <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
           <div className="space-y-1">
-            <p className="font-medium">Stakeholders decide when money moves.</p>
-            {walletFloor === true && moneyMajority === true && (
-              <p className="text-muted-foreground">
-                A payout needs more than half of the stakeholders&apos; combined vote,
-                with no single wallet counting for more than 20% of all stakes.
-                It needs at least three stakeholders to approve — or every
-                stakeholder, when there are fewer than three — and together they
-                must have put in more than half the money. If a window closes
-                short, the stage fails and the builder&apos;s deposit is
-                forfeited to you.
-              </p>
-            )}
-            {walletFloor === true && moneyMajority !== true && (
-              <p className="text-muted-foreground">
-                A payout needs more than half of the stakeholders&apos; combined vote,
-                with no single wallet counting for more than 20% of all stakes,
-                and it needs at least three stakeholders to approve — or every
-                stakeholder, when there are fewer than three. If a window closes
-                short, the stage fails and the builder&apos;s deposit is
-                forfeited to you.
-              </p>
-            )}
-            {walletFloor === false && (
-              <p className="text-muted-foreground">
-                A payout needs more than half of all stakes behind it, and no
-                single wallet counts for more than 20% — so it always takes at
-                least three stakeholders. If a window closes short, the stage fails
-                and the builder&apos;s deposit is forfeited to you.
-              </p>
-            )}
-            {walletFloor === null && (
-              <p className="text-muted-foreground">
-                Each payout goes to a vote of the stakeholders, and no single wallet
-                counts for more than 20% of all stakes. If a window closes short,
-                the stage fails and the builder&apos;s deposit is forfeited to
-                you.
-              </p>
-            )}
-            {isContributor && (
-              <p className="pt-1">
-                Your vote is worth{" "}
-                <strong>
-                  {fromStroops(myWeight).toLocaleString(undefined, {
-                    maximumFractionDigits: 2,
-                  })}{" "}
-                  {currency}
-                </strong>
+            <p className="text-muted-foreground">{rule}</p>
+            {isStakeholder ? (
+              <p className="pt-1 text-foreground">
+                Your say: <strong>{money(myWeight)}</strong>
+                {requiredWeight !== null && <> of the {money(requiredWeight)} needed</>}
                 {myWeight >= cap && cap > 0n && (
-                  <span className="text-muted-foreground"> (capped at 20%)</span>
+                  <span className="text-muted-foreground"> (capped at 20% of all stakes)</span>
                 )}
                 .
               </p>
+            ) : user ? (
+              <p className="pt-1 text-muted-foreground">
+                Only stakeholders vote. Staking closed when the goal was reached.
+              </p>
+            ) : (
+              <p className="pt-1 text-muted-foreground">Sign in to see if you can vote.</p>
             )}
           </div>
         </div>
@@ -640,23 +598,34 @@ export function MilestoneVoting({
           requiredWeight && requiredWeight > 0n
             ? Math.min(100, Number((approved * 100n) / requiredWeight))
             : 0;
-        // The vault has the floor, or may have, and this milestone's count did
+        // The vault has the floor, or may have, and this stage's count did
         // not come back. Say so rather than show a tally missing its other half.
         const countUnread = walletFloor !== false && !count;
         // Likewise for the money majority, which only a vault with the floor can have.
         const stakeUnread = walletFloor !== false && moneyMajority !== false && !stake;
-        const busy = busyId === m.id;
         const alreadyVoted = voted[m.id];
+        const stageName = `Stage ${m.id}`;
+        const amount = BigInt(m.amount);
+        const open = active?.id === m.id ? active.kind : null;
+        const close = () => setActive(null);
+        const endsText = new Date(endsAt * 1000).toLocaleString("en-GB", {
+          day: "numeric",
+          month: "short",
+          hour: "2-digit",
+          minute: "2-digit",
+        });
 
         return (
           <div key={m.id} className="rounded-lg border p-4">
             <MilestoneHeading
               id={m.id}
               title={listed.get(m.id)?.title}
-              badge={<Badge variant={PHASE_VARIANT[phase]}>{PHASE_LABEL[phase]}</Badge>}
-              amount={`${fromStroops(BigInt(m.amount)).toLocaleString(undefined, {
-                maximumFractionDigits: 2,
-              })} ${currency}`}
+              badge={
+                <Badge variant={PHASE_VARIANT[phase]}>
+                  {phase === "voting" ? `${PHASE_LABEL.voting} · ${timeLeft(endsAt)}` : PHASE_LABEL[phase]}
+                </Badge>
+              }
+              amount={money(amount)}
             />
             <Deliverable text={listed.get(m.id)?.description} />
 
@@ -672,12 +641,12 @@ export function MilestoneVoting({
               phase === "lapsed" ||
               phase === "unconfirmed") && (
               <div className="mt-3 space-y-1.5">
-                <Progress value={pct} aria-label={`Milestone ${m.id} approval`} />
+                <Progress value={pct} aria-label={`${stageName} approval`} />
                 <div className="flex justify-between text-xs text-muted-foreground">
                   <span>
                     {requiredWeight !== null
-                      ? `${fmt(approved)} of ${fmt(requiredWeight)} ${currency} needed`
-                      : `${fmt(approved)} ${currency} approved`}
+                      ? `${money(approved)} of ${money(requiredWeight)} yes so far`
+                      : `${money(approved)} yes so far`}
                   </span>
                   {phase === "voting" && (
                     <span className="flex items-center gap-1">
@@ -691,130 +660,177 @@ export function MilestoneVoting({
                 )}
                 {stake?.supported && (
                   <p className="text-xs text-muted-foreground">
-                    {stakeLine(stake.approved, raised, currency)}
+                    {stakeLine(money(stake.approved), money(raised))}
+                  </p>
+                )}
+                {phase === "voting" && (
+                  <p className="text-xs text-muted-foreground">
+                    If it isn&apos;t approved by {endsText}, the stage fails and refunds open.
                   </p>
                 )}
                 {(requiredWeight === null || countUnread || stakeUnread) && (
                   <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    Part of this vote could not be read from the network.
+                    Part of this vote couldn&apos;t be read right now.
                     {retry}
                   </p>
                 )}
               </div>
             )}
 
-            <div className="mt-3 flex flex-wrap gap-2">
-              {phase === "locked" && isCreator && platformLocked && (
+            <div className="mt-3 space-y-2">
+              {/* ── Not yet up for a vote ── */}
+              {phase === "locked" && isBuilder && platformLocked && (
                 <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
                   <Lock className="h-3.5 w-3.5" aria-hidden="true" />
-                  The platform has locked this project, so opening a vote is
-                  paused until it is unlocked.
+                  BLKFNDR has paused this listing, so opening a new vote is paused.
                 </p>
               )}
-
-              {phase === "locked" && isCreator && !platformLocked && (
-                <Button size="sm" disabled={busy} onClick={() =>
-                  run(m.id, "Voting opened", () =>
-                    openMilestoneVote({ vaultAddress, milestoneId: m.id }),
-                  )
-                }>
-                  {busy && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
-                  Open voting
-                  <span className="sr-only"> on milestone {m.id}</span>
-                </Button>
+              {phase === "locked" && isBuilder && !platformLocked && open !== "open" && (
+                <div className="space-y-1.5">
+                  <Button size="sm" onClick={() => setActive({ id: m.id, kind: "open" })}>
+                    Ask stakeholders for this payout
+                  </Button>
+                  <p className="text-xs text-muted-foreground">
+                    Stakeholders get {windowDays} days to vote. Add your proof first so they can see
+                    what they&apos;re approving.
+                  </p>
+                </div>
               )}
-
-              {phase === "locked" && !isCreator && (
+              {phase === "locked" && !isBuilder && (
                 <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
                   <Lock className="h-3.5 w-3.5" aria-hidden="true" />
-                  The builder has not opened this milestone for voting yet.
+                  The builder opens the vote when this stage is done and proof is posted.
                 </p>
               )}
-
-              {phase === "voting" && isContributor && !alreadyVoted && (
-                <Button size="sm" disabled={busy} onClick={() =>
-                  run(m.id, "Vote recorded", () =>
-                    approveMilestone({ vaultAddress, milestoneId: m.id }),
-                  )
-                }>
-                  {busy ? (
-                    <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <ThumbsUp className="mr-2 h-3.5 w-3.5" aria-hidden="true" />
-                  )}
-                  Approve release
-                  <span className="sr-only"> of milestone {m.id}</span>
-                </Button>
+              {open === "open" && (
+                <MoneyActionPanel
+                  context={{ action: "open-vote" }}
+                  title={`Open the ${stageName} vote`}
+                  sentence={`Stakeholders get ${windowDays} days to approve the ${money(amount)} payout for ${stageName}. Nothing moves until they do.`}
+                  rows={[{ label: "Payout if approved", value: money(amount) }]}
+                  walletShows="a request to open the vote, with no money moving"
+                  prepare={() => prepareOpenMilestoneVote({ vaultAddress, milestoneId: m.id })}
+                  successTitle={`The ${stageName} vote is open.`}
+                  successBody={`Stakeholders have ${windowDays} days to vote.`}
+                  onSuccess={afterAction}
+                  onClose={close}
+                />
               )}
 
+              {/* ── Vote open ── */}
+              {phase === "voting" && isStakeholder && !alreadyVoted && open !== "approve" && (
+                <Button size="sm" onClick={() => setActive({ id: m.id, kind: "approve" })}>
+                  <ThumbsUp className="mr-2 h-3.5 w-3.5" aria-hidden="true" />
+                  Approve this payout
+                </Button>
+              )}
+              {open === "approve" && (
+                <MoneyActionPanel
+                  context={{ action: "vote" }}
+                  title="Approve this payout"
+                  sentence={`Approve the ${money(amount)} payout for ${stageName}? This is final; one vote per stakeholder. Not voting counts as no.`}
+                  rows={[
+                    { label: "Payout to the builder", value: money(amount) },
+                    { label: "Your vote counts", value: money(myWeight) },
+                    { label: "Leaves your wallet", value: "Nothing but the network fee" },
+                  ]}
+                  walletShows="your vote, with no money leaving your wallet"
+                  prepare={() => prepareApproveMilestone({ vaultAddress, milestoneId: m.id })}
+                  successTitle="Recorded. Your approval counts."
+                  onSuccess={afterAction}
+                  onClose={close}
+                />
+              )}
               {phase === "voting" && alreadyVoted && (
                 <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
                   <CheckCircle2 className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
-                  You have voted. One vote per stakeholder.
+                  You voted yes. One vote per stakeholder; it can&apos;t be changed.
                 </p>
               )}
-
-              {phase === "voting" && !isContributor && (
+              {phase === "voting" && !isStakeholder && (
                 <p className="text-sm text-muted-foreground">
-                  Only this project&apos;s stakeholders can vote.
+                  {user ? "Only stakeholders can vote." : "Sign in to see if you can vote."}
                 </p>
               )}
 
+              {/* ── Approved, not yet sent ── */}
               {phase === "passed" && (
-                <>
-                  <Button size="sm" disabled={busy} onClick={() =>
-                    run(m.id, "Milestone released", () =>
-                      releaseMilestone({ vaultAddress, milestoneId: m.id }),
-                    )
-                  }>
-                    {busy && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
-                    Pay out this stage
-                    <span className="sr-only"> (stage {m.id})</span>
-                  </Button>
-                  <p className="self-center text-xs text-muted-foreground">
-                    Approved — anyone can execute this. Nobody can hold it up.
-                  </p>
-                </>
+                <p className="text-sm text-muted-foreground">
+                  Stakeholders approved this payout. It isn&apos;t sent automatically yet: anyone can
+                  send it now, and nobody can hold it back.
+                </p>
+              )}
+              {phase === "passed" && canTrigger && open !== "payout" && (
+                <Button size="sm" onClick={() => setActive({ id: m.id, kind: "payout" })}>
+                  Send the payout now
+                </Button>
+              )}
+              {open === "payout" && (
+                <MoneyActionPanel
+                  context={{ action: "payout" }}
+                  title="Send the approved payout"
+                  sentence={`This sends ${money(amount)} from the vault to the builder, as the vote decided. Nothing leaves your wallet except a small network fee.`}
+                  rows={[{ label: "From the vault to the builder", value: money(amount) }]}
+                  walletShows={`a payout of ${exact(amount)} from the vault to the builder`}
+                  prepare={() => prepareReleaseMilestone({ vaultAddress, milestoneId: m.id })}
+                  successTitle={`${money(amount)} paid to the builder for ${stageName}.`}
+                  onSuccess={afterAction}
+                  onClose={close}
+                />
               )}
 
+              {/* ── Vote ended short, not yet recorded ── */}
               {phase === "lapsed" && (
-                <>
-                  <Button size="sm" variant="destructive" disabled={busy} onClick={() =>
-                    run(m.id, "Milestone settled", () =>
-                      settleLapsedMilestone({ vaultAddress, milestoneId: m.id }),
-                    )
-                  }>
-                    {busy && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
-                    Settle as failed
-                    <span className="sr-only">: milestone {m.id}</span>
-                  </Button>
-                  <p className="self-center text-xs text-muted-foreground">
-                    Closed without carrying. Settling returns money to stakeholders
-                    and forfeits the builder&apos;s deposit.
-                  </p>
-                </>
+                <p className="text-sm text-muted-foreground">
+                  The vote closed without enough yes votes. Closing the stage opens refunds, with a
+                  share of the builder&apos;s deposit. Anyone can do it, for a small network fee.
+                </p>
+              )}
+              {phase === "lapsed" && canTrigger && open !== "close" && (
+                <Button size="sm" variant="outline" onClick={() => setActive({ id: m.id, kind: "close" })}>
+                  Close the stage and open refunds
+                </Button>
+              )}
+              {open === "close" && (
+                <MoneyActionPanel
+                  context={{ action: "close" }}
+                  title="Close the stage"
+                  sentence={`This records that ${stageName} failed its vote. Refunds open for every stakeholder, with a share of the builder's deposit. Nothing leaves your wallet except a small network fee.`}
+                  rows={[{ label: "Stage", value: stageName }]}
+                  walletShows="a request to close the stage, with no money leaving your wallet"
+                  prepare={() => prepareSettleLapsedMilestone({ vaultAddress, milestoneId: m.id })}
+                  successTitle={`${stageName} is closed. Refunds are open.`}
+                  onSuccess={afterAction}
+                  onClose={close}
+                />
               )}
 
               {phase === "unconfirmed" && (
                 <p className="text-sm text-muted-foreground">
-                  The window has closed, but whether the vote carried could not
-                  be confirmed. Retry before releasing or settling.
+                  The vote has closed, but we couldn&apos;t confirm the result right now. {retry}
                 </p>
               )}
 
               {phase === "released" && (
                 <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
                   <CheckCircle2 className="h-3.5 w-3.5 text-green-600" aria-hidden="true" />
-                  Released to the builder.
+                  Paid to the builder, as stakeholders voted.
                 </p>
               )}
 
               {phase === "failed" && (
-                <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                  <XCircle className="h-3.5 w-3.5 text-destructive" aria-hidden="true" />
-                  Failed. Stakeholders can collect their share of the remaining money
-                  and the builder&apos;s deposit.
-                </p>
+                <div className="space-y-2">
+                  <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                    <XCircle className="h-3.5 w-3.5 text-destructive" aria-hidden="true" />
+                    This stage failed its vote. Stakeholders collect what&apos;s left in the vault,
+                    plus a share of the builder&apos;s deposit.
+                  </p>
+                  {isStakeholder && onCollectRefund && (
+                    <Button size="sm" onClick={onCollectRefund}>
+                      Collect your refund
+                    </Button>
+                  )}
+                </div>
               )}
             </div>
           </div>

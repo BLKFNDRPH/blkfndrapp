@@ -483,7 +483,7 @@ export function StakeSheet({ project, onClose }: { project: Project; onClose: ()
             { label: "Network fee", value: feeText, hint: "Paid in XLM from your wallet" },
             { label: "Fee to BLKFNDR", value: "$0.00" },
           ]}
-          walletShows={formatToken(rawToUnits(step.amountRaw), currency)}
+          walletShows={`the amount, ${formatToken(rawToUnits(step.amountRaw), currency)}`}
           phase={step.phase}
           onOpenWallet={send}
           onBack={() => setStep({ kind: "form" })}
