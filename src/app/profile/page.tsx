@@ -83,9 +83,11 @@ export default function ProfilePage() {
           ? "verified"
           : status === "rejected"
             ? "rejected"
-            : status === "pending" || status === "approved"
-              ? "pending"
-              : "none",
+            : status === "approved"
+              ? "approved"
+              : status === "pending"
+                ? "pending"
+                : "none",
       );
     })();
     return () => {

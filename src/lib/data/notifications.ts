@@ -4,7 +4,7 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireCaller } from "@/lib/supabase/auth";
-import { PROJECT_RESTRICTOR_ROLES } from "@/lib/admin-roles";
+import { PROJECT_RESTRICTOR_ROLES, type AdminRole } from "@/lib/admin-roles";
 
 /**
  * Notifications. Replaces the Mongo `notifications` collection.
@@ -110,7 +110,13 @@ export async function notify(input: {
  * when a linked wallet is on the on-chain admin roster, so a console admin with
  * no such wallet (a Project Administrator, say) was never told.
  */
-export async function notifyAdmins(title: string, caption: string, projectId?: string) {
+export async function notifyAdmins(
+  title: string,
+  caption: string,
+  projectId?: string,
+  /** Who to tell. Project events by default; identity events pass the KYC reviewers. */
+  roles: readonly AdminRole[] = PROJECT_RESTRICTOR_ROLES,
+) {
   const admin = createAdminClient();
 
   // A row with no user_id is an invite whose holder has not signed in yet, so
@@ -118,7 +124,7 @@ export async function notifyAdmins(title: string, caption: string, projectId?: s
   const { data, error } = await admin
     .from("platform_admins")
     .select("user_id")
-    .in("role", PROJECT_RESTRICTOR_ROLES)
+    .in("role", roles)
     .not("user_id", "is", null);
   if (error) {
     console.error("[notifications] Could not list admins:", error.message);

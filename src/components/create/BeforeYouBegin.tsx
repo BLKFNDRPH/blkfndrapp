@@ -141,6 +141,19 @@ export function BeforeYouBegin({
             status="Under review. You can fill in your listing meanwhile; the vault can open once it's approved."
           />
         );
+      case "approved":
+        return (
+          <Row
+            tone="waiting"
+            title="Verified identity"
+            hint={hint}
+            status="Approved, with one step left before it counts: attach your wallet, or wait for a reviewer to record it."
+          >
+            <Button asChild size="sm" variant="outline">
+              <Link href="/profile/kyc-attestation">See what's left</Link>
+            </Button>
+          </Row>
+        );
       case "rejected":
         return (
           <Row tone="problem" title="Verified identity" hint={hint} status="Not approved. You can send it again.">

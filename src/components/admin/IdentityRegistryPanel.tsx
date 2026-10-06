@@ -52,7 +52,8 @@ const IDENTITY_ID = process.env.NEXT_PUBLIC_BLKFNDR_IDENTITY_CONTRACT_ID || "";
 interface QueueRow {
   id: string;
   user_id: string;
-  stellar_address: string;
+  /** Null when the applicant submitted before having a wallet. */
+  stellar_address: string | null;
   document_type: string;
   status: "pending" | "approved" | "rejected";
   rejection_reason: string;
@@ -68,6 +69,8 @@ interface CaseDetail {
   residential_address: string | null;
   document_expires_on: string | null;
   details_hash: string;
+  /** Path in the private bucket; its extension says whether it is a PDF. */
+  document_path?: string;
   /** Short-lived signed URL into the private bucket, minted server-side. */
   documentUrl: string | null;
 }
@@ -222,16 +225,26 @@ export function IdentityRegistryPanel() {
   // it holds for them. No wallet here — the whole point of the managed key. The
   // details hash the attestation commits to is read server-side from the
   // submission, so the reviewer does not thread it through the browser.
+  // A submission with no wallet yet is approved on its documents alone; the
+  // same call records it on-chain once the applicant attaches one, from the
+  // approved list below.
   const handleApproveRequest = async (req: QueueRow) => {
-    const address = req.stellar_address;
     setLoading(true);
     try {
       const res = await attestKycAction(req.id);
       if (res.success) {
-        toast({
-          title: "Attested and Approved",
-          description: `KYC approved for ${address.slice(0, 6)}… on-chain.`,
-        });
+        toast(
+          res.address
+            ? {
+                title: "Attested and Approved",
+                description: `KYC approved for ${res.address.slice(0, 6)}… on-chain.`,
+              }
+            : {
+                title: "Documents approved",
+                description:
+                  "The applicant has no wallet yet and has been told to attach one. Record it from Approved Creators once they do.",
+              },
+        );
         fetchKycRequests();
       } else {
         toast({
@@ -270,14 +283,15 @@ export function IdentityRegistryPanel() {
   };
 
   const handleRevokeRequest = async (req: QueueRow) => {
-    const address = req.stellar_address;
     setLoading(true);
     try {
       const res = await revokeKycAction(req.id);
       if (res.success) {
         toast({
           title: "Attestation Revoked",
-          description: `KYC revoked for ${address.slice(0, 6)}… on-chain.`,
+          description: res.address
+            ? `KYC revoked for ${res.address.slice(0, 6)}… on-chain.`
+            : "The approval is withdrawn. Nothing was on-chain yet.",
         });
         fetchKycRequests();
       } else {
@@ -296,6 +310,39 @@ export function IdentityRegistryPanel() {
   const approvedList = kycRequests.filter((r) => r.status === "approved");
 
   const [showApproved, setShowApproved] = useState(false);
+
+  // Whether each approved wallet is on the public record. An approval given
+  // before the applicant had a wallet is recorded only once they attach one and
+  // a reviewer presses Record; this is how the list knows which those are.
+  const [onRecord, setOnRecord] = useState<Record<string, boolean | null>>({});
+  const approvedAddresses = approvedList
+    .map((r) => r.stellar_address)
+    .filter((a): a is string => Boolean(a))
+    .join(",");
+  useEffect(() => {
+    if (!approvedAddresses || !IDENTITY_ID) return;
+    let cancelled = false;
+    const client = new IdentityClient({
+      contractId: IDENTITY_ID,
+      rpcUrl: SOROBAN_RPC_URL,
+      networkPassphrase: NETWORK_PASSPHRASE,
+    });
+    Promise.all(
+      approvedAddresses.split(",").map(async (address) => {
+        try {
+          const sim = await (await client.is_kyc_approved({ address })).simulate();
+          return [address, Boolean(sim.result)] as const;
+        } catch {
+          return [address, null] as const;
+        }
+      }),
+    ).then((entries) => {
+      if (!cancelled) setOnRecord(Object.fromEntries(entries));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [approvedAddresses]);
 
   return (
     <div className="space-y-8">
@@ -365,20 +412,28 @@ export function IdentityRegistryPanel() {
                   <div className="flex-1 p-6 md:p-8 space-y-6">
                     {/* Wallet Address Header */}
                     <div className="space-y-1.5">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-mono text-sm font-bold text-foreground break-all select-all">
-                          {req.stellar_address}
-                        </span>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleCopy(req.stellar_address, "Wallet address")}
-                          className="h-6 w-6 hover:bg-muted text-muted-foreground rounded-md shrink-0"
-                          title="Copy Wallet Address"
-                        >
-                          <Copy className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
+                      {req.stellar_address ? (
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-mono text-sm font-bold text-foreground break-all select-all">
+                            {req.stellar_address}
+                          </span>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleCopy(req.stellar_address!, "Wallet address")}
+                            className="h-6 w-6 hover:bg-muted text-muted-foreground rounded-md shrink-0"
+                            title="Copy Wallet Address"
+                          >
+                            <Copy className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">
+                          <span className="font-semibold text-foreground">No wallet attached yet.</span>{" "}
+                          Approving accepts the documents; there is nothing to record on-chain until the
+                          applicant attaches a wallet, and you are notified when they do.
+                        </p>
+                      )}
                     </div>
 
                     {/* 2×2 Data Grid */}
@@ -517,7 +572,20 @@ export function IdentityRegistryPanel() {
                     {/* The document lives in a private bucket, not IPFS. The URL
                         below is signed server-side and expires in five minutes,
                         so it arrives only with an opened case. */}
-                    {detail?.documentUrl ? (
+                    {detail?.documentUrl && /\.pdf$/i.test(detail.document_path ?? "") ? (
+                      // A PDF can't be drawn into the image viewer; the browser's
+                      // own viewer opens it from the same short-lived URL.
+                      <a
+                        href={detail.documentUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full aspect-[4/3] flex flex-col items-center justify-center gap-2 bg-muted/30 border-2 border-border/60 rounded-xl text-sm font-semibold text-primary hover:bg-muted/50"
+                      >
+                        <FileCode className="h-8 w-8" />
+                        Open the PDF document
+                        <span className="text-xs font-normal text-muted-foreground">The link expires in five minutes.</span>
+                      </a>
+                    ) : detail?.documentUrl ? (
                       <button
                         type="button"
                         onClick={() => {
@@ -605,7 +673,7 @@ export function IdentityRegistryPanel() {
                     >
                       {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                       <CheckCircle className="mr-2 h-4 w-4" />
-                      Approve & Attest
+                      {req.stellar_address ? "Approve & Attest" : "Approve documents"}
                     </Button>
                   </div>
                 </div>
@@ -675,14 +743,36 @@ export function IdentityRegistryPanel() {
                     <div className="min-w-0 flex-1">
                       {/* Names are not in the queue payload, and an approved
                           creator is identified on-chain by address anyway. */}
-                      <p className="text-sm font-semibold text-foreground font-mono truncate" title={req.stellar_address}>
-                        {req.stellar_address}
-                      </p>
+                      {req.stellar_address ? (
+                        <p className="text-sm font-semibold text-foreground font-mono truncate" title={req.stellar_address}>
+                          {req.stellar_address}
+                        </p>
+                      ) : (
+                        <p className="text-sm font-semibold text-muted-foreground">
+                          Waiting for the applicant to attach a wallet
+                        </p>
+                      )}
                       <p className="text-xs text-muted-foreground truncate mt-0.5 capitalize">
                         {req.document_type?.replace("_", " ")}
                         {req.created_at ? ` · ${new Date(req.created_at).toLocaleDateString()}` : ""}
+                        {req.stellar_address && onRecord[req.stellar_address] === false && (
+                          <span className="normal-case font-semibold text-amber-600 dark:text-amber-400">
+                            {" "}· Not on-chain yet
+                          </span>
+                        )}
                       </p>
                     </div>
+                    {req.stellar_address && onRecord[req.stellar_address] === false && (
+                      <Button
+                        size="sm"
+                        onClick={() => handleApproveRequest(req)}
+                        disabled={loading || !canAttest}
+                        title={!canAttest ? "Recording needs an appointed managed attestor key." : undefined}
+                        className="h-9 px-4 text-xs font-semibold shrink-0"
+                      >
+                        Record on-chain
+                      </Button>
+                    )}
                     <Button
                       variant="ghost"
                       size="sm"

@@ -10,6 +10,7 @@ import { setMilestoneProof, getProjectByVault } from "@/lib/data/projects";
 import { notifyAdmins } from "@/lib/data/notifications";
 import {
   submitOwnKyc,
+  attachOwnKycWallet,
   getOwnSubmission,
   listSubmissionsForReview,
   getSubmissionForReview,
@@ -63,6 +64,23 @@ export async function submitKycRequest(
   }
 }
 
+/** Attach the caller's linked wallet to their own identity check, filed without one. */
+export async function attachMyKycWallet(): Promise<
+  { success: true; address: string; status: "pending" | "approved" | "rejected" } | { success: false; error: string }
+> {
+  try {
+    const { address, status } = await attachOwnKycWallet();
+    return { success: true as const, address, status };
+  } catch (error) {
+    return (
+      authFailure(error) ?? {
+        success: false,
+        error: error instanceof Error ? error.message : "Could not attach your wallet.",
+      }
+    );
+  }
+}
+
 export async function getMyKycStatus(): Promise<ActionResult<{ request: Awaited<ReturnType<typeof getOwnSubmission>> }>> {
   try {
     return { success: true, request: await getOwnSubmission() };
@@ -105,11 +123,12 @@ export async function updateKycRequestStatus(
 /**
  * Approve and attest a submission with the reviewer's managed key — the
  * walletless path. The server signs the on-chain attestation; the reviewer never
- * connects Freighter. Returns the address attested so the panel can refresh.
+ * connects Freighter. Returns the address attested so the panel can refresh, or
+ * null when the applicant has no wallet yet and only the documents were approved.
  */
 export async function attestKycAction(
   submissionId: string,
-): Promise<{ success: true; address: string } | { success: false; error: string }> {
+): Promise<{ success: true; address: string | null } | { success: false; error: string }> {
   try {
     const { address } = await attestSubmission(submissionId);
     return { success: true as const, address };
@@ -126,7 +145,7 @@ export async function attestKycAction(
 /** Revoke a submission's attestation with the reviewer's managed key. */
 export async function revokeKycAction(
   submissionId: string,
-): Promise<{ success: true; address: string } | { success: false; error: string }> {
+): Promise<{ success: true; address: string | null } | { success: false; error: string }> {
   try {
     const { address } = await revokeSubmissionAttestation(submissionId);
     return { success: true as const, address };

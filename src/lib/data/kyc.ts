@@ -3,10 +3,16 @@ import "server-only";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { requireCaller, requireKycReviewer, AuthError } from "@/lib/supabase/auth";
+import {
+  requireCaller,
+  requireKycReviewer,
+  AuthError,
+  KYC_REVIEWER_ROLES,
+} from "@/lib/supabase/auth";
 import { isStellarAccount } from "@/lib/stellar-address";
 import { signAttestation, signRevocation } from "@/lib/managed-wallet";
-import { notify } from "@/lib/data/notifications";
+import { notify, notifyAdmins } from "@/lib/data/notifications";
+import { computeDetailsHash } from "@/lib/kyc/details-hash";
 
 /**
  * KYC data access.
@@ -27,7 +33,8 @@ const APPLICANT_COLUMNS =
 export interface ApplicantSubmission {
   id: string;
   user_id: string;
-  stellar_address: string;
+  /** The wallet this check clears, or null until the applicant attaches one. */
+  stellar_address: string | null;
   document_type: string;
   document_expires_on: string | null;
   status: "pending" | "approved" | "rejected";
@@ -37,7 +44,9 @@ export interface ApplicantSubmission {
 }
 
 const SubmissionInput = z.object({
-  stellarAddress: z.string().refine(isStellarAccount, "Not a Stellar account address"),
+  // Null when the applicant has no wallet yet: the documents are reviewed in
+  // the meantime and the wallet is attached later (attachOwnKycWallet).
+  stellarAddress: z.string().refine(isStellarAccount, "Not a Stellar account address").nullable(),
   fullName: z.string().trim().min(1).max(200),
   email: z.string().trim().email().max(320),
   documentType: z.enum(["passport", "drivers_license", "national_id"]),
@@ -77,8 +86,8 @@ async function requireLinkedWallet(
   if (error) throw new Error(`Could not save KYC submission: ${error.message}`);
   if (!data?.stellar_public_key || data.stellar_public_key !== address) {
     throw new Error(
-      "Identity checks are filed against the wallet linked to your account, and this one is not linked. " +
-        "Link it on the verification page (Freighter asks you to sign a one-time message), then submit again.",
+      "Your verification can only be attached to the wallet set up on your account, and this one isn't. " +
+        "Set it up from your profile's Wallet tab, or submit without a wallet and attach one later.",
     );
   }
 }
@@ -132,7 +141,9 @@ export async function submitOwnKyc(input: unknown) {
   if (readError) throw new Error(`Could not save KYC submission: ${readError.message}`);
 
   if (!existing) {
-    await requireLinkedWallet(supabase, caller.userId, parsed.stellarAddress);
+    if (parsed.stellarAddress) {
+      await requireLinkedWallet(supabase, caller.userId, parsed.stellarAddress);
+    }
 
     const { error } = await supabase
       .from("kyc_requests")
@@ -142,7 +153,15 @@ export async function submitOwnKyc(input: unknown) {
       // The only unique key an applicant can collide with is another account's
       // stellar_address; their own row would have been found above.
       if (error.code === "23505") {
-        throw new Error("That Stellar address is already registered to another account.");
+        throw new Error("That wallet already has an identity check on another account.");
+      }
+      // Until 20261006170000_kyc_wallet_optional_at_submit is applied, the
+      // column is required and the policy compares it with the linked wallet,
+      // so a check with no wallet is refused by one or the other.
+      if (!parsed.stellarAddress && (error.code === "23502" || error.code === "42501")) {
+        throw new Error(
+          "Submitting before you have a wallet isn't switched on yet. Set up your wallet from your profile's Wallet tab, then submit.",
+        );
       }
       throw new Error(`Could not save KYC submission: ${error.message}`);
     }
@@ -154,17 +173,19 @@ export async function submitOwnKyc(input: unknown) {
   }
 
   // stellar_address carries no UPDATE grant, so a resubmission cannot move an
-  // existing record onto a different account. Say so rather than accept the
+  // existing record onto a different wallet. Say so rather than accept the
   // form and silently keep the old address.
-  if (existing.stellar_address !== parsed.stellarAddress) {
-    throw new Error(
-      `This identity check is filed against ${existing.stellar_address}. Reconnect that wallet to resubmit, or contact support to change it.`,
-    );
+  if (existing.stellar_address) {
+    if (existing.stellar_address !== parsed.stellarAddress) {
+      throw new Error(
+        `Your verification is attached to the wallet ending ${existing.stellar_address.slice(-4)}. Switch to that wallet and set it up on your account again to resubmit, or contact support to move it.`,
+      );
+    }
+    // The address on file must still be linked: removing a wallet from the
+    // account unlinks it, so someone resubmitting afterwards links it again
+    // first.
+    await requireLinkedWallet(supabase, caller.userId, existing.stellar_address);
   }
-
-  // The address on file must still be linked: signing out unlinks it, so
-  // someone resubmitting after a new sign-in links it again first.
-  await requireLinkedWallet(supabase, caller.userId, parsed.stellarAddress);
 
   const { error } = await supabase
     .from("kyc_requests")
@@ -172,6 +193,104 @@ export async function submitOwnKyc(input: unknown) {
     .eq("user_id", caller.userId);
 
   if (error) throw new Error(`Could not save KYC submission: ${error.message}`);
+
+  // A check first filed without a wallet, resubmitted now that there is one.
+  if (!existing.stellar_address && parsed.stellarAddress) {
+    await attachOwnKycWallet();
+  }
+}
+
+/**
+ * Attach the caller's linked wallet to their own identity check, which was
+ * filed without one.
+ *
+ * Through the service role, because stellar_address has no UPDATE grant: a
+ * browser-facing role must never be able to point a check at a wallet. What
+ * this writes is exactly what the write policies would accept on an insert --
+ * the caller's linked wallet, which linkWallet sets only after a signed
+ * challenge -- and only onto the caller's own row, and only while it has no
+ * wallet, so it can never move a check from one wallet to another.
+ *
+ * The details hash is recomputed with the address, so the commitment the
+ * attestation puts on-chain binds the details to this wallet, as it does for a
+ * check filed with one.
+ *
+ * An approved check gets its wallet here and still needs a reviewer to record
+ * it on-chain, so they are told.
+ */
+export async function attachOwnKycWallet(): Promise<{
+  address: string;
+  status: ApplicantSubmission["status"];
+}> {
+  const caller = await requireCaller();
+  const supabase = await createClient();
+
+  const { data: profile, error: profileError } = await supabase
+    .from("profiles")
+    .select("stellar_public_key")
+    .eq("id", caller.userId)
+    .maybeSingle();
+  if (profileError) throw new Error(`Could not attach your wallet: ${profileError.message}`);
+  const linked = profile?.stellar_public_key ?? "";
+  if (!isStellarAccount(linked)) {
+    throw new Error("Set up your wallet from your profile's Wallet tab first, then attach it.");
+  }
+
+  const admin = createAdminClient();
+  const { data: row, error } = await admin
+    .from("kyc_requests")
+    .select(
+      "stellar_address, status, full_name, date_of_birth, document_type, id_number, document_expires_on, residential_address",
+    )
+    .eq("user_id", caller.userId)
+    .maybeSingle();
+  if (error) throw new Error(`Could not attach your wallet: ${error.message}`);
+  if (!row) throw new Error("There's no identity check to attach a wallet to yet.");
+
+  if (row.stellar_address) {
+    if (row.stellar_address === linked) {
+      return { address: linked, status: row.status as ApplicantSubmission["status"] };
+    }
+    throw new Error(
+      `Your verification is already attached to the wallet ending ${row.stellar_address.slice(-4)}.`,
+    );
+  }
+
+  const detailsHash = await computeDetailsHash({
+    fullName: row.full_name,
+    dateOfBirth: row.date_of_birth ?? "",
+    documentType: row.document_type,
+    idNumber: row.id_number ?? "",
+    documentExpiresOn: row.document_expires_on ?? "",
+    residentialAddress: row.residential_address ?? "",
+    stellarAddress: linked,
+  });
+
+  const { data: updated, error: updateError } = await admin
+    .from("kyc_requests")
+    .update({ stellar_address: linked, details_hash: detailsHash })
+    .eq("user_id", caller.userId)
+    .is("stellar_address", null)
+    .select("status")
+    .maybeSingle();
+  if (updateError) {
+    if (updateError.code === "23505") {
+      throw new Error("That wallet already has an identity check on another account.");
+    }
+    throw new Error(`Could not attach your wallet: ${updateError.message}`);
+  }
+  if (!updated) throw new Error("Your verification changed while the wallet was being attached. Reload and try again.");
+
+  if (updated.status === "approved") {
+    await notifyAdmins(
+      "An approved identity check is ready to record",
+      "An applicant approved without a wallet has attached one. Record it from the identity panel so they can open a vault.",
+      undefined,
+      KYC_REVIEWER_ROLES,
+    );
+  }
+
+  return { address: linked, status: updated.status as ApplicantSubmission["status"] };
 }
 
 /**
@@ -250,6 +369,8 @@ export async function decideSubmission(
   submissionId: string,
   decision: "approved" | "rejected",
   rejectionReason = "",
+  /** For an approval: whether it is on-chain yet, or waits for the applicant's wallet. */
+  recorded = true,
 ) {
   await requireKycReviewer();
   z.string().uuid().parse(submissionId);
@@ -277,13 +398,20 @@ export async function decideSubmission(
   // decision that is already recorded.
   await notify({
     userId: data.user_id,
-    title: decision === "approved" ? "Identity verified" : "Identity verification not accepted",
+    title:
+      decision === "rejected"
+        ? "We couldn't verify your document"
+        : recorded
+          ? "Identity verified"
+          : "Identity approved: one step left",
     caption:
-      decision === "approved"
-        ? "Your identity has been verified on-chain. You can now create project vaults."
-        : reason
-          ? `Your submission was not accepted: ${reason}`
-          : "Your submission was not accepted. Open verification to submit again.",
+      decision === "rejected"
+        ? reason
+          ? `${reason.replace(/[.\s]+$/, "")}. Upload a clearer copy and submit again.`
+          : "Upload a clearer copy and submit again."
+        : recorded
+          ? "You can open a vault for your project."
+          : "A reviewer approved your documents. Set up a wallet and attach it on the verification page to finish.",
     url: "/profile/kyc-attestation",
   });
 }
@@ -330,6 +458,14 @@ export async function attestSubmission(submissionId: string) {
     .maybeSingle();
   if (error) throw new Error(`Could not read KYC submission: ${error.message}`);
   if (!sub) throw new Error("That submission does not exist.");
+
+  // Filed before the applicant had a wallet: the documents can be approved,
+  // but there is no address to attest yet. attachOwnKycWallet tells the
+  // reviewers when there is, and this same call then records it.
+  if (!sub.stellar_address) {
+    await decideSubmission(submissionId, "approved", "", false);
+    return { address: null, attestor: me.managed_wallet };
+  }
 
   try {
     await signAttestation({
@@ -389,7 +525,10 @@ export async function revokeSubmissionAttestation(submissionId: string) {
   if (error) throw new Error(`Could not read KYC submission: ${error.message}`);
   if (!sub) throw new Error("That submission does not exist.");
 
-  await signRevocation({ keyRef: email, subject: sub.stellar_address });
+  // Nothing on-chain for a check that never had a wallet.
+  if (sub.stellar_address) {
+    await signRevocation({ keyRef: email, subject: sub.stellar_address });
+  }
   await decideSubmission(submissionId, "rejected");
 
   return { address: sub.stellar_address };
