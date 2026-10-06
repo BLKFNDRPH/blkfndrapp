@@ -150,6 +150,38 @@ export function describeProgress(
   };
 }
 
+/** Every Stellar asset carries 7 decimal places. */
+export const TOKEN_DECIMALS = 7;
+const UNIT = 10n ** BigInt(TOKEN_DECIMALS);
+
+/**
+ * A typed amount ("12.4", "1,000", ".5") as base units, exactly, with no
+ * floating point in between. Digits past the seventh decimal are dropped,
+ * since the vault cannot count them. Null for anything that is not a plain
+ * non-negative number.
+ */
+export function parseAmount(input: string): bigint | null {
+  const s = input.trim().replace(/,/g, "");
+  if (s === "" || s === "." || !/^\d*(\.\d*)?$/.test(s)) return null;
+  const [whole, frac = ""] = s.split(".");
+  const fraction = (frac + "0".repeat(TOKEN_DECIMALS)).slice(0, TOKEN_DECIMALS);
+  return BigInt(whole || "0") * UNIT + BigInt(fraction || "0");
+}
+
+/** Base units as whole tokens, for display only (never for arithmetic). */
+export function rawToUnits(raw: bigint): number {
+  return Number(raw) / Number(UNIT);
+}
+
+/** Base units as the plain string an input field holds: "12.4", "50". */
+export function rawToInput(raw: bigint): string {
+  const negative = raw < 0n;
+  const abs = negative ? -raw : raw;
+  const whole = abs / UNIT;
+  const frac = (abs % UNIT).toString().padStart(TOKEN_DECIMALS, "0").replace(/0+$/, "");
+  return `${negative ? "-" : ""}${whole}${frac ? `.${frac}` : ""}`;
+}
+
 /** How long a rate has been sitting in the cache, in words. */
 export function describeRateAge(updatedAt: number | null | undefined, now = Date.now()): string {
   if (!updatedAt) return "rate unavailable";

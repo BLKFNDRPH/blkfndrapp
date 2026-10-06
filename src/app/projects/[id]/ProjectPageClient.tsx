@@ -84,9 +84,8 @@ function ProjectPageInner({ id }: { id: string }) {
     closeProjectDetails,
     refreshProject,
     setIsFundFlow,
-    signInToContinue,
   } = useProjectDetails();
-  const { user, loading: authLoading } = useAuth();
+  const { loading: authLoading } = useAuth();
   const searchParams = useSearchParams();
 
   // Ask the provider for this id on arrival; forget it on the way out. Moving
@@ -108,9 +107,10 @@ function ProjectPageInner({ id }: { id: string }) {
     if (stakeParam !== "1" || authLoading || stakeConsumed.current) return;
     stakeConsumed.current = true;
     rewriteQuery((params) => params.delete("stake"));
-    if (user) setIsFundFlow(true);
-    else signInToContinue({ fund: true });
-  }, [stakeParam, authLoading, user, setIsFundFlow, signInToContinue]);
+    // Signed in or not, the stake sheet opens: a signed-out visitor reads what
+    // staking involves first, and its sign-in card carries the intent back.
+    setIsFundFlow(true);
+  }, [stakeParam, authLoading, setIsFundFlow]);
 
   // The active tab lives in the address, so a tab can be linked to. It is
   // held in state because a replaceState write does not reach
