@@ -17,6 +17,7 @@ import { useStellarContract } from "@/hooks/use-stellar-contract";
 import { Progress } from "@/components/ui/progress";
 import { useProjectDetails } from "@/context/ProjectDetailsContext";
 import { MilestonePlan, MilestoneVoting, type MilestoneVaultState } from "./MilestoneVoting";
+import { VaultRecord } from "./VaultRecord";
 import { ExpandableText } from "@/components/ui/expandable-text";
 import { MilestoneProofDialog, MilestoneProofView, parseProof } from "./MilestoneProof";
 import { ProjectLocation } from "./ProjectLocation";
@@ -1064,33 +1065,14 @@ export function ProjectView({
 
             {/* ---- Record ---- */}
             <TabsContent value="record" className="space-y-4 pt-2">
-              {/* Public record, Phase 1 variant */}
-              {ledgerUrl ? (
-                <Card className="border-border/60 bg-muted/20">
-                  <CardHeader className="p-4 pb-2">
-                    <CardTitle className="text-base">The full money record is coming.</CardTitle>
-                  </CardHeader>
-                  <CardContent className="p-4 pt-0 space-y-2 text-sm">
-                    <p className="text-muted-foreground">
-                      For now, every entry for this vault is on the public ledger.
-                    </p>
-                    <a
-                      href={ledgerUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
-                    >
-                      Open on the public ledger (stellar.expert)
-                      <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
-                    </a>
-                    <p className="text-xs text-muted-foreground">{EXPLORER_EXPLAINER}</p>
-                  </CardContent>
-                </Card>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  Nothing recorded yet. The vault opens when the builder&apos;s deposit lands.
-                </p>
-              )}
+              {/* The vault's public record, from the indexed ledger events. */}
+              <VaultRecord
+                projectId={project.id}
+                currency={project.currencyType ?? "USDC"}
+                xlmUsd={xlmUsd ?? null}
+                me={activeAddress || null}
+                ledgerUrl={ledgerUrl}
+              />
 
               {/* Technical details: the only place an address appears */}
               {technicalDetails}
