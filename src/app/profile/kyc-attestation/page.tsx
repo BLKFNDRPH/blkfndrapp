@@ -329,7 +329,7 @@ export default function VerifyIdentityPage() {
               </Button>
             ) : (
               <Button asChild>
-                <Link href="/profile?tab=wallet">Set up your wallet</Link>
+                <Link href="/profile?tab=wallet&for=identity">Set up your wallet</Link>
               </Button>
             )}
             {attachError && (
@@ -375,7 +375,7 @@ export default function VerifyIdentityPage() {
           </p>
           <div className="flex flex-wrap gap-2">
             <Button asChild size="sm" variant="outline">
-              <Link href="/profile?tab=wallet">Set up a wallet</Link>
+              <Link href="/profile?tab=wallet&for=identity">Set up a wallet</Link>
             </Button>
             <Button asChild size="sm" variant="outline">
               <a href="mailto:hello@blkfndr.com?subject=Move%20my%20identity%20verification">Contact support</a>

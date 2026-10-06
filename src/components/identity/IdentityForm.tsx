@@ -460,7 +460,7 @@ export function IdentityForm({
               meantime. You&apos;ll attach the wallet here before you open a vault.
             </p>
             <Button asChild variant="outline" size="sm">
-              <Link href="/profile?tab=wallet">Set up your wallet</Link>
+              <Link href="/profile?tab=wallet&for=identity">Set up your wallet</Link>
             </Button>
           </div>
         )}

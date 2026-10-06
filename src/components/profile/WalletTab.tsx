@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Copy, Check, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { WalletPanel } from "@/components/settings/WalletSettings";
@@ -11,6 +12,24 @@ import {
 import { IS_PRACTICE_NETWORK } from "@/lib/network";
 import { formatToken, formatUsd, rawToUnits } from "@/lib/money";
 import { PRACTICE_DOLLARS_FAUCET, type WalletReadiness } from "@/lib/wallet-readiness";
+
+/**
+ * Where someone sent here to set up a wallet came from (`?for=`), so the setup
+ * says what it's for and its last step takes them straight back. The vault
+ * form keeps its draft in the browser, so going back loses nothing.
+ */
+const SETUP_FOR: Record<string, { purpose: string; doneHref: string; doneLabel: string }> = {
+  identity: {
+    purpose: "to verify your identity",
+    doneHref: "/profile/kyc-attestation",
+    doneLabel: "Continue to your verification",
+  },
+  vault: {
+    purpose: "to open a vault",
+    doneHref: "/create-listing",
+    doneLabel: "Continue to your vault",
+  },
+};
 
 /**
  * The wallet: the shared panel (set up, reconnect, the account ID, disconnect
@@ -32,6 +51,7 @@ export function WalletTab({
   onRefresh: () => void;
 }) {
   const [copied, setCopied] = useState(false);
+  const setupFor = SETUP_FOR[useSearchParams().get("for") ?? ""];
   const state = readinessState(readiness, readinessLoading, null);
   const usdcRaw = readiness?.holding.status === "ok" ? readiness.holding.raw : null;
   const xlmRaw = readiness?.xlmRaw ?? null;
@@ -50,7 +70,11 @@ export function WalletTab({
     <div className="grid gap-4 lg:grid-cols-2">
       <section aria-label="Your wallet" className="space-y-3 rounded-xl border border-border bg-card p-4">
         <p className="font-semibold">Your wallet</p>
-        <WalletPanel />
+        <WalletPanel
+          purpose={setupFor?.purpose}
+          doneHref={setupFor?.doneHref}
+          doneLabel={setupFor?.doneLabel}
+        />
       </section>
 
       {address && (

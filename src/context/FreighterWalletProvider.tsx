@@ -7,6 +7,11 @@ import {
   getFreighterAddressIfAvailable,
   isStellarPublicKey,
   WalletConnectError,
+  walletNetworkMatches,
+  OUR_SIDE_MESSAGE,
+  SIGN_IN_EXPIRED_MESSAGE,
+  ANOTHER_ACCOUNT_MESSAGE,
+  CODE_DECLINED_MESSAGE,
 } from "@/lib/freighter-connect";
 import { FreighterWalletContext } from "./FreighterWalletContext";
 
@@ -16,10 +21,6 @@ import { FreighterWalletContext } from "./FreighterWalletContext";
  * until the person reconnects. Signing out neither sets nor clears it.
  */
 const DISCONNECTED_FOR_NOW_KEY = "freighterDisconnected";
-
-/** Our side failed, not the person's. One sentence, the same everywhere. */
-const OUR_SIDE_MESSAGE =
-  "We couldn't finish setting up (our side, not yours). Nothing was moved. Try again in a moment.";
 
 async function restoreAddressFromSession(): Promise<string | null> {
   try {
@@ -123,6 +124,16 @@ export const FreighterWalletProvider = ({
       }
       const publicKey = result.address;
 
+      // A wallet left on another network would sign the link code for the
+      // wrong one, and every later transaction would fail without saying why.
+      // Checked before anything else is asked of the person. A wallet that
+      // won't say is let through; the signature step catches it.
+      if ((await walletNetworkMatches()) === "mismatch") {
+        const networkError = new WalletConnectError("wrong-network");
+        setError(networkError.message);
+        throw networkError;
+      }
+
       const nonceRes = await fetch("/api/auth/freighter/nonce", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -198,7 +209,7 @@ export const FreighterWalletProvider = ({
         console.error("Sign Error:", signErr);
         if (signErr instanceof WalletConnectError && signErr.code === "declined") {
           throw new Error(
-            "You didn't approve the code, so the wallet isn't set up yet. Nothing was moved or charged.",
+            CODE_DECLINED_MESSAGE,
           );
         }
         if (
@@ -221,12 +232,15 @@ export const FreighterWalletProvider = ({
 
       if (!verifyRes.ok || !verifyData.success) {
         console.error("[Wallet] verify:", verifyRes.status, verifyData?.error);
-        // The route answers "Unauthorized" when the sign-in is gone, and
+        // The route answers "Unauthorized" when the sign-in is gone, names a
+        // wallet already linked to someone else (linkWallet's unique key), and
         // explains a bad challenge or signature in its own words otherwise.
         throw new Error(
           verifyData?.error === "Unauthorized"
-            ? "Your sign-in expired. Sign in again and we'll pick up here."
-            : OUR_SIDE_MESSAGE,
+            ? SIGN_IN_EXPIRED_MESSAGE
+            : /already linked to another account/i.test(String(verifyData?.error ?? ""))
+              ? ANOTHER_ACCOUNT_MESSAGE
+              : OUR_SIDE_MESSAGE,
         );
       }
 

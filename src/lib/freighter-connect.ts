@@ -1,9 +1,16 @@
 import {
   getAddress,
+  getNetwork,
   isAllowed,
   isConnected,
   requestAccess,
 } from "@stellar/freighter-api";
+// The same constant stellar-clients uses, taken from the SDK directly so this
+// module, which AuthContext loads on every page, doesn't pull in every
+// contract binding with it.
+import { Networks } from "@stellar/stellar-sdk";
+
+const NETWORK_PASSPHRASE = Networks.TESTNET;
 
 const STELLAR_PUBLIC_KEY_RE = /^G[A-Z2-7]{55}$/;
 
@@ -20,12 +27,14 @@ export function isStellarPublicKey(
  *   "install it"; on a phone no extension can exist at all.
  * - `declined`: the person said no in the wallet's own window.
  * - `locked`: the wallet is there but gave no account (locked, or none chosen).
+ * - `wrong-network`: the wallet is set to a different network from this app's.
  * - `unavailable`: the wallet errored for a reason of its own.
  */
 export type WalletConnectFailure =
   | "not-detected"
   | "declined"
   | "locked"
+  | "wrong-network"
   | "unavailable";
 
 /** The plain-language sentence for each failure, one fix each. */
@@ -36,9 +45,56 @@ export const WALLET_CONNECT_MESSAGES: Record<WalletConnectFailure, string> = {
     "You didn't allow this site in your wallet. Nothing happened. Allow it to continue.",
   locked:
     "Your wallet is locked or has no account chosen. Unlock it, pick an account, then try again.",
+  "wrong-network":
+    "Your wallet is on the main network. Switch it to the test network in its settings, then try again.",
   unavailable:
     "Your wallet didn't respond. Make sure it's unlocked, then try again.",
 };
+
+/**
+ * Whether the wallet is set to this app's network: "match", "mismatch", or
+ * null when the wallet won't say (not installed, or not allowed yet).
+ *
+ * A wallet left on the main network signs the link code for the wrong network
+ * and every later transaction fails; QA met it as an unexplained error. The
+ * setup flow checks before asking for anything.
+ */
+export async function walletNetworkMatches(): Promise<"match" | "mismatch" | null> {
+  if (typeof window === "undefined") return null;
+  try {
+    const result = await getNetwork();
+    if (result.error || !result.networkPassphrase) return null;
+    return result.networkPassphrase === NETWORK_PASSPHRASE ? "match" : "mismatch";
+  } catch {
+    return null;
+  }
+}
+
+/** Whether a wallet extension answers at all, for the setup flow's "Looking for it…". */
+export async function walletInstalled(): Promise<boolean> {
+  if (typeof window === "undefined") return false;
+  try {
+    const result = await isConnected();
+    return !result.error && Boolean(result.isConnected);
+  } catch {
+    return false;
+  }
+}
+
+/** Our side failed, not the person's. One sentence, the same everywhere. */
+export const OUR_SIDE_MESSAGE =
+  "We couldn't finish setting up (our side, not yours). Nothing was moved. Try again in a moment.";
+
+/** The sign-in went away between starting and finishing the link. */
+export const SIGN_IN_EXPIRED_MESSAGE = "Your sign-in expired. Sign in again and we'll pick up here.";
+
+/** The wallet is already linked to a different BLKFNDR account. */
+export const ANOTHER_ACCOUNT_MESSAGE =
+  "This wallet is already set up on another BLKFNDR account (signed in with a different email). Sign in to that account, or create a new wallet for this one.";
+
+/** The person turned down the one-time code in their wallet. */
+export const CODE_DECLINED_MESSAGE =
+  "You didn't approve the code, so the wallet isn't set up yet. Nothing was moved or charged.";
 
 /** A connect failure with its code attached, so screens can branch on it. */
 export class WalletConnectError extends Error {
