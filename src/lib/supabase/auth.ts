@@ -85,7 +85,7 @@ export async function requireAdmin(): Promise<AuthedCaller> {
  * `kyc_manager` role). That also matches the `has_admin_role('kyc_manager')`
  * RLS already on `kyc_requests`.
  */
-const KYC_REVIEWER_ROLES: readonly AdminRole[] = ["owner", "platform_admin", "kyc_manager"];
+export const KYC_REVIEWER_ROLES: readonly AdminRole[] = ["owner", "platform_admin", "kyc_manager"];
 
 export async function requireKycReviewer(): Promise<AuthedCaller> {
   const caller = await requireCaller();

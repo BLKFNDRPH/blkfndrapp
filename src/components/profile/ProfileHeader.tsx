@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import type { User } from "@/lib/types";
 
 export type Participation = "watching" | "stakeholder" | "steward";
-export type IdentityState = "loading" | "none" | "pending" | "rejected" | "verified";
+export type IdentityState = "loading" | "none" | "pending" | "approved" | "rejected" | "verified";
 
 const PARTICIPATION_LABEL: Record<Participation, string> = {
   watching: "Watching",
@@ -18,6 +18,12 @@ const IDENTITY: Record<Exclude<IdentityState, "loading">, { label: string; class
   none: { label: "Identity not verified", className: "border-border bg-muted/60 text-muted-foreground" },
   pending: {
     label: "Identity under review",
+    className: "border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-300",
+  },
+  // Approved by a reviewer, not yet on the public record: waiting for a wallet
+  // to be attached, or for a reviewer to record it.
+  approved: {
+    label: "Identity approved: one step left",
     className: "border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-300",
   },
   rejected: {

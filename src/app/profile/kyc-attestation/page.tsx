@@ -1,905 +1,448 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { ArrowLeft, CheckCircle2, Circle, Clock, Loader2, ShieldCheck, XCircle } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
-import { useFreighterWallet } from "@/context/FreighterWalletContext";
-import { useToast } from "@/hooks/use-toast";
-import { useRouter } from "next/navigation";
-import { submitKycRequest, getMyKycStatus } from "@/app/actions";
+import { attachMyKycWallet, getMyKycStatus } from "@/app/actions";
 // Type only, so the server-only module is erased rather than bundled.
 import type { ApplicantSubmission } from "@/lib/data/kyc";
-import { uploadKycDocument, computeDetailsHash } from "@/lib/kyc/prepare-submission";
+import { identityClient, simulate } from "@/lib/stellar-clients";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { ArrowLeft, ShieldCheck, Loader2, AlertTriangle, FileText, Send, Shield, Wallet } from "lucide-react";
-import Link from "next/link";
-import { Client as IdentityClient } from "@/packages/blkfndr_identity/src";
-import { cn, shortenAddress } from "@/lib/utils";
-import { Badge } from "@/components/ui/badge";
-import { Textarea } from "@/components/ui/textarea";
+import { IdentityForm } from "@/components/identity/IdentityForm";
+import { VerificationRecord } from "@/components/identity/VerificationRecord";
+import { cn } from "@/lib/utils";
 
-const NETWORK_PASSPHRASE = "Test SDF Network ; September 2015";
-const SOROBAN_RPC_URL = "https://soroban-testnet.stellar.org";
-const IDENTITY_ID = process.env.NEXT_PUBLIC_BLKFNDR_IDENTITY_CONTRACT_ID || "";
+/**
+ * Verify your identity.
+ *
+ * Open to anyone signed in. It used to show nothing but "Link Your Wallet"
+ * until a wallet extension had signed a challenge, so a builder with a
+ * passport and no crypto could not even learn what verification involved. Now
+ * the documents go in first and the wallet is attached at submission if there
+ * is one, or later if not: a reviewer can approve the documents either way,
+ * and the approval reaches the public record once a wallet is attached.
+ *
+ * Where a check stands comes from two places: the submission (pending,
+ * approved, rejected) and the public record the vault checks
+ * (is_kyc_approved for the attached wallet). Only the second makes someone
+ * verified.
+ */
 
-export default function KycAttestationPage() {
-  const { user, loading: authLoading, refreshUser } = useAuth();
-  const { freighterWalletAddress, login: connectFreighter } = useFreighterWallet();
-  const { toast } = useToast();
-  const router = useRouter();
+type Phase =
+  | "none"
+  | "pending"
+  | "rejected"
+  | "approved-no-wallet"
+  | "approved-unrecorded"
+  | "verified";
 
-  // Wizard state configuration
-  interface KycFormData {
-    fullName: string;
-    email: string;
-    documentType: string;
-    documentImage: string; // Base64 data URL
-    documentFile: File | null; // Raw File object for name display
-    idNumber: string;
-    dob: string;
-    expiryDate: string;
-    residentialAddress: string;
-    consentFlag: boolean;
+function phaseOf(submission: ApplicantSubmission | null, onRecord: boolean | null): Phase {
+  if (!submission) return "none";
+  if (submission.stellar_address && onRecord) return "verified";
+  if (submission.status === "rejected") return "rejected";
+  if (submission.status === "approved") {
+    return submission.stellar_address ? "approved-unrecorded" : "approved-no-wallet";
   }
+  return "pending";
+}
 
-  const [formData, setFormData] = useState<KycFormData>({
-    fullName: "",
-    email: "",
-    documentType: "passport",
-    documentImage: "",
-    documentFile: null,
-    idNumber: "",
-    dob: "",
-    expiryDate: "",
-    residentialAddress: "",
-    consentFlag: false,
-  });
+const day = (iso: string | null | undefined) =>
+  iso ? new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "";
 
-  const [step, setStep] = useState(1);
-  const [currentKycRequest, setCurrentKycRequest] = useState<ApplicantSubmission | null>(null);
-  const [isOnChainApproved, setIsOnChainApproved] = useState(false);
-  const [loadingStatus, setLoadingStatus] = useState(true);
-  const [isPendingSubmit, startSubmitTransition] = useTransition();
-  const [isEditing, setIsEditing] = useState(false);
-  const [isLinking, setIsLinking] = useState(false);
+const DOCUMENT_NAMES: Record<string, string> = {
+  passport: "Passport",
+  national_id: "National ID card",
+  drivers_license: "Driver's license",
+};
 
-  // The account's linked wallet, which it proved control of by signing a
-  // challenge. An identity check can name no other: the server and the
-  // database both refuse it. Linking also makes it the wallet the app signs
-  // with, so it is the builder the vault constructor will check.
-  const activeAddress = user?.stellarPublicKey || "";
+/** "Documents submitted → Reviewed by a person → Verified", for where a check stands. */
+function Tracker({ phase }: { phase: Phase }) {
+  const reviewed = phase !== "pending";
+  const steps = [
+    { label: "Documents submitted", state: "done" as const },
+    {
+      label: phase === "rejected" ? "Not accepted" : "Reviewed by a person",
+      state: phase === "pending" ? ("current" as const) : phase === "rejected" ? ("failed" as const) : ("done" as const),
+    },
+    {
+      label: "Verified",
+      state:
+        phase === "verified"
+          ? ("done" as const)
+          : reviewed && phase !== "rejected"
+            ? ("current" as const)
+            : ("todo" as const),
+    },
+  ];
+  return (
+    <ol className="grid grid-cols-3 gap-2 rounded-xl border border-border bg-card p-4 text-center text-xs sm:text-sm">
+      {steps.map((s) => (
+        <li key={s.label} className="flex flex-col items-center gap-1.5">
+          {s.state === "done" ? (
+            <CheckCircle2 className="h-6 w-6 text-emerald-500" aria-hidden="true" />
+          ) : s.state === "current" ? (
+            <Clock className="h-6 w-6 text-amber-500" aria-hidden="true" />
+          ) : s.state === "failed" ? (
+            <XCircle className="h-6 w-6 text-destructive" aria-hidden="true" />
+          ) : (
+            <Circle className="h-6 w-6 text-muted-foreground" aria-hidden="true" />
+          )}
+          <span className={cn("font-medium", s.state === "todo" && "text-muted-foreground")}>
+            {s.label}
+            <span className="sr-only">
+              {s.state === "done" ? " (done)" : s.state === "current" ? " (in progress)" : s.state === "failed" ? " (not accepted)" : ""}
+            </span>
+          </span>
+        </li>
+      ))}
+    </ol>
+  );
+}
 
-  const fetchKycStatus = async () => {
-    setLoadingStatus(true);
+export default function VerifyIdentityPage() {
+  const { user, loading: authLoading, login } = useAuth();
+  // The wallet set up on the account, which it proved it holds by signing a
+  // challenge. A check can be attached to no other.
+  const linked = user?.stellarPublicKey || "";
+
+  const [submission, setSubmission] = useState<ApplicantSubmission | null>(null);
+  const [onRecord, setOnRecord] = useState<boolean | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [readFailed, setReadFailed] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [recordOpen, setRecordOpen] = useState(false);
+  const [attaching, setAttaching] = useState(false);
+  const [attachError, setAttachError] = useState<string | null>(null);
+
+  // Only the first read shows the loading line. A later one -- after a
+  // submission, an attach, or the account refreshing -- updates in place, so a
+  // half-typed form is never unmounted by a status check.
+  const loaded = useRef(false);
+  const load = useCallback(async () => {
+    if (!loaded.current) setLoading(true);
+    setReadFailed(false);
+    const res = await getMyKycStatus().catch(() => null);
+    if (!res || !res.success) {
+      if (!loaded.current) setReadFailed(true);
+      setLoading(false);
+      return;
+    }
+    loaded.current = true;
+    const sub = res.request ?? null;
+    setSubmission(sub);
+    if (sub?.stellar_address) {
+      const read = await simulate(
+        () => identityClient().is_kyc_approved({ address: sub.stellar_address! }),
+        `is_kyc_approved(${sub.stellar_address})`,
+      );
+      setOnRecord(read === null ? null : Boolean(read));
+    } else {
+      setOnRecord(null);
+    }
+    setLoading(false);
+  }, []);
+
+  // Keyed on the account, not the user object, which is rebuilt on every
+  // session refresh.
+  const uid = user?.uid;
+  useEffect(() => {
+    if (uid) load();
+  }, [uid, load]);
+
+  const attach = async () => {
+    setAttaching(true);
+    setAttachError(null);
     try {
-      // The submission belongs to the account, so it is read with or without a
-      // wallet. This used to return before loading anything when there was no
-      // wallet, which left the page on its loading spinner for good.
-      const res = await getMyKycStatus();
-      if (res.success && res.request) {
-        // Status only. The identity fields are not granted to any
-        // browser-facing role, so a resubmission is re-entered by hand rather
-        // than prefilled — deliberately, since prefilling would mean serving
-        // an ID number back to the page on every visit.
-        setCurrentKycRequest(res.request);
-        setFormData((prev) => ({
-          ...prev,
-          documentType: res.request?.document_type || 'passport',
-        }));
-      } else {
-        setCurrentKycRequest(null);
-        setFormData((prev) => ({
-          ...prev,
-          fullName: user?.name || "",
-          email: user?.email || "",
-        }));
-      }
-
-      // On-chain status, for the linked wallet, or for the address on file
-      // when none is linked.
-      const subject = activeAddress || (res.success ? res.request?.stellar_address : undefined);
-      if (!subject) {
-        setIsOnChainApproved(false);
-      } else if (IDENTITY_ID) {
-        try {
-          const client = new IdentityClient({
-            contractId: IDENTITY_ID,
-            rpcUrl: SOROBAN_RPC_URL,
-            networkPassphrase: NETWORK_PASSPHRASE,
-            // No publicKey: a read-only simulation, and the SDK uses
-            // NULL_ACCOUNT when it is omitted. The old
-            // NEXT_PUBLIC_STELLAR_FALLBACK_ADDRESS is FILL_ME here — truthy but
-            // not a strkey, so it threw "invalid encoded string" and this catch
-            // showed the applicant as unverified. Passing the wallet instead
-            // would throw "Account not found" for one not yet on the ledger,
-            // which is precisely the person about to start verification.
-          });
-          const checkTx = await client.is_kyc_approved({ address: subject });
-          const checkSim = await checkTx.simulate();
-          setIsOnChainApproved(Boolean(checkSim.result));
-        } catch (simulateErr) {
-          console.error("Failed to simulate KYC check on-chain:", simulateErr);
-          setIsOnChainApproved(false);
-        }
-      }
-    } catch (err) {
-      console.error("Failed to load KYC details:", err);
+      const res = await attachMyKycWallet();
+      if (!res.success) throw new Error(res.error);
+      await load();
+    } catch (error) {
+      setAttachError(error instanceof Error ? error.message : String(error));
     } finally {
-      setLoadingStatus(false);
+      setAttaching(false);
     }
   };
 
-  useEffect(() => {
-    if (!authLoading && !user) {
-      router.push("/profile");
-    }
-  }, [user, authLoading, router]);
+  const header = (
+    <div className="space-y-2">
+      <h1 className="font-headline text-3xl font-bold tracking-tight text-accent">Verify your identity</h1>
+      <p className="text-muted-foreground">
+        Only builders need this. It lets stakeholders see that a real, checked person is behind a
+        project. Stakeholders never need it.
+      </p>
+    </div>
+  );
 
-  useEffect(() => {
-    fetchKycStatus();
-  }, [activeAddress]);
-
-  // Pre-populate user profile data if user changes
-  useEffect(() => {
-    if (user && !formData.fullName) {
-      setFormData((prev) => ({
-        ...prev,
-        fullName: prev.fullName || user.name || "",
-        email: prev.email || user.email || "",
-      }));
-    }
-  }, [user]);
-
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setFormData((prev) => ({
-        ...prev,
-        documentFile: file,
-        documentImage: reader.result as string,
-      }));
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const handleNextStep = () => {
-    if (!formData.fullName || !formData.email || !formData.documentImage) {
-      toast({
-        title: "Missing Fields",
-        description: "Please fill out all fields and provide a document image.",
-        variant: "destructive",
-      });
-      return;
-    }
-    setStep(2);
-  };
-
-  // Connects Freighter and links its selected account to this account through a
-  // signed challenge, as every other "connect" button does. Re-reading the user
-  // afterwards is what puts the new link into activeAddress.
-  const handleLinkWallet = async () => {
-    setIsLinking(true);
-    try {
-      await connectFreighter();
-      await refreshUser();
-      toast({
-        title: "Wallet Linked",
-        description: "Your Freighter wallet is linked to your account.",
-      });
-    } catch (err: any) {
-      toast({
-        title: "Could Not Link Wallet",
-        description: err?.message || "Freighter did not link a wallet.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsLinking(false);
-    }
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!activeAddress) {
-      toast({
-        title: "Wallet Not Linked",
-        description: "Link your Freighter wallet to your account to submit verification details.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (
-      !formData.fullName ||
-      !formData.email ||
-      !formData.documentImage ||
-      !formData.idNumber ||
-      !formData.dob ||
-      !formData.expiryDate ||
-      !formData.residentialAddress
-    ) {
-      toast({
-        title: "Missing Fields",
-        description: "Please fill out all fields in the Review & Confirm step.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (!formData.consentFlag) {
-      toast({
-        title: "Consent Required",
-        description: "You must check the consent box to proceed.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // DOB age validation (must be 18+)
-    const dobDate = new Date(formData.dob);
-    const today = new Date();
-    let age = today.getFullYear() - dobDate.getFullYear();
-    const monthDiff = today.getMonth() - dobDate.getMonth();
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dobDate.getDate())) {
-      age--;
-    }
-    if (age < 18) {
-      toast({
-        title: "Underage Applicant",
-        description: "You must be at least 18 years old to verify your identity.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // Expiry date validation (must be in future)
-    const expiryDate = new Date(formData.expiryDate);
-    if (expiryDate < today) {
-      toast({
-        title: "Expired Document",
-        description: "Your document's expiry date must be in the future.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    startSubmitTransition(async () => {
-      try {
-        // The document goes to a private Storage bucket; only its path is
-        // recorded. This form previously sent the image inline as a base64 data
-        // URL, which the current backend does not accept — identity documents
-        // are deliberately kept out of any table a query can reach.
-        if (!formData.documentFile) {
-          throw new Error("Attach a photo of your identity document.");
-        }
-        const documentPath = await uploadKycDocument(formData.documentFile);
-
-        const detailsHash = await computeDetailsHash({
-          fullName: formData.fullName,
-          dateOfBirth: formData.dob,
-          documentType: formData.documentType,
-          idNumber: formData.idNumber,
-          documentExpiresOn: formData.expiryDate,
-          residentialAddress: formData.residentialAddress,
-          stellarAddress: activeAddress,
-        });
-
-        const res = await submitKycRequest({
-          stellarAddress: activeAddress,
-          fullName: formData.fullName,
-          email: formData.email,
-          documentType: formData.documentType,
-          documentPath,
-          idNumber: formData.idNumber,
-          dateOfBirth: formData.dob,
-          documentExpiresOn: formData.expiryDate,
-          residentialAddress: formData.residentialAddress,
-          detailsHash,
-          consentGiven: formData.consentFlag,
-        });
-
-        if (res.success) {
-          toast({
-            title: "Submission sent for admin review!",
-            description: "Your identity details have been successfully recorded.",
-          });
-          setIsEditing(false);
-          setStep(1);
-          await fetchKycStatus();
-        } else {
-          throw new Error(res.error || "Submission failed");
-        }
-      } catch (err: any) {
-        toast({
-          title: "Submission Error",
-          description: err.message || "Failed to submit application.",
-          variant: "destructive",
-        });
-      }
-    });
-  };
-
-  if (authLoading || loadingStatus) {
-    return (
-      <div className="container mx-auto max-w-2xl py-12 flex flex-col items-center justify-center min-h-[400px]">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        <p className="text-sm text-muted-foreground mt-4">Loading verification status...</p>
+  const shell = (children: React.ReactNode) => (
+    <div className="container mx-auto max-w-2xl px-4 py-10">
+      <Link href="/profile" className="mb-6 inline-flex items-center text-sm font-semibold hover:text-accent">
+        <ArrowLeft className="mr-2 h-4 w-4" aria-hidden="true" />
+        Back to your profile
+      </Link>
+      <div className="space-y-6">
+        {header}
+        {children}
       </div>
+    </div>
+  );
+
+  if (authLoading) {
+    return shell(
+      <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+        Loading your verification status…
+      </p>,
     );
   }
 
-  const dbStatus = currentKycRequest?.status || "none";
-  const showSubmittedDetails = dbStatus !== "none" && !isEditing;
-  // A new submission names the linked wallet, and a resubmission keeps the
-  // address already on file. Either way the form can only succeed once that
-  // wallet is linked, so ask for the link before the form, not after it.
-  const filedAddress = currentKycRequest?.stellar_address ?? "";
-  const linkNeeded = !activeAddress || (!!filedAddress && filedAddress !== activeAddress);
+  // Signed out: say what this is and offer to sign in here, rather than
+  // bouncing to the profile, which bounced again.
+  if (!user) {
+    return shell(
+      <div className="space-y-3 rounded-xl border border-border bg-card p-6">
+        <p className="font-medium">Sign in to verify your identity</p>
+        <p className="text-sm text-muted-foreground">
+          You&apos;ll need a passport, national ID card or driver&apos;s license, and a few minutes. No
+          wallet is needed to start.
+        </p>
+        <Button type="button" onClick={() => login()}>
+          Sign in
+        </Button>
+      </div>,
+    );
+  }
 
-  return (
-    <div className="container mx-auto max-w-2xl py-12 px-4">
-      <div className="mb-6">
-        <Link href="/profile" className="flex items-center text-sm font-semibold hover:text-accent transition-colors">
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          Back to Profile
-        </Link>
-      </div>
+  if (loading) {
+    return shell(
+      <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+        Loading your verification status…
+      </p>,
+    );
+  }
 
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight font-headline text-accent">Identity Verification</h1>
-          <p className="text-muted-foreground text-sm mt-1">
-            Attest your identity on the Stellar network to authorize project vault creations.
+  if (readFailed) {
+    return shell(
+      <div className="space-y-3 rounded-xl border border-border bg-card p-6">
+        <p className="font-medium">We couldn&apos;t load your verification just now.</p>
+        <Button type="button" variant="outline" onClick={load}>
+          Try again
+        </Button>
+      </div>,
+    );
+  }
+
+  const phase = phaseOf(submission, onRecord);
+  const filed = submission?.stellar_address ?? null;
+  const wrongWallet = Boolean(filed && linked && filed !== linked);
+
+  const form = (
+    <div className="rounded-xl border border-border bg-card p-4 sm:p-6">
+      <IdentityForm
+        defaultName={user.name && user.name !== "Anonymous" ? user.name : ""}
+        accountEmail={user.email || ""}
+        walletToAttach={linked}
+        filedWallet={filed}
+        onSubmitted={() => {
+          setEditing(false);
+          load();
+        }}
+        onCancel={submission ? () => setEditing(false) : undefined}
+      />
+    </div>
+  );
+
+  if (phase === "none" || editing) {
+    return shell(
+      <>
+        {phase === "none" && (
+          <p className="text-sm text-muted-foreground">
+            A person at BLKFNDR checks every document. You&apos;ll see the decision here and in your
+            notifications.
           </p>
-        </div>
+        )}
+        {form}
+      </>,
+    );
+  }
 
-        {/* Progress Stepper */}
-        {dbStatus !== "none" && (
-          <div className="bg-card border border-border/80 rounded-2xl p-6 shadow-sm select-none">
-            <div className="flex items-center justify-between relative max-w-md mx-auto">
-              {/* Connecting Lines */}
-              <div className="absolute top-5 left-[10%] right-[10%] h-0.5 bg-muted -z-0">
-                <div
-                  className="h-full bg-primary transition-all duration-500"
-                  style={{
-                    width:
-                      isOnChainApproved || dbStatus === "approved" || dbStatus === "rejected"
-                        ? "100%"
-                        : dbStatus === "pending"
-                        ? "50%"
-                        : "0%",
-                  }}
-                />
-              </div>
-
-              {/* Step 1: Submitted */}
-              <div className="flex flex-col items-center z-10 relative">
-                <div
-                  className={cn(
-                    "h-10 w-10 rounded-full flex items-center justify-center border-2 font-bold text-xs transition-colors",
-                    // The whole tracker renders only when a submission exists, so
-                    // step 1 is complete by definition.
-                    "bg-primary border-primary text-primary-foreground"
-                  )}
-                >
-                  1
-                </div>
-                <span className="text-[11px] font-semibold mt-2 text-foreground">Submitted</span>
-              </div>
-
-              {/* Step 2: Under Review */}
-              <div className="flex flex-col items-center z-10 relative">
-                <div
-                  className={cn(
-                    "h-10 w-10 rounded-full flex items-center justify-center border-2 font-bold text-xs transition-colors",
-                    dbStatus === "pending" || dbStatus === "approved" || dbStatus === "rejected" || isOnChainApproved
-                      ? dbStatus === "pending"
-                        ? "bg-amber-500 border-amber-500 text-white animate-pulse"
-                        : "bg-primary border-primary text-primary-foreground"
-                      : "bg-background border-muted text-muted-foreground"
-                  )}
-                >
-                  2
-                </div>
-                <span className="text-[11px] font-semibold mt-2 text-foreground">Under Review</span>
-              </div>
-
-              {/* Step 3: Verified / Rejected */}
-              <div className="flex flex-col items-center z-10 relative">
-                <div
-                  className={cn(
-                    "h-10 w-10 rounded-full flex items-center justify-center border-2 font-bold text-xs transition-colors",
-                    isOnChainApproved || dbStatus === "approved" || dbStatus === "rejected"
-                      ? dbStatus === "rejected"
-                        ? "bg-rose-500 border-rose-500 text-white"
-                        : "bg-emerald-500 border-emerald-500 text-white"
-                      : "bg-background border-muted text-muted-foreground"
-                  )}
-                >
-                  3
-                </div>
-                <span className="text-[11px] font-semibold mt-2 text-foreground">
-                  {dbStatus === "rejected" ? "Rejected" : "Verified"}
-                </span>
-              </div>
+  // ── Where the check stands ──────────────────────────────────────────────
+  const panel = (() => {
+    switch (phase) {
+      case "verified":
+        return (
+          <div className="space-y-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-5">
+            <p className="flex items-center gap-2 font-semibold text-emerald-700 dark:text-emerald-300">
+              <ShieldCheck className="h-5 w-5" aria-hidden="true" />
+              Verified. You can open a vault.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button asChild>
+                <Link href="/create-listing">Open a vault</Link>
+              </Button>
+              <Button type="button" variant="outline" onClick={() => setRecordOpen(true)}>
+                See your verification record
+              </Button>
             </div>
           </div>
-        )}
-
-        {isOnChainApproved ? (
-          <Alert className="bg-emerald-500/10 border-emerald-500/20 text-emerald-800 dark:text-emerald-300 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-5 rounded-2xl">
-            <div className="flex gap-3">
-              <ShieldCheck className="h-5 w-5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
-              <div>
-                <AlertTitle className="font-bold">Verified on Chain</AlertTitle>
-                <AlertDescription className="text-xs mt-0.5">
-                  Your wallet address has been verified and recorded on the Identity Registry contract.
-                </AlertDescription>
-              </div>
-            </div>
-            {IDENTITY_ID && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="self-start sm:self-auto shrink-0 text-xs font-semibold bg-emerald-500/10 hover:bg-emerald-500/20 border-emerald-500/30 text-emerald-800 dark:text-emerald-300 animate-none"
-                asChild
-              >
-                <a
-                  href={`https://stellar.expert/explorer/testnet/contract/${IDENTITY_ID}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  View Attestation
-                </a>
+        );
+      case "pending":
+        return (
+          <div className="space-y-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-5">
+            <p className="font-semibold">Under review</p>
+            <p className="text-sm text-muted-foreground">
+              Submitted on {day(submission?.updated_at)}. A reviewer will check your documents, and
+              you&apos;ll get a notification when they&apos;ve decided.
+            </p>
+          </div>
+        );
+      case "rejected":
+        return (
+          <div className="space-y-3 rounded-xl border border-destructive/30 bg-destructive/10 p-5">
+            <p className="font-semibold">We couldn&apos;t verify this document</p>
+            <p className="text-sm">
+              {submission?.rejection_reason
+                ? `${submission.rejection_reason.replace(/[.\s]+$/, "")}. `
+                : ""}
+              Upload a clearer copy and submit again.
+            </p>
+            <Button type="button" onClick={() => setEditing(true)}>
+              Submit again
+            </Button>
+          </div>
+        );
+      case "approved-no-wallet":
+        return (
+          <div className="space-y-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-5">
+            <p className="font-semibold">
+              {linked ? "Approved. Attach your wallet to finish." : "Approved. Set up a wallet to finish."}
+            </p>
+            <p className="text-sm text-muted-foreground">
+              A reviewer approved your documents. Your verification counts once it&apos;s attached to the
+              wallet you&apos;ll open vaults from, and a reviewer has recorded it on the public record.
+            </p>
+            {linked ? (
+              <Button type="button" onClick={attach} disabled={attaching}>
+                {attaching && <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />}
+                {attaching ? "Attaching…" : `Attach your wallet ending …${linked.slice(-4)}`}
+              </Button>
+            ) : (
+              <Button asChild>
+                <Link href="/profile?tab=wallet">Set up your wallet</Link>
               </Button>
             )}
-          </Alert>
-        ) : dbStatus === "pending" ? (
-          <Alert className="bg-amber-500/10 border-amber-500/20 text-amber-800 dark:text-amber-300">
-            <Loader2 className="h-5 w-5 text-amber-600 dark:text-amber-400 animate-spin" />
-            <AlertTitle className="font-bold">Verification Pending Admin Approval</AlertTitle>
-            <AlertDescription className="text-xs">
-              Your identity document submission is currently being reviewed by administrators. Once confirmed, it will be registered on-chain.
-            </AlertDescription>
-          </Alert>
-        ) : dbStatus === "rejected" ? (
-          <Alert className="bg-rose-500/10 border-rose-500/20 text-rose-800 dark:text-rose-300 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-5 rounded-2xl">
-            <div className="flex gap-3">
-              <AlertTriangle className="h-5 w-5 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
-              <div>
-                <AlertTitle className="font-bold">Verification Rejected</AlertTitle>
-                <AlertDescription className="text-xs mt-0.5">
-                  Your document was rejected:{" "}
-                  <strong className="text-rose-900 dark:text-rose-200">
-                    {currentKycRequest?.rejection_reason || "No reason specified"}
-                  </strong>
-                  . Please re-upload a clear copy.
-                </AlertDescription>
-              </div>
-            </div>
-            <Button
-              onClick={() => {
-                setIsEditing(true);
-                setStep(1);
-              }}
-              className="self-start sm:self-auto shrink-0 bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold animate-none"
-              size="sm"
-            >
-              Re-submit Documents
-            </Button>
-          </Alert>
-        ) : null}
+            {attachError && (
+              <p role="alert" className="text-sm font-medium text-destructive">
+                {attachError}
+              </p>
+            )}
+          </div>
+        );
+      case "approved-unrecorded":
+        return (
+          <div className="space-y-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-5">
+            <p className="font-semibold">Approved. Being recorded.</p>
+            <p className="text-sm text-muted-foreground">
+              {onRecord === null
+                ? "We couldn't check the public record just now. If your verification isn't on it yet, a reviewer records it next; you'll get a notification."
+                : "A reviewer records your verification on the public record next, and you'll get a notification when it's done. Then you can open a vault."}
+            </p>
+            {onRecord === null && (
+              <Button type="button" variant="outline" size="sm" onClick={load}>
+                Check again
+              </Button>
+            )}
+          </div>
+        );
+    }
+  })();
 
-        {currentKycRequest && showSubmittedDetails ? (
-          <Card className="border border-border bg-card shadow-lg rounded-2xl overflow-hidden">
-            <CardHeader className="border-b bg-muted/20">
-              <CardTitle className="text-xl font-bold flex items-center gap-2">
-                <FileText className="h-5 w-5 text-primary" />
-                Submitted Identity Info
-              </CardTitle>
-              <CardDescription>
-                What we can show you about your submission. Your name, ID number, date of
-                birth and address are not readable by this page — they are withheld from
-                the browser by design and only a reviewer can see them.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6 pt-6">
-              {/* Only the columns granted to the applicant. The identity fields this
-                  card used to list are not readable here at all, and reading one of
-                  them unguarded -- documentType.replace(...) on a value that is always
-                  undefined -- is what crashed this page the moment a submission
-                  existed to render. */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1 sm:col-span-2">
-                  <span className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-1">
-                    <Shield className="h-3.5 w-3.5" /> Stellar Address
-                  </span>
-                  <p className="text-sm font-semibold font-mono text-foreground break-all select-all">
-                    {currentKycRequest.stellar_address}
-                  </p>
-                </div>
-                <div className="space-y-1">
-                  <span className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-1">
-                    <FileText className="h-3.5 w-3.5" /> Document Type
-                  </span>
-                  <p className="text-sm font-semibold text-foreground capitalize">
-                    {currentKycRequest.document_type?.replace("_", " ") || "N/A"}
-                  </p>
-                </div>
-                <div className="space-y-1">
-                  <span className="text-[10px] uppercase font-bold text-muted-foreground">Expiry Date</span>
-                  <p className="text-sm font-semibold text-foreground">
-                    {currentKycRequest.document_expires_on
-                      ? new Date(currentKycRequest.document_expires_on).toLocaleDateString()
-                      : "N/A"}
-                  </p>
-                </div>
-                <div className="space-y-1">
-                  <span className="text-[10px] uppercase font-bold text-muted-foreground">Submission Status</span>
-                  <p className="text-sm font-semibold text-foreground capitalize">{dbStatus}</p>
-                </div>
-                <div className="space-y-1">
-                  <span className="text-[10px] uppercase font-bold text-muted-foreground">Submitted</span>
-                  <p className="text-sm font-semibold text-foreground">
-                    {currentKycRequest.created_at
-                      ? new Date(currentKycRequest.created_at).toLocaleString()
-                      : "N/A"}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-            <CardFooter className="bg-muted/10 p-6 flex justify-end border-t mt-4 gap-3">
-              {(dbStatus === "rejected" || (dbStatus === "approved" && !isOnChainApproved)) && (
-                <Button
-                  onClick={() => {
-                    setIsEditing(true);
-                    setStep(1);
-                  }}
-                  className="bg-primary hover:bg-primary/95 text-primary-foreground font-semibold px-6"
-                >
-                  Edit Submission
-                </Button>
-              )}
-            </CardFooter>
-          </Card>
-        ) : linkNeeded ? (
-          <Card className="border border-border bg-card shadow-lg rounded-2xl overflow-hidden">
-            <CardHeader className="border-b bg-muted/20">
-              <CardTitle className="text-xl font-bold flex items-center gap-2">
-                <Wallet className="h-5 w-5 text-primary" />
-                Link Your Wallet
-              </CardTitle>
-              <CardDescription className="text-xs mt-1">
-                Identity checks are filed against the wallet linked to your account, and that
-                wallet signs as the builder when you launch a project. Linking asks Freighter to
-                sign a one-time message. It moves no funds.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="pt-6 text-sm text-muted-foreground">
-              {filedAddress && filedAddress !== activeAddress ? (
-                <p>
-                  Your identity check is filed against{" "}
-                  <span className="font-mono text-foreground break-all">{filedAddress}</span>.
-                  Select that account in Freighter, then link it to resubmit.
-                </p>
-              ) : freighterWalletAddress ? (
-                <p>
-                  Freighter is connected with{" "}
-                  <span className="font-mono text-foreground">
-                    {shortenAddress(freighterWalletAddress)}
-                  </span>
-                  , but that wallet is not linked to your account yet.
-                </p>
-              ) : (
-                <p>No wallet is linked to your account yet.</p>
-              )}
-            </CardContent>
-            <CardFooter className="bg-muted/10 p-6 flex justify-between border-t mt-4 gap-3">
-              <div>
-                {isEditing && (
+  return shell(
+    <>
+      <Tracker phase={phase} />
+      {panel}
+
+      {/* A check filed for one wallet while the account now uses another:
+          vaults open from the account's wallet, so it wouldn't count. */}
+      {wrongWallet && (
+        <div className="space-y-2 rounded-xl border border-amber-500/40 bg-amber-500/10 p-5 text-sm">
+          <p className="font-semibold">Your verification is on a different wallet</p>
+          <p>
+            It&apos;s attached to the wallet ending …{filed!.slice(-4)}, but the wallet set up on your
+            account now ends …{linked.slice(-4)}. Switch back to …{filed!.slice(-4)} in your wallet and set
+            it up on your account again, or contact support to move the verification.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button asChild size="sm" variant="outline">
+              <Link href="/profile?tab=wallet">Set up a wallet</Link>
+            </Button>
+            <Button asChild size="sm" variant="outline">
+              <a href="mailto:hello@blkfndr.com?subject=Move%20my%20identity%20verification">Contact support</a>
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* What the applicant may see of their own submission: never the
+          identity fields, which no browser-facing role can read. */}
+      {submission && (
+        <section aria-labelledby="submitted-heading" className="rounded-xl border border-border bg-card p-5">
+          <h2 id="submitted-heading" className="mb-3 font-semibold">
+            What you submitted
+          </h2>
+          <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+            <div>
+              <dt className="text-muted-foreground">Document</dt>
+              <dd className="font-medium">{DOCUMENT_NAMES[submission.document_type] ?? "Identity document"}</dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Expires</dt>
+              <dd className="font-medium">{day(submission.document_expires_on) || "Not given"}</dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Submitted</dt>
+              <dd className="font-medium">{day(submission.updated_at)}</dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Attached wallet</dt>
+              <dd className="font-medium">
+                {filed ? `Account ID …${filed.slice(-4)}` : "None yet"}
+                {!filed && linked && phase === "pending" && (
                   <Button
                     type="button"
-                    variant="secondary"
-                    onClick={() => setIsEditing(false)}
-                    disabled={isLinking}
+                    variant="link"
+                    size="sm"
+                    className="ml-1 h-auto p-0"
+                    onClick={attach}
+                    disabled={attaching}
                   >
-                    Cancel
+                    {attaching ? "Attaching…" : `Attach …${linked.slice(-4)}`}
                   </Button>
                 )}
-              </div>
-              <Button
-                type="button"
-                onClick={handleLinkWallet}
-                disabled={isLinking}
-                className="bg-primary hover:bg-primary/95 text-primary-foreground font-semibold px-6 flex items-center gap-2"
-              >
-                {isLinking ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Linking...
-                  </>
-                ) : (
-                  <>
-                    <Wallet className="h-4 w-4" />
-                    Link Wallet
-                  </>
-                )}
-              </Button>
-            </CardFooter>
-          </Card>
-        ) : (
-          <Card className="border border-border bg-card shadow-lg rounded-2xl overflow-hidden">
-            <CardHeader className="border-b bg-muted/20">
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="text-xl font-bold flex items-center gap-2">
-                    <FileText className="h-5 w-5 text-primary" />
-                    Submit Verification Documents
-                  </CardTitle>
-                  <CardDescription className="text-xs mt-1">
-                    {step === 1
-                      ? "Step 1: Fill out your basic profile and upload an identification document."
-                      : "Step 2: Review details and enter compliance identifier parameters."}
-                  </CardDescription>
-                </div>
-                <Badge variant="secondary" className="text-[10px] uppercase font-bold px-2 py-0.5">
-                  Step {step} of 2
-                </Badge>
-              </div>
-            </CardHeader>
+              </dd>
+            </div>
+          </dl>
+          {phase === "pending" && attachError && (
+            <p role="alert" className="mt-3 text-sm font-medium text-destructive">
+              {attachError}
+            </p>
+          )}
+          <p className="mt-4 text-xs text-muted-foreground">
+            Your name, ID number, date of birth and address are never shown on this page. Only a
+            reviewer can see them.
+          </p>
+        </section>
+      )}
 
-            <form onSubmit={step === 2 ? handleSubmit : (e) => { e.preventDefault(); handleNextStep(); }}>
-              <CardContent className="space-y-4 pt-6">
-                {step === 1 ? (
-                  /* ─── STEP 1: Upload Details ─── */
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="fullName">Full Name</Label>
-                      <Input
-                        id="fullName"
-                        placeholder="John Doe"
-                        value={formData.fullName}
-                        onChange={(e) => setFormData((prev) => ({ ...prev, fullName: e.target.value }))}
-                        required
-                        disabled={isPendingSubmit}
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="email">Email Address</Label>
-                      <Input
-                        id="email"
-                        type="email"
-                        placeholder="john@example.com"
-                        value={formData.email}
-                        onChange={(e) => setFormData((prev) => ({ ...prev, email: e.target.value }))}
-                        required
-                        disabled={isPendingSubmit}
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="documentType">Document Type</Label>
-                      <Select
-                        value={formData.documentType}
-                        onValueChange={(val) => setFormData((prev) => ({ ...prev, documentType: val }))}
-                        disabled={isPendingSubmit}
-                      >
-                        <SelectTrigger id="documentType">
-                          <SelectValue placeholder="Select type" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="passport">Passport</SelectItem>
-                          <SelectItem value="national_id">National Identity Card</SelectItem>
-                          <SelectItem value="drivers_license">Driver's License</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="documentFile">Upload Identity Document</Label>
-                      {formData.documentFile ? (
-                        <div className="flex items-center justify-between p-3 rounded-lg border border-primary/20 bg-primary/5 text-xs text-foreground font-semibold">
-                          <span className="truncate max-w-[80%]">{formData.documentFile.name}</span>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="text-rose-500 hover:text-rose-600 hover:bg-rose-50 shrink-0 text-[10px] font-bold h-7 px-2"
-                            onClick={() => setFormData((prev) => ({ ...prev, documentFile: null, documentImage: "" }))}
-                          >
-                            Remove
-                          </Button>
-                        </div>
-                      ) : formData.documentImage ? (
-                        <div className="flex items-center justify-between p-3 rounded-lg border border-emerald-500/20 bg-emerald-500/5 text-xs text-emerald-700 font-semibold">
-                          <span className="truncate max-w-[80%]">Document proof loaded</span>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="text-rose-500 hover:text-rose-600 hover:bg-rose-50 shrink-0 text-[10px] font-bold h-7 px-2"
-                            onClick={() => setFormData((prev) => ({ ...prev, documentImage: "" }))}
-                          >
-                            Change File
-                          </Button>
-                        </div>
-                      ) : (
-                        <Input
-                          id="documentFile"
-                          type="file"
-                          accept="image/*"
-                          onChange={handleImageChange}
-                          required={!formData.documentImage}
-                          disabled={isPendingSubmit}
-                        />
-                      )}
-                      <p className="text-[10px] text-muted-foreground mt-1">
-                        Upload a clear photo of your passport, national ID card, or driver's license.
-                      </p>
-                    </div>
-
-                    {formData.documentImage && (
-                      <div className="mt-4 border rounded-xl overflow-hidden max-h-48 flex justify-center bg-black/5 dark:bg-black/20 p-2">
-                        <img
-                          src={formData.documentImage}
-                          alt="Uploaded Document Preview"
-                          className="max-h-full object-contain"
-                        />
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  /* ─── STEP 2: Review & Confirm ─── */
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="confirmName">Full Name</Label>
-                      <Input
-                        id="confirmName"
-                        value={formData.fullName}
-                        disabled
-                        className="bg-muted text-muted-foreground font-semibold"
-                      />
-                      <p className="text-[9px] text-muted-foreground">Pre-filled from Step 1 profile parameters.</p>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="idNumber">ID/Document Number</Label>
-                      <Input
-                        id="idNumber"
-                        placeholder="Enter your passport or ID number"
-                        value={formData.idNumber}
-                        onChange={(e) => setFormData((prev) => ({ ...prev, idNumber: e.target.value }))}
-                        required
-                        disabled={isPendingSubmit}
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="dob">Date of Birth</Label>
-                        <Input
-                          id="dob"
-                          type="date"
-                          value={formData.dob}
-                          onChange={(e) => setFormData((prev) => ({ ...prev, dob: e.target.value }))}
-                          required
-                          disabled={isPendingSubmit}
-                        />
-                        <p className="text-[9px] text-muted-foreground">Must be 18 years or older.</p>
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label htmlFor="expiryDate">ID Expiry Date</Label>
-                        <Input
-                          id="expiryDate"
-                          type="date"
-                          value={formData.expiryDate}
-                          onChange={(e) => setFormData((prev) => ({ ...prev, expiryDate: e.target.value }))}
-                          required
-                          disabled={isPendingSubmit}
-                        />
-                        <p className="text-[9px] text-muted-foreground">Must be a future date.</p>
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="residentialAddress">Residential Address</Label>
-                      <Textarea
-                        id="residentialAddress"
-                        placeholder="Enter your current primary residential address..."
-                        value={formData.residentialAddress}
-                        onChange={(e) => setFormData((prev) => ({ ...prev, residentialAddress: e.target.value }))}
-                        required
-                        rows={3}
-                        className="min-h-[80px]"
-                        disabled={isPendingSubmit}
-                      />
-                    </div>
-
-                    <div className="pt-2">
-                      <label className="flex items-start gap-3 cursor-pointer select-none group text-xs text-muted-foreground hover:text-foreground transition-colors">
-                        <input
-                          type="checkbox"
-                          checked={formData.consentFlag}
-                          onChange={(e) => setFormData((prev) => ({ ...prev, consentFlag: e.target.checked }))}
-                          className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer"
-                          disabled={isPendingSubmit}
-                          required
-                        />
-                        <span className="leading-normal font-medium">
-                          I consent to the collection and processing of my identity documents for verification purposes.
-                        </span>
-                      </label>
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-
-              <CardFooter className="bg-muted/10 p-6 flex justify-between border-t mt-4 gap-3">
-                {step === 1 ? (
-                  <>
-                    <div>
-                      {isEditing && (
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          onClick={() => setIsEditing(false)}
-                          disabled={isPendingSubmit}
-                        >
-                          Cancel
-                        </Button>
-                      )}
-                    </div>
-                    <Button
-                      type="button"
-                      onClick={handleNextStep}
-                      disabled={isPendingSubmit || !formData.fullName || !formData.email || (!formData.documentImage && !formData.documentFile)}
-                      className="bg-primary hover:bg-primary/95 text-primary-foreground font-semibold px-6"
-                    >
-                      Continue to Review
-                    </Button>
-                  </>
-                ) : (
-                  <>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      onClick={() => setStep(1)}
-                      disabled={isPendingSubmit}
-                    >
-                      Back to Step 1
-                    </Button>
-                    <Button
-                      type="submit"
-                      disabled={isPendingSubmit || !formData.idNumber || !formData.dob || !formData.expiryDate || !formData.residentialAddress || !formData.consentFlag}
-                      className="bg-primary hover:bg-primary/95 text-primary-foreground font-semibold px-6 flex items-center gap-2"
-                    >
-                      {isPendingSubmit ? (
-                        <>
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                          Submitting...
-                        </>
-                      ) : (
-                        <>
-                          <Send className="h-4 w-4" />
-                          Submit Verification
-                        </>
-                      )}
-                    </Button>
-                  </>
-                )}
-              </CardFooter>
-            </form>
-          </Card>
-        )}
-      </div>
-    </div>
+      {phase === "verified" && filed && (
+        <VerificationRecord
+          open={recordOpen}
+          onOpenChange={setRecordOpen}
+          wallet={filed}
+          approvedOn={submission?.updated_at ?? null}
+        />
+      )}
+    </>,
   );
 }

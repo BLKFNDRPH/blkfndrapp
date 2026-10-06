@@ -1546,6 +1546,11 @@ export function ListingForm() {
       });
     } else if (identity === "pending") {
       out.push({ text: "Your identity check is still under review. The vault can open once it's approved." });
+    } else if (identity === "approved") {
+      out.push({
+        text: "Your identity is approved, with one step left before it counts.",
+        actions: [{ label: "See what's left", href: "/profile/kyc-attestation" }],
+      });
     }
 
     switch (funds.state) {

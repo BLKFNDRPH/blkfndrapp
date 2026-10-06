@@ -276,7 +276,7 @@ export type Database = {
           rejection_reason: string
           residential_address: string | null
           status: string
-          stellar_address: string
+          stellar_address: string | null
           updated_at: string
           user_id: string
         }
@@ -295,7 +295,7 @@ export type Database = {
           rejection_reason?: string
           residential_address?: string | null
           status?: string
-          stellar_address: string
+          stellar_address?: string | null
           updated_at?: string
           user_id: string
         }
@@ -314,7 +314,7 @@ export type Database = {
           rejection_reason?: string
           residential_address?: string | null
           status?: string
-          stellar_address?: string
+          stellar_address?: string | null
           updated_at?: string
           user_id?: string
         }

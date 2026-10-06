@@ -44,7 +44,16 @@ export function isUnusualOpeningFee(feeXlm: number, stages: number): boolean {
   return feeXlm > Math.max(5, 3 * openingFeeXlm(stages));
 }
 
-export type IdentityStatus = "loading" | "signed-out" | "none" | "pending" | "rejected" | "verified" | "unknown";
+export type IdentityStatus =
+  | "loading"
+  | "signed-out"
+  | "none"
+  | "pending"
+  // Approved by a reviewer, not yet on the public record for this wallet.
+  | "approved"
+  | "rejected"
+  | "verified"
+  | "unknown";
 
 /** What the wallet holds, read once per wallet and currency. */
 export type WalletHoldings =
@@ -165,7 +174,8 @@ export function useLaunchReadiness({
       if (!active) return;
       if (onRecord) setIdentity("verified");
       else if (submitted === "rejected") setIdentity("rejected");
-      else if (submitted === "pending" || submitted === "approved") setIdentity("pending");
+      else if (submitted === "approved") setIdentity("approved");
+      else if (submitted === "pending") setIdentity("pending");
       else if (submitted === "none" && onRecord === false) setIdentity("none");
       else setIdentity("unknown");
     })();
