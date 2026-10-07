@@ -31,7 +31,7 @@ export async function GET() {
         timestamp: new Date(n.created_at).getTime(),
         isRead: n.is_read,
         url: n.url,
-        object: n.project_id,
+        object: n.project_number ?? null,
       })),
     );
   } catch (error) {

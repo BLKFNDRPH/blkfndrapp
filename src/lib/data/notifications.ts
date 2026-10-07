@@ -24,6 +24,12 @@ export interface Notification {
   project_id: string | null;
   is_read: boolean;
   created_at: string;
+  /**
+   * The project's public number, the one its page is addressed by. project_id
+   * is the row's uuid, and a link built from it went to "We can't find that
+   * project". Null when there is no project, or it is hidden from the reader.
+   */
+  project_number?: string | null;
 }
 
 export async function listOwnNotifications(): Promise<Notification[]> {
@@ -32,12 +38,15 @@ export async function listOwnNotifications(): Promise<Notification[]> {
 
   const { data, error } = await supabase
     .from("notifications")
-    .select("*")
+    .select("*, projects(project_id)")
     .order("created_at", { ascending: false })
     .limit(200);
 
   if (error) throw new Error(`Could not load notifications: ${error.message}`);
-  return (data ?? []) as Notification[];
+  return (data ?? []).map((row) => {
+    const { projects, ...rest } = row as typeof row & { projects: { project_id: string } | null };
+    return { ...rest, project_number: projects?.project_id ?? null } as Notification;
+  });
 }
 
 export async function markRead(ids: string[]) {

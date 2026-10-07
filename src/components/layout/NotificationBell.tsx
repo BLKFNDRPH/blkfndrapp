@@ -13,8 +13,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuLabel,
 } from '@/components/ui/dropdown-menu';
-import { Bell, ExternalLink, X, Briefcase, MessageSquareText } from 'lucide-react';
+import { Bell, ExternalLink, X, Briefcase, MessageSquareText, ArrowRight } from 'lucide-react';
 import type { Notification } from '@/lib/types';
+// Type only, so the server-only module is erased rather than bundled.
+import type { Decision } from '@/lib/data/decisions';
 import { formatDistanceToNow } from 'date-fns';
 import { ScrollArea } from '../ui/scroll-area';
 import { cn } from '@/lib/utils';
@@ -38,6 +40,9 @@ export function NotificationBell() {
   const router = useRouter();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  // What needs this person now (open votes, money waiting). Worked out from
+  // the ledger on every poll, so an item leaves once it is done.
+  const [decisions, setDecisions] = useState<Decision[]>([]);
   // Controlled so a "View Project" press can close the panel as it navigates;
   // the row's handlers stop the event that would otherwise close it.
   const [isOpen, setIsOpen] = useState(false);
@@ -53,6 +58,14 @@ export function NotificationBell() {
 
   const fetchNotifications = useCallback(async () => {
     if (!user) return;
+    // Independent of the notifications below: a failure here leaves the last
+    // answer in place rather than emptying the list.
+    fetch('/api/me/decisions')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (Array.isArray(d)) setDecisions(d as Decision[]);
+      })
+      .catch(() => {});
     try {
       const res = await fetch('/api/notifications');
       if (!res.ok) return;
@@ -208,6 +221,25 @@ export function NotificationBell() {
 
   if (!user) return null;
 
+  /** "Closes Thu 9 Oct", in the reader's own time. */
+  const closes = (secs: number) =>
+    `closes ${new Date(secs * 1000).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })}`;
+
+  // A notification's link: a page on this site opens in place and closes the
+  // panel; anything else is the public ledger, in a new tab. Every link used
+  // to say "View Transaction" and open a new tab, including the verification
+  // page's.
+  const isInternal = (url: string) => url.startsWith('/') && !url.startsWith('//');
+  const openInternal = (e: React.MouseEvent, url: string) => {
+    e.stopPropagation();
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    e.preventDefault();
+    router.push(url);
+    setIsOpen(false);
+  };
+
+  const badgeCount = unreadCount + decisions.length;
+
   return (
     <>
       <DropdownMenu open={isOpen} onOpenChange={handleOpenChange}>
@@ -215,14 +247,16 @@ export function NotificationBell() {
           <div className="relative">
             <Button variant="default" size="icon" className="rounded-full nav-button">
               <Bell className="h-4 w-4" />
-              <span className="sr-only">Notifications</span>
+              <span className="sr-only">
+                Notifications{decisions.length > 0 ? `, ${decisions.length} need you` : ''}
+              </span>
             </Button>
-            {unreadCount > 0 && (
+            {badgeCount > 0 && (
               <Badge
                 variant="destructive"
                 className="absolute top-0 right-0 transform translate-x-1/4 -translate-y-1/4 h-5 w-5 justify-center p-0"
               >
-                {unreadCount}
+                {badgeCount}
               </Badge>
             )}
           </div>
@@ -241,7 +275,40 @@ export function NotificationBell() {
             </Button>
           </div>
           <DropdownMenuSeparator />
-          <ScrollArea className="h-[300px]">
+          <ScrollArea className="h-[340px]">
+            {decisions.length > 0 && (
+              <section aria-label="Needs you" className="m-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-2">
+                <p className="px-1 pb-1 text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300">
+                  Needs you
+                </p>
+                <ul className="space-y-1">
+                  {decisions.map((d) => (
+                    <li key={`${d.kind}-${d.projectNumber}-${d.kind === 'vote' ? d.stage : ''}`}>
+                      <Link
+                        href={d.href}
+                        onClick={(e) => openInternal(e, d.href)}
+                        className="flex items-center justify-between gap-3 rounded-md px-2 py-1.5 text-sm hover:bg-amber-500/10"
+                      >
+                        <span className="min-w-0">
+                          {d.kind === 'vote' ? (
+                            <>
+                              Stage {d.stage} of {d.title} is up for your vote
+                              <span className="block text-xs text-muted-foreground">{closes(d.closesAt)}</span>
+                            </>
+                          ) : (
+                            <>Money is waiting for you from {d.title}</>
+                          )}
+                        </span>
+                        <span className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold">
+                          {d.kind === 'vote' ? 'Vote now' : 'Get it back'}
+                          <ArrowRight className="h-3 w-3" aria-hidden="true" />
+                        </span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
             {notifications.length > 0 ? (
               notifications.map((notif) => (
                 <DropdownMenuItem key={notif.id} asChild className="p-0 group menu-item-ripple focus:bg-transparent">
@@ -256,19 +323,29 @@ export function NotificationBell() {
                           {notif.title.includes('Removed') ? getFirstSentence(notif.caption) : notif.caption}
                         </p>
                         <div className="flex items-center gap-2 pt-1">
-                          {notif.object && (
-                            <Button asChild variant="secondary" size="sm" className="h-7 group-focus:bg-primary/20 group-focus:text-accent-foreground group-focus:hover:bg-primary/30" onClick={(e) => handleViewProject(e, notif.object!)}>
-                              <Link href={projectHref(notif.object)}>
-                                <Briefcase className="mr-2 h-3 w-3" />
-                                View Project
+                          {notif.url && isInternal(notif.url) ? (
+                            // A page on this site: one button, opened in place.
+                            <Button asChild variant="secondary" size="sm" className="h-7 group-focus:bg-primary/20 group-focus:text-accent-foreground group-focus:hover:bg-primary/30">
+                              <Link href={notif.url} onClick={(e) => openInternal(e, notif.url!)}>
+                                <ArrowRight className="mr-2 h-3 w-3" />
+                                Open
                               </Link>
                             </Button>
+                          ) : (
+                            notif.object && (
+                              <Button asChild variant="secondary" size="sm" className="h-7 group-focus:bg-primary/20 group-focus:text-accent-foreground group-focus:hover:bg-primary/30" onClick={(e) => handleViewProject(e, notif.object!)}>
+                                <Link href={projectHref(notif.object)}>
+                                  <Briefcase className="mr-2 h-3 w-3" />
+                                  Open project
+                                </Link>
+                              </Button>
+                            )
                           )}
-                          {notif.url && (
+                          {notif.url && !isInternal(notif.url) && (
                             <Button asChild variant="secondary" size="sm" className="h-7 group-focus:bg-primary/20 group-focus:text-accent-foreground group-focus:hover:bg-primary/30">
                               <Link href={notif.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
                                 <ExternalLink className="mr-2 h-3 w-3" />
-                                View Transaction
+                                See the public record
                               </Link>
                             </Button>
                           )}
@@ -296,11 +373,12 @@ export function NotificationBell() {
                   </div>
                 </DropdownMenuItem>
               ))
-            ) : (
-              <div className="text-center text-sm text-muted-foreground py-4">
-                No notifications yet.
+            ) : decisions.length === 0 ? (
+              <div className="px-4 py-6 text-center text-sm text-muted-foreground">
+                Nothing needs you right now. We&apos;ll let you know when a vote opens or money is
+                waiting.
               </div>
-            )}
+            ) : null}
           </ScrollArea>
         </DropdownMenuContent>
       </DropdownMenu>
