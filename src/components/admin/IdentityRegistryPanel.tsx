@@ -60,17 +60,19 @@ interface QueueRow {
   created_at: string;
 }
 
-/** What opening a case adds. The only read of the identity columns anywhere. */
+/** What opening a case adds. The only read of the identity columns anywhere.
+ *  A decision deletes the document and, once the hash is final, the details,
+ *  so on a decided case these are null. */
 interface CaseDetail {
   full_name: string;
-  email: string;
+  email: string | null;
   id_number: string | null;
   date_of_birth: string | null;
   residential_address: string | null;
   document_expires_on: string | null;
   details_hash: string;
   /** Path in the private bucket; its extension says whether it is a PDF. */
-  document_path?: string;
+  document_path?: string | null;
   /** Short-lived signed URL into the private bucket, minted server-side. */
   documentUrl: string | null;
 }

@@ -339,6 +339,16 @@ The same rule is in the database. [20261006155050_kyc_wallet_optional_at_submit.
 - **Reject** (`updateKycRequestStatus`): records the decision with the reviewer's reason (up to 500 characters).
 - **Revoke** (`revokeSubmissionAttestation`): signs a revocation with the managed key, then marks the check rejected.
 
+### Deletion after the decision
+
+A decided check keeps only what the record needs: `full_name`, `document_type`, `document_expires_on`, `details_hash`, `status` and the wallet. Recording or revoking an attestation reads only the hash and the wallet.
+
+- **The details.** The `kyc_requests_drop_identity_after_decision` trigger ([migration](../supabase/migrations/20261007130000_kyc_identity_deleted_after_decision.sql)) clears `email`, `id_number`, `date_of_birth` and `residential_address` once the hash is final. That happens on a rejection, or on an approval with a wallet. An approval given before the applicant had a wallet keeps them until a wallet is attached, because `attachOwnKycWallet` recomputes the hash from them together with the address. The update that attaches the wallet then clears them. The rule is a trigger, so every write path follows it, the dashboard included.
+- **The document.** The decision clears `document_path`. SQL cannot delete Storage objects (`storage.objects` has `protect_objects_delete`), so `deleteUnusedKycDocuments` in [src/lib/data/kyc.ts](../src/lib/data/kyc.ts) deletes the file through the Storage API. It runs after every decision and every submission. It deletes whatever `kyc_documents_to_delete(for_user)` lists: objects no row points at, all of that applicant's at once, and anyone's an hour after upload. The second half catches abandoned uploads, deleted accounts and failed deletes.
+- **Resubmitting.** A rejected applicant re-enters every field, so nothing they need is lost. A submission must name a document under the applicant's own prefix, because whatever a check points at is deleted when it is decided.
+
+Database backups still hold the old values until they age out.
+
 Every decision notifies the applicant (#79). `decideSubmission` calls `notify()`, which adds a bell notification linking to `/profile/kyc-attestation`. A rejection includes the reviewer's reason. `NotificationBell` shows a toast for newly arrived unread notifications. A failed notification cannot undo a recorded decision.
 
 ### Managed attestor keys

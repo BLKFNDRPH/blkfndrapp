@@ -92,12 +92,13 @@ export async function POST(request: NextRequest) {
   const extension = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "application/pdf": "pdf" }[sniffed];
   const path = `${userId}/document-${Date.now()}.${extension}`;
 
+  // Every upload gets a path of its own, so this never overwrites anything. The
+  // document a resubmission replaces is deleted when the resubmission is filed,
+  // and the one a check was decided on as soon as it is decided
+  // (deleteUnusedKycDocuments in src/lib/data/kyc.ts).
   const admin = createAdminClient();
   const { error } = await admin.storage.from(BUCKET).upload(path, bytes, {
     contentType: sniffed,
-    // A resubmission replaces the previous document rather than accumulating
-    // copies of someone's passport.
-    upsert: true,
   });
 
   if (error) {

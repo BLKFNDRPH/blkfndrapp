@@ -428,9 +428,16 @@ export default function VerifyIdentityPage() {
               {attachError}
             </p>
           )}
+          {/* Deleted on the decision, or for an approval without a wallet
+              once one is attached (kyc_requests_drop_identity_after_decision). */}
           <p className="mt-4 text-xs text-muted-foreground">
-            Your name, ID number, date of birth and address are never shown on this page. Only a
-            reviewer can see them.
+            {submission.status === "pending"
+              ? filed
+                ? "Your name, ID number, date of birth and address are never shown on this page. Only a reviewer can see them. Once they've decided, we delete your document, ID number, date of birth and address."
+                : "Your name, ID number, date of birth and address are never shown on this page. Only a reviewer can see them. Once they've decided, we delete your document. Your ID number, date of birth and address are deleted then too, or, if they approve before you've attached a wallet, once you attach one."
+              : submission.status === "approved" && !filed
+                ? "Your document has been deleted. Your ID number, date of birth and address are kept only until you attach your wallet, then deleted too."
+                : "Your document, ID number, date of birth and address have been deleted. We keep your name and a one-way fingerprint of your details."}
           </p>
         </section>
       )}

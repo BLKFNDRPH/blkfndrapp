@@ -268,7 +268,7 @@ The two profile lookups are signed-in only because contributor addresses are pub
 | Method | Route | Auth | Request | Response |
 |---|---|---|---|---|
 | `POST` | `/api/upload-image` | Signed in | Multipart `file`, at most 8 MB. PNG, JPEG, WebP, GIF, SVG or JSON, checked against the actual bytes (JSON must parse) | `{ cid }`. Pins to Pinata with the JWT from Supabase Vault (`pinata_jwt`), falling back to `PINATA_JWT`, into group `PINATA_GROUP_BLKDFNDR` if set. Used for listing images, listing metadata and milestone proof photos |
-| `POST` | `/api/kyc-document` | Signed in | Multipart `file`, at most 10 MB. PNG, JPEG, WebP or PDF, checked against the bytes | `{ path }`: `<user id>/document-<timestamp>.<ext>` in the private `kyc-documents` bucket. The prefix comes from the session, never the request. Each upload gets a new path, so earlier uploads stay in the bucket. Never sent to IPFS. Reviewers reach it only through a 5-minute signed URL |
+| `POST` | `/api/kyc-document` | Signed in | Multipart `file`, at most 10 MB. PNG, JPEG, WebP or PDF, checked against the bytes | `{ path }`: `<user id>/document-<timestamp>.<ext>` in the private `kyc-documents` bucket. The prefix comes from the session, never the request. Each upload gets a new path. The one a resubmission replaces is deleted when it is filed, and the one a check was decided on is deleted with the decision. Never sent to IPFS. Reviewers reach it only through a 5-minute signed URL |
 
 ### Admin
 
