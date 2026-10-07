@@ -100,20 +100,22 @@ This rule applies to vaults the factory creates after its wasm hash was switched
 
 ### Deployed Contracts (Testnet)
 
-The rebuilt set, deployed with `scripts/deploy-contracts.sh` and wiring verified by reading it back off the ledger.
+The current source, deployed on 2026-10-06 with `scripts/deploy-contracts.sh` and live in the app since 2026-10-07. Every contract's wasm, fetched back from testnet, matches a local build, and the wiring was read back off the ledger.
 
 | Contract | Address |
 |---|---|
-| Factory | [`CDIXGE5M...F7BGKR7D5`](https://stellar.expert/explorer/testnet/contract/CDIXGE5MWFAYXA7FKLB4CDRSSQZ6VQSGHT6O6OY3TFTWVF6F7BGKR7D5) |
-| Attestation registry | [`CDLL2A4R...JSNB2SO7`](https://stellar.expert/explorer/testnet/contract/CDLL2A4RBSQPKSPTEE3O4HNSDICSJEGCHAWIGUYVRPGOKVEPJSNB2SO7) |
-| Identity registry | [`CCDBWBFE...RWZT27TGW`](https://stellar.expert/explorer/testnet/contract/CCDBWBFEK3YVXD2CDTJ4NFDPO7DB3OLB4YVX7BZI22M7QM4RWZT27TGW) |
-| Admin roster | [`CAHAOAX5...AU6WAGOG`](https://stellar.expert/explorer/testnet/contract/CAHAOAX52JAQ75C3INJIDVKT7EITWDVPYP2K27NJTD4CPYZUAU6WAGOG) |
-| Treasury (fee destination + governance) | [`CDA5XDY5...M44COAXU`](https://stellar.expert/explorer/testnet/contract/CDA5XDY564RV2OSZNF2S6CXQYCABFASBOHUCXJEGII6M232VM44COAXU) |
+| Factory | [`CBRUIRJX...D3QSAHPLINO`](https://stellar.expert/explorer/testnet/contract/CBRUIRJXRU6NGHOSF5KMPUOFIXIANCPI43QC6JX2PKNOKD3QSAHPLINO) |
+| Attestation registry | [`CDEN2LU4...72KIXSPSQFX`](https://stellar.expert/explorer/testnet/contract/CDEN2LU4M4SDSOWGU7JM5A46M3M2YSEKRLJ75PCNTFMPY72KIXSPSQFX) |
+| Identity registry | [`CAILTHEY...KUWHZ4FDHQ3`](https://stellar.expert/explorer/testnet/contract/CAILTHEYMBPUPQ2OM5KXTE2QKOTDRQEMIL3UAKWFMA2EWKUWHZ4FDHQ3) |
+| Admin roster | [`CAKANFZH...HHC6KCKJAAB`](https://stellar.expert/explorer/testnet/contract/CAKANFZHW6IYUNDNJMWJ3YNPZNHSSPF4CTOXKO55DBWOXHHC6KCKJAAB) |
+| Treasury (fee destination + governance) | [`CAGMEGMS...NRO3TQPZW`](https://stellar.expert/explorer/testnet/contract/CAGMEGMS6MS6ENADUWDRW3GQ4XRBDYFFKHMRFVDEBHFCZW7NRO3TQPZW) |
 | Operations Vault (gas budget) | [`CCVXM3YP...NQG7FDSN`](https://stellar.expert/explorer/testnet/contract/CCVXM3YPPEMWG4INHFTZ4NBJ3PQW3ZUNYIZMBJBNYQOMSNOENQG7FDSN) |
 
-The treasury is the factory's fee wallet, so the app reads its address from the factory rather than from configuration. The treasury and Operations Vault were redeployed on 2026-09-28 with their audit fixes: each is configured by a constructor inside its own deploy transaction (H-03), and both follow checks-effects-interactions (M-05/M-06). The previous instances are superseded: treasury `CCNID3UW…` (empty) and Operations Vault `CDZXCWKY…`, which still holds 25 XLM until the owners vote it across ([progress.md](progress.md#1-finish-the-operations-vault-cutover)).
+The treasury is the factory's fee wallet, so the app reads its address from the factory rather than from configuration. Every contract is configured by a constructor inside its own deploy transaction (H-03), and attestation records are keyed by vault (#73). Project ids continue from the previous factory, so the first new project is #12. The approved builders' KYC was copied into the new identity registry. The full record is in [smart-contracts.md](docs/smart-contracts.md#the-registry-redeploy).
 
-The factory, attestation, identity and admin contracts above predate the #73 and #75 source fixes (constructor-based configuration, attestation records keyed by vault, identity TTL). Those reach testnet with the coordinated redeploy tracked in [progress.md](progress.md#4-redeploy-the-factory-and-registries-73--75), which mints new addresses.
+The Operations Vault was redeployed on 2026-09-28. Its predecessor `CDZXCWKY…` still holds 25 XLM until the owners vote it across ([progress.md](progress.md#1-finish-the-operations-vault-cutover)).
+
+Projects #1–#11 keep the previous factory and registries they were created with: factory `CDIXGE5M…`, now closed to new launches, and attestation registry `CDLL2A4R…`, which receives their records as they close. The previous identity registry, admin roster and treasury are no longer used ([details](docs/smart-contracts.md#previous-set-projects-111)).
 
 Shared contract storage on Soroban expires when nobody pays its rent, and the next caller pays to restore it. The `keep-alive-cron` service checks the factory, both registries, the admin roster, the treasury, the Operations Vault, the code they run and the code every existing vault runs, plus any older factory or registry an existing vault still depends on, on a schedule, restoring anything archived and topping up anything under 40 days to 60. The contracts top themselves up to 30 days at the caller's expense, so keeping them above that means a launch or a stake never pays the platform's rent.
 
@@ -127,15 +129,15 @@ Projects created before then run `70e5f3a8…` or the earlier `9c20bca3…`.
 
 A reviewer checks any project's vault against that hash. The landing page's "Check it yourself" box reads the factory's current hash live from [`/api/vault-wasm-hash`](https://testnetv2.blkfndr.com/api/vault-wasm-hash) rather than quoting a constant. `scripts/build-contracts.sh` builds it from source; the wasm embeds absolute dependency paths in its panic locations, so a matching hash needs the same build paths (a pinned Docker build would remove that caveat).
 
-Platform parameters as deployed, read from the factory on 2026-10-02:
-- **Flat fee:** 300 base units (0.00003 of the project's token). This is almost certainly a leftover 3% from the earlier percentage model. `scripts/deploy-contracts.sh` defaults to 1 unit.
+Platform parameters as deployed, read from the factory on 2026-10-07:
+- **Flat fee:** 1 unit of the project's token, paid by the builder.
 - **Minimum contribution:** 5 units.
 - **Voting window:** 7 days.
 - **Minimum bond:** 5% of the goal.
 
 The factory's admin is still the deployer key, not the treasury, so these change by one signature until the admin is handed over ([progress.md](progress.md#4b-hand-the-factory-admin-to-the-treasury)).
 
-The contract suite has 175 tests: vault 52, treasury 45, operations 25, factory 15, identity 15, attestation 14 and admin 9.
+The contract suite has 183 tests: vault 56, treasury 45, operations 25, factory 17, attestation 16, identity 15 and admin 9.
 
 #### Previous generation
 

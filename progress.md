@@ -24,7 +24,8 @@ Read-only checks, not inferred from merges: the deployed `/_next/static` bundle,
 | **Google sign-in** | ✅ Fixed on the host. Since 2026-10-01 its redirects use `https://`, and the PKCE exchanges complete |
 | **Indexer** | ✅ Current. The cursor was updated 2026-10-02, and all 7 live projects carry their real titles except the three test rows (#1–3) |
 | **Vault release rule (#99) and money majority** | ✅ Live for new projects since 2026-10-06. The factory deploys vault wasm `e9009410…`, as `/api/vault-wasm-hash` confirms ([item 2](#2-switch-the-factory-to-the-99-vault-wasm)) |
-| **Operations Vault cutover** | ⚠️ Half done. The app points at the new vault, but the old one still holds 25 XLM, the new one 0, and the treasury's ops funding is unset |
+| **Factory and registries (#73, #75)** | ✅ Redeployed 2026-10-06 and live in the app since 2026-10-07: factory `CBRUIRJX…`, attestation `CDEN2LU4…`, identity `CAILTHEY…`, admin roster `CAKANFZH…`, treasury `CAGMEGMS…`. Projects #1–#11 keep the previous set ([item 4](#4-redeploy-the-factory-and-registries-73--75)) |
+| **Operations Vault cutover** | ⚠️ Half done. The app points at the new vault, but the old one still holds 25 XLM, the new one 0, and the new treasury's ops funding is unset |
 | **`profiles` column grants (#70)** | ❌ Not applied. `authenticated` can still `UPDATE profiles.stellar_public_key` |
 | **KYC linked-wallet policy (#89)** | ❌ Not applied, and it has to follow the grants above |
 | **Project hide/lock (#85)** | ✅ Migration applied, 4 restrictions in use |
@@ -74,9 +75,9 @@ Every app-layer change below is live, because the host was rebuilt from `main`. 
 | #70 | DB | `requireKycReviewer` gate. Write-only column grants on `profiles` | ✅ Code · ❌ **migration not applied** ([item 3](#3-apply-the-two-pending-migrations-in-order)) |
 | #71 | Deploy | Hardened vault wasm `70e5f3a8`, with the factory repointed | ✅ |
 | #72 | Keeper | `settle_stalled` keeper cron | ✅ |
-| #73 | Contract | Attestation **H-07** (records keyed by vault) and **M-04** `disable_factory`. Identity **M-02** (TTL) | ❌ Shelf-ready |
+| #73 | Contract | Attestation **H-07** (records keyed by vault) and **M-04** `disable_factory`. Identity **M-02** (TTL) | ✅ Redeployed 2026-10-06, live 2026-10-07 |
 | #74 | Contract | **H-03**: `__constructor` on treasury and operations | ✅ |
-| #75 | Contract | **H-03**: `__constructor` on factory, attestation, identity and admin. New deploy order | ❌ Shelf-ready |
+| #75 | Contract | **H-03**: `__constructor` on factory, attestation, identity and admin. New deploy order | ✅ Redeployed 2026-10-06, live 2026-10-07 |
 
 **H-03 is closed in source.** Every contract configures itself in a constructor, except the vault, which `create_vault` deploys and initializes atomically.
 
@@ -93,15 +94,11 @@ Every app-layer change below is live, because the host was rebuilt from `main`. 
 
 - **App:** everything on `main` through #103, including the #68 fixes, the #70 reviewer gate, the keeper (#72), the keep-alive (#86) and the hide/lock migration (#85).
 - **Vault** wasm `e9009410…`, since 2026-10-06. The factory deploys it, so new projects get the #99 release rule, the money majority (#119) and the `d212b37` fixes, along with H-02, M-03 and M-07. Vaults are immutable, so older vaults keep their original code: `70e5f3a8…` or `9c20bca3…`.
-- **Treasury** [`CDA5XDY5…M44COAXU`](https://stellar.expert/explorer/testnet/contract/CDA5XDY564RV2OSZNF2S6CXQYCABFASBOHUCXJEGII6M232VM44COAXU), redeployed 2026-09-28. The factory routes fees to it.
+- **Factory, attestation, identity, admin roster and treasury**, redeployed 2026-10-06 from source (#73, #75) and live in the app since 2026-10-07. The factory routes fees to the new treasury [`CAGMEGMS…NRO3TQPZW`](https://stellar.expert/explorer/testnet/contract/CAGMEGMS6MS6ENADUWDRW3GQ4XRBDYFFKHMRFVDEBHFCZW7NRO3TQPZW). Addresses and transactions are in [smart-contracts.md](docs/smart-contracts.md#the-registry-redeploy).
 - **Operations Vault** [`CCVXM3YP…NQG7FDSN`](https://stellar.expert/explorer/testnet/contract/CCVXM3YPPEMWG4INHFTZ4NBJ3PQW3ZUNYIZMBJBNYQOMSNOENQG7FDSN), which the app now points at. It is unfunded until [item 1](#1-finish-the-operations-vault-cutover) is done.
 
 **Merged, not active:**
 
-- **Factory, attestation, identity, admin.** They carry #73 and #75. Read from testnet on 2026-10-02:
-  - all four still expose `initialize`;
-  - attestation still keys records by `project_id` and has no `disable_factory`;
-  - identity has no `bump_kyc` or `bump_attestor`.
 - **Migrations** `20260809160000_profiles_column_grants` and `20261001160000_kyc_filed_against_linked_wallet`.
 
 Current hashes come from a fresh `bash scripts/build-contracts.sh`. The wasm embeds absolute build paths, so a hash only reproduces on the same paths (see item 8).
@@ -116,7 +113,7 @@ Current hashes come from a fresh `bash scripts/build-contracts.sh`. The wasm emb
 The host step is done: the app addresses `CCVXM3YP…`. Two owner votes remain:
 
 1. **Move the old vault's 25 XLM.** `CDZXCWKY…` still holds 250,000,000 stroops. The governance panel now addresses the new vault, so this `Release` has to be proposed and approved outside the panel, with each owner's key in Stellar Lab or the CLI. Since it is testnet XLM, writing it off is also an option.
-2. **`SetOpsFunding`** on the treasury, pointing at `CCVXM3YP…`. `get_ops_funding` returns `null` today, so the monthly gas transfer has nothing to send to. This can be done from the panel now.
+2. **`SetOpsFunding`** on the **new** treasury `CAGMEGMS…`, pointing at `CCVXM3YP…`. `get_ops_funding` returns `null`, so the monthly gas transfer has nothing to send to. The governance panel reads the treasury from the factory, so it already addresses the new one. A vote on the previous treasury no longer matters.
 
 ### 2. Switch the factory to the #99 vault wasm
 ✅ **Done 2026-10-06.** The factory admin ran `update_wasm_hash` to `e9009410…` in [`9dd7ed93…`](https://stellar.expert/explorer/testnet/tx/9dd7ed938ad0ef0db7e357cc6567e70c1620abb296a7baa301932888d7a13508), after the host was running the #121 vote panel. Checks:
@@ -149,7 +146,13 @@ Without a Gateway Key, the dedicated gateway (`PINATA_GATEWAY_URL`, `nft.blkfndr
 - **Success:** the app logs stop showing `nft.blkfndr.com answered 401`.
 
 ### 4. Redeploy the factory and registries (#73 + #75)
-Redeploy the factory, attestation, identity and admin with `scripts/deploy-contracts.sh`.
+✅ **Done.** Deployed 2026-10-06 with `scripts/deploy-contracts.sh` from the admin key. The app has used the new set since its 2026-10-07 rebuild.
+- **Record:** addresses, transactions and checks are in [smart-contracts.md](docs/smart-contracts.md#the-registry-redeploy). The IDs are in `deployments/testnet-production/contracts.env`.
+- **Previous factory closed** to new launches (identity registry pointed at itself, tx `311abe5e…`). Projects #1–#11 keep the previous factory and attestation registry, which the keep-alive keeps alive.
+- **Watch out on a rebuild:** an automatic rebuild after the merges once served the previous addresses again. The four `NEXT_PUBLIC_BLKFNDR_*_CONTRACT_ID` values must be saved on the stack itself, which every automatic rebuild uses.
+- **Still to do:** the first real launch, which should become project #12.
+
+How it was planned and run:
 
 - **Deploy order is proven live.** Attestation goes before the factory, then one `add_factory`. The reference deployment ran it on 2026-10-06 and the script's read-back checks passed.
 - **Continue the project ids.** Pass `--first-project-id` set to the live factory's `get_project_count` + 1 (12 on 2026-10-06). `projects.project_id` is unique, so a new factory starting at 1 would collide with project #1 and its first project would fail to index.
@@ -162,14 +165,13 @@ Redeploy the factory, attestation, identity and admin with `scripts/deploy-contr
   A throwaway testnet run on 2026-10-07 passed all 12 checks.
 - **Re-attest existing KYC** into the new identity registry with `scripts/migrate-kyc.mjs`, before the cutover. The command is in [deployment.md](docs/deployment.md#migrating-kyc). A dry run on 2026-10-07 found 3 approved builders, all matching the live registry.
 - **Keep-alive:** nothing to add. #125 tracks the env contracts, and every contract and code an existing vault depends on.
-- This is an on-chain action. It needs the deployer key and an explicit go-ahead.
 
 ### 4b. Hand the factory admin to the treasury
 The live factory's admin is still the deployer key `GDR4TPUF…`.
 
 - Until `transfer_admin` hands it to the treasury, a carried treasury proposal that calls the factory cannot execute. That covers `SetFee`, `SetBondBps`, `SetWasmHash`, `SetFeeWallet`, `SetIdentityRegistry`, `SetVotingWindow`, `SetMinContribution` and `TransferAdmin`.
 - Today, fee and policy changes are one signature, not an owner vote.
-- If item 4 redeploys the factory, construct the new one with the treasury as admin, or transfer it straight after.
+- The new factory `CBRUIRJX…` was deployed with the deployer key as admin, by owner decision: hand it to the new treasury `CAGMEGMS…` once the new set has run cleanly for a while.
 
 ### 5. M-09 — migration history drift
 - **Enum:** live has `admin_role` with `platform_admin`, added by a live-only migration (`20260809015229 add_platform_admin_role`) that has no file in the repo. The repo's `moderator_roles.sql` creates the enum without it.
@@ -226,7 +228,8 @@ These were verified with harnesses, but not with a real wallet or account:
 ## Next
 1. Finish the Operations Vault cutover (item 1): two owner votes.
 2. Apply the two migrations (item 3): a one-command push, in order. Set the gateway key on the host (item 3b), a one-variable stack update.
-3. After 2026-10-13 14:14:52 UTC, finish the reference deployment's Project B (`bash scripts/reference-scenario.sh project-b-finish`) and add its transactions to the deliverable evidence.
-4. Start Phase 1 of the [Web3-accessibility redesign](docs/design/web3-accessibility-redesign.md): copy, information architecture and flow, with no chain changes. #103 was its first item.
+3. Launch the first project on the new factory and check it becomes #12 (item 4).
+4. After 2026-10-13 14:14:52 UTC, finish the reference deployment's Project B (`bash scripts/reference-scenario.sh project-b-finish`) and add its transactions to the deliverable evidence.
+5. Start Phase 1 of the [Web3-accessibility redesign](docs/design/web3-accessibility-redesign.md): copy, information architecture and flow, with no chain changes. #103 was its first item.
 
 _Per-finding audit detail is in the security-audit PDF. Per-PR detail is in the PR descriptions._
