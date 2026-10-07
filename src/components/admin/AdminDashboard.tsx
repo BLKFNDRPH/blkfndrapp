@@ -225,6 +225,15 @@ export function AdminDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [myRole, adminView]);
 
+  // ?view=identity opens that tab, for links in notifications and emails. Read
+  // once the role is known, and only for a tab this role can open.
+  useEffect(() => {
+    if (!myRole) return;
+    const asked = new URLSearchParams(window.location.search).get("view");
+    if (asked && (visibleViews as string[]).includes(asked)) setAdminView(asked as typeof adminView);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [myRole]);
+
   // Pending KYC count, polled.
   const { data: kycData } = useSWR("/api/admin/kyc-count", fetcher, {
     refreshInterval: 15000,

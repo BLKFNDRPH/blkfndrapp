@@ -134,6 +134,7 @@ export function WalletSetupFlow({
   const [address, setAddress] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [reminder, setReminder] = useState<"idle" | "saving" | "saved" | "failed">("idle");
+  const [reminderTo, setReminderTo] = useState<string | null>(null);
   const [activation, setActivation] = useState<"unknown" | "needed" | "done" | "working" | "failed">("unknown");
   const [activationProblem, setActivationProblem] = useState<string | null>(null);
 
@@ -209,6 +210,7 @@ export function WalletSetupFlow({
     setReminder("saving");
     const here = `${window.location.pathname}${window.location.search}`;
     const res = await remindMeToSetUpWallet(here).catch(() => null);
+    setReminderTo(res && res.success ? res.emailedTo : null);
     setReminder(res && res.success ? "saved" : "failed");
   };
 
@@ -256,10 +258,16 @@ export function WalletSetupFlow({
           {user && (
             <Button type="button" className="h-10 w-full" onClick={remind} disabled={reminder === "saving" || reminder === "saved"}>
               {reminder === "saving" && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" aria-hidden="true" />}
-              {reminder === "saved" ? "Reminder saved" : "Remind me on a computer"}
+              {reminder === "saved" ? (reminderTo ? "Link sent" : "Reminder saved") : "Send me the link"}
             </Button>
           )}
-          {reminder === "saved" && (
+          {reminder === "saved" && reminderTo && (
+            <p className="text-sm text-muted-foreground">
+              We&apos;re emailing it to {reminderTo}, usually within a minute. Open it on a computer to come
+              straight back to this step. It&apos;s in your notifications too.
+            </p>
+          )}
+          {reminder === "saved" && !reminderTo && (
             <p className="text-sm text-muted-foreground">
               It&apos;s in your notifications, with a link straight back to this step. Sign in on a
               computer and open the bell.

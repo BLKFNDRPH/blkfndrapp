@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireCaller } from "@/lib/supabase/auth";
 import { PROJECT_RESTRICTOR_ROLES, type AdminRole } from "@/lib/admin-roles";
+import type { EmailCategory } from "@/lib/email/categories";
 
 /**
  * Notifications. Replaces the Mongo `notifications` collection.
@@ -81,6 +82,16 @@ export async function dismissAll() {
 }
 
 /**
+ * The columns that queue a notification for email too. The notification
+ * emails cron sends it, if the person hasn't turned that kind off.
+ */
+export function emailColumns(category: EmailCategory | null | undefined) {
+  return category
+    ? { email_category: category, email_status: "pending" as const }
+    : { email_category: null, email_status: null };
+}
+
+/**
  * Create a notification for someone else.
  *
  * Service-role, because the recipient is by definition not the caller and no
@@ -93,6 +104,8 @@ export async function notify(input: {
   caption?: string;
   url?: string | null;
   projectId?: string | null;
+  /** Also email it, under this switch. Omitted: the bell only. */
+  email?: EmailCategory;
 }) {
   const admin = createAdminClient();
   const { error } = await admin.from("notifications").insert({
@@ -101,6 +114,7 @@ export async function notify(input: {
     caption: (input.caption ?? "").slice(0, 1000),
     url: input.url ?? null,
     project_id: input.projectId ?? null,
+    ...emailColumns(input.email),
   });
 
   if (error) {
@@ -125,6 +139,8 @@ export async function notifyAdmins(
   projectId?: string,
   /** Who to tell. Project events by default; identity events pass the KYC reviewers. */
   roles: readonly AdminRole[] = PROJECT_RESTRICTOR_ROLES,
+  /** Where it leads, and whether it is emailed too (under "reviews"). */
+  options: { url?: string; email?: boolean } = {},
 ) {
   const admin = createAdminClient();
 
@@ -149,7 +165,9 @@ export async function notifyAdmins(
       user_id: id,
       title: title.slice(0, 200),
       caption: caption.slice(0, 1000),
+      url: options.url ?? null,
       project_id: projectId ?? null,
+      ...emailColumns(options.email ? "reviews" : null),
     })),
   );
 

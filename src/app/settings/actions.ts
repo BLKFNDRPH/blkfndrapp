@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { updateOwnProfile } from "@/lib/data/profiles";
 import { authFailure } from "@/lib/auth/guards";
+import { getOwnEmailSettings, setOwnEmailPreference, type OwnEmailSettings } from "@/lib/data/email-preferences";
+import type { EmailPreferences, EmailSwitch } from "@/lib/email/categories";
 
 /**
  * Update the caller's own display name.
@@ -27,5 +29,30 @@ export async function updateUserDisplayName(
         error: error instanceof Error ? error.message : "Could not update display name.",
       }
     );
+  }
+}
+
+/** The caller's email switches, and the address emails go to. */
+export async function getMyEmailSettings(): Promise<
+  { success: true; settings: OwnEmailSettings } | { success: false; error: string; signedOut?: boolean }
+> {
+  try {
+    return { success: true, settings: await getOwnEmailSettings() };
+  } catch (error) {
+    const auth = authFailure(error);
+    if (auth) return { ...auth, signedOut: true };
+    return { success: false, error: "We couldn't load your email settings. Try again in a moment." };
+  }
+}
+
+/** Turn one of the caller's own email switches on or off. */
+export async function setMyEmailPreference(
+  sw: EmailSwitch,
+  on: boolean,
+): Promise<{ success: true; preferences: EmailPreferences } | { success: false; error: string }> {
+  try {
+    return { success: true, preferences: await setOwnEmailPreference(sw, on) };
+  } catch (error) {
+    return authFailure(error) ?? { success: false, error: "We couldn't save that. Try again." };
   }
 }

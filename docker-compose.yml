@@ -143,8 +143,8 @@ services:
 
       # ── Indexer auth (required, SECRET) ──────────────────────────────────
       # Bearer token for the cron endpoints: POST /api/indexer, /api/ops-funding,
-      # /api/settle-stalled, /api/keep-alive and /api/governance-keeper. Shared
-      # with the cron services below.
+      # /api/settle-stalled, /api/keep-alive, /api/governance-keeper and
+      # /api/notification-emails. Shared with the cron services below.
       - INDEXER_SECRET=${INDEXER_SECRET:-}
 
       # ── Operations funding submitter (optional, SECRET) ──────────────────
@@ -163,6 +163,16 @@ services:
       # GOOGLE_GENERATIVEAI_API_KEY, which matches none of them, so the AI
       # listing review silently did nothing however valid the key was.
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+
+      # ── Email (optional) ─────────────────────────────────────────────────
+      # Notifications are also emailed through Resend once a key is set. Set
+      # it in the admin console (Settings → Resend API key), which keeps it in
+      # Supabase Vault; RESEND_API_KEY here is only the fallback. Without
+      # either, nothing is emailed and the bell works as before.
+      # EMAIL_FROM is the sender, on a domain verified in Resend. Unset means
+      # "BLKFNDR <notifications@blkfndr.com>".
+      - RESEND_API_KEY=${RESEND_API_KEY:-}
+      - EMAIL_FROM=${EMAIL_FROM:-}
     volumes:
       - next-cache:/app/.next/cache
     networks:
@@ -362,6 +372,39 @@ services:
     labels:
       - "app.name=blkfndr3-governance-keeper"
       - "app.description=Sends approved payouts and closes lapsed stages"
+
+  # Emails the notifications queued for email, and queues the "one day left to
+  # vote" reminders, which go to the bell either way. Every minute, so an email
+  # follows its notification closely. Sends nothing until a Resend key is set,
+  # and never anything more than a day old, so switching email on later
+  # doesn't send a backlog.
+  notification-emails-cron:
+    image: curlimages/curl:8.11.1
+    restart: unless-stopped
+    depends_on:
+      blkfndr-app:
+        condition: service_healthy
+    environment:
+      - INDEXER_SECRET=${INDEXER_SECRET:-}
+      - NOTIFICATION_EMAILS_INTERVAL_SECONDS=${NOTIFICATION_EMAILS_INTERVAL_SECONDS:-60}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "notification-emails-cron: polling every $${NOTIFICATION_EMAILS_INTERVAL_SECONDS}s"
+        while true; do
+          curl --silent --show-error --fail --max-time 120 \
+            -X POST http://blkfndr-app:3000/api/notification-emails \
+            -H "Authorization: Bearer $${INDEXER_SECRET}" \
+            -H "Content-Type: application/json" \
+            -d '{}' \
+            || echo "notification-emails-cron: run failed at $$(date -u +%FT%TZ)"
+          sleep "$${NOTIFICATION_EMAILS_INTERVAL_SECONDS}"
+        done
+    networks:
+      - blkfndr-network
+    labels:
+      - "app.name=blkfndr3-notification-emails"
+      - "app.description=Emails notifications and queues vote reminders"
 
 volumes:
   next-cache:

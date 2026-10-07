@@ -13,7 +13,7 @@ graph TB
 
     subgraph "Docker Compose stack"
         APP[blkfndr-app<br/>Server Actions + route handlers<br/>server-only data layer]
-        CRON[indexer-cron · ops-funding-cron<br/>settle-stalled-cron · keep-alive-cron<br/>governance-keeper-cron]
+        CRON[indexer-cron · ops-funding-cron<br/>settle-stalled-cron · keep-alive-cron<br/>governance-keeper-cron · notification-emails-cron]
     end
 
     subgraph Stellar
@@ -148,7 +148,7 @@ The console's health view shows the cursor and when it last moved, which is the 
 
 ## Scheduled jobs
 
-Soroban has no cron, and nothing in the app triggers itself. [docker-compose.yml](../docker-compose.yml) therefore runs five small `curlimages/curl` services beside the app. Each waits for the app's healthcheck, then calls one route over the stack's internal network (`http://blkfndr-app:3000`) with `Authorization: Bearer $INDEXER_SECRET`, sleeps, and repeats.
+Soroban has no cron, and nothing in the app triggers itself. [docker-compose.yml](../docker-compose.yml) therefore runs six small `curlimages/curl` services beside the app. Each waits for the app's healthcheck, then calls one route over the stack's internal network (`http://blkfndr-app:3000`) with `Authorization: Bearer $INDEXER_SECRET`, sleeps, and repeats.
 
 | Service | Calls | Default interval | What it does |
 |---|---|---|---|
@@ -157,6 +157,7 @@ Soroban has no cron, and nothing in the app triggers itself. [docker-compose.yml
 | `settle-stalled-cron` | `POST /api/settle-stalled` | 1 day (`SETTLE_STALLED_INTERVAL_SECONDS`) | For each project indexed as `funded` or `active`, builds `settle_stalled` (which simulates it) and submits only the ones that would succeed |
 | `keep-alive-cron` | `POST /api/keep-alive` | 1 day (`KEEP_ALIVE_INTERVAL_SECONDS`) | Restores and extends shared contract storage. See below |
 | `governance-keeper-cron` | `POST /api/governance-keeper` | 15 min (`GOVERNANCE_KEEPER_INTERVAL_SECONDS`) | For each project not yet closed out, reads the vault and sends `release_milestone` for a carried stage, `settle_lapsed_milestone` for one whose window ended short, and `settle` for a missed goal not yet on the record, each only if its simulation succeeds |
+| `notification-emails-cron` | `POST /api/notification-emails` | 60 s (`NOTIFICATION_EMAILS_INTERVAL_SECONDS`) | Adds "one day left to vote" reminders to the bell, then emails the notifications queued for email through Resend. Transacts nothing. See [Notifications](#notifications) |
 
 The four that transact are signed by `OPS_FUNDING_SUBMITTER_SECRET`, a funded account that pays fees and holds no authority: every call is permissionless, and the gate lives in the contract or the TTL. Without that secret, each returns a skip. Extra calls are harmless.
 
@@ -282,14 +283,32 @@ Writes go through `set_project_hidden` and `set_project_locked`, which check `ca
 
 ## Notifications
 
-Notifications are rows in `notifications`, created only by the server with the service role:
+Notifications are rows in `notifications`, created only by the server with the service role. The browser can only mark its own read and dismiss them (`update (is_read)` and `delete`, each behind a policy on `user_id`).
 
-| Function | Recipient | Sent when |
-|---|---|---|
-| `notify` | One user | A KYC decision (to the applicant); a project hidden, unhidden, locked or unlocked (to the builder, if their wallet is linked to an account) |
-| `notifyAdmins` | Every roster member with role `owner`, `platform_admin` or `project_approver` and a bound account | Milestone proof submitted |
+| Created by | Recipient | Sent when | Emailed as |
+|---|---|---|---|
+| `notifyForVaultEvent` ([vault-notifications.ts](../src/lib/data/vault-notifications.ts)), from the indexer | Stakeholders and the builder whose wallets are linked to an account | A stage vote opens; a stage is paid; a stage or vault fails, or stalls; a goal is reached; a new stake (builder); the deposit comes back (builder) | `votes`, `refunds` or `updates` |
+| `queueVoteReminders` ([vote-reminders.ts](../src/lib/data/vote-reminders.ts)), from `notification-emails-cron` | Stakeholders who haven't voted | A stage vote closes within a day (and opened more than a day ago) | `votes` |
+| `notify` | One user | A KYC decision (to the applicant); a project hidden, unhidden, locked or unlocked (to the builder); a wallet-setup link they asked for on a phone | `account` |
+| `notifyAdmins` | Roster members with a bound account, by role | A new or resubmitted identity check, and an approved one ready to record (KYC reviewers); milestone proof submitted (project roles, bell only) | `reviews` |
 
-Recipients of `notifyAdmins` come from the same `platform_admins` roster the guards use. A failed notification is logged and never fails the action that caused it.
+Recipients of `notifyAdmins` come from the same `platform_admins` roster the guards use. A failed notification is logged and never fails the action that caused it. The indexer handles each ledger event once, so a vault notification is produced at most once; a reminder is claimed in `notification_once` first, so it is produced once even though the scan finds the same vote every minute.
+
+### Email
+
+A notification is queued for email by the code that creates it, which sets `email_category` and `email_status = 'pending'` on the row. `notification-emails-cron` sends the queue through Resend ([notification-emails.ts](../src/lib/email/notification-emails.ts)): the subject is the notification's title, the body its caption, with one button to its link ([render.ts](../src/lib/email/render.ts)). Before sending it checks the recipient's switch for that category in `email_preferences` (a missing row means all on) and that their sign-in address is confirmed. `account` emails have no switch.
+
+| Category | Settings switch |
+|---|---|
+| `votes` | Email me when a vote needs me |
+| `refunds` | Email me when a refund is ready |
+| `updates` | Email me receipts |
+| `reviews` | Email me when something is waiting for review (admins only) |
+| `account` | None: always sent |
+
+Every switchable email carries an unsubscribe link and a one-click `List-Unsubscribe` header, keyed by the recipient's random `unsubscribe_token`. The link opens [/email/unsubscribe](../src/app/email/unsubscribe/page.tsx), which asks before turning the switch off, so a mail scanner that opens links changes nothing; the header posts to `/api/email/unsubscribe`. A token can only turn a switch off. `email_preferences` and `notification_once` have RLS with no policies and no browser grants: only the server reads them.
+
+Each send uses the notification id as Resend's idempotency key, so a retry or an overlapping run can't send twice. Temporary failures retry on later runs, up to 5 attempts; a refused key, an unverified domain or a used-up quota stops the run without using attempts; nothing more than a day old is sent. Without a Resend key nothing is emailed and the bell is unaffected.
 
 Users read their own notifications through `/api/notifications`, which runs on their session, so RLS confines it to their rows. The bell ([NotificationBell.tsx](../src/components/layout/NotificationBell.tsx)) polls every 60 seconds while signed in, and on a `refresh-notifications` window event. It toasts any unread notification that arrived since the previous poll, but not on the first load.
 
@@ -358,13 +377,14 @@ blkfndrapp/
 │   │   ├── ops-funding.ts      # Monthly treasury → Operations Vault trigger
 │   │   ├── settle-stalled.ts   # Abandoned-vault keeper
 │   │   ├── governance-keeper.ts # Sends carried payouts, closes lapsed stages
+│   │   ├── email/               # Notification emails: categories, rendering, the Resend sender
 │   │   ├── managed-wallet.ts   # Managed attestor keys (server-only)
 │   │   ├── bond-readiness.ts   # Launch bond pre-flight
 │   │   └── vault-deploy-guard.ts # Duplicate-launch guard
 │   ├── packages/               # Generated contract bindings
 │   └── proxy.ts                # Session refresh (not a security boundary)
 ├── docs/
-├── docker-compose.yml          # App + four cron services
+├── docker-compose.yml          # App + six cron services
 └── Dockerfile
 ```
 

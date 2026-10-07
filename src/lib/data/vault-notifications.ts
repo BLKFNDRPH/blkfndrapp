@@ -3,6 +3,8 @@ import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { projectHref } from "@/lib/project-href";
 import { describeMoney, rawToUnits } from "@/lib/money";
+import { emailColumns } from "@/lib/data/notifications";
+import type { EmailCategory } from "@/lib/email/categories";
 
 /**
  * Tell people when a vault does something they need to know: a vote they can
@@ -19,7 +21,7 @@ import { describeMoney, rawToUnits } from "@/lib/money";
  * ledger names wallets, and an account is the only way to a person.
  */
 
-type Row = { user_id: string; title: string; caption: string; url: string; project_id: string };
+type Row = { user_id: string; title: string; caption: string; url: string; project_id: string; email: EmailCategory };
 
 const RELEVANT = new Set([
   "MILESTN/VOTEOPEN",
@@ -33,6 +35,17 @@ const RELEVANT = new Set([
 ]);
 
 const str = (v: unknown) => (v === null || v === undefined ? "" : String(v));
+
+/**
+ * "Thu 14 Oct at 14:00 UTC". Emails can't know the reader's time zone, so the
+ * time is in UTC and says so.
+ */
+export function closingTime(epochSeconds: number): string {
+  const d = new Date(epochSeconds * 1000);
+  const day = d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
+  const time = d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "UTC" });
+  return `${day.replace(",", "")} at ${time} UTC`;
+}
 
 /** Account ids for wallets, skipping wallets no account has set up. */
 async function accountsFor(admin: ReturnType<typeof createAdminClient>, wallets: string[]): Promise<Map<string, string>> {
@@ -77,11 +90,13 @@ export async function notifyForVaultEvent(key: string, payload: unknown[], vault
   // A builder who also staked hears the builder's version once, not both.
   const stakeholders = stakers.map((w) => accounts.get(w)).filter((id): id is string => Boolean(id) && id !== builder);
 
+  // Each message is also emailed, under the switch that covers it: a vote that
+  // needs them, money waiting for them, or a receipt.
   const rows: Row[] = [];
-  const toStakeholders = (title_: string, caption: string, url: string) =>
-    stakeholders.forEach((user_id) => rows.push({ user_id, title: title_, caption, url, project_id: project.id }));
+  const toStakeholders = (title_: string, caption: string, url: string, email: EmailCategory) =>
+    stakeholders.forEach((user_id) => rows.push({ user_id, title: title_, caption, url, project_id: project.id, email }));
   const toBuilder = (title_: string, caption: string, url: string) => {
-    if (builder) rows.push({ user_id: builder, title: title_, caption, url, project_id: project.id });
+    if (builder) rows.push({ user_id: builder, title: title_, caption, url, project_id: project.id, email: "updates" });
   };
 
   const stage = Number(payload[1]);
@@ -90,8 +105,9 @@ export async function notifyForVaultEvent(key: string, payload: unknown[], vault
       const days = Math.round((Number(payload[3]) - Number(payload[2])) / 86_400) || 7;
       toStakeholders(
         `Stage ${stage} of ${title} is up for your vote`,
-        `Voting closes in ${days} days. The builder is paid for this stage only if enough stakeholders vote yes.`,
+        `Voting closes in ${days} days, on ${closingTime(Number(payload[3]))}. The builder is paid for this stage only if enough stakeholders vote yes.`,
         stages,
+        "votes",
       );
       break;
     }
@@ -101,6 +117,7 @@ export async function notifyForVaultEvent(key: string, payload: unknown[], vault
         `${amount} paid to the builder of ${title}`,
         `Stakeholders approved Stage ${stage}, and the vault paid it out.`,
         stages,
+        "updates",
       );
       toBuilder(`You were paid ${amount} for Stage ${stage} of ${title}`, "Stakeholders approved the stage, and the vault paid you.", stages);
       break;
@@ -110,6 +127,7 @@ export async function notifyForVaultEvent(key: string, payload: unknown[], vault
         `Money is waiting for you from ${title}`,
         `The Stage ${stage} vote ended short of a majority, so refunds are open, with a share of the builder's deposit. Collect yours from the project page.`,
         page,
+        "refunds",
       );
       toBuilder(
         `Stage ${stage} of ${title} didn't pass its vote`,
@@ -122,6 +140,7 @@ export async function notifyForVaultEvent(key: string, payload: unknown[], vault
         `Money is waiting for you from ${title}`,
         "Nothing moved for 90 days, so the vault closed and refunds opened. Collect yours from the project page.",
         page,
+        "refunds",
       );
       toBuilder(`${title} was closed after 90 quiet days`, "Refunds are open to stakeholders, and your deposit is shared among them.", page);
       break;
@@ -130,6 +149,7 @@ export async function notifyForVaultEvent(key: string, payload: unknown[], vault
         `Your stake in ${title} is ready to come back to you`,
         "The deadline passed before the goal was reached, so everyone who staked can collect their stake in full.",
         page,
+        "refunds",
       );
       toBuilder(`${title} didn't reach its goal`, "Stakes go back to stakeholders, and your deposit isn't forfeited.", page);
       break;
@@ -138,6 +158,7 @@ export async function notifyForVaultEvent(key: string, payload: unknown[], vault
         `${title} reached its ${money(payload[1])} goal`,
         "Stakes are closed. The builder is starting, and you'll vote on each payout.",
         page,
+        "updates",
       );
       toBuilder(
         `${title} reached its ${money(payload[1])} goal`,
@@ -161,7 +182,12 @@ export async function notifyForVaultEvent(key: string, payload: unknown[], vault
 
   if (rows.length === 0) return 0;
   const { error } = await admin.from("notifications").insert(
-    rows.map((r) => ({ ...r, title: r.title.slice(0, 200), caption: r.caption.slice(0, 1000) })),
+    rows.map(({ email, ...r }) => ({
+      ...r,
+      title: r.title.slice(0, 200),
+      caption: r.caption.slice(0, 1000),
+      ...emailColumns(email),
+    })),
   );
   if (error) {
     // A notification must never fail the indexing that produced it.

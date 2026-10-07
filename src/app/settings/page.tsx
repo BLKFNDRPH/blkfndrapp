@@ -2,6 +2,7 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { DisplayNameForm } from "@/components/settings/DisplayNameForm";
 import { AppearanceSettings } from "@/components/settings/AppearanceSettings";
+import { EmailSettings } from "@/components/settings/EmailSettings";
 import { PracticeNetworkBadge, WalletSettings } from "@/components/settings/WalletSettings";
 
 export default function SettingsPage() {
@@ -10,7 +11,7 @@ export default function SettingsPage() {
       <div className="space-y-4 mb-8">
         <h1 className="text-4xl font-bold tracking-tight font-headline text-accent">Settings</h1>
         <p className="text-muted-foreground text-lg">
-          Your account, how the app looks, and your wallet.
+          Your account, how the app looks, your emails and your wallet.
         </p>
       </div>
       <div className="space-y-8">
@@ -35,6 +36,19 @@ export default function SettingsPage() {
           </CardHeader>
           <CardContent>
             <AppearanceSettings />
+          </CardContent>
+        </Card>
+
+        <Card id="email" className="scroll-mt-24">
+          <CardHeader>
+            <CardTitle>Notifications</CardTitle>
+            <CardDescription>
+              Everything shows in the bell. Choose what we also email you, so a vote or a refund doesn&apos;t wait for your
+              next visit.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <EmailSettings />
           </CardContent>
         </Card>
 

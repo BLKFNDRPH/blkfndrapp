@@ -1,6 +1,6 @@
 # Deployment
 
-blkfndr runs as one Docker Compose stack: the Next.js app plus four small cron
+blkfndr runs as one Docker Compose stack: the Next.js app plus six small cron
 containers that call it on a schedule. The stack is deployed through Portainer.
 The database and sign-in live in Supabase, and the contracts live on Stellar.
 
@@ -31,6 +31,7 @@ Defined in [docker-compose.yml](../docker-compose.yml).
 | `settle-stalled-cron` | `curlimages/curl:8.11.1` | Every `SETTLE_STALLED_INTERVAL_SECONDS` (default 86400, daily) | `POST /api/settle-stalled` | `INDEXER_SECRET`; the app needs `OPS_FUNDING_SUBMITTER_SECRET` |
 | `keep-alive-cron` | `curlimages/curl:8.11.1` | Every `KEEP_ALIVE_INTERVAL_SECONDS` (default 86400, daily) | `POST /api/keep-alive` | `INDEXER_SECRET`; the app needs `OPS_FUNDING_SUBMITTER_SECRET` |
 | `governance-keeper-cron` | `curlimages/curl:8.11.1` | Every `GOVERNANCE_KEEPER_INTERVAL_SECONDS` (default 900, 15 minutes) | `POST /api/governance-keeper` | `INDEXER_SECRET`; the app needs `OPS_FUNDING_SUBMITTER_SECRET` |
+| `notification-emails-cron` | `curlimages/curl:8.11.1` | Every `NOTIFICATION_EMAILS_INTERVAL_SECONDS` (default 60) | `POST /api/notification-emails` | `INDEXER_SECRET`; the app needs a Resend key to send (see [Email](#email)) |
 
 Each cron waits until the app passes its healthcheck, then loops. It calls
 `http://blkfndr-app:3000` over the stack's internal network, sending
@@ -39,7 +40,7 @@ makes an HTTP error visible: the log shows `<name>: run failed at <time>`. A
 successful run prints the route's JSON reply. The request timeout is 120 seconds,
 or 600 seconds for keep-alive and 300 for the governance keeper.
 
-All five routes check the bearer token with a constant-time compare. If
+All six routes check the bearer token with a constant-time compare. If
 `INDEXER_SECRET` is unset in the app, they refuse every request and the app logs
 `INDEXER_SECRET is not set — rejecting request.`
 
@@ -128,6 +129,41 @@ docker exec <governance-keeper-cron container> sh -c \
      -d "{\"dryRun\": true}"'
 ```
 
+### notification-emails-cron
+
+Two jobs, every minute:
+
+- **Vote reminders.** For each stage vote closing within a day that opened more
+  than a day ago, it adds "One day left to vote on Stage N of …" to the bell of
+  every stakeholder who hasn't voted. Each reminder is claimed once in
+  `notification_once`, so it is never repeated, even after it is dismissed.
+  These reach the bell whether or not email is set up.
+- **Email.** It sends the notifications queued for email (`email_status =
+  'pending'`), oldest first, up to 50 a run, paced under Resend's rate limit.
+  It skips anyone who turned that kind of email off, and any account without a
+  confirmed address. A temporary Resend failure is retried on later runs, up to
+  5 times, with the notification id as Resend's idempotency key, so a retry
+  can't send twice. A refused key, an unverified domain or a used-up quota
+  stops the run and leaves the queue as it is. Nothing more than a day old is
+  sent, so switching email on later doesn't send a backlog.
+
+See [src/lib/email/notification-emails.ts](../src/lib/email/notification-emails.ts)
+and [src/lib/data/vote-reminders.ts](../src/lib/data/vote-reminders.ts). A dry
+run lists the reminders due and the emails it would send, and writes and sends
+nothing:
+
+```bash
+docker exec <notification-emails-cron container> sh -c \
+  'curl -s -X POST http://blkfndr-app:3000/api/notification-emails \
+     -H "Authorization: Bearer $INDEXER_SECRET" \
+     -H "Content-Type: application/json" \
+     -d "{\"dryRun\": true}"'
+```
+
+To see what happened to a notification's email, read its row:
+`email_status` is `pending`, `sent`, `skipped` or `failed`, and
+`email_error` says why for the last three.
+
 ### The gas payer
 
 `OPS_FUNDING_SUBMITTER_SECRET` pays the network fees for ops-funding,
@@ -202,7 +238,7 @@ stellar contract id asset --asset USDC:<ISSUER_G_ADDRESS> --network testnet
 | Variable | Required | Read in | Notes |
 |---|---|---|---|
 | `SUPABASE_SECRET_KEY` | **Yes** | [supabase/admin.ts](../src/lib/supabase/admin.ts) | Service-role key. Bypasses RLS. The indexer, the crons, KYC review and the Vault secret reads use it. Unset, every service-role call throws `SUPABASE_SECRET_KEY is not set` |
-| `INDEXER_SECRET` | **Yes** | The four machine routes under [src/app/api](../src/app/api) | Bearer token shared by the app and the crons. Use a long random value |
+| `INDEXER_SECRET` | **Yes** | The six cron routes under [src/app/api](../src/app/api) | Bearer token shared by the app and the crons. Use a long random value |
 | `PINATA_JWT` | Yes, unless set in the Vault | [secrets.ts](../src/lib/secrets.ts) | Pinning key. Read from Supabase Vault first (see below). Without either, uploads fail and no project can be created |
 | `PINATA_GATEWAY_URL` | No | [pinata-client.ts](../src/lib/pinata-client.ts), [upload-image/route.ts](../src/app/api/upload-image/route.ts) | Dedicated gateway host, e.g. `nft.blkfndr.com`. Only the hostname is used. The indexer tries it first, then `gateway.pinata.cloud` |
 | `PINATA_GATEWAY_KEY` | With a dedicated gateway | [pinata-client.ts](../src/lib/pinata-client.ts) | The dedicated gateway's Gateway Key (Pinata → Gateways → Access Controls → Gateway Keys), **not** the JWT. See the note below |
@@ -210,7 +246,8 @@ stellar contract id asset --asset USDC:<ISSUER_G_ADDRESS> --network testnet
 | `OPS_FUNDING_SUBMITTER_SECRET` | No | [ops-funding.ts](../src/lib/ops-funding.ts), [settle-stalled.ts](../src/lib/settle-stalled.ts), [ttl-keeper.ts](../src/lib/ttl-keeper.ts), [governance-keeper.ts](../src/lib/governance-keeper.ts) | Stellar secret seed of a funded, gas-only account. See [The gas payer](#the-gas-payer) |
 | `APP_URLS` | No | [auth/app-origin.ts](../src/lib/auth/app-origin.ts) | Extra origins, comma separated. See [Serving from more than one domain](#serving-from-more-than-one-domain) |
 | `GEMINI_API_KEY` | No | The `@genkit-ai/googleai` plugin, set up in [src/ai/genkit.ts](../src/ai/genkit.ts) | AI listing review. The plugin reads `GEMINI_API_KEY`, then `GOOGLE_API_KEY`, then `GOOGLE_GENAI_API_KEY`. Compose passes only `GEMINI_API_KEY` |
-| `RESEND_API_KEY` | No | [secrets.ts](../src/lib/secrets.ts) | Env fallback for the `resend_api_key` Vault secret. Nothing sends email yet, so nothing uses it. Compose does not pass it |
+| `RESEND_API_KEY` | No | [secrets.ts](../src/lib/secrets.ts) | Env fallback for the `resend_api_key` Vault secret, which the notification emails cron sends with. Prefer the Vault (Settings in the admin console). Without either, nothing is emailed |
+| `EMAIL_FROM` | No | [notification-emails.ts](../src/lib/email/notification-emails.ts) | Sender, e.g. `BLKFNDR <notifications@blkfndr.com>` (the default). Its domain must be verified in Resend. See [Email](#email) |
 
 The image also sets `NODE_ENV=production`, `PORT=3000`, `HOSTNAME=0.0.0.0` and
 `NEXT_TELEMETRY_DISABLED=1`. Leave them alone.
@@ -221,6 +258,30 @@ and falls back to `PINATA_JWT` and `RESEND_API_KEY` only when the Vault has no
 value. An owner sets them in the admin console under Settings, without a
 redeploy. Once set in the Vault, the Vault wins. Owners can write these values
 but cannot read them back.
+
+<a id="email"></a>
+**Email.** Notifications are also emailed, through [Resend](https://resend.com),
+once a key is set. To switch it on:
+
+1. Create a Resend account. The free plan sends 100 emails a day and 3,000 a
+   month.
+2. **Domains → Add domain.** Use the domain in `EMAIL_FROM`: `blkfndr.com`
+   for the default sender, or a subdomain such as `mail.blkfndr.com` to keep
+   its sending reputation separate (then set `EMAIL_FROM` to match).
+3. Add the DNS records Resend lists, at the DNS host for that domain: the DKIM
+   `TXT` record, and the `MX` and SPF `TXT` records on its `send`
+   subdomain. A DMARC `TXT` record on `_dmarc` is recommended. Wait until
+   Resend shows the domain as verified.
+4. **API Keys → Create API key**, with sending access. Paste it into the admin
+   console under **Settings → Resend API key**. It goes to the Vault; nothing
+   needs a redeploy.
+5. **Update the stack** once, so `notification-emails-cron` starts (and
+   `EMAIL_FROM`, if you set it, reaches the app).
+6. Run the dry run above. `wouldSend` lists what the next run sends.
+
+Until the domain is verified, Resend refuses every send with a 403; the cron
+logs it and stops each run without using up any retries, so nothing is lost
+except emails that turn a day old in the meantime.
 
 **Pinata Gateway Key.** For this account's pins, the dedicated gateway
 (`PINATA_GATEWAY_URL`) answers `401 ERR_ID:00024` unless the request carries the
@@ -595,7 +656,7 @@ They are not repeated here.
 
 In order, because each step depends on the one before:
 
-1. **Containers healthy.** All five running, `blkfndr-app` marked healthy.
+1. **Containers healthy.** All seven running, `blkfndr-app` marked healthy.
 2. **App answers.** `GET /api/health` returns `{"status":"ok",…}`.
 3. **Supabase wired.** The projects list renders, even if empty. A blank page
    with console errors about a missing URL means the build args were not set,
@@ -605,6 +666,8 @@ In order, because each step depends on the one before:
 5. **Projects appear.** Create one and wait one interval.
 6. **Crons.** The three daily services print a reply once a day. `skipped` is
    normal when nothing is due or the gas payer is unset.
+   `notification-emails-cron` prints one every minute; its `emails.status` is
+   `skipped` until a Resend key is set.
 
 ## Updating
 
@@ -614,7 +677,7 @@ In order, because each step depends on the one before:
 | Any `NEXT_PUBLIC_` value | Rebuild the image |
 | A runtime variable (`SUPABASE_SECRET_KEY`, `PINATA_*`, `APP_URLS`, …) | Recreate the container. No rebuild |
 | A cron interval | Recreate that cron container |
-| A Vault secret (`pinata_jwt`) | Nothing. Set it in the console |
+| A Vault secret (`pinata_jwt`, `resend_api_key`) | Nothing. Set it in the console |
 
 **Portainer:** **Stacks** → your stack → **Update the stack** (Web editor), or
 **Pull and redeploy** (Git repository). The app image is built here, not pulled
@@ -797,7 +860,8 @@ docker run --rm -v <stack>_next-cache:/data -v $(pwd):/backup alpine tar czf /ba
 - [ ] Pinata JWT in the Vault or in `PINATA_JWT`
 - [ ] `OPS_FUNDING_SUBMITTER_SECRET` set and funded
 - [ ] TLS terminated at the reverse proxy
-- [ ] All four crons running and printing replies
+- [ ] All six crons running and printing replies
+- [ ] Resend domain verified and its key in the Vault, if email is wanted
 
 ## Scaling
 
