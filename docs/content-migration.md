@@ -17,7 +17,8 @@ Last full review: **2026-10-02 to 2026-10-03**, against `main` at #104. Every pa
 | Contract API | [smart-contracts.md](smart-contracts.md) | Current | All seven contracts, release rule, deployed addresses |
 | Contract bindings | [blkfndr-stellar-cntrct-setup.md](blkfndr-stellar-cntrct-setup.md) | Current | Generated TypeScript bindings and how to regenerate them |
 | HTTP routes and server actions | [api-reference.md](api-reference.md) | Current | Every `src/app/api` route and exported action |
-| Auth, sessions, wallet linking | [authentication.md](authentication.md) | Current | Supabase Auth, Google, Freighter linking and signing, admin roster |
+| Auth, sessions, wallet linking | [authentication.md](authentication.md) | Current | Supabase Auth, Google, Freighter linking and signing, admin roster, KYC deletion and renewal (reviewed 2026-10-07) |
+| Personal data and retention | [privacy.md](privacy.md) | Current | What is held, who sees it, how long; identity-document deletion, renewal, record check; 2026-10-07 audit and open items (added 2026-10-07) |
 | AI listing review | [ai-features.md](ai-features.md) | Current | Implemented Genkit flow; query analysis and sentiment tracking are design specs only |
 | Deployment and operations | [deployment.md](deployment.md) | Current | Docker, Portainer, compose crons, env vars, contract deploys |
 | Contributing | [contributing.md](contributing.md) | Current | Setup, checks, migrations, PR conventions |
@@ -33,6 +34,7 @@ Last full review: **2026-10-02 to 2026-10-03**, against `main` at #104. Every pa
 - [x] Treasury and Operations Vault governance
 - [x] Platform moderation: approval consensus, hide and lock
 - [x] KYC attestation and managed attestor keys
+- [x] Identity data deletion, renewal on ID expiry and the record check (#142–#147)
 - [x] Event indexer, keeper and keep-alive crons
 - [x] HTTP routes and server actions
 - [x] AI listing review

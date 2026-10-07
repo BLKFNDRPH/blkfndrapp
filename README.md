@@ -82,7 +82,7 @@ This rule applies to vaults the factory creates after its wasm hash was switched
 | **Frontend** | Next.js 16, React 19, TailwindCSS, shadcn/ui |
 | **Database** | Supabase (Postgres with Row Level Security) |
 | **Auth** | Supabase Auth — email/password and Google; Freighter for wallet linking |
-| **Storage** | Supabase Storage (identity documents), Pinata IPFS (listing metadata, media, milestone proof photos) |
+| **Storage** | Supabase Storage (identity documents, deleted after the decision), Pinata IPFS (listing metadata, media, milestone proof photos) |
 | **AI** | Google Genkit + Gemini 2.5 Flash |
 | **Deployment** | Docker Compose on Portainer: the app plus four cron services (indexer, ops funding, stalled-vault keeper, storage keep-alive) |
 
@@ -232,7 +232,7 @@ Then, in the dashboard:
 
 Authorization is enforced by the database, not only by application code. Every table has Row Level Security, and the identity columns on `kyc_requests` are not granted to any browser-facing role at all — `select *` on your own row fails with a publishable key. Those columns are reachable only with the service-role key, from `server-only` modules, after an explicit admin check.
 
-Identity documents are not stored in the database. They live in a private Storage bucket reached through short-lived signed URLs minted server-side, and are deleted once a reviewer has decided. The ID number, date of birth and address go at the same time, except after an approval given before the applicant has a wallet, when they go once one is attached.
+Identity documents are not stored in the database. They live in a private Storage bucket, never on IPFS and never with an outside verification service, and only KYC reviewers see them: one case at a time, through a five-minute signed URL, shown from memory so their browser keeps no copy. A document is deleted once a reviewer has decided, and the ID number, date of birth, address and email go at the same time. The exception is an approval given before the applicant has a wallet, whose details go once one is attached. What remains is the name, the document's type and expiry, and a SHA-256 fingerprint of the details on the public record. A verification lasts until the ID expires and is renewed with a current one. See [Private data](docs/privacy.md) for what is held, for how long, and the 2026-10-07 deletion audit.
 
 Console roles come from the `platform_admins` roster — the four groups the platform is run by: owner, platform administrator, KYC manager and project administrator — asked through `my_role()` and `is_admin()` in the database and `requireCaller()` on the server, never from `user_metadata`, which a user can edit. The on-chain `blkfndr-admin` roster is separate, and neither is in the path that moves funds.
 
@@ -312,6 +312,7 @@ blkfndrapp/
 - [Contract Bindings](docs/blkfndr-stellar-cntrct-setup.md) — Generated TypeScript bindings
 - [API Reference](docs/api-reference.md) — HTTP routes, server actions, Horizon and Soroban RPC
 - [Authentication](docs/authentication.md) — Supabase Auth, wallet linking and signing, admin roles
+- [Private data](docs/privacy.md) — What personal data is held and for how long, identity-document deletion, the 2026-10-07 audit
 - [AI Features](docs/ai-features.md) — Genkit flows and AI integration
 - [Deployment](docs/deployment.md) — Docker, Portainer, crons, and contract deploys
 - [Contributing](docs/contributing.md) — Development setup and guidelines

@@ -117,6 +117,11 @@ These are requirements, not style preferences.
 3. **No PostgREST `.upsert()` on tables with column-scoped grants.** `.upsert()` compiles to `INSERT … ON CONFLICT DO UPDATE`, and Postgres requires SELECT on every column that statement assigns. On a table where a role may write a column it cannot read, the upsert is refused before RLS runs, with `permission denied for table …`. That message reads like a missing grant, but it isn't one. Do not widen the grants. Read the row, then INSERT or UPDATE explicitly, as `submitOwnKyc` does in [src/lib/data/kyc.ts](../src/lib/data/kyc.ts). This applies to `profiles`, `kyc_requests`, `notifications` and any table that gets the same pattern.
 4. **Non-custodial.** No platform-held key may ever control stakeholder funds or votes. Platform-managed keys exist only for KYC attestors and gas.
 5. **Secrets stay server-side.** Nothing secret takes a `NEXT_PUBLIC_` prefix, and the service-role key is read only from `server-only` modules.
+6. **Identity data leaves no copies.** ID documents and details are deleted once a check is decided ([privacy.md](privacy.md)). Code that touches them must not make another copy, so:
+   - never write a document to disk or a log, and never send it to IPFS, an email or a third party;
+   - show it only through [CaseDocument](../src/components/admin/CaseDocument.tsx) (`cache: "no-store"`, an in-memory object URL), never `next/image` or a plain `<img>` on the signed URL;
+   - never read the identity columns of a decided check, which are null by design;
+   - send a new identity field through `kyc_requests_drop_identity_after_decision`, so it is cleared with the rest.
 
 ## Environment variables and the Docker build
 

@@ -370,7 +370,7 @@ KYC attestors sign from **managed, gas-only wallets**: the platform generates th
 |---|---|---|
 | `__constructor(admin)` | Deployer, at deploy | Sets the admin |
 | `add_attestor(account)` / `remove_attestor(account)` | Admin | Appoints or removes an attestor. Removing one leaves the approvals they wrote in place |
-| `attest(attestor, address, kyc_hash)` | Attestor or admin | Records an approval (a hash of the off-chain KYC record). Refuses if one exists |
+| `attest(attestor, address, kyc_hash)` | Attestor or admin | Records an approval: a SHA-256 hash of the verified details and the wallet ([details-hash.ts](../src/lib/kyc/details-hash.ts)). The details are deleted off chain after the decision ([privacy.md](privacy.md)), so the hash is all that remains. Refuses if one exists, so a renewal is a `revoke` then a new `attest` |
 | `revoke(attestor, address)` | Attestor or admin | Removes an approval |
 | `transfer_admin(new_admin)` | Admin | — |
 | `bump_kyc(address)` / `bump_attestor(account)` | Anyone | Extends an approval's or an attestor's TTL without changing it. Reverts if it does not exist |

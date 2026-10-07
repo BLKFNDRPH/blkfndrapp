@@ -8,6 +8,7 @@
 - [Contract Bindings](blkfndr-stellar-cntrct-setup.md)
 - [API Reference](api-reference.md)
 - [Authentication](authentication.md)
+- [Private Data](privacy.md)
 - [AI Features](ai-features.md)
 - [Deployment](deployment.md)
 - [Contributing](contributing.md)

@@ -56,7 +56,7 @@ blkfndr treats that as a design constraint rather than a policy problem.
 | Frontend | Next.js and React |
 | Database | Supabase (Postgres with Row Level Security) |
 | Auth | Supabase Auth (email/password, Google); Freighter for wallet linking and signing |
-| Storage | Pinata (IPFS) for blueprints and listing media; private Supabase Storage for identity documents |
+| Storage | Pinata (IPFS) for blueprints and listing media; private Supabase Storage for identity documents, deleted after the decision |
 | AI | Google Genkit with Gemini 2.5 Flash, for listing-quality review |
 
 Stellar is purpose-built for payments and asset issuance, which makes it a natural home for a protocol whose unit of work is a small stake that may come from anywhere.
@@ -234,8 +234,11 @@ The full contract suite passes 175 tests on `main`: the vault 52, the treasury 4
 Authorization is enforced by the database, not only by the application:
 
 - Every table carries Row Level Security.
-- Identity columns on KYC records are readable by no browser-facing role: `select *` on your own row fails with a publishable key. Reviewers read them only through `server-only` code using the service-role key, after a reviewer-role check.
-- Identity documents are never stored in the database. They live in a private Storage bucket, reached through signed URLs that expire after five minutes. Once a reviewer has decided, the document is deleted, and so are the ID number, date of birth and address. The one exception is an approval given before the applicant has a wallet: those three details stay until a wallet is attached. What remains is the name and a one-way hash of the details.
+- Identity columns on KYC records are readable by no browser-facing role: `select *` on your own row fails with a publishable key. Reviewers read them only through `server-only` code using the service-role key, after a reviewer-role check. A reviewer's own session has no access to anyone else's check.
+- Identity documents are never stored in the database, never sent to IPFS and never shared with an outside verification service. They live in a private Storage bucket, reached through signed URLs that expire after five minutes. The review panel shows them from memory, so a reviewer's browser keeps no copy.
+- Once a reviewer has decided, the document is deleted, and so are the ID number, date of birth, address and email. The one exception is an approval given before the applicant has a wallet: those details stay until a wallet is attached. What remains is the name, the document's type and expiry, and a one-way hash of the details on the public record. The hash proves the check happened. With an ID the person shows again, a reviewer can recompute it to confirm who holds the wallet.
+- A verification lasts until the ID it was approved on expires. Builders are reminded to renew from 30 days before, and a lapsed one no longer counts.
+- What is held, for how long, and the deletion audit of 2026-10-07 are in [Private data](privacy.md).
 - Admin roles come from the `platform_admins` roster in Postgres, asked fresh on every request through `my_role()`. They are never read from `user_metadata`, which a user can edit.
 - Every exported async function in a `"use server"` file is treated as a public HTTP endpoint: it re-authenticates, re-authorizes and validates its arguments, with the argument list treated as hostile.
 
