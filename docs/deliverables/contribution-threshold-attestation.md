@@ -45,7 +45,7 @@ The contracts are [blkfndr-vault](../../contracts/blkfndr-vault/src/lib.rs), [bl
 
 ### Reference deployment
 
-A standalone set, deployed on 2026-10-06 by `GCNNVIOAMIV4AUPFLF7YNX5IVHVUYXJDOI7ETBKL4ILNDSKKHT4A4PJI` with [scripts/deploy-contracts.sh](../../scripts/deploy-contracts.sh). The live app does not use these contracts. Since 2026-10-06 the app's production factory deploys the same vault code (`e9009410…`), but its attestation and identity registries are older builds ([Deployed vs source](../smart-contracts.md#deployed-vs-source)).
+A standalone set, deployed on 2026-10-06 by `GCNNVIOAMIV4AUPFLF7YNX5IVHVUYXJDOI7ETBKL4ILNDSKKHT4A4PJI` with [scripts/deploy-contracts.sh](../../scripts/deploy-contracts.sh). The live app does not use these contracts. Since the 2026-10-07 redeploy it runs its own set built from the same source ([Deployed to testnet](../smart-contracts.md#deployed-to-testnet)).
 
 | Contract | Address |
 |---|---|
@@ -238,4 +238,7 @@ A rerun deploys new contracts and writes over the files in `deployments/testnet-
 - **Event retention.** Soroban RPC keeps events for about a week. The record in contract storage is the permanent copy. History older than that comes from the registry's reads or from an indexer or archive that kept the events.
 - **Storage rent.** Records live in persistent storage with a ~30-day TTL, extended when written. An entry left idle past its TTL is archived, not deleted. Anyone can restore it, unchanged.
 - **Wallets, not people.** Contributors are not identity-gated, so the cap and the three-wallet rule count addresses. The money majority is what makes splitting a stake across wallets useless for carrying a release.
-- **Production.** The app's live factory (`CDIXGE5M…`) has deployed this same vault, `e9009410…`, since 2026-10-06, so every new project on the site runs the rule described here. The switch was [`9dd7ed93…`](https://stellar.expert/explorer/testnet/tx/9dd7ed938ad0ef0db7e357cc6567e70c1620abb296a7baa301932888d7a13508), made after the host was running a vote panel that shows the money condition. Projects created before then keep the older vault they were created with. The app's attestation and identity registries are still the older builds until the coordinated redeploy.
+- **Production.** The app runs the same contracts as this reference deployment. Its factory differs only in starting its project ids at 12.
+  - **Vault code:** since 2026-10-06 the app's factory has deployed this vault, `e9009410…`. The switch was [`9dd7ed93…`](https://stellar.expert/explorer/testnet/tx/9dd7ed938ad0ef0db7e357cc6567e70c1620abb296a7baa301932888d7a13508), made once the host's vote panel showed the money condition.
+  - **Registries:** since 2026-10-07 the app uses a freshly deployed factory, attestation registry and identity registry built from this source ([the registry redeploy](../smart-contracts.md#the-registry-redeploy)).
+  - **Older projects:** projects #1–#11 keep the older vault and registries they were created with.

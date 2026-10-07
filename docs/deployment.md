@@ -558,7 +558,7 @@ nor the admin key, and should not:
 ```bash
 bash scripts/build-contracts.sh
 stellar contract upload --wasm target/wasm32-unknown-unknown/release/blkfndr_vault.wasm --source-account ba-escrow-deployer --network testnet
-stellar contract invoke --id CDIXGE5MWFAYXA7FKLB4CDRSSQZ6VQSGHT6O6OY3TFTWVF6F7BGKR7D5 --source-account ba-escrow-deployer --network testnet -- update_wasm_hash --new_hash <hash printed by the upload>
+stellar contract invoke --id CBRUIRJXRU6NGHOSF5KMPUOFIXIANCPI43QC6JX2PKNOKD3QSAHPLINO --source-account ba-escrow-deployer --network testnet -- update_wasm_hash --new_hash <hash printed by the upload>
 ```
 
 Built from `main` on the maintainer's machine, that wasm hashes `e9009410…`.
@@ -567,8 +567,13 @@ the upload prints. If that code is already on testnet, the upload only reprints
 its hash.
 
 Last switch: 2026-10-06, from `70e5f3a8…` to `e9009410…` (the #99 release rule
-plus the money majority), in transaction
+plus the money majority), on the previous factory `CDIXGE5M…`, in transaction
 [`9dd7ed93…`](https://stellar.expert/explorer/testnet/tx/9dd7ed938ad0ef0db7e357cc6567e70c1620abb296a7baa301932888d7a13508).
+The current factory `CBRUIRJX…` was deployed with `e9009410…` from the start.
+
+When the factory is redeployed, keep the four `NEXT_PUBLIC_BLKFNDR_*_CONTRACT_ID`
+values saved on the Portainer stack itself. On 2026-10-07 an automatic rebuild
+after a merge served the previous addresses again until they were.
 
 To check, `GET /api/vault-wasm-hash` reads the hash straight from the factory's
 storage and caches it for 5 minutes. The homepage's "check it yourself" box shows

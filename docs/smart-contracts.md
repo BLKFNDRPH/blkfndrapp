@@ -37,20 +37,61 @@ A vault trusts only the addresses the factory pinned into it at creation, so a p
 
 ## Deployed to testnet
 
+Since the registry redeploy (deployed 2026-10-06, live in the app 2026-10-07), every contract on testnet runs the current source.
+
 | Contract | Address | Running |
 |---|---|---|
-| Factory | [`CDIXGE5M…F7BGKR7D5`](https://stellar.expert/explorer/testnet/contract/CDIXGE5MWFAYXA7FKLB4CDRSSQZ6VQSGHT6O6OY3TFTWVF6F7BGKR7D5) | Older build. Configured by `initialize`, not a constructor |
-| Attestation registry | [`CDLL2A4R…JSNB2SO7`](https://stellar.expert/explorer/testnet/contract/CDLL2A4RBSQPKSPTEE3O4HNSDICSJEGCHAWIGUYVRPGOKVEPJSNB2SO7) | Older build. `initialize`, records keyed by project id, no `disable_factory` |
-| Identity registry | [`CCDBWBFE…RWZT27TGW`](https://stellar.expert/explorer/testnet/contract/CCDBWBFEK3YVXD2CDTJ4NFDPO7DB3OLB4YVX7BZI22M7QM4RWZT27TGW) | Older build. `initialize`, no `bump_kyc` / `bump_attestor` |
-| Admin roster | [`CAHAOAX5…AU6WAGOG`](https://stellar.expert/explorer/testnet/contract/CAHAOAX52JAQ75C3INJIDVKT7EITWDVPYP2K27NJTD4CPYZUAU6WAGOG) | Older build. `initialize` |
-| Treasury | [`CDA5XDY5…M44COAXU`](https://stellar.expert/explorer/testnet/contract/CDA5XDY564RV2OSZNF2S6CXQYCABFASBOHUCXJEGII6M232VM44COAXU) | Current source, redeployed 2026-09-28 |
-| Operations Vault | [`CCVXM3YP…NQG7FDSN`](https://stellar.expert/explorer/testnet/contract/CCVXM3YPPEMWG4INHFTZ4NBJ3PQW3ZUNYIZMBJBNYQOMSNOENQG7FDSN) | Current source, redeployed 2026-09-28 |
+| Factory | [`CBRUIRJX…D3QSAHPLINO`](https://stellar.expert/explorer/testnet/contract/CBRUIRJXRU6NGHOSF5KMPUOFIXIANCPI43QC6JX2PKNOKD3QSAHPLINO) | Current source (wasm `eb20ce0f…`). Its first project id is 12 |
+| Attestation registry | [`CDEN2LU4…72KIXSPSQFX`](https://stellar.expert/explorer/testnet/contract/CDEN2LU4M4SDSOWGU7JM5A46M3M2YSEKRLJ75PCNTFMPY72KIXSPSQFX) | Current source (`66f73252…`) |
+| Identity registry | [`CAILTHEY…KUWHZ4FDHQ3`](https://stellar.expert/explorer/testnet/contract/CAILTHEYMBPUPQ2OM5KXTE2QKOTDRQEMIL3UAKWFMA2EWKUWHZ4FDHQ3) | Current source (`a0574873…`) |
+| Admin roster | [`CAKANFZH…HHC6KCKJAAB`](https://stellar.expert/explorer/testnet/contract/CAKANFZHW6IYUNDNJMWJ3YNPZNHSSPF4CTOXKO55DBWOXHHC6KCKJAAB) | Current source (`00ebfb91…`) |
+| Treasury | [`CAGMEGMS…NRO3TQPZW`](https://stellar.expert/explorer/testnet/contract/CAGMEGMS6MS6ENADUWDRW3GQ4XRBDYFFKHMRFVDEBHFCZW7NRO3TQPZW) | Current source (`3dc2b67d…`), built against the factory above |
+| Operations Vault | [`CCVXM3YP…NQG7FDSN`](https://stellar.expert/explorer/testnet/contract/CCVXM3YPPEMWG4INHFTZ4NBJ3PQW3ZUNYIZMBJBNYQOMSNOENQG7FDSN) | Current source (`08360ea4…`), redeployed 2026-09-28. It references neither the factory nor the treasury, so the redeploy left it alone |
 
 The factory is the source of truth for the others: its `get_fee_wallet`, `get_identity_registry` and `get_attestation_registry` return the treasury, identity and attestation addresses above. The app reads the treasury from `get_fee_wallet` rather than from configuration, so repointing fees repoints the app.
 
+### The registry redeploy
+
+Deployed from the admin key `GDR4TPUF…` with `scripts/deploy-contracts.sh --first-project-id 12 --shareholders-from <previous treasury> --roster-admins … --attestors …`. The IDs are in [deployments/testnet-production/contracts.env](../deployments/testnet-production/contracts.env).
+
+- **Project ids continue at 12.** The previous factory issued #1–#11, and `projects.project_id` is unique.
+- **Carried over:**
+  - the treasury's three shareholders (3,334 / 3,333 / 3,333 bps);
+  - the roster admins `GC64IPJE…` and `GDUIQFAO…`;
+  - the app's managed attestor key `GCLH73GF…`. The previous registry's test attestor was not carried over.
+- **KYC.** The 3 approved builders were copied in with [migrate-kyc.mjs](../scripts/migrate-kyc.mjs), each with the same hash it held in the previous registry.
+- **Verified read-only:**
+  - every wasm fetched from testnet matches a local build;
+  - every setting reads back as intended;
+  - a simulated launch by a migrated builder deployed a vault and paid the fee to the new treasury.
+
+| Step | Transaction |
+|---|---|
+| Identity registry, then its attestor | [`92a6b4a9…`](https://stellar.expert/explorer/testnet/tx/92a6b4a948a9c4b0c255b34e4298b4e14b346b562d2e33084c384e9eb6ce78bb), [`c50bfebd…`](https://stellar.expert/explorer/testnet/tx/c50bfebd7aa88f9352809c5b9fc5a41ff31bb54a6963c20efa3c7ae30c3a47d3) |
+| Admin roster, then its two admins | [`53915c00…`](https://stellar.expert/explorer/testnet/tx/53915c0046a897c0496d352213819d959529327ae69ed1d891adb1afc9def460), [`8831387c…`](https://stellar.expert/explorer/testnet/tx/8831387c49c72ec95efeb26ba3b6ed5ece9030ef48e5c61a1edd74c0f36be4be), [`d39aa1fb…`](https://stellar.expert/explorer/testnet/tx/d39aa1fb1dba232a1ff311a6481f0721cd8ef92b21e623c8656a3e1777802391) |
+| Attestation registry | [`e091a145…`](https://stellar.expert/explorer/testnet/tx/e091a1454026a5a8c712804ba9e36237200f929a6717521e062c00f96056ef09) |
+| Factory, then `add_factory` | [`f710c938…`](https://stellar.expert/explorer/testnet/tx/f710c938e959699818de333a85d3aabe5782714806ffbab05008f7eec8b3d064), [`3fe80ddf…`](https://stellar.expert/explorer/testnet/tx/3fe80ddf8a2fee199fdaad7aaae87e5e67b1881c7b33f09179c5e7594a026c30) |
+| Treasury, then `update_fee_wallet` | [`60533728…`](https://stellar.expert/explorer/testnet/tx/60533728f7b30442d42496bbf632974cc850a47c579d3c1981e68996ffb8c88f), [`485577bd…`](https://stellar.expert/explorer/testnet/tx/485577bd954c1f8585ba3943abdd451747f62af023259f97675c1f1791fc9717) |
+| KYC migration (3) | [`fc9d3fe7…`](https://stellar.expert/explorer/testnet/tx/fc9d3fe76f22ee9a3ab3c5e3c1dc1c686da64fc2fdd49eac11713d7cc96ec3d1), [`40091221…`](https://stellar.expert/explorer/testnet/tx/40091221b3613b682ce88a15e109175a19480cfd7b839b305d611868ef70b92b), [`8dfc13c4…`](https://stellar.expert/explorer/testnet/tx/8dfc13c40bd2cf09ec177f812a76579d46d8209d0fdc00c9caf86aca662577e6) |
+| Previous factory closed to new launches | [`311abe5e…`](https://stellar.expert/explorer/testnet/tx/311abe5e1d7a8b5ebb74de9f9d43d55d2fe2fc6c93c7b125d303f05eab5dbd32) |
+
+### Previous set: projects #1–#11
+
+A vault keeps the addresses pinned into it at creation, so projects #1–#11 still run on the previous set:
+
+| Contract | Address | Now |
+|---|---|---|
+| Factory | [`CDIXGE5M…F7BGKR7D5`](https://stellar.expert/explorer/testnet/contract/CDIXGE5MWFAYXA7FKLB4CDRSSQZ6VQSGHT6O6OY3TFTWVF6F7BGKR7D5) | Closed to new launches: its identity registry points at itself, so `create_vault` fails at the KYC check. It still answers `is_vault` when one of its vaults writes its record |
+| Attestation registry | [`CDLL2A4R…JSNB2SO7`](https://stellar.expert/explorer/testnet/contract/CDLL2A4RBSQPKSPTEE3O4HNSDICSJEGCHAWIGUYVRPGOKVEPJSNB2SO7) | Receives the records of projects #1–#11 as they close. Older build, records keyed by project id |
+| Identity registry | [`CCDBWBFE…RWZT27TGW`](https://stellar.expert/explorer/testnet/contract/CCDBWBFEK3YVXD2CDTJ4NFDPO7DB3OLB4YVX7BZI22M7QM4RWZT27TGW) | No longer consulted: a vault checks KYC only when it is created |
+| Admin roster | [`CAHAOAX5…AU6WAGOG`](https://stellar.expert/explorer/testnet/contract/CAHAOAX52JAQ75C3INJIDVKT7EITWDVPYP2K27NJTD4CPYZUAU6WAGOG) | No longer read by the app |
+| Treasury | [`CDA5XDY5…M44COAXU`](https://stellar.expert/explorer/testnet/contract/CDA5XDY564RV2OSZNF2S6CXQYCABFASBOHUCXJEGII6M232VM44COAXU) | Superseded. It holds 2,100 base units (0.00021 USDC) of fees, written off |
+
+The keep-alive keeps the previous factory and attestation registry alive for as long as a vault depends on them. A builder's record is split as a result: projects #1–#11 are in `CDLL2A4R…`, and later projects in `CDEN2LU4…`.
+
 ### Reference deployment
 
-A second, standalone set runs the current source. It was deployed on 2026-10-06 with `scripts/deploy-contracts.sh`, the first live run of the #75 constructor deploy order. The app and its indexer do not use it, and it shares nothing with the set above. Every on-chain wasm hash-matches a local build. Test transactions for deposits, threshold approval, release, refunds, bond forfeiture and attestation are recorded in [the deliverable evidence](deliverables/contribution-threshold-attestation.md).
+A second, standalone set runs the current source, except that its factory predates the starting project id. It was deployed on 2026-10-06 with `scripts/deploy-contracts.sh`, the first live run of the #75 constructor deploy order. The app and its indexer do not use it, and it shares nothing with the sets above. Every on-chain wasm hash-matches a local build. Test transactions for deposits, threshold approval, release, refunds, bond forfeiture and attestation are recorded in [the deliverable evidence](deliverables/contribution-threshold-attestation.md).
 
 | Contract | Address |
 |---|---|
@@ -67,14 +108,10 @@ The IDs are in [deployments/testnet-reference/contracts.env](../deployments/test
 | Contract | What testnet runs | Source on `main` adds |
 |---|---|---|
 | Vault | wasm `e9009410…` for projects created since 2026-10-06: the current source, with the #99 release rule and the money majority. Projects created since the hardening redeploy (#71) run `70e5f3a8…`, and older ones `9c20bca3…` | Nothing |
-| Factory | `initialize` | #75: `__constructor` |
-| Attestation | `initialize(admin, factory)`; records keyed by `project_id`; `get_builder_projects` | #73 H-07: records keyed by vault address, `get_builder_vaults`. #73 M-04: `disable_factory`. #75: `__constructor(admin)`. `ATTEST RECORDED` carries the builder as a topic |
-| Identity | `initialize` | #73 M-02: permissionless `bump_kyc` / `bump_attestor`, and approvals re-extended when read. #75: `__constructor` |
-| Admin | `initialize` | #75: `__constructor` |
-| Treasury | Current source (wasm `3dc2b67d…`) | — |
-| Operations | Current source (wasm `08360ea4…`) | — |
+| Factory, attestation, identity, admin, treasury | Current source, deployed 2026-10-06 | Nothing |
+| Operations | Current source (wasm `08360ea4…`) | Nothing |
 
-Interfaces were read from testnet with `stellar contract info interface`, and the treasury and Operations Vault wasm fetched from testnet hash-match a local build of `main`. Redeploying the factory and registries is item 4 in [progress.md](../progress.md). The treasury's factory address is set only by its constructor, so a new factory also means a new treasury.
+Every contract's wasm, fetched from testnet, hash-matches a local build of `main`. The [previous set](#previous-set-projects-111) still serving projects #1–#11 is the older build: `initialize` rather than a constructor, attestation records keyed by project id, and no `disable_factory`, `bump_kyc` or `bump_attestor`.
 
 ### The vault wasm hash
 
@@ -92,18 +129,18 @@ A build of `main` does not have one canonical hash. The wasm embeds absolute car
 
 ## Platform parameters
 
-Read from the live factory on 2026-10-02 (`stellar contract invoke --send=no`, read-only). Amounts are in base units of the project's token: 1 unit = 10,000,000 base units (7 decimals). A project is denominated in USDC or XLM.
+Read from the live factory on 2026-10-07 (`stellar contract invoke --send=no`, read-only). Amounts are in base units of the project's token: 1 unit = 10,000,000 base units (7 decimals). A project is denominated in USDC or XLM.
 
 | Parameter | Factory getter | Live value |
 |---|---|---|
-| Flat platform fee | `get_platform_fee` | **300 base units** (0.00003 of the project's token) |
+| Flat platform fee | `get_platform_fee` | 10,000,000 (1 unit of the project's token) |
 | Minimum contribution | `get_min_contribution` | 50,000,000 (5 units) |
 | Milestone voting window | `get_voting_window` | 604,800 s (7 days) |
 | Minimum bond | `get_bond_percentage` | 500 bps (5% of the goal) |
 | Factory admin | `get_admin` | `GDR4TPUF…` (the deployer key, not the treasury) |
-| Projects created | `get_project_count` | 7 |
+| Last project id issued | `get_project_count` | 11, so the next project is #12 |
 
-The 300 base-unit fee is almost certainly a leftover from the earlier percentage model (300 bps = 3%). It is charged as a flat amount, as the contract intends, but it is effectively zero. [scripts/deploy-contracts.sh](../scripts/deploy-contracts.sh) defaults to 10 units for a fresh factory. Changing the live fee needs `update_platform_fee` from the factory admin, or a treasury `SetFee` vote once the treasury is the factory admin.
+The previous factory charged 300 base units, almost certainly a leftover from the earlier percentage model (300 bps = 3%). Changing the fee needs `update_platform_fee` from the factory admin, or a treasury `SetFee` vote once the treasury is the factory admin.
 
 ## Storage lifetime
 
@@ -274,7 +311,7 @@ Deploys vaults and is the single place that decides what code a vault runs and w
 
 | Function | Who | Effect |
 |---|---|---|
-| `__constructor(admin, vault_wasm_hash, fee_wallet, platform_fee, identity_registry, attestation_registry, voting_window_secs, min_contribution, first_project_id)` | Deployer, at deploy | Configures the factory inside the deploy transaction. The fee must be 0 to 10,000 units (`MAX_PLATFORM_FEE`), the window non-zero, the minimum contribution positive, and `first_project_id` at least 1. A replacement factory is given its predecessor's `get_project_count` + 1, so project ids never repeat: the app keys projects by them. The live factory takes the same arguments, less `first_project_id`, through `initialize` |
+| `__constructor(admin, vault_wasm_hash, fee_wallet, platform_fee, identity_registry, attestation_registry, voting_window_secs, min_contribution, first_project_id)` | Deployer, at deploy | Configures the factory inside the deploy transaction. The fee must be 0 to 10,000 units (`MAX_PLATFORM_FEE`), the window non-zero, the minimum contribution positive, and `first_project_id` at least 1. A replacement factory is given its predecessor's `get_project_count` + 1, so project ids never repeat: the app keys projects by them. The live factory was given 12. The previous factory took the same arguments, less `first_project_id`, through `initialize` |
 | `create_vault(config)` | Builder | Checks the bond against the minimum, increments the project counter, deploys a vault from the pinned wasm hash, registers it with `is_vault`, then calls the vault's `initialize` with the factory-held addresses and parameters |
 | `update_wasm_hash` / `update_fee_wallet` / `update_platform_fee` / `update_bond_percentage` / `update_identity_registry` / `update_voting_window` / `update_min_contribution` | Admin | Policy for **future** vaults. Existing vaults keep what they were created with |
 | `transfer_admin(new_admin)` | Admin | Hands over factory admin, for example to the treasury |
@@ -292,7 +329,7 @@ Reads: `is_vault(address)`, `get_vault(project_id)`, `get_admin`, `get_fee_walle
 
 - **Storage keys:** `Admin`, `VaultWasmHash`, `ProjectCounter`, `FeeWalletAddress`, `PlatformFee`, `MinBondPercentage`, `IdentityRegistry`, `AttestationRegistry`, `VotingWindowSecs`, `MinContribution` (instance); `ProjectVaultMap(id)`, `IsVault(address)` (persistent).
 - **Events:** `FACTORY INIT`, `FACTORY DEPLOY` (project id, vault, creator, metadata CID), `FACTORY UPGRADE`, `FACTORY WALLET`, `FACTORY FEE`, `FACTORY BOND_PCT`, `FACTORY IDENTITY`, `FACTORY VOTEWIN`, `FACTORY MINCONTR`, `FACTORY ADMIN_TX`.
-- **Errors:** `NotAuthorized` 1, `NotInitialized` 11, `BondBelowMinimum` 12, `InvalidConfiguration` 13, `VaultNotFound` 14. Code 10 (`AlreadyInitialized`) is a reserved gap in source; the live factory still uses it.
+- **Errors:** `NotAuthorized` 1, `NotInitialized` 11, `BondBelowMinimum` 12, `InvalidConfiguration` 13, `VaultNotFound` 14. Code 10 (`AlreadyInitialized`) is a reserved gap; the previous factory still uses it.
 
 ---
 
@@ -319,7 +356,7 @@ Reads: `get_record(vault)`, `has_record(vault)`, `get_builder_vaults(builder)`, 
 - **Reading from another contract.** Any contract can call `get_builder_summary` or `get_builder_history` and gate on the result. `another_contract_can_gate_on_a_builders_record` does this from a stand-in grant programme.
 - **Errors:** `NotInitialized` 2, `NotAVault` 3, `AlreadyAttested` 4, `RecordNotFound` 5, `InvalidRecord` 6, `UntrustedFactory` 7, `FactoryAlreadyTrusted` 8, `TooManyFactories` 9, `FactoryNotTrusted` 10.
 
-**The deployed registry is older.** It is configured by `initialize(admin, factory)`, keys records by `project_id` (`get_record(project_id)`, `has_record(project_id)`, `get_builder_projects`), has no `disable_factory` and so cannot stop trusting a factory, and keeps error 1 as `AlreadyInitialized`. Because project ids restart at 1 in every factory, a second trusted factory would collide with the first. The app's `attestationClient` binding follows the source, not this deployment; nothing in the app calls it today.
+**The previous registry, which projects #1–#11 write to, is older.** It is configured by `initialize(admin, factory)`, keys records by `project_id` (`get_record(project_id)`, `has_record(project_id)`, `get_builder_projects`), has no `disable_factory` and so cannot stop trusting a factory, and keeps error 1 as `AlreadyInitialized`. Because project ids restart at 1 in every factory, a second trusted factory would collide with the first. It trusts only the previous factory, so the collision never arises there. The app's `attestationClient` binding follows the source; nothing in the app calls it today.
 
 ---
 
@@ -338,13 +375,13 @@ KYC attestors sign from **managed, gas-only wallets**: the platform generates th
 | `transfer_admin(new_admin)` | Admin | — |
 | `bump_kyc(address)` / `bump_attestor(account)` | Anyone | Extends an approval's or an attestor's TTL without changing it. Reverts if it does not exist |
 
-Reads: `is_kyc_approved(address)`, `get_attestation(address)`, `is_attestor(account)` (true for the admin), `get_admin`. In source, `is_kyc_approved`, `get_attestation` and an attestor's own calls re-extend the entry they read, so an approval in use does not archive.
+Reads: `is_kyc_approved(address)`, `get_attestation(address)`, `is_attestor(account)` (true for the admin), `get_admin`. `is_kyc_approved`, `get_attestation` and an attestor's own calls re-extend the entry they read, so an approval in use does not archive.
 
 - **Storage keys:** `Admin` (instance); `Attestor(address)`, `Attestation(address)` (persistent).
 - **Events:** `IDENTITY INIT`, `IDENTITY ATTESTOR` (account, added), `IDENTITY ATTEST`, `IDENTITY REVOKE`, `IDENTITY ADMIN_TX`.
 - **Errors:** `NotAuthorized` 1, `NotInitialized` 11, `AlreadyAttested` 12, `NotAttested` 13, `NotAnAttestor` 14, `AlreadyAnAttestor` 15.
 
-**The deployed registry is older:** `initialize(admin)`, and no `bump_kyc` / `bump_attestor` or re-extension on read (#73 M-02). An approval nobody touches archives about 30 days after it was written.
+**The previous registry is older:** `initialize(admin)`, and no `bump_kyc` / `bump_attestor` or re-extension on read (#73 M-02). Since the redeploy no vault consults it: a vault checks KYC only when it is created.
 
 ---
 
@@ -364,7 +401,7 @@ Reads: `is_admin(account)`, `get_admins`, `get_owner`, `admin_count`.
 - **Events:** `ADMIN INIT`, `ADMIN ADDED`, `ADMIN REMOVED`, `ADMIN OWNER_TX`.
 - **Errors:** `NotAuthorized` 1, `NotInitialized` 11, `AlreadyAnAdmin` 12, `NotAnAdmin` 13, `WouldOrphanRoster` 14.
 
-Console access does not come from this contract. Since #88 the app asks the `platform_admins` roster in Postgres through `my_role()`. The admin views still read `get_admins` and `get_owner`. The deployed roster is configured by `initialize(owner)`.
+Console access does not come from this contract. Since #88 the app asks the `platform_admins` roster in Postgres through `my_role()`. The admin views still read `get_admins` and `get_owner`. The previous roster was configured by `initialize(owner)`; the live one by its constructor.
 
 ---
 
@@ -372,7 +409,7 @@ Console access does not come from this contract. Since #88 the app asks the `pla
 
 Where the flat listing fees pool, and the governance seat for the platform. Owners vote **two-thirds by headcount** (`APPROVAL 2/3`: two of three, three of four) to distribute the balance to shareholders and to set platform policy. Nobody, including the deployer, can move money on their own signature. **45 tests.**
 
-On testnet the register is three owners at 3,334 / 3,333 / 3,333 bps, and the treasury governs factory `CDIXGE5M…`.
+On testnet the register is three owners at 3,334 / 3,333 / 3,333 bps, and the treasury governs factory `CBRUIRJX…`.
 
 | Function | Who | Effect |
 |---|---|---|

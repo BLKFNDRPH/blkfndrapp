@@ -244,7 +244,7 @@ This is the rule in `main`'s [contracts/blkfndr-vault/src/lib.rs](../contracts/b
   - `get_milestone_stake(id)` returns the approvers' stake and the stake needed.
   - A vault without `get_milestone_wallets` is on the raw-raise rule. One without `get_milestone_stake` lacks the money condition.
 
-**Live for new projects since 2026-10-06.** That day the factory (`CDIXGE5M…`) was switched with `update_wasm_hash` to vault wasm `e9009410…`. Projects created before then keep the rule they were created with: vault wasm `70e5f3a8…` needs more than half of the raw raise. `/api/vault-wasm-hash` shows the hash the factory currently deploys.
+**Live for new projects since 2026-10-06.** That day the factory then in use (`CDIXGE5M…`) was switched with `update_wasm_hash` to vault wasm `e9009410…`. The factory that replaced it on 2026-10-07 (`CBRUIRJX…`) deploys the same code. Projects created before then keep the rule they were created with: vault wasm `70e5f3a8…` needs more than half of the raw raise. `/api/vault-wasm-hash` shows the hash the factory currently deploys.
 
 ### Known gap in older vaults
 
