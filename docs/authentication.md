@@ -349,6 +349,26 @@ A decided check keeps only what the record needs: `full_name`, `document_type`, 
 
 Database backups still hold the old values until they age out.
 
+### Renewal when the ID expires
+
+A verification holds until the ID it was approved on expires. `kyc_requests.verified_until` holds that date ([migration](../supabase/migrations/20261007150000_kyc_renewal_before_id_expires.sql)):
+
+- **Set** on approval, by the `kyc_requests_track_verified_until` trigger, to the document's expiry.
+- **Kept** while a renewal is under review or after one is turned down. The record still holds the earlier approval until that date.
+- **Cleared** when the attestation is revoked.
+
+The date logic lives in [src/lib/kyc/renewal.ts](../src/lib/kyc/renewal.ts), with a 30-day renewal window.
+
+- **Renewing.** From 30 days before `verified_until`, the applicant may resubmit an approved check. The update policy allows it, and so does `submitOwnKyc`. The check goes back to pending. Approving it in `attestSubmission` replaces the hash on the record. The registry only does that as a revoke and a fresh attest: `attest` refuses an address it already holds. A turned-down check can't be recorded at all.
+- **Reminders.** `queueKycExpiryReminders` runs inside the notification-emails cron. The applicant hears once when the window opens and once when the verification lapses. The KYC reviewers hear once it has lapsed, so they can revoke it. Each reminder is claimed in `notification_once`. None are sent while a renewal is under review.
+- **Lapsed.** Past `verified_until` the attestation stays on the record until a reviewer revokes it, but it no longer counts in the app. The verification page shows it as expired, and the launch flow lists it as a problem (`IdentityStatus` `"lapsed"`). The vault contract still checks only `is_kyc_approved`, which is why reviewers are asked to revoke.
+
+### Checking against the record
+
+The documents are gone, but the hash on the record can still prove who was verified. In **Approved Creators**, *Check details* opens [RecordCheckDialog](../src/components/admin/RecordCheckDialog.tsx). The reviewer types the details from an ID the person shows again. The dialog recomputes the hash with `computeDetailsHash` and the wallet, and compares it with `get_attestation`. A match means these details are the ones that were verified for the wallet. It all runs in the reviewer's browser, and nothing typed is sent or stored.
+
+A newer ID has a different number and expiry, so it won't match. The address must be the one the applicant typed, apart from capitals and spacing.
+
 Every decision notifies the applicant (#79). `decideSubmission` calls `notify()`, which adds a bell notification linking to `/profile/kyc-attestation`. A rejection includes the reviewer's reason. `NotificationBell` shows a toast for newly arrived unread notifications. A failed notification cannot undo a recorded decision.
 
 ### Managed attestor keys

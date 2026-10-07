@@ -317,6 +317,7 @@ export type Database = {
           stellar_address: string | null
           updated_at: string
           user_id: string
+          verified_until: string | null
         }
         Insert: {
           consent_given?: boolean
@@ -336,6 +337,7 @@ export type Database = {
           stellar_address?: string | null
           updated_at?: string
           user_id: string
+          verified_until?: string | null
         }
         Update: {
           consent_given?: boolean
@@ -355,6 +357,7 @@ export type Database = {
           stellar_address?: string | null
           updated_at?: string
           user_id?: string
+          verified_until?: string | null
         }
         Relationships: [
           {

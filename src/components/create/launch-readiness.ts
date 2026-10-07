@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { getMyKycStatus } from "@/app/actions";
 import { identityClient, simulate } from "@/lib/stellar-clients";
+import { renewalState } from "@/lib/kyc/renewal";
 import {
   bondAssetFor,
   spendableXlm,
@@ -53,6 +54,8 @@ export type IdentityStatus =
   | "approved"
   | "rejected"
   | "verified"
+  // On the record, but the ID it was approved on has expired (src/lib/kyc/renewal.ts).
+  | "lapsed"
   | "unknown";
 
 /** What the wallet holds, read once per wallet and currency. */
@@ -161,6 +164,9 @@ export function useLaunchReadiness({
     (async () => {
       const res = await getMyKycStatus().catch(() => null);
       const submitted = res && res.success ? res.request?.status ?? "none" : null;
+      // The record holds until the ID it was approved on expires. Past that it
+      // stays on the record until a reviewer revokes it, but no longer counts.
+      const lapsed = res && res.success ? renewalState(res.request?.verified_until) === "lapsed" : false;
       let onRecord: boolean | null = false;
       if (address) {
         // simulate answers null when the record can't be read, which is not
@@ -172,7 +178,7 @@ export function useLaunchReadiness({
         onRecord = read === null ? null : Boolean(read);
       }
       if (!active) return;
-      if (onRecord) setIdentity("verified");
+      if (onRecord) setIdentity(lapsed ? "lapsed" : "verified");
       else if (submitted === "rejected") setIdentity("rejected");
       else if (submitted === "approved") setIdentity("approved");
       else if (submitted === "pending") setIdentity("pending");

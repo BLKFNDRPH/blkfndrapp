@@ -37,6 +37,8 @@ import {
   DialogFooter,
 } from "../ui/dialog";
 import { cn } from "@/lib/utils";
+import { formatDay, renewalState } from "@/lib/kyc/renewal";
+import { RecordCheckDialog } from "./RecordCheckDialog";
 
 const NETWORK_PASSPHRASE = "Test SDF Network ; September 2015";
 const SOROBAN_RPC_URL = "https://soroban-testnet.stellar.org";
@@ -55,6 +57,9 @@ interface QueueRow {
   /** Null when the applicant submitted before having a wallet. */
   stellar_address: string | null;
   document_type: string;
+  document_expires_on: string | null;
+  /** When the approval on the record runs out; set while one stands, even beside a renewal. */
+  verified_until: string | null;
   status: "pending" | "approved" | "rejected";
   rejection_reason: string;
   created_at: string;
@@ -317,7 +322,14 @@ export function IdentityRegistryPanel() {
   };
 
   const pendingList = kycRequests.filter((r) => r.status === "pending");
-  const approvedList = kycRequests.filter((r) => r.status === "approved");
+  // Approved checks, and turned-down renewals whose earlier approval still
+  // stands on the record: that one may need revoking once it lapses.
+  const approvedList = kycRequests.filter(
+    (r) => r.status === "approved" || (r.status === "rejected" && r.verified_until !== null),
+  );
+
+  // The wallet being checked against its record, or null.
+  const [checkWallet, setCheckWallet] = useState<string | null>(null);
 
   const [showApproved, setShowApproved] = useState(false);
 
@@ -663,6 +675,13 @@ export function IdentityRegistryPanel() {
                     <Badge variant="secondary" className="text-[10px] uppercase tracking-widest font-semibold text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20">
                       Awaiting Review
                     </Badge>
+                    {/* An earlier approval stands for this wallet: approving
+                        replaces its record with this document's. */}
+                    {req.verified_until && (
+                      <Badge variant="secondary" className="text-[10px] uppercase tracking-widest font-semibold">
+                        Renewal · verified until {formatDay(req.verified_until)}
+                      </Badge>
+                    )}
                     <span className="text-xs text-muted-foreground font-medium">
                       Submitted: {req.created_at ? new Date(req.created_at).toLocaleString() : "Unknown"}
                     </span>
@@ -799,9 +818,36 @@ export function IdentityRegistryPanel() {
                             {" "}· Not on-chain yet
                           </span>
                         )}
+                        {req.status === "rejected" && (
+                          <span className="normal-case font-semibold text-muted-foreground"> · Renewal not accepted</span>
+                        )}
+                        {req.verified_until && renewalState(req.verified_until) === "lapsed" ? (
+                          <span className="normal-case font-semibold text-rose-600 dark:text-rose-400">
+                            {" "}· ID expired {formatDay(req.verified_until)}. Revoke unless renewed
+                          </span>
+                        ) : req.verified_until && renewalState(req.verified_until) === "due" ? (
+                          <span className="normal-case font-semibold text-amber-600 dark:text-amber-400">
+                            {" "}· ID expires {formatDay(req.verified_until)}
+                          </span>
+                        ) : null}
                       </p>
                     </div>
-                    {req.stellar_address && onRecord[req.stellar_address] === false && (
+                    {req.stellar_address && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setCheckWallet(req.stellar_address)}
+                        className="h-9 px-4 text-xs font-semibold shrink-0"
+                      >
+                        Check details
+                      </Button>
+                    )}
+                    {/* Approved and not lapsed: a turned-down renewal's hash is the
+                        document that was refused, and a lapsed one's ID has expired. */}
+                    {req.status === "approved" &&
+                      renewalState(req.verified_until) !== "lapsed" &&
+                      req.stellar_address &&
+                      onRecord[req.stellar_address] === false && (
                       <Button
                         size="sm"
                         onClick={() => handleApproveRequest(req)}
@@ -829,6 +875,8 @@ export function IdentityRegistryPanel() {
           </CardContent>
         )}
       </Card>
+
+      <RecordCheckDialog wallet={checkWallet} onClose={() => setCheckWallet(null)} />
 
       {/* Lightbox Dialog */}
       <Dialog open={!!lightboxImage} onOpenChange={(open) => { if (!open) setLightboxImage(null); }}>
