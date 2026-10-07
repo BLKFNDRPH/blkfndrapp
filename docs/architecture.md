@@ -25,7 +25,7 @@ graph TB
     subgraph Supabase
         PG[(Postgres + RLS)]
         AUTH[Auth]
-        STG[Storage: private KYC documents]
+        STG[Storage: private KYC documents, deleted on decision]
         SV[Vault: managed keys, platform secrets]
     end
 
@@ -52,7 +52,7 @@ The browser never talks to Supabase directly: there is no Supabase client in the
 ## The three planes
 
 1. **On-chain (value and record).** The seven contracts in [Smart Contracts](smart-contracts.md). A project's stakes and the builder's bond sit in its vault. Releases happen on a stakeholder vote, and the outcome is written to an append-only registry. Flat listing fees pool in the treasury. The Operations Vault holds the platform's gas budget.
-2. **Off-chain app (Supabase).** Postgres with Row Level Security holds listing metadata, profiles, notifications, KYC records, the admin roster and moderation state. Auth issues sessions. Storage holds identity documents in a private bucket. Supabase Vault holds managed attestor keys and platform secrets.
+2. **Off-chain app (Supabase).** Postgres with Row Level Security holds listing metadata, profiles, notifications, KYC records, the admin roster and moderation state. Auth issues sessions. Storage holds identity documents in a private bucket until the check is decided ([privacy.md](privacy.md)). Supabase Vault holds managed attestor keys and platform secrets.
 3. **The bridge.** A thin server layer connects the two. The indexer mirrors chain events into Postgres. The server signs KYC attestations with managed, gas-only keys, and three scheduled jobs press the permissionless, time-gated buttons the contracts expose.
 
 ## Data flow
@@ -193,7 +193,7 @@ By default a query runs through the **caller's own session** (`createClient()`: 
 |---|---|---|
 | `projects.ts` | Listings and milestones | Indexer upserts, milestone proof writes |
 | `events.ts` | `contract_events`, the indexer cursor | Everything (no browser grants) |
-| `kyc.ts` | KYC submissions, document URLs, attest/revoke | Identity columns, signed URLs, decisions, after `requireKycReviewer` |
+| `kyc.ts` | KYC submissions, document URLs, attest/revoke, renewal, deleting decided documents | Identity columns, signed URLs, decisions, after `requireKycReviewer` |
 | `profiles.ts` | Profiles, wallet linking | Writing the linked wallet, only after the signature check |
 | `notifications.ts` | Notifications | `notify` and `notifyAdmins`, since the recipient is not the caller |
 | `platform.ts` | Platform settings, wallet-link challenges | Everything (no browser grants), behind `requireAdmin` for settings |
@@ -208,7 +208,7 @@ By default a query runs through the **caller's own session** (`createClient()`: 
 Authorization is enforced by the database, not only by application code. The publishable key is public, and a signed-in user can call PostgREST directly with their own token, so the policies are what actually bound a session. The server's guards are the second line.
 
 - **Every table has RLS.** Grants decide which columns a role may touch; policies decide which rows.
-- **KYC.** The identity columns on `kyc_requests` are granted to no browser role, so they are reachable only with the service role, from server-only code, after `requireKycReviewer`. An applicant may file and resubmit only their own pending row. Documents live in the private `kyc-documents` bucket, under the applicant's own user id, behind 5-minute signed URLs. A decision deletes the document and, once the details hash is final, the ID number, date of birth, address and email ([authentication.md](authentication.md#deletion-after-the-decision)).
+- **KYC.** The identity columns on `kyc_requests` are granted to no browser role, so they are reachable only with the service role, from server-only code, after `requireKycReviewer`. An applicant may file and resubmit only their own row: one that is pending or rejected, or approved and due for renewal. A reviewer's own session has no access to anyone else's check (20261007170000); review runs on the server only. Documents live in the private `kyc-documents` bucket, under the applicant's own user id, behind 5-minute signed URLs, shown in the review panel from memory with `cache: "no-store"` ([CaseDocument](../src/components/admin/CaseDocument.tsx)). A decision deletes the document and, once the details hash is final, the ID number, date of birth, address and email ([authentication.md](authentication.md#deletion-after-the-decision)).
 - **Indexer-owned tables.** `projects`, `project_milestones`, `contract_events` and `indexer_state` have no browser write grant. Nothing reachable with a browser key can write a funding total.
 - **Listings.** Anyone reads a public listing that is not awaiting owner consensus, not by a banned builder, and not hidden. The builder also reads their own; a stakeholder reads one they hold or held a stake in; admins read every listing. "Their own" and "a stake" are matched through the wallet linked to the account.
 - **The roster.** Any admin reads `platform_admins`; only an owner writes it. A trigger stops anyone removing themselves or the last admin.
@@ -289,8 +289,8 @@ Notifications are rows in `notifications`, created only by the server with the s
 |---|---|---|---|
 | `notifyForVaultEvent` ([vault-notifications.ts](../src/lib/data/vault-notifications.ts)), from the indexer | Stakeholders and the builder whose wallets are linked to an account | A stage vote opens; a stage is paid; a stage or vault fails, or stalls; a goal is reached; a new stake (builder); the deposit comes back (builder) | `votes`, `refunds` or `updates` |
 | `queueVoteReminders` ([vote-reminders.ts](../src/lib/data/vote-reminders.ts)), from `notification-emails-cron` | Stakeholders who haven't voted | A stage vote closes within a day (and opened more than a day ago) | `votes` |
-| `notify` | One user | A KYC decision (to the applicant); a project hidden, unhidden, locked or unlocked (to the builder); a wallet-setup link they asked for on a phone | `account` |
-| `notifyAdmins` | Roster members with a bound account, by role | A new or resubmitted identity check, and an approved one ready to record (KYC reviewers); milestone proof submitted (project roles, bell only) | `reviews` |
+| `notify` | One user | A KYC decision, a renewal or a revocation (to the applicant); a project hidden, unhidden, locked or unlocked (to the builder); a wallet-setup link they asked for on a phone | `account` |
+| `notifyAdmins` | Roster members with a bound account, by role | A new, resubmitted or renewing identity check, and an approved one ready to record (KYC reviewers); milestone proof submitted (project roles, bell only) | `reviews` |
 
 Recipients of `notifyAdmins` come from the same `platform_admins` roster the guards use. A failed notification is logged and never fails the action that caused it. The indexer handles each ledger event once, so a vault notification is produced at most once; a reminder is claimed in `notification_once` first, so it is produced once even though the scan finds the same vote every minute.
 
@@ -336,7 +336,7 @@ No owner key signs a transfer. A carried vote is the authority, and execution is
 
 ## Security model
 
-- **Authorization in the database.** RLS on every table; KYC identity columns unreadable to browser roles; identity documents in a private bucket behind signed URLs; managed keys and secrets in Supabase Vault behind service-role-only functions.
+- **Authorization in the database.** RLS on every table; KYC identity columns unreadable to browser roles; identity documents in a private bucket behind signed URLs, deleted on decision along with the ID details ([privacy.md](privacy.md)); managed keys and secrets in Supabase Vault behind service-role-only functions.
 - **Roles from the roster,** asked fresh on every request, never from a token claim.
 - **Hostile-argument server actions.** Every `"use server"` export and every route handler authenticates, authorizes and validates for itself.
 - **Service role only in server-only code,** behind an explicit check beside each query.
@@ -390,7 +390,7 @@ blkfndrapp/
 
 ## Key design decisions
 
-- **Supabase over MongoDB and NextAuth.** Row Level Security lets the database enforce authorization itself. That is what makes the KYC identity columns genuinely unreadable from the browser rather than merely hidden by application code. The MongoDB data layer is gone; only comments mention it.
+- **Supabase over MongoDB and NextAuth.** Row Level Security lets the database enforce authorization itself. That is what makes the KYC identity columns genuinely unreadable from the browser rather than merely hidden by application code. The MongoDB data layer is gone; only comments mention it. Its data was not migrated, and that includes the ID images the old KYC form stored as base64. Deleting the old Atlas cluster is an open item in [privacy.md](privacy.md#open-items).
 - **Stellar / Soroban.** Sub-cent fees and about 5-second finality make per-milestone, per-vote on-chain actions affordable. The native asset contract lets a contract hold and pay out XLM, which is what makes the governed gas budget possible.
 - **Permissionless execution wherever value moves.** A carried vote is the authority; anyone can submit the transaction. There is no appointed signer to chase and no one who can withhold a decision already made.
 - **Append-only history.** The attestation registry has no update or delete entrypoint, so a builder's record cannot be edited before their next project.

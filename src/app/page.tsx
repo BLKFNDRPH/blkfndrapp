@@ -18,6 +18,7 @@ import { FeaturedSkeleton } from "@/components/home/FeaturedSkeleton";
 import { TakePartSection } from "@/components/home/TakePartSection";
 import { AboutSection } from "@/components/home/AboutSection";
 import { SecuritySection } from "@/components/home/SecuritySection";
+import { PrivacySection } from "@/components/home/PrivacySection";
 import { ContactSection } from "@/components/home/ContactSection";
 
 const HERO_CHIPS = [
@@ -30,6 +31,7 @@ const SECTION_LINKS = [
   { href: "#take-part", label: "Take part" },
   { href: "#how-it-works", label: "How it works" },
   { href: "#protection", label: "Protection" },
+  { href: "#privacy", label: "Privacy" },
   { href: "#contact", label: "Contact" },
 ];
 
@@ -238,6 +240,7 @@ export default function Home() {
       <TakePartSection />
       <AboutSection />
       <SecuritySection />
+      <PrivacySection />
       <ContactSection />
     </div>
   );

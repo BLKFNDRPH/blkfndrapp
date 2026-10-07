@@ -115,14 +115,15 @@ Every exported async function in a `"use server"` file is a public HTTP endpoint
 | Action | Who may call | What it does |
 |---|---|---|
 | `runImproveListingQuality(input)` | Signed in | Runs the Genkit listing review (Gemini 2.5 Flash). Returns `{ suggestions[], flags[], overallQualityScore }`, or `null` when signed out, when the model fails, or without `GEMINI_API_KEY` |
-| `submitKycRequest(input)` | Signed in | Files or resubmits the caller's own KYC, through their own session. The address must be the caller's linked wallet. An approved check cannot be resubmitted, and a resubmission cannot change the address. Tells the KYC reviewers, in the bell and by email |
-| `getMyKycStatus()` | Signed in | The caller's own status fields |
+| `submitKycRequest(input)` | Signed in | Files or resubmits the caller's own KYC, through their own session. The address must be the caller's linked wallet, and the document path must be under the caller's own prefix. An approved check can be resubmitted only to renew it, from 30 days before its ID expires (`verified_until`), and a resubmission cannot change the address. Deletes the upload it replaces. Tells the KYC reviewers, in the bell and by email |
+| `getMyKycStatus()` | Signed in | The caller's own status fields, including `verified_until`. Never the identity details |
+| `attachMyKycWallet()` | Signed in | Attaches the caller's linked wallet to their own check, if it was filed without one, and recomputes the details hash with it. Refused on a rejected check. On an approved check, the same update deletes the ID details and tells the KYC reviewers it is ready to record |
 | `remindMeToSetUpWallet(path)` | Signed in | Puts a link back to the wallet setup step in the caller's notifications and queues it for email (`account`). Returns `{ success, emailedTo }`; `emailedTo` is the caller's address when a Resend key is set, else `null`. `path` must be a path on this site |
 | `getKycRequests(status?)` | KYC reviewer | The review queue, without identity fields |
-| `getKycSubmission(id)` | KYC reviewer | One full record plus a 5-minute signed URL to the document |
-| `updateKycRequestStatus(id, status, reason?)` | KYC reviewer | Records approve/reject in the database and notifies the applicant. Writes nothing on chain |
-| `attestKycAction(id)` | KYC reviewer holding a managed key | Signs `attest` on chain with the reviewer's managed key, then records the approval and notifies the applicant |
-| `revokeKycAction(id)` | KYC reviewer holding a managed key | Signs `revoke` on chain, then records a rejection |
+| `getKycSubmission(id)` | KYC reviewer | One full record plus a 5-minute signed URL to the document. On a decided check the identity details and document are gone, so those fields are null and there is no URL |
+| `updateKycRequestStatus(id, status, reason?)` | KYC reviewer | Records approve/reject in the database and notifies the applicant. Writes nothing on chain. The decision deletes the document and, once the details hash is final, the ID details |
+| `attestKycAction(id)` | KYC reviewer holding a managed key | Signs `attest` on chain with the reviewer's managed key, then records the approval and notifies the applicant. For a renewal it replaces the hash on record (revoke, then attest). Refuses a turned-down check and an approval whose ID has expired |
+| `revokeKycAction(id)` | KYC reviewer holding a managed key | Signs `revoke` on chain (already off the record is fine), clears `verified_until`, then records a rejection. A renewal under review stays pending |
 | `getMyManagedAttestorAction()` | KYC reviewer (others get `null`) | The managed attestor address the platform holds for the caller |
 | `triggerIndexerSync()` | Any admin | Runs one indexer pass. The client calls it after every transaction (`refreshAfterTx`); for anyone not on the roster it returns `{ success: false }` and the change waits for the next scheduled pass |
 | `submitMilestoneProof(vault, milestoneId, proof)` | The vault's builder (linked wallet equals the vault's `creator`), or any admin | See below |
@@ -268,7 +269,7 @@ The two profile lookups are signed-in only because contributor addresses are pub
 | Method | Route | Auth | Request | Response |
 |---|---|---|---|---|
 | `POST` | `/api/upload-image` | Signed in | Multipart `file`, at most 8 MB. PNG, JPEG, WebP, GIF, SVG or JSON, checked against the actual bytes (JSON must parse) | `{ cid }`. Pins to Pinata with the JWT from Supabase Vault (`pinata_jwt`), falling back to `PINATA_JWT`, into group `PINATA_GROUP_BLKDFNDR` if set. Used for listing images, listing metadata and milestone proof photos |
-| `POST` | `/api/kyc-document` | Signed in | Multipart `file`, at most 10 MB. PNG, JPEG, WebP or PDF, checked against the bytes | `{ path }`: `<user id>/document-<timestamp>.<ext>` in the private `kyc-documents` bucket. The prefix comes from the session, never the request. Each upload gets a new path. The one a resubmission replaces is deleted when it is filed, and the one a check was decided on is deleted with the decision. Never sent to IPFS. Reviewers reach it only through a 5-minute signed URL |
+| `POST` | `/api/kyc-document` | Signed in | Multipart `file`, at most 10 MB. PNG, JPEG, WebP or PDF, checked against the bytes | `{ path }`: `<user id>/document-<timestamp>.<ext>` in the private `kyc-documents` bucket. The prefix comes from the session, never the request. Each upload gets a new path. The one a resubmission replaces is deleted when it is filed, and the one a check was decided on is deleted with the decision. Never sent to IPFS. Reviewers reach it only through a 5-minute signed URL, which the review panel fetches with `cache: "no-store"` and shows from memory |
 
 ### Admin
 
@@ -338,7 +339,7 @@ The dedicated gateway gets `PINATA_GATEWAY_KEY` as an `x-pinata-gateway-token` h
 |---|---|---|
 | Pinata (IPFS) | Listing images and metadata, milestone proof photos | `pinata_jwt` in Supabase Vault, or `PINATA_JWT` (server-only) |
 | Gemini 2.5 Flash (Genkit) | AI listing review | `GEMINI_API_KEY` (server-only, optional) |
-| Supabase Storage | Private KYC documents behind signed URLs | Service role (`SUPABASE_SECRET_KEY`, server-only) |
+| Supabase Storage | Private KYC documents behind signed URLs, deleted through the Storage API after the decision ([privacy.md](privacy.md)) | Service role (`SUPABASE_SECRET_KEY`, server-only) |
 | Supabase Vault | Managed attestor keys, platform secrets | Service role (server-only) |
 | Friendbot (testnet only) | Funding a newly generated attestor key | None |
 

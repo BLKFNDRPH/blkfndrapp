@@ -1,6 +1,6 @@
 # BLKFNDR — Progress
 
-_Last updated: 2026-10-03 · `main` at #104_
+_Last updated: 2026-10-03 · `main` at #104. The identity-data rows and section were added 2026-10-07 for #142–#147._
 
 Where the platform stands: what is live on testnet, what is merged but not yet active, and what is still open. It covers:
 - the repositioning (#67)
@@ -28,6 +28,7 @@ Read-only checks, not inferred from merges: the deployed `/_next/static` bundle,
 | **Operations Vault cutover** | ⚠️ Half done. The app points at the new vault, but the old one still holds 25 XLM, the new one 0, and the new treasury's ops funding is unset |
 | **`profiles` column grants (#70)** | ✅ Applied 2026-10-07 (`20261007100549`). The browser can update only `display_name` and `avatar_url` ([item 3](#3--apply-the-two-pending-migrations)) |
 | **KYC linked-wallet policy (#89)** | ✅ In `20261006155050`, applied 2026-10-06 |
+| **Identity data (#142–#147)** | ✅ Live 2026-10-07. ID documents and details are deleted after the decision, and verifications are renewed when the ID expires. Review is server-only, and reviewers' browsers keep no copy. The deletion audit passed for everything the app controls; the legacy MongoDB data is still open ([item 10](#10-delete-the-legacy-identity-data), [privacy.md](docs/privacy.md)) |
 | **Email** | ⏳ Built (#138); sends nothing until a Resend key is set and the sending domain is verified ([item 3c](#3c-switch-on-email)) |
 | **Browser table grants** | ⏳ `20261007104544_revoke_browser_table_grants` dry-run on live, not applied. It needs the owner's approval ([item 3d](#3d-apply-the-browser-table-grant-revocation)) |
 | **Project hide/lock (#85)** | ✅ Migration applied, 4 restrictions in use |
@@ -67,6 +68,18 @@ Every app-layer change below is live, because the host was rebuilt from `main`. 
 | #101 | Stake flow | Removed the phantom 3% fee from the stake dialog. Stakes were never charged a fee | ✅ |
 | #102 | Stake flow | Sign-in opens above the project dialog. After sign-in (Google reload or password remount), the project reopens, in the fund flow when that was the intent | ✅ |
 
+### Identity data — 2026-10-07 (#142–#147)
+
+All live. The three migrations were applied 2026-10-07, after the app had already deployed. #143's code read a column that didn't exist yet, and the review queue failed until its migration ran.
+
+| PR | Area | What changed | Live? |
+|----|------|--------------|-------|
+| #142 | KYC | A decision deletes the ID document. The ID number, date of birth, address and email go too once the details hash is final: on a rejection, or on an approval with a wallet. Done by trigger, plus a Storage sweep of files no check points at. A submission must name a file under the caller's own prefix | ✅ `20261007130000`; 18 old files deleted |
+| #143 | KYC | A verification holds until its ID expires (`verified_until`). Renewal opens 30 days before, and approving it replaces the on-chain hash. Reminders go out through the notification-emails cron, and a lapsed verification blocks a launch in the app. Adds a hash-based record check | ✅ `20261007150000` |
+| #144 | KYC | Dropped the KYC-manager browser policies, which had let any KYC manager or owner rewrite any check | ✅ `20261007170000` |
+| #145, #146 | Admin | *See details* shows what a decided check keeps, with a deletion notice. The record check asks only for what isn't kept | ✅ |
+| #147 | Admin | Documents are shown from memory with `cache: "no-store"`, so reviewers' browsers keep no copy | ✅ |
+
 ### Security-audit remediation (#67–#75)
 
 | PR | Tier | What | On testnet? |
@@ -74,7 +87,7 @@ Every app-layer change below is live, because the host was rebuilt from `main`. 
 | #67 | Docs | Repositioned from "crowdfunding" to **a secure on-chain vault for real-world projects** | ✅ |
 | #68 | App | Removed the unauthenticated `createNotification`. Security headers. Fixed the auth order in `platform-settings` | ✅ |
 | #69 | Contract | Vault **H-02** (`settle_stalled`), **M-03** milestone cap, **M-07** `return_bond` CEI. Treasury and operations **M-05/M-06** CEI | ✅ Vault via #71, treasury and ops via the 2026-09-28 redeploy |
-| #70 | DB | `requireKycReviewer` gate. Write-only column grants on `profiles` | ✅ Code · ❌ **migration not applied** ([item 3](#3-apply-the-two-pending-migrations-in-order)) |
+| #70 | DB | `requireKycReviewer` gate. Write-only column grants on `profiles` | ✅ Code · ✅ migration applied 2026-10-07 as `20261007100549` ([item 3](#3--apply-the-two-pending-migrations)) |
 | #71 | Deploy | Hardened vault wasm `70e5f3a8`, with the factory repointed | ✅ |
 | #72 | Keeper | `settle_stalled` keeper cron | ✅ |
 | #73 | Contract | Attestation **H-07** (records keyed by vault) and **M-04** `disable_factory`. Identity **M-02** (TTL) | ✅ Redeployed 2026-10-06, live 2026-10-07 |
@@ -235,6 +248,13 @@ These were verified with harnesses, but not with a real wallet or account:
 - linking a different Freighter account from the header
 - a full KYC submit from the verification page
 
+### 10. Delete the legacy identity data
+The 2026-10-07 deletion audit found the app clean. Three things it couldn't settle are left (details in [privacy.md](docs/privacy.md#open-items)):
+
+- **MongoDB Atlas.** From 2026-07-17 to 2026-08-07 the app stored the ID image itself, as base64, in a `KycRequest` collection. The data was never migrated. An owner checks whether the cluster still exists, and if so deletes the collection or the cluster, with its snapshots.
+- **Pinata.** One private, PGP-encrypted file from 2026-07-21 isn't from this app. Confirm with whoever uploaded it.
+- **Display name fallback.** `handle_new_user` uses the email as the display name when an account has no name. No live profile does today, but the fallback should change.
+
 ---
 
 ## Next
@@ -243,5 +263,6 @@ These were verified with harnesses, but not with a real wallet or account:
 3. Launch the first project on the new factory and check it becomes #12 (item 4).
 4. After 2026-10-13 14:14:52 UTC, finish the reference deployment's Project B (`bash scripts/reference-scenario.sh project-b-finish`) and add its transactions to the deliverable evidence.
 5. Start Phase 1 of the [Web3-accessibility redesign](docs/design/web3-accessibility-redesign.md): copy, information architecture and flow, with no chain changes. #103 was its first item.
+6. Delete the legacy MongoDB identity data (item 10): check in Atlas whether the cluster still exists.
 
 _Per-finding audit detail is in the security-audit PDF. Per-PR detail is in the PR descriptions._
