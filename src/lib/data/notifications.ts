@@ -74,10 +74,13 @@ export async function dismiss(id: string) {
 }
 
 export async function dismissAll() {
-  await requireCaller();
+  const { userId } = await requireCaller();
   const supabase = await createClient();
-  // No filter needed: the delete policy already confines this to the caller.
-  const { error } = await supabase.from("notifications").delete().neq("id", "");
+  // The delete policy already confines this to the caller; the filter is here
+  // because PostgREST's safeupdate refuses a DELETE with no WHERE clause. It
+  // used to be neq("id", ""), and "" is not a uuid, so every Clear all failed
+  // with 22P02 before a row was looked at.
+  const { error } = await supabase.from("notifications").delete().eq("user_id", userId);
   if (error) throw new Error(`Could not clear notifications: ${error.message}`);
 }
 
