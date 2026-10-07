@@ -95,6 +95,35 @@ async function requireLinkedWallet(
 /** The identity panel in the admin console. */
 const IDENTITY_PANEL = "/admin?view=identity";
 
+const DOCUMENTS_BUCKET = "kyc-documents";
+
+/**
+ * Delete the identity documents no submission needs any more.
+ *
+ * A decision clears a check's document_path, and a resubmission replaces it
+ * (20261007130000_kyc_identity_deleted_after_decision), but the file is a
+ * Storage object, which SQL cannot delete. kyc_documents_to_delete lists every
+ * object no row points at: all of this applicant's straight away, and anyone
+ * else's an hour after upload, which sweeps up what an abandoned upload, a
+ * deleted account or a failed delete left behind.
+ *
+ * Never throws. It runs after the decision or submission is recorded, and a
+ * failure here must not report that as failed. The next run deletes whatever
+ * this one missed.
+ */
+async function deleteUnusedKycDocuments(userId: string) {
+  const admin = createAdminClient();
+  const { data: paths, error } = await admin.rpc("kyc_documents_to_delete", { for_user: userId });
+  if (error) {
+    console.error("[kyc] Could not list documents to delete:", error.message);
+    return;
+  }
+  if (!paths?.length) return;
+
+  const { error: removeError } = await admin.storage.from(DOCUMENTS_BUCKET).remove(paths);
+  if (removeError) console.error("[kyc] Could not delete documents:", removeError.message);
+}
+
 /**
  * Tell the KYC reviewers a check is waiting, in the bell and by email. Nothing
  * told them before: a submission sat in the queue until someone happened to
@@ -130,6 +159,13 @@ async function tellReviewers(title: string) {
 export async function submitOwnKyc(input: unknown) {
   const caller = await requireCaller();
   const parsed = SubmissionInput.parse(input);
+
+  // The upload route files a document under the uploader's own id. Whatever a
+  // check points at is deleted once it is decided, so a check must never point
+  // at a file under someone else's.
+  if (!parsed.documentPath.startsWith(`${caller.userId}/`)) {
+    throw new Error("That document wasn't uploaded from your account. Upload it again.");
+  }
 
   const supabase = await createClient();
 
@@ -183,6 +219,8 @@ export async function submitOwnKyc(input: unknown) {
       }
       throw new Error(`Could not save KYC submission: ${error.message}`);
     }
+    // Uploads from an attempt that never got this far.
+    await deleteUnusedKycDocuments(caller.userId);
     await tellReviewers("New identity check to review");
     return;
   }
@@ -213,6 +251,9 @@ export async function submitOwnKyc(input: unknown) {
 
   if (error) throw new Error(`Could not save KYC submission: ${error.message}`);
 
+  // The document this one replaces.
+  await deleteUnusedKycDocuments(caller.userId);
+
   // A check first filed without a wallet, resubmitted now that there is one.
   if (!existing.stellar_address && parsed.stellarAddress) {
     await attachOwnKycWallet();
@@ -233,7 +274,8 @@ export async function submitOwnKyc(input: unknown) {
  *
  * The details hash is recomputed with the address, so the commitment the
  * attestation puts on-chain binds the details to this wallet, as it does for a
- * check filed with one.
+ * check filed with one. On an approved check, the same update deletes those
+ * details: the hash is final once the wallet is in it.
  *
  * An approved check gets its wallet here and still needs a reviewer to record
  * it on-chain, so they are told.
@@ -266,6 +308,12 @@ export async function attachOwnKycWallet(): Promise<{
     .maybeSingle();
   if (error) throw new Error(`Could not attach your wallet: ${error.message}`);
   if (!row) throw new Error("There's no identity check to attach a wallet to yet.");
+
+  // A rejection deleted the details the hash is computed from. Resubmitting
+  // brings them back and attaches the wallet in the same step.
+  if (row.status === "rejected") {
+    throw new Error("Your identity check wasn't accepted. Submit it again, and your wallet is attached with it.");
+  }
 
   if (row.stellar_address) {
     if (row.stellar_address === linked) {
@@ -373,9 +421,11 @@ export async function getSubmissionForReview(submissionId: string) {
 
   if (error) throw new Error(`Could not read KYC submission: ${error.message}`);
   if (!data) return null;
+  // A decided check's document has been deleted.
+  if (!data.document_path) return { ...data, documentUrl: null };
 
   const { data: signed, error: signError } = await admin.storage
-    .from("kyc-documents")
+    .from(DOCUMENTS_BUCKET)
     // Long enough to review, short enough that a leaked URL expires quickly.
     .createSignedUrl(data.document_path, 60 * 5);
 
@@ -411,6 +461,10 @@ export async function decideSubmission(
 
   if (error) throw new Error(`Could not record KYC decision: ${error.message}`);
   if (!data) throw new Error("Could not record KYC decision: no such submission.");
+
+  // The decision cleared the identity details and the document's path
+  // (kyc_requests_drop_identity_after_decision). This deletes the file.
+  await deleteUnusedKycDocuments(data.user_id);
 
   // Tell the applicant. Without this the decision was visible only to someone
   // who thought to revisit the verification page and read a step indicator --

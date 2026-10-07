@@ -305,9 +305,9 @@ export type Database = {
           date_of_birth: string | null
           details_hash: string
           document_expires_on: string | null
-          document_path: string
+          document_path: string | null
           document_type: string
-          email: string
+          email: string | null
           full_name: string
           id: string
           id_number: string | null
@@ -324,9 +324,9 @@ export type Database = {
           date_of_birth?: string | null
           details_hash: string
           document_expires_on?: string | null
-          document_path: string
+          document_path?: string | null
           document_type: string
-          email: string
+          email?: string | null
           full_name: string
           id?: string
           id_number?: string | null
@@ -343,9 +343,9 @@ export type Database = {
           date_of_birth?: string | null
           details_hash?: string
           document_expires_on?: string | null
-          document_path?: string
+          document_path?: string | null
           document_type?: string
-          email?: string
+          email?: string | null
           full_name?: string
           id?: string
           id_number?: string | null
@@ -852,6 +852,7 @@ export type Database = {
       is_admin_wallet: { Args: { addr: string }; Returns: boolean }
       is_banned: { Args: { uid: string }; Returns: boolean }
       is_owner: { Args: never; Returns: boolean }
+      kyc_documents_to_delete: { Args: { for_user: string }; Returns: string[] }
       my_role: {
         Args: never
         Returns: Database["public"]["Enums"]["admin_role"]

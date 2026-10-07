@@ -235,7 +235,7 @@ Authorization is enforced by the database, not only by the application:
 
 - Every table carries Row Level Security.
 - Identity columns on KYC records are readable by no browser-facing role: `select *` on your own row fails with a publishable key. Reviewers read them only through `server-only` code using the service-role key, after a reviewer-role check.
-- Identity documents are never stored in the database. They live in a private Storage bucket, reached through signed URLs that expire after five minutes.
+- Identity documents are never stored in the database. They live in a private Storage bucket, reached through signed URLs that expire after five minutes. Once a reviewer has decided, the document is deleted, and so are the ID number, date of birth and address. The one exception is an approval given before the applicant has a wallet: those three details stay until a wallet is attached. What remains is the name and a one-way hash of the details.
 - Admin roles come from the `platform_admins` roster in Postgres, asked fresh on every request through `my_role()`. They are never read from `user_metadata`, which a user can edit.
 - Every exported async function in a `"use server"` file is treated as a public HTTP endpoint: it re-authenticates, re-authorizes and validates its arguments, with the argument list treated as hostile.
 

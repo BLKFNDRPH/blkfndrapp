@@ -490,7 +490,11 @@ export function IdentityForm({
         </div>
         <p className="text-sm text-muted-foreground">
           Your name, ID number, date of birth and address are never shown on this page after you
-          submit. Only a reviewer can see them.
+          submit. Only a reviewer can see them.{" "}
+          {wallet
+            ? "Once they've decided, we delete your document, ID number, date of birth and address."
+            : "Once they've decided, we delete your document. Your ID number, date of birth and address are deleted then too, or, if they approve before you've set up a wallet, once you attach one."}{" "}
+          We keep your name and a one-way fingerprint of your details.
         </p>
       </div>
     </form>

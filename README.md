@@ -232,7 +232,7 @@ Then, in the dashboard:
 
 Authorization is enforced by the database, not only by application code. Every table has Row Level Security, and the identity columns on `kyc_requests` are not granted to any browser-facing role at all — `select *` on your own row fails with a publishable key. Those columns are reachable only with the service-role key, from `server-only` modules, after an explicit admin check.
 
-Identity documents are not stored in the database. They live in a private Storage bucket reached through short-lived signed URLs minted server-side.
+Identity documents are not stored in the database. They live in a private Storage bucket reached through short-lived signed URLs minted server-side, and are deleted once a reviewer has decided. The ID number, date of birth and address go at the same time, except after an approval given before the applicant has a wallet, when they go once one is attached.
 
 Console roles come from the `platform_admins` roster — the four groups the platform is run by: owner, platform administrator, KYC manager and project administrator — asked through `my_role()` and `is_admin()` in the database and `requireCaller()` on the server, never from `user_metadata`, which a user can edit. The on-chain `blkfndr-admin` roster is separate, and neither is in the path that moves funds.
 
