@@ -39,6 +39,7 @@ import {
 import { cn } from "@/lib/utils";
 import { formatDay, renewalState } from "@/lib/kyc/renewal";
 import { RecordCheckDialog, type RecordTarget } from "./RecordCheckDialog";
+import { CaseDocument } from "./CaseDocument";
 
 const NETWORK_PASSPHRASE = "Test SDF Network ; September 2015";
 const SOROBAN_RPC_URL = "https://soroban-testnet.stellar.org";
@@ -80,7 +81,12 @@ interface CaseDetail {
   document_path?: string | null;
   /** Short-lived signed URL into the private bucket, minted server-side. */
   documentUrl: string | null;
+  /** When it was read, so a reopened case whose signed URL has expired is read again. */
+  fetchedAt: number;
 }
+
+/** Signed URLs last five minutes (getSubmissionForReview); re-read a little before. */
+const CASE_FRESH_MS = 4 * 60 * 1000;
 
 export function IdentityRegistryPanel() {
   const { toast } = useToast();
@@ -207,13 +213,18 @@ export function IdentityRegistryPanel() {
         return;
       }
       setOpenCase(submissionId);
-      if (details[submissionId]) return;
+      // Reopened within the signed URL's life: nothing to re-read.
+      const cached = details[submissionId];
+      if (cached && Date.now() - cached.fetchedAt < CASE_FRESH_MS) return;
 
       setLoadingCase(submissionId);
       try {
         const res = await getKycSubmission(submissionId);
         if (res.success && res.request) {
-          setDetails((prev) => ({ ...prev, [submissionId]: res.request as CaseDetail }));
+          setDetails((prev) => ({
+            ...prev,
+            [submissionId]: { ...(res.request as Omit<CaseDetail, "fetchedAt">), fetchedAt: Date.now() },
+          }));
         } else {
           toast({
             title: "Could not open submission",
@@ -621,40 +632,20 @@ export function IdentityRegistryPanel() {
                   {/* Right Visual Column — Document Image */}
                   <div className="md:w-[260px] lg:w-[300px] shrink-0 flex items-center justify-center p-6 md:p-8 bg-muted/10 md:border-l border-b md:border-b-0 border-border/60">
                     {/* The document lives in a private bucket, not IPFS. The URL
-                        below is signed server-side and expires in five minutes,
-                        so it arrives only with an opened case. */}
-                    {detail?.documentUrl && /\.pdf$/i.test(detail.document_path ?? "") ? (
-                      // A PDF can't be drawn into the image viewer; the browser's
-                      // own viewer opens it from the same short-lived URL.
-                      <a
-                        href={detail.documentUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="w-full aspect-[4/3] flex flex-col items-center justify-center gap-2 bg-muted/30 border-2 border-border/60 rounded-xl text-sm font-semibold text-primary hover:bg-muted/50"
-                      >
-                        <FileCode className="h-8 w-8" />
-                        Open the PDF document
-                        <span className="text-xs font-normal text-muted-foreground">The link expires in five minutes.</span>
-                      </a>
-                    ) : detail?.documentUrl ? (
-                      <button
-                        type="button"
-                        onClick={() => {
+                        is signed server-side and expires in five minutes, so it
+                        arrives only with an opened case. It is shown from an
+                        in-memory copy the browser doesn't cache, dropped when
+                        the case closes (CaseDocument). */}
+                    {isOpen && detail?.documentUrl ? (
+                      <CaseDocument
+                        signedUrl={detail.documentUrl}
+                        isPdf={/\.pdf$/i.test(detail.document_path ?? "")}
+                        onInspect={(objectUrl) => {
                           setLightboxRotation(0);
                           setLightboxZoom(1);
-                          setLightboxImage(detail.documentUrl);
+                          setLightboxImage(objectUrl);
                         }}
-                        className="group relative cursor-pointer block border-2 border-border/60 rounded-xl overflow-hidden w-full aspect-[4/3] bg-zinc-900/30 shadow-lg hover:shadow-xl transition-all"
-                      >
-                        <img
-                          src={detail.documentUrl}
-                          alt="Verification Document"
-                          className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-300"
-                        />
-                        <span className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity text-xs text-white font-semibold tracking-wide">
-                          Click to Inspect
-                        </span>
-                      </button>
+                      />
                     ) : (
                       <div className="w-full aspect-[4/3] flex flex-col items-center justify-center gap-2 bg-muted/30 border-2 border-dashed border-border/50 rounded-xl">
                         {isLoadingCase ? (
@@ -903,7 +894,10 @@ export function IdentityRegistryPanel() {
                 transform: `rotate(${lightboxRotation}deg) scale(${lightboxZoom})`,
               }}
             >
+              {/* The in-memory copy from CaseDocument. Not next/image: its
+                  optimizer would fetch and cache the ID server-side. */}
               {lightboxImage && (
+                // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={lightboxImage}
                   alt="Enlarged Document"
