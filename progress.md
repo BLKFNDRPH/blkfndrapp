@@ -52,7 +52,7 @@ Every app-layer change below is live, because the host was rebuilt from `main`. 
 | #86 | Launch / ops | **QA Trial #3.** The `keep-alive-cron` keeps shared contract storage from expiring, which cut the launch fee from 172.83 to 5.88 XLM. Also a review dialog with the simulated fee, a duplicate-launch guard, and recovery when a launch was sent but never confirmed | ✅ |
 | #87 | Data | Project reads now select `location`, `location_lat` and `location_lng` | ✅ |
 | #88 | Admin | "Is this an admin" comes from the `platform_admins` roster. `notifyAdmins` notifies roster members | ✅ |
-| #89 | Wallet / KYC | The linked wallet comes from the session, and Freighter is no longer snapped back to it. The signer must match the requested account. A failed unlink is reported. KYC can be filed only against the linked wallet | ✅ Code · ⏳ migration `20261001160000` |
+| #89 | Wallet / KYC | The linked wallet comes from the session, and Freighter is no longer snapped back to it. The signer must match the requested account. A failed unlink is reported. KYC can be filed only against the linked wallet | ✅ Code · ✅ policy in `20261006155050`, column grants `20261007100549` |
 | #90 | Indexer | Follows the RPC cursor through quiet 10,000-ledger windows, and restarts at the oldest retained ledger instead of skipping a gap | ✅ |
 | #91, #104 | Indexer / IPFS | Falls back from the dedicated gateway to `gateway.pinata.cloud`, and retries projects still titled "Project #N". #91's Gateway Key commit was pushed after its merge. #104 landed it: `PINATA_GATEWAY_KEY` goes to the dedicated gateway only, and redirects are not followed, so the key cannot leak | ✅ #91 · ⏳ #104 needs the host env var |
 | #92, #94 | Profiles | Creator and backer names and photos come from the linked profile. The indexer fills `creator_display`, and syncs no longer reset titles | ✅ |
@@ -97,9 +97,7 @@ Every app-layer change below is live, because the host was rebuilt from `main`. 
 - **Factory, attestation, identity, admin roster and treasury**, redeployed 2026-10-06 from source (#73, #75) and live in the app since 2026-10-07. The factory routes fees to the new treasury [`CAGMEGMS…NRO3TQPZW`](https://stellar.expert/explorer/testnet/contract/CAGMEGMS6MS6ENADUWDRW3GQ4XRBDYFFKHMRFVDEBHFCZW7NRO3TQPZW). Addresses and transactions are in [smart-contracts.md](docs/smart-contracts.md#the-registry-redeploy).
 - **Operations Vault** [`CCVXM3YP…NQG7FDSN`](https://stellar.expert/explorer/testnet/contract/CCVXM3YPPEMWG4INHFTZ4NBJ3PQW3ZUNYIZMBJBNYQOMSNOENQG7FDSN), which the app now points at. It is unfunded until [item 1](#1-finish-the-operations-vault-cutover) is done.
 
-**Merged, not active:**
-
-- **Migrations** `20260809160000_profiles_column_grants` and `20261001160000_kyc_filed_against_linked_wallet`.
+**Applied 2026-10-07:** `20261007100549_profiles_column_grants` (was `20260809160000`). `20261001160000_kyc_filed_against_linked_wallet` is a no-op now: `20261006155050_kyc_wallet_optional_at_submit` superseded it.
 
 Current hashes come from a fresh `bash scripts/build-contracts.sh`. The wasm embeds absolute build paths, so a hash only reproduces on the same paths (see item 8).
 
@@ -132,11 +130,11 @@ Projects created before the switch keep the old bar (more than half the raw rais
 - ✅ **The vote panel shows the money condition.** It reads `get_milestone_stake(id)` from the regenerated binding, counts it toward "Approved", and shows what the approvers put in against the raise. Older vaults have no such function, and the panel reads that as their rule rather than as a failed read. The admin View Vault names the rule the same way.
 - ✅ **Switched**, with the commands in [deployment.md](docs/deployment.md#switching-the-vault-code). The code was already on testnet from the reference deployment, so no upload was needed.
 
-### 3. Apply the two pending migrations, in order
-1. `20260809160000_profiles_column_grants`. Without it, anyone signed in can set their own linked wallet without a signature.
-2. `20261001160000_kyc_filed_against_linked_wallet`. Without step 1, this policy can be bypassed by rewriting your own link first.
+### 3. ✅ Apply the two pending migrations
+- ✅ **Column grants, applied 2026-10-07** as `20261007100549_profiles_column_grants`, with the owner's approval. A live dry run first showed a signed-in user linking any wallet to themselves with no signature; afterwards it is refused, while display-name and avatar edits, admin renames and the service-role `linkWallet` path still work. `anon`'s table-wide `UPDATE` was revoked with it. All 13 linked wallets carried the link stamp `linkWallet` writes, so there was no sign the gap had been used.
+- ✅ **The KYC linked-wallet policy** is in `20261006155050_kyc_wallet_optional_at_submit` (applied 2026-10-06), which also lets a check be filed before the applicant has a wallet. `20261001160000` is kept as a no-op so a `db push` cannot reapply its stricter policies.
 
-Both are owner actions (`supabase db push`, or the MCP with approval). Once the grants apply, `profiles` writes must stay column-scoped, so no PostgREST `.upsert()`.
+`profiles` writes must stay column-scoped from here on, so no PostgREST `.upsert()` on it.
 
 ### 3b. Set `PINATA_GATEWAY_KEY` on the host
 Without a Gateway Key, the dedicated gateway (`PINATA_GATEWAY_URL`, `nft.blkfndr.com`) answers `401 ERR_ID:00024` for this account's pins. The API JWT only authorizes pinning.

@@ -69,7 +69,7 @@ const SubmissionInput = z.object({
  * they control. That is the wallet linked to their account, which only
  * linkWallet writes, after a signed challenge. Without this check, one person's
  * documents could clear somebody else's wallet. The write policies refuse it
- * too (20261001160000_kyc_filed_against_linked_wallet). Checking here first
+ * too (20261006155050_kyc_wallet_optional_at_submit). Checking here first
  * gives the applicant a message they can act on instead of an RLS error.
  */
 async function requireLinkedWallet(
