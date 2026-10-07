@@ -214,10 +214,7 @@ Authorization is enforced by the database, not only by application code. The pub
 - **Restrictions.** `project_restrictions` has no browser write grant. It changes only through `set_project_hidden` and `set_project_locked`, and the `*_by` columns are granted to no browser role.
 - **Secrets and keys.** Managed attestor keys and platform secrets live in Supabase Vault behind functions only the service role may execute. Owners can set a platform secret through `set_platform_secret` but cannot read it back.
 
-**Pending on the live database.** Two tracked migrations are not yet applied as of 2026-10-02 (see [progress.md](../progress.md)):
-
-1. `20260809160000_profiles_column_grants` revokes the browser's `UPDATE` on `profiles.stellar_public_key` and `wallet_status`. Until it applies, a signed-in user can set their own linked wallet through PostgREST without signing a challenge.
-2. `20261001160000_kyc_filed_against_linked_wallet` makes the KYC write policies require the applicant's linked wallet. The server action already checks this. The policy is only as strong as the column above, so it must follow migration 1.
+- **Linked wallets.** `20261007100549_profiles_column_grants` (applied 2026-10-07) leaves the browser able to update only `display_name` and `avatar_url` on `profiles`. `stellar_public_key`, `wallet_status` and `last_login_at` are written only by the service-role `linkWallet` / `unlinkWallet`, after the signature challenge. The KYC write policies (`20261006155050_kyc_wallet_optional_at_submit`) require any address on a check to be the caller's linked wallet, so they rest on that column. `20261001160000_kyc_filed_against_linked_wallet` is a deliberate no-op: 20261006155050 superseded it.
 
 ### Smart contracts — Soroban
 

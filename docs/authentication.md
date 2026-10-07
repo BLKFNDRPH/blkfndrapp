@@ -284,11 +284,11 @@ Details that matter:
 
 After a link or unlink, the UI calls `refreshUser()` so `AuthContext` picks up the new linked wallet.
 
-### Column grants: the write-only defense (not yet live)
+### Column grants: the write-only defense
 
-`linkWallet` writes through the service-role client because [20260809160000_profiles_column_grants.sql](../supabase/migrations/20260809160000_profiles_column_grants.sql) revokes the table-wide `UPDATE` on `profiles` from `authenticated` and grants back only `display_name` and `avatar_url`. With it applied, the signature challenge is the only way to set `stellar_public_key`.
+`linkWallet` writes through the service-role client because [20261007100549_profiles_column_grants.sql](../supabase/migrations/20261007100549_profiles_column_grants.sql) revokes the table-wide `UPDATE` on `profiles` from `authenticated` and grants back only `display_name` and `avatar_url`. With it applied, the signature challenge is the only way to set `stellar_public_key`.
 
-**That migration is not applied on the live database** (checked 2026-10-02: `authenticated` still holds `UPDATE` on `profiles.stellar_public_key`). Until it is, a signed-in user can set their own `stellar_public_key` directly through PostgREST, without a signature, to any address no other account has linked. Every check that trusts the linked wallet (`requireWalletOwnerOrAdmin`, the KYC filing rule) is only as strong as that column. The application code it depends on is already live, so the migration can be applied.
+**Applied on the live database on 2026-10-07.** Before it, a signed-in user could set their own `stellar_public_key` directly through PostgREST, without a signature, to any address no other account had linked; a live dry run confirmed it, and confirmed it refused afterwards. It also revokes `anon`'s table-wide `UPDATE`. Every check that trusts the linked wallet (`requireWalletOwnerOrAdmin`, the KYC filing rule, the notifications and "Needs you" keyed on it) rests on this column.
 
 ---
 
@@ -329,7 +329,7 @@ An approved identity check clears one Stellar address on the identity registry. 
 2. **The document is uploaded** to `POST /api/kyc-document` ([route](../src/app/api/kyc-document/route.ts)). It requires a session, accepts up to 10 MB, and identifies the file from its leading bytes (PNG, JPEG, WebP or PDF), not from the client's Content-Type. The file goes to the private `kyc-documents` Storage bucket under `<user_id>/…`, a prefix taken from the session, never from the request. Only the path comes back. Identity documents never go to IPFS: a content address is permanent, and an applicant may ask for their document to be erased.
 3. **The submission** (`submitKycRequest` → `submitOwnKyc` in [src/lib/data/kyc.ts](../src/lib/data/kyc.ts)) is validated with zod and refused unless `stellarAddress` equals the caller's linked wallet. It is written through the caller's own client, so RLS pins `user_id` to the caller and `status` to `pending`. An approved check cannot be resubmitted, and a resubmission cannot move the check to another address.
 
-The same rule belongs in the database. [20261001160000_kyc_filed_against_linked_wallet.sql](../supabase/migrations/20261001160000_kyc_filed_against_linked_wallet.sql) adds "`stellar_address` equals the caller's linked wallet" to both `kyc_requests` write policies, so an insert straight through PostgREST cannot skip the server check. **It is not applied on the live database yet**, and it is only meaningful once the column-grant migration above is applied too. Apply the grants first.
+The same rule is in the database. [20261006155050_kyc_wallet_optional_at_submit.sql](../supabase/migrations/20261006155050_kyc_wallet_optional_at_submit.sql) requires both `kyc_requests` write policies' `stellar_address` to be null (a check filed before the applicant has a wallet, attached later by the server) or the caller's linked wallet, so an insert straight through PostgREST cannot skip the server check. It replaced 20261001160000, which is kept as a no-op so a `db push` cannot reapply its stricter policies.
 
 ### Review
 
@@ -372,7 +372,5 @@ In the Supabase dashboard (Authentication → URL Configuration), the Site URL i
 
 | Gap | State |
 |---|---|
-| **Profile column grants not applied.** [20260809160000_profiles_column_grants](../supabase/migrations/20260809160000_profiles_column_grants.sql) is not on the live database, so a signed-in user can still write their own `stellar_public_key` without a signature. | Code is live. Apply the migration. |
-| **KYC linked-wallet policy not applied.** [20261001160000_kyc_filed_against_linked_wallet](../supabase/migrations/20261001160000_kyc_filed_against_linked_wallet.sql) is not on the live database. `submitOwnKyc` enforces the rule, but a direct PostgREST insert does not. | Apply it after the grants migration. |
 | **No "forgot password" UI.** `requestPasswordReset` exists in [src/app/auth/actions.ts](../src/app/auth/actions.ts) and is deliberately kept, but nothing calls it. `/settings`, where a recovery link lands, has no form for setting a new password. | Unwired, pending a wire-up-or-delete decision |
 | **Admin menu link follows the chain.** The header shows the Admin link from the on-chain `blkfndr-admin` roster for the wallet in use (`useAdminStatus`), not from `platform_admins`. Console-only admins reach `/admin` directly. | Open |

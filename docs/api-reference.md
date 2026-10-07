@@ -234,7 +234,7 @@ Route handlers live under `src/app/api/` and `src/app/auth/`. Signed-in routes r
 | `GET` | `/auth/callback` | None | `?code=` from the OAuth provider | Exchanges the PKCE code for a session and redirects to the remembered `next` path. Failures redirect to `/login?error=Provider`, `NoCode` or `Exchange` |
 | `GET` | `/auth/confirm` | None | `?token_hash=&type=` from an email link | Verifies the one-time token. Recovery goes to `/settings`, everything else to `/profile`. Failures redirect to `/login?error=InvalidLink` or `LinkExpired` |
 
-Linking a wallet writes `profiles.stellar_public_key` with the service role, after the signature check. Live, the migration that removes the browser's own write grant on that column (`20260809160000_profiles_column_grants`) is **not yet applied**; see [progress.md](../progress.md).
+Linking a wallet writes `profiles.stellar_public_key` with the service role, after the signature check. The browser holds no write grant on that column (`20261007100549_profiles_column_grants`, applied 2026-10-07).
 
 ### Listings and user data
 

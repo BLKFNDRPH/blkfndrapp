@@ -31,3 +31,14 @@
 
 revoke update on public.profiles from authenticated;
 grant update (display_name, avatar_url) on public.profiles to authenticated;
+
+-- anon held the same table-wide UPDATE. No policy lets it change a row, so it
+-- did nothing, but the grant is closed too rather than left for a future
+-- policy to open by accident.
+--
+-- Applied 2026-10-07. A live dry run first showed a signed-in user setting
+-- their own stellar_public_key with no signature succeed; after these lines it
+-- is refused, as are wallet_status, last_login_at and id. display_name and
+-- avatar_url edits, an admin renaming a user, and the service-role linkWallet
+-- path all still work; an admin setting another user's wallet is refused.
+revoke update on public.profiles from anon;

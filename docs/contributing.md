@@ -136,7 +136,7 @@ The Dockerfile refuses to build when `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SU
 Migrations are tracked SQL in [supabase/migrations/](../supabase/migrations/), named `YYYYMMDDHHMMSS_snake_case.sql`. Each one covers schema, RLS policies and grants.
 
 - **Never edit an applied migration.** Add a new one that corrects it.
-- **Start with a header comment** that says what the migration fixes and why. If it depends on app code being live first, say so under `DEPLOY ORDER`. [20260809160000_profiles_column_grants.sql](../supabase/migrations/20260809160000_profiles_column_grants.sql) is an example.
+- **Start with a header comment** that says what the migration fixes and why. If it depends on app code being live first, say so under `DEPLOY ORDER`. [20261007100549_profiles_column_grants.sql](../supabase/migrations/20261007100549_profiles_column_grants.sql) is an example.
 - **Apply** with `supabase link --project-ref <ref> && supabase db push`. Applying to the live project is the owner's call.
 - **Regenerate the types** afterwards: `supabase gen types typescript --project-id <ref> > src/lib/supabase/database.types.ts`.
 
