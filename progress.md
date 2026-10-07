@@ -26,8 +26,9 @@ Read-only checks, not inferred from merges: the deployed `/_next/static` bundle,
 | **Vault release rule (#99) and money majority** | ✅ Live for new projects since 2026-10-06. The factory deploys vault wasm `e9009410…`, as `/api/vault-wasm-hash` confirms ([item 2](#2-switch-the-factory-to-the-99-vault-wasm)) |
 | **Factory and registries (#73, #75)** | ✅ Redeployed 2026-10-06 and live in the app since 2026-10-07: factory `CBRUIRJX…`, attestation `CDEN2LU4…`, identity `CAILTHEY…`, admin roster `CAKANFZH…`, treasury `CAGMEGMS…`. Projects #1–#11 keep the previous set ([item 4](#4-redeploy-the-factory-and-registries-73--75)) |
 | **Operations Vault cutover** | ⚠️ Half done. The app points at the new vault, but the old one still holds 25 XLM, the new one 0, and the new treasury's ops funding is unset |
-| **`profiles` column grants (#70)** | ❌ Not applied. `authenticated` can still `UPDATE profiles.stellar_public_key` |
-| **KYC linked-wallet policy (#89)** | ❌ Not applied, and it has to follow the grants above |
+| **`profiles` column grants (#70)** | ✅ Applied 2026-10-07 as `20261007100549` ([item 3](#3--apply-the-two-pending-migrations)) |
+| **KYC linked-wallet policy (#89)** | ✅ Applied 2026-10-06 in `20261006155050` |
+| **Browser table grants** | ⏳ `20261007104544_revoke_browser_table_grants` dry-run on live, not applied. It needs the owner's approval ([item 3c](#3c-apply-the-browser-table-grant-revocation)) |
 | **Project hide/lock (#85)** | ✅ Migration applied, 4 restrictions in use |
 | **IPFS reads** | ⏳ #104 (merged 2026-10-02) sends the Pinata Gateway Key, but it only helps once the host runs #104 and has `PINATA_GATEWAY_KEY` set ([item 3b](#3b-set-pinata_gateway_key-on-the-host)). Until then the dedicated gateway refuses (401) and reads fall back to the rate-limited shared gateway |
 
@@ -135,6 +136,9 @@ Projects created before the switch keep the old bar (more than half the raw rais
 - ✅ **The KYC linked-wallet policy** is in `20261006155050_kyc_wallet_optional_at_submit` (applied 2026-10-06), which also lets a check be filed before the applicant has a wallet. `20261001160000` is kept as a no-op so a `db push` cannot reapply its stricter policies.
 
 `profiles` writes must stay column-scoped from here on, so no PostgREST `.upsert()` on it.
+
+### 3c. Apply the browser table-grant revocation
+`20261007104544_revoke_browser_table_grants` takes `anon` off every write and `TRUNCATE`, and cuts `authenticated` back to the verbs and columns the app actually uses on eleven tables. It also drops `feature_requests_author_edit`, which let an author mark their own request planned. No app change goes with it. A live dry run, rolled back, passed all 20 app writes before and after, and refused all 19 unused ones. Applying it is the owner's call. Once it is applied, rename the file to the version live records.
 
 ### 3b. Set `PINATA_GATEWAY_KEY` on the host
 Without a Gateway Key, the dedicated gateway (`PINATA_GATEWAY_URL`, `nft.blkfndr.com`) answers `401 ERR_ID:00024` for this account's pins. The API JWT only authorizes pinning.
