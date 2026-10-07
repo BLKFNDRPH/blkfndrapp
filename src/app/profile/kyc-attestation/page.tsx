@@ -8,6 +8,7 @@ import { attachMyKycWallet, getMyKycStatus } from "@/app/actions";
 // Type only, so the server-only module is erased rather than bundled.
 import type { ApplicantSubmission } from "@/lib/data/kyc";
 import { identityClient, simulate } from "@/lib/stellar-clients";
+import { formatDay, renewalState, RENEWAL_WINDOW_DAYS } from "@/lib/kyc/renewal";
 import { Button } from "@/components/ui/button";
 import { IdentityForm } from "@/components/identity/IdentityForm";
 import { VerificationRecord } from "@/components/identity/VerificationRecord";
@@ -35,16 +36,19 @@ type Phase =
   | "rejected"
   | "approved-no-wallet"
   | "approved-unrecorded"
-  | "verified";
+  | "verified"
+  // Approved, but the ID it was approved on has expired.
+  | "lapsed";
 
 function phaseOf(submission: ApplicantSubmission | null, onRecord: boolean | null): Phase {
   if (!submission) return "none";
-  if (submission.stellar_address && onRecord) return "verified";
+  // The submission's status first. A renewal under review, or one turned
+  // down, sits beside an earlier approval that is still on the record.
+  if (submission.status === "pending") return "pending";
   if (submission.status === "rejected") return "rejected";
-  if (submission.status === "approved") {
-    return submission.stellar_address ? "approved-unrecorded" : "approved-no-wallet";
-  }
-  return "pending";
+  if (renewalState(submission.verified_until) === "lapsed") return "lapsed";
+  if (submission.stellar_address && onRecord) return "verified";
+  return submission.stellar_address ? "approved-unrecorded" : "approved-no-wallet";
 }
 
 const day = (iso: string | null | undefined) =>
@@ -66,13 +70,15 @@ function Tracker({ phase }: { phase: Phase }) {
       state: phase === "pending" ? ("current" as const) : phase === "rejected" ? ("failed" as const) : ("done" as const),
     },
     {
-      label: "Verified",
+      label: phase === "lapsed" ? "Expired" : "Verified",
       state:
         phase === "verified"
           ? ("done" as const)
-          : reviewed && phase !== "rejected"
-            ? ("current" as const)
-            : ("todo" as const),
+          : phase === "lapsed"
+            ? ("failed" as const)
+            : reviewed && phase !== "rejected"
+              ? ("current" as const)
+              : ("todo" as const),
     },
   ];
   return (
@@ -91,7 +97,7 @@ function Tracker({ phase }: { phase: Phase }) {
           <span className={cn("font-medium", s.state === "todo" && "text-muted-foreground")}>
             {s.label}
             <span className="sr-only">
-              {s.state === "done" ? " (done)" : s.state === "current" ? " (in progress)" : s.state === "failed" ? " (not accepted)" : ""}
+              {s.state === "done" ? " (done)" : s.state === "current" ? " (in progress)" : s.state === "failed" && phase !== "lapsed" ? " (not accepted)" : ""}
             </span>
           </span>
         </li>
@@ -236,6 +242,11 @@ export default function VerifyIdentityPage() {
   const phase = phaseOf(submission, onRecord);
   const filed = submission?.stellar_address ?? null;
   const wrongWallet = Boolean(filed && linked && filed !== linked);
+  // When the last approval runs out: the expiry of the ID it was approved on.
+  const until = submission?.verified_until ?? null;
+  const renewal = renewalState(until);
+  // An earlier approval still standing beside a renewal under review or turned down.
+  const stillVerifiedUntil = until && renewal !== "lapsed" ? until : null;
 
   const form = (
     <div className="rounded-xl border border-border bg-card p-4 sm:p-6">
@@ -260,6 +271,14 @@ export default function VerifyIdentityPage() {
           <p className="text-sm text-muted-foreground">
             A person at BLKFNDR checks every document. You&apos;ll see the decision here and in your
             notifications.
+          </p>
+        )}
+        {submission?.status === "approved" && (
+          <p className="text-sm text-muted-foreground">
+            Verify again with your current ID.{" "}
+            {stillVerifiedUntil
+              ? `Your verification holds until ${formatDay(stillVerifiedUntil)} while a reviewer checks the new one.`
+              : "A reviewer checks it, and you can open vaults again once it's approved."}
           </p>
         )}
         {form}
@@ -295,6 +314,11 @@ export default function VerifyIdentityPage() {
               Submitted on {day(submission?.updated_at)}. A reviewer will check your documents, and
               you&apos;ll get a notification when they&apos;ve decided.
             </p>
+            {stillVerifiedUntil && (
+              <p className="text-sm text-muted-foreground">
+                Your current verification holds until {formatDay(stillVerifiedUntil)} meanwhile.
+              </p>
+            )}
           </div>
         );
       case "rejected":
@@ -306,9 +330,22 @@ export default function VerifyIdentityPage() {
                 ? `${submission.rejection_reason.replace(/[.\s]+$/, "")}. `
                 : ""}
               Upload a clearer copy and submit again.
+              {stillVerifiedUntil && ` Your current verification holds until ${formatDay(stillVerifiedUntil)}.`}
             </p>
             <Button type="button" onClick={() => setEditing(true)}>
               Submit again
+            </Button>
+          </div>
+        );
+      case "lapsed":
+        return (
+          <div className="space-y-3 rounded-xl border border-destructive/30 bg-destructive/10 p-5">
+            <p className="font-semibold">Your verification has lapsed</p>
+            <p className="text-sm">
+              Your ID expired on {formatDay(until!)}. Verify again with a current one to open vaults.
+            </p>
+            <Button type="button" onClick={() => setEditing(true)}>
+              Verify again
             </Button>
           </div>
         );
@@ -362,6 +399,20 @@ export default function VerifyIdentityPage() {
     <>
       <Tracker phase={phase} />
       {panel}
+
+      {/* Inside the renewal window: the ID behind this approval expires soon. */}
+      {submission?.status === "approved" && renewal === "due" && (
+        <div className="space-y-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-5 text-sm">
+          <p className="font-semibold">Your ID expires on {formatDay(until!)}</p>
+          <p>
+            Your verification holds until then. Verify again with your current ID before it runs out, so you
+            can keep opening vaults. You can do it any time in the {RENEWAL_WINDOW_DAYS} days before.
+          </p>
+          <Button type="button" size="sm" onClick={() => setEditing(true)}>
+            Verify again
+          </Button>
+        </div>
+      )}
 
       {/* A check filed for one wallet while the account now uses another:
           vaults open from the account's wallet, so it wouldn't count. */}

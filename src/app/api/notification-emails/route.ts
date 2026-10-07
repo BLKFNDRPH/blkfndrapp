@@ -1,17 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { queueVoteReminders } from "@/lib/data/vote-reminders";
+import { queueKycExpiryReminders } from "@/lib/data/kyc-reminders";
 import { sendNotificationEmails } from "@/lib/email/notification-emails";
 import crypto from "crypto";
 
 export const dynamic = "force-dynamic";
 
 /**
- * Called every minute by the notification-emails cron. Two jobs:
+ * Called every minute by the notification-emails cron. Three jobs:
  *
  * 1. Queue "one day left to vote" reminders for stakeholders who haven't voted
  *    on a stage closing within the day. These go to the bell whether or not
  *    email is set up.
- * 2. Email the notifications queued for email, through Resend. Without a
+ * 2. Queue identity renewal reminders: to builders whose ID expires within
+ *    the renewal window or has expired, and to the KYC reviewers once one has
+ *    lapsed. Bell either way, like the vote reminders.
+ * 3. Email the notifications queued for email, through Resend. Without a
  *    Resend key this sends nothing.
  *
  * Same bearer-secret gate as the other cron endpoints. `{"dryRun": true}`
@@ -52,8 +56,12 @@ export async function POST(req: NextRequest) {
       console.error("[notification-emails] Vote reminders failed:", error);
       return { error: String(error) };
     });
+    const identityReminders = await queueKycExpiryReminders({ dryRun }).catch((error: unknown) => {
+      console.error("[notification-emails] Identity reminders failed:", error);
+      return { error: String(error) };
+    });
     const emails = await sendNotificationEmails({ dryRun });
-    return NextResponse.json({ success: true, reminders, emails });
+    return NextResponse.json({ success: true, reminders, identityReminders, emails });
   } catch (error) {
     console.error("Error in notification-emails route:", error);
     return NextResponse.json({ success: false, error: String(error) }, { status: 500 });

@@ -374,7 +374,8 @@ services:
       - "app.description=Sends approved payouts and closes lapsed stages"
 
   # Emails the notifications queued for email, and queues the "one day left to
-  # vote" reminders, which go to the bell either way. Every minute, so an email
+  # vote" and identity renewal reminders, which go to the bell either way.
+  # Every minute, so an email
   # follows its notification closely. Sends nothing until a Resend key is set,
   # and never anything more than a day old, so switching email on later
   # doesn't send a backlog.

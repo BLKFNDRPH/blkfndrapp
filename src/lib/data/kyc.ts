@@ -13,6 +13,8 @@ import { isStellarAccount } from "@/lib/stellar-address";
 import { signAttestation, signRevocation } from "@/lib/managed-wallet";
 import { notify, notifyAdmins } from "@/lib/data/notifications";
 import { computeDetailsHash } from "@/lib/kyc/details-hash";
+import { renewalState, formatDay, RENEWAL_WINDOW_DAYS } from "@/lib/kyc/renewal";
+import { identityClient, simulate } from "@/lib/stellar-clients";
 
 /**
  * KYC data access.
@@ -28,7 +30,7 @@ import { computeDetailsHash } from "@/lib/kyc/details-hash";
 
 /** What an applicant is allowed to learn about their own submission. */
 const APPLICANT_COLUMNS =
-  "id, user_id, stellar_address, document_type, document_expires_on, status, rejection_reason, created_at, updated_at";
+  "id, user_id, stellar_address, document_type, document_expires_on, verified_until, status, rejection_reason, created_at, updated_at";
 
 export interface ApplicantSubmission {
   id: string;
@@ -37,6 +39,8 @@ export interface ApplicantSubmission {
   stellar_address: string | null;
   document_type: string;
   document_expires_on: string | null;
+  /** When the last approval runs out (src/lib/kyc/renewal.ts), or null if nothing is approved. */
+  verified_until: string | null;
   status: "pending" | "approved" | "rejected";
   rejection_reason: string;
   created_at: string;
@@ -188,7 +192,7 @@ export async function submitOwnKyc(input: unknown) {
 
   const { data: existing, error: readError } = await supabase
     .from("kyc_requests")
-    .select("stellar_address, status")
+    .select("stellar_address, status, verified_until")
     .eq("user_id", caller.userId)
     .maybeSingle();
 
@@ -225,8 +229,16 @@ export async function submitOwnKyc(input: unknown) {
     return;
   }
 
-  if (existing.status === "approved") {
-    throw new Error("Your identity check is already approved — there is nothing to resubmit.");
+  // An approved check is resubmitted only to renew it, from RENEWAL_WINDOW_DAYS
+  // before the document it was approved on expires. The update policy has the
+  // same rule; this says so in words instead of updating nothing.
+  const renewing = existing.status === "approved";
+  if (renewing && (renewalState(existing.verified_until) ?? "current") === "current") {
+    throw new Error(
+      existing.verified_until
+        ? `Your identity check is already approved. You can renew it from ${RENEWAL_WINDOW_DAYS} days before your ID expires on ${formatDay(existing.verified_until)}.`
+        : "Your identity check is already approved — there is nothing to resubmit.",
+    );
   }
 
   // stellar_address carries no UPDATE grant, so a resubmission cannot move an
@@ -258,7 +270,7 @@ export async function submitOwnKyc(input: unknown) {
   if (!existing.stellar_address && parsed.stellarAddress) {
     await attachOwnKycWallet();
   }
-  await tellReviewers("An identity check was resubmitted");
+  await tellReviewers(renewing ? "An identity check is being renewed" : "An identity check was resubmitted");
 }
 
 /**
@@ -391,7 +403,7 @@ export async function listSubmissionsForReview(
   const admin = createAdminClient();
   let query = admin
     .from("kyc_requests")
-    .select("id, user_id, stellar_address, document_type, status, rejection_reason, created_at")
+    .select("id, user_id, stellar_address, document_type, document_expires_on, verified_until, status, rejection_reason, created_at")
     .order("created_at", { ascending: true });
 
   if (status) query = query.eq("status", status);
@@ -440,12 +452,17 @@ export async function decideSubmission(
   submissionId: string,
   decision: "approved" | "rejected",
   rejectionReason = "",
-  /** For an approval: whether it is on-chain yet, or waits for the applicant's wallet. */
-  recorded = true,
+  options: {
+    /** For an approval: whether it is on-chain yet, or waits for the applicant's wallet. */
+    recorded?: boolean;
+    /** What to tell the applicant, in place of the usual words for the decision. */
+    notice?: { title: string; caption: string };
+  } = {},
 ) {
   await requireKycReviewer();
   z.string().uuid().parse(submissionId);
   z.enum(["approved", "rejected"]).parse(decision);
+  const recorded = options.recorded ?? true;
 
   const admin = createAdminClient();
   const reason = decision === "rejected" ? rejectionReason.slice(0, 500) : "";
@@ -456,7 +473,7 @@ export async function decideSubmission(
     .from("kyc_requests")
     .update({ status: decision, rejection_reason: reason })
     .eq("id", submissionId)
-    .select("user_id")
+    .select("user_id, verified_until")
     .maybeSingle();
 
   if (error) throw new Error(`Could not record KYC decision: ${error.message}`);
@@ -471,22 +488,30 @@ export async function decideSubmission(
   // an approved creator had no way to learn they were cleared. notify()
   // swallows its own failures, so a notification problem cannot undo a
   // decision that is already recorded.
+  //
+  // A renewal turned down leaves the previous approval on the record until its
+  // date (verified_until is kept), so the applicant hears that too.
+  const stillUntil =
+    decision === "rejected" && renewalState(data.verified_until) !== "lapsed" ? data.verified_until : null;
   await notify({
     userId: data.user_id,
     title:
-      decision === "rejected"
+      options.notice?.title ??
+      (decision === "rejected"
         ? "We couldn't verify your document"
         : recorded
           ? "Identity verified"
-          : "Identity approved: one step left",
+          : "Identity approved: one step left"),
     caption:
-      decision === "rejected"
-        ? reason
-          ? `${reason.replace(/[.\s]+$/, "")}. Upload a clearer copy and submit again.`
-          : "Upload a clearer copy and submit again."
+      options.notice?.caption ??
+      (decision === "rejected"
+        ? (reason
+            ? `${reason.replace(/[.\s]+$/, "")}. Upload a clearer copy and submit again.`
+            : "Upload a clearer copy and submit again.") +
+          (stillUntil ? ` Your current verification holds until ${formatDay(stillUntil)}.` : "")
         : recorded
           ? "You can open a vault for your project."
-          : "A reviewer approved your documents. Set up a wallet and attach it on the verification page to finish.",
+          : "A reviewer approved your documents. Set up a wallet and attach it on the verification page to finish."),
     url: "/profile/kyc-attestation",
     // The applicant was told "we'll notify you by email".
     email: "account",
@@ -530,17 +555,37 @@ export async function attestSubmission(submissionId: string) {
 
   const { data: sub, error } = await admin
     .from("kyc_requests")
-    .select("stellar_address, details_hash")
+    .select("stellar_address, details_hash, status, verified_until, document_expires_on")
     .eq("id", submissionId)
     .maybeSingle();
   if (error) throw new Error(`Could not read KYC submission: ${error.message}`);
   if (!sub) throw new Error("That submission does not exist.");
+  // A turned-down check's hash commits to the document that was refused. It
+  // can be recorded only after the applicant resubmits and it is approved.
+  if (sub.status === "rejected") {
+    throw new Error("This check was turned down, so there is nothing to record. It can be approved once the applicant submits again.");
+  }
+  // Recording an approval whose ID has expired would put a lapsed
+  // verification back on the record. The applicant renews it instead.
+  if (sub.status === "approved" && renewalState(sub.verified_until) === "lapsed") {
+    throw new Error("The ID behind this approval has expired. The applicant needs to verify again with a current one.");
+  }
+
+  // A renewal: a check under review that an earlier approval still stands for.
+  const renewal = sub.status === "pending" && sub.verified_until !== null;
+  const notice =
+    renewal && sub.document_expires_on
+      ? {
+          title: "Identity verification renewed",
+          caption: `Your verification now holds until ${formatDay(sub.document_expires_on)}.`,
+        }
+      : undefined;
 
   // Filed before the applicant had a wallet: the documents can be approved,
   // but there is no address to attest yet. attachOwnKycWallet tells the
   // reviewers when there is, and this same call then records it.
   if (!sub.stellar_address) {
-    await decideSubmission(submissionId, "approved", "", false);
+    await decideSubmission(submissionId, "approved", "", { recorded: false });
     return { address: null, attestor: me.managed_wallet };
   }
 
@@ -551,15 +596,34 @@ export async function attestSubmission(submissionId: string) {
       kycHashHex: sub.details_hash,
     });
   } catch (err) {
-    // Already attested on a prior attempt whose database write did not land —
-    // the ledger is where it needs to be, so sync the decision rather than
-    // refuse. Any other failure still stops us marking it approved.
+    // Any failure but "already attested" stops us marking it approved.
     const msg = err instanceof Error ? err.message : String(err);
     if (!/AlreadyAttested|#12/i.test(msg)) throw err;
+
+    // The wallet is on the record already. Either an earlier attempt landed
+    // there and its database write did not, so the record holds this hash and
+    // the decision only needs syncing. Or this is a renewal, and the record
+    // still holds the previous document's hash. The registry replaces one only
+    // by a revoke and a fresh attest. If the attest fails after the revoke, the
+    // check stays pending and a retry attests it from scratch.
+    const onRecord = await recordedHash(sub.stellar_address);
+    if (onRecord === null) throw new Error("Could not read the public record for this wallet. Try again.");
+    if (onRecord !== sub.details_hash.toLowerCase()) {
+      await signRevocation({ keyRef: email, subject: sub.stellar_address });
+      await signAttestation({ keyRef: email, subject: sub.stellar_address, kycHashHex: sub.details_hash });
+    }
   }
-  await decideSubmission(submissionId, "approved");
+  await decideSubmission(submissionId, "approved", "", { notice });
 
   return { address: sub.stellar_address, attestor: me.managed_wallet };
+}
+
+/** The hash on the public record for a wallet, as hex, or null when it can't be read. */
+async function recordedHash(address: string): Promise<string | null> {
+  const hash = await simulate(() => identityClient().get_attestation({ address }), `get_attestation(${address})`);
+  // Typed as a Buffer, but a contract refusal (NotAttested) comes back as an
+  // Err object, not a throw. Checked on testnet.
+  return hash instanceof Uint8Array ? Buffer.from(hash).toString("hex") : null;
 }
 
 /** The managed attestor key the platform holds for the current reviewer, or
@@ -577,8 +641,14 @@ export async function myManagedAttestor(): Promise<string | null> {
   return data?.managed_wallet ?? null;
 }
 
-/** Revoke a submission's attestation on-chain with the reviewer's managed key,
- *  then mark it rejected. The mirror of attestSubmission. */
+/**
+ * Revoke a submission's attestation on-chain with the reviewer's managed key,
+ * then mark it rejected. The mirror of attestSubmission.
+ *
+ * Also how a lapsed verification comes off the record: its ID expired and was
+ * not renewed. A renewal still under review keeps its status, since approving
+ * it records the wallet afresh.
+ */
 export async function revokeSubmissionAttestation(submissionId: string) {
   const caller = await requireKycReviewer();
   z.string().uuid().parse(submissionId);
@@ -596,7 +666,7 @@ export async function revokeSubmissionAttestation(submissionId: string) {
 
   const { data: sub, error } = await admin
     .from("kyc_requests")
-    .select("stellar_address")
+    .select("user_id, stellar_address, status, verified_until")
     .eq("id", submissionId)
     .maybeSingle();
   if (error) throw new Error(`Could not read KYC submission: ${error.message}`);
@@ -604,9 +674,42 @@ export async function revokeSubmissionAttestation(submissionId: string) {
 
   // Nothing on-chain for a check that never had a wallet.
   if (sub.stellar_address) {
-    await signRevocation({ keyRef: email, subject: sub.stellar_address });
+    try {
+      await signRevocation({ keyRef: email, subject: sub.stellar_address });
+    } catch (err) {
+      // Already off the record. There is nothing to undo on-chain, and the row
+      // is brought in line below.
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!/NotAttested|#13/i.test(msg)) throw err;
+    }
   }
-  await decideSubmission(submissionId, "rejected");
+
+  // Nothing stands on the record for this check any more.
+  const { error: clearError } = await admin
+    .from("kyc_requests")
+    .update({ verified_until: null })
+    .eq("id", submissionId);
+  if (clearError) throw new Error(`Could not record the revocation: ${clearError.message}`);
+
+  const lapsedOn = renewalState(sub.verified_until) === "lapsed" ? sub.verified_until : null;
+  const lapsed = lapsedOn
+    ? {
+        title: "Your identity verification has lapsed",
+        caption: `Your ID expired on ${formatDay(lapsedOn)}. Verify again with a current document to open vaults.`,
+      }
+    : null;
+
+  if (sub.status === "pending") {
+    await notify({
+      userId: sub.user_id,
+      title: lapsed?.title ?? "Your identity verification was withdrawn",
+      caption: "A reviewer is still checking the document you sent to renew it. You'll hear when they've decided.",
+      url: "/profile/kyc-attestation",
+      email: "account",
+    });
+  } else {
+    await decideSubmission(submissionId, "rejected", "", { notice: lapsed ?? undefined });
+  }
 
   return { address: sub.stellar_address };
 }

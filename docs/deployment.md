@@ -131,13 +131,18 @@ docker exec <governance-keeper-cron container> sh -c \
 
 ### notification-emails-cron
 
-Two jobs, every minute:
+Three jobs, every minute:
 
 - **Vote reminders.** For each stage vote closing within a day that opened more
   than a day ago, it adds "One day left to vote on Stage N of …" to the bell of
   every stakeholder who hasn't voted. Each reminder is claimed once in
   `notification_once`, so it is never repeated, even after it is dismissed.
   These reach the bell whether or not email is set up.
+- **Identity renewal reminders.** It tells a builder when the ID behind their
+  verification expires within 30 days, and again once it has expired. Once it
+  has expired, it also tells the KYC reviewers to revoke it. Claimed the same
+  way, once per verification and date. See
+  [authentication.md](authentication.md#renewal-when-the-id-expires).
 - **Email.** It sends the notifications queued for email (`email_status =
   'pending'`), oldest first, up to 50 a run, paced under Resend's rate limit.
   It skips anyone who turned that kind of email off, and any account without a

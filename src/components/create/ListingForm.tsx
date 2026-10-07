@@ -1544,6 +1544,11 @@ export function ListingForm() {
             : "Your identity isn't verified yet.",
         actions: [{ label: "Verify", href: "/profile/kyc-attestation" }],
       });
+    } else if (identity === "lapsed") {
+      out.push({
+        text: "Your ID has expired, so your identity verification no longer counts. Verify again with a current one.",
+        actions: [{ label: "Verify again", href: "/profile/kyc-attestation" }],
+      });
     } else if (identity === "pending") {
       out.push({ text: "Your identity check is still under review. The vault can open once it's approved." });
     } else if (identity === "approved") {

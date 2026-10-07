@@ -132,6 +132,14 @@ export function BeforeYouBegin({
     switch (identity) {
       case "verified":
         return <Row tone="done" title="Verified identity" hint={hint} status="Verified" />;
+      case "lapsed":
+        return (
+          <Row tone="problem" title="Verified identity" hint={hint} status="Your ID has expired. Verify again with a current one.">
+            <Button asChild size="sm">
+              <Link href="/profile/kyc-attestation">Verify again</Link>
+            </Button>
+          </Row>
+        );
       case "pending":
         return (
           <Row
