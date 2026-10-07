@@ -1,8 +1,10 @@
 "use client";
 
-import { useState } from "react";
-import { CheckCircle2, CircleHelp, Loader2, XCircle } from "lucide-react";
+import { useEffect, useState } from "react";
+import { CheckCircle2, CircleHelp, Loader2, ShieldOff, XCircle } from "lucide-react";
+import { getKycSubmission } from "@/app/actions";
 import { computeDetailsHash } from "@/lib/kyc/details-hash";
+import { formatDay, renewalState } from "@/lib/kyc/renewal";
 import { identityClient, simulate } from "@/lib/stellar-clients";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -11,27 +13,50 @@ import { Textarea } from "../ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../ui/dialog";
 
 /**
- * Check a person against their verification record, with no documents kept.
+ * A verified wallet's record, and a check of a person against it.
  *
- * A check's documents and details are deleted once it is decided
- * (20261007130000). What remains is the hash its attestation put on the
- * record: SHA-256 of the details and the wallet (src/lib/kyc/details-hash.ts).
+ * A check's documents and personal details are deleted once it is decided
+ * (20261007130000). What is kept is shown at the top: the name, the
+ * document's type and expiry, and the hash its attestation put on the record,
+ * which is SHA-256 of the details and the wallet (src/lib/kyc/details-hash.ts).
+ *
  * When there is doubt about who holds a verified wallet -- a dispute, an
- * account recovery, a report -- the person shows their ID again, the reviewer
- * types its details here, and the hash is recomputed and compared with the
- * record. A match means these are the details that were verified for this
- * wallet.
+ * account recovery, a report -- the person shows their ID again. The kept
+ * details fill the form, the reviewer types the rest from the ID, and the
+ * hash is recomputed and compared with the record. A match means these are
+ * the details that were verified for this wallet.
  *
- * Runs in the reviewer's browser. What is typed never reaches the server and
- * is never stored: the hash is computed here, the record is read from the
- * chain, and the fields are cleared when the dialog closes.
+ * The record is read through getKycSubmission, the reviewer's one-case read.
+ * The comparison runs in the reviewer's browser: what is typed never reaches
+ * the server and is never stored, and the fields clear when the dialog closes.
  */
+
+/** The approved check to show, from the identity panel's list. */
+export interface RecordTarget {
+  id: string;
+  wallet: string;
+  status: "pending" | "approved" | "rejected";
+  verifiedUntil: string | null;
+}
+
+/** What getSubmissionForReview returns that this dialog reads. */
+interface KeptRecord {
+  full_name: string;
+  document_type: string;
+  document_expires_on: string | null;
+  details_hash: string;
+  id_number: string | null;
+  date_of_birth: string | null;
+  residential_address: string | null;
+  document_path: string | null;
+}
 
 const DOCUMENT_TYPES = [
   { value: "passport", label: "Passport" },
   { value: "national_id", label: "National ID card" },
   { value: "drivers_license", label: "Driver's license" },
 ] as const;
+const documentLabel = (value: string) => DOCUMENT_TYPES.find((t) => t.value === value)?.label ?? value;
 
 const EMPTY = {
   fullName: "",
@@ -48,16 +73,56 @@ type Result = "match" | "mismatch" | "not-on-record" | "unreadable";
 const hex = (bytes: Uint8Array) => Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 
 export function RecordCheckDialog({
-  wallet,
+  target,
   onClose,
 }: {
-  /** The wallet to check against; the dialog is open while this is set. */
-  wallet: string | null;
+  /** The check to show; the dialog is open while this is set. */
+  target: RecordTarget | null;
   onClose: () => void;
 }) {
+  const [record, setRecord] = useState<KeptRecord | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [fields, setFields] = useState<Fields>(EMPTY);
   const [checking, setChecking] = useState(false);
   const [result, setResult] = useState<Result | null>(null);
+
+  // A turned-down renewal's row holds the refused document's name, type and
+  // expiry. The record on-chain is still the earlier approval, so those
+  // neither describe it nor fill the check.
+  const turnedDownRenewal = target?.status === "rejected";
+
+  useEffect(() => {
+    if (!target) return;
+    let active = true;
+    setRecord(null);
+    setLoadError(null);
+    getKycSubmission(target.id)
+      .then((res) => {
+        if (!active) return;
+        const rec = res.success ? (res.request as KeptRecord | null) : null;
+        if (!rec) {
+          setLoadError(("error" in res && res.error) || "No such check.");
+          return;
+        }
+        setRecord(rec);
+        if (target.status === "approved") {
+          setFields({
+            ...EMPTY,
+            fullName: rec.full_name,
+            documentType: rec.document_type,
+            documentExpiresOn: rec.document_expires_on ?? "",
+          });
+        }
+      })
+      .catch((err: unknown) => {
+        if (active) setLoadError(err instanceof Error ? err.message : String(err));
+      });
+    return () => {
+      active = false;
+    };
+  }, [target]);
+
+  const wallet = target?.wallet ?? null;
 
   const set =
     (key: keyof Fields) =>
@@ -69,6 +134,8 @@ export function RecordCheckDialog({
   const close = () => {
     setFields(EMPTY);
     setResult(null);
+    setRecord(null);
+    setLoadError(null);
     onClose();
   };
 
@@ -101,18 +168,105 @@ export function RecordCheckDialog({
     }
   };
 
+  // Whether the personal details and the document are gone from this row, as
+  // they are once a check with a wallet is decided.
+  const deleted =
+    record !== null &&
+    !record.document_path &&
+    !record.id_number &&
+    !record.date_of_birth &&
+    !record.residential_address;
+  const lapsed = renewalState(target?.verifiedUntil) === "lapsed";
+
   return (
-    <Dialog open={wallet !== null} onOpenChange={(open) => !open && close()}>
+    <Dialog open={target !== null} onOpenChange={(open) => !open && close()}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Check against the record</DialogTitle>
-          <DialogDescription>
-            Ask the person to show their ID, and type its details. They are compared with what was
-            verified for the wallet ending …{wallet?.slice(-4)}.
-          </DialogDescription>
+          <DialogTitle>Verification details</DialogTitle>
+          <DialogDescription>The record for the wallet ending …{wallet?.slice(-4)}.</DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={check} className="space-y-4">
+        {/* ── What is kept ─────────────────────────────────────────────── */}
+        {loadError ? (
+          <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm">
+            Couldn&apos;t load the record: {loadError}
+          </p>
+        ) : !record ? (
+          <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+            Loading the record…
+          </p>
+        ) : (
+          <section aria-labelledby="kept-heading" className="space-y-3">
+            <h3 id="kept-heading" className="text-sm font-semibold">
+              On record
+            </h3>
+            {turnedDownRenewal && (
+              <p className="text-sm text-muted-foreground">
+                This is the renewal that was turned down.
+                {target?.verifiedUntil
+                  ? ` The public record still holds the earlier approval, valid until ${formatDay(target.verifiedUntil)}.`
+                  : ""}
+              </p>
+            )}
+            <dl className="divide-y rounded-lg border text-sm">
+              <div className="flex justify-between gap-4 px-3 py-2">
+                <dt className="text-muted-foreground">Name</dt>
+                <dd className="text-right font-medium">{record.full_name}</dd>
+              </div>
+              <div className="flex justify-between gap-4 px-3 py-2">
+                <dt className="text-muted-foreground">Document</dt>
+                <dd className="text-right font-medium">{documentLabel(record.document_type)}</dd>
+              </div>
+              <div className="flex justify-between gap-4 px-3 py-2">
+                <dt className="text-muted-foreground">ID expires</dt>
+                <dd className="text-right font-medium">
+                  {record.document_expires_on ? formatDay(record.document_expires_on) : "Not given"}
+                  {lapsed && !turnedDownRenewal && (
+                    <span className="ml-1 font-semibold text-destructive">(expired)</span>
+                  )}
+                </dd>
+              </div>
+              <div className="flex justify-between gap-4 px-3 py-2">
+                <dt className="shrink-0 text-muted-foreground">Wallet</dt>
+                <dd className="break-all text-right font-mono text-xs">{wallet}</dd>
+              </div>
+              <div className="flex justify-between gap-4 px-3 py-2">
+                <dt className="shrink-0 text-muted-foreground">Fingerprint</dt>
+                <dd className="text-right font-mono text-xs" title={record.details_hash}>
+                  {record.details_hash.slice(0, 10)}…{record.details_hash.slice(-10)}
+                </dd>
+              </div>
+            </dl>
+
+            {deleted && (
+              <div className="flex items-start gap-2 rounded-lg border border-border bg-muted/40 p-3 text-sm">
+                <ShieldOff className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                <div className="space-y-1">
+                  <p className="font-semibold">Documents and personal details are deleted after attestation</p>
+                  <p className="text-muted-foreground">
+                    The ID scan, ID number, date of birth, home address and email were permanently deleted once this
+                    check was decided. Only what&apos;s above is kept. The fingerprint is a one-way hash of the
+                    details; it&apos;s what the public record holds, and it can&apos;t be turned back into them.
+                  </p>
+                </div>
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* ── Check a person against it ────────────────────────────────── */}
+        <form onSubmit={check} className="space-y-4 border-t pt-4">
+          <div className="space-y-1">
+            <h3 className="text-sm font-semibold">Check a person against the record</h3>
+            <p className="text-sm text-muted-foreground">
+              Ask them to show their ID.{" "}
+              {record && !turnedDownRenewal
+                ? "Name, document and expiry are filled in from the record; type the rest from the ID."
+                : "Type its details."}{" "}
+              They&apos;re compared with what was verified for this wallet.
+            </p>
+          </div>
           <div className="space-y-1.5">
             <Label htmlFor="rc-name">Full name, as on the ID</Label>
             <Input id="rc-name" value={fields.fullName} onChange={set("fullName")} autoComplete="off" />

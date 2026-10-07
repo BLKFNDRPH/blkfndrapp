@@ -38,7 +38,7 @@ import {
 } from "../ui/dialog";
 import { cn } from "@/lib/utils";
 import { formatDay, renewalState } from "@/lib/kyc/renewal";
-import { RecordCheckDialog } from "./RecordCheckDialog";
+import { RecordCheckDialog, type RecordTarget } from "./RecordCheckDialog";
 
 const NETWORK_PASSPHRASE = "Test SDF Network ; September 2015";
 const SOROBAN_RPC_URL = "https://soroban-testnet.stellar.org";
@@ -328,8 +328,8 @@ export function IdentityRegistryPanel() {
     (r) => r.status === "approved" || (r.status === "rejected" && r.verified_until !== null),
   );
 
-  // The wallet being checked against its record, or null.
-  const [checkWallet, setCheckWallet] = useState<string | null>(null);
+  // The check whose record is open, or null.
+  const [recordTarget, setRecordTarget] = useState<RecordTarget | null>(null);
 
   const [showApproved, setShowApproved] = useState(false);
 
@@ -836,10 +836,17 @@ export function IdentityRegistryPanel() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => setCheckWallet(req.stellar_address)}
+                        onClick={() =>
+                          setRecordTarget({
+                            id: req.id,
+                            wallet: req.stellar_address!,
+                            status: req.status,
+                            verifiedUntil: req.verified_until,
+                          })
+                        }
                         className="h-9 px-4 text-xs font-semibold shrink-0"
                       >
-                        Check details
+                        See details
                       </Button>
                     )}
                     {/* Approved and not lapsed: a turned-down renewal's hash is the
@@ -876,7 +883,7 @@ export function IdentityRegistryPanel() {
         )}
       </Card>
 
-      <RecordCheckDialog wallet={checkWallet} onClose={() => setCheckWallet(null)} />
+      <RecordCheckDialog target={recordTarget} onClose={() => setRecordTarget(null)} />
 
       {/* Lightbox Dialog */}
       <Dialog open={!!lightboxImage} onOpenChange={(open) => { if (!open) setLightboxImage(null); }}>
