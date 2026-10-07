@@ -82,8 +82,9 @@ export async function requireAdmin(): Promise<AuthedCaller> {
  * running KYC review is part of running the platform. To enforce strict
  * least-privilege instead — KYC review for `kyc_manager` and `owner` only —
  * drop `"platform_admin"` from the set below (and assign the operator the
- * `kyc_manager` role). That also matches the `has_admin_role('kyc_manager')`
- * RLS already on `kyc_requests`.
+ * `kyc_manager` role). There is no reviewer RLS on `kyc_requests` to match:
+ * 20261007170000 dropped it, so a reviewer's own session reaches no other
+ * applicant's row and this set is the only gate.
  */
 export const KYC_REVIEWER_ROLES: readonly AdminRole[] = ["owner", "platform_admin", "kyc_manager"];
 
