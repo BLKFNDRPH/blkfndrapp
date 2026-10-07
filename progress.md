@@ -29,6 +29,7 @@ Read-only checks, not inferred from merges: the deployed `/_next/static` bundle,
 | **`profiles` column grants (#70)** | ✅ Applied 2026-10-07 (`20261007100549`). The browser can update only `display_name` and `avatar_url` ([item 3](#3--apply-the-two-pending-migrations)) |
 | **KYC linked-wallet policy (#89)** | ✅ In `20261006155050`, applied 2026-10-06 |
 | **Email** | ⏳ Built (#138); sends nothing until a Resend key is set and the sending domain is verified ([item 3c](#3c-switch-on-email)) |
+| **Browser table grants** | ⏳ `20261007104544_revoke_browser_table_grants` dry-run on live, not applied. It needs the owner's approval ([item 3d](#3d-apply-the-browser-table-grant-revocation)) |
 | **Project hide/lock (#85)** | ✅ Migration applied, 4 restrictions in use |
 | **IPFS reads** | ⏳ #104 (merged 2026-10-02) sends the Pinata Gateway Key, but it only helps once the host runs #104 and has `PINATA_GATEWAY_KEY` set ([item 3b](#3b-set-pinata_gateway_key-on-the-host)). Until then the dedicated gateway refuses (401) and reads fall back to the rate-limited shared gateway |
 
@@ -152,6 +153,9 @@ Notifications are also emailed once Resend is set up (#138). Until then the bell
 4. Run the cron's dry run ([deployment.md](docs/deployment.md#notification-emails-cron)) and check `wouldSend`.
 
 The free plan sends 100 emails a day. Each person can turn off votes, refunds, receipts and (admins) reviews in Settings, or from any email.
+
+### 3d. Apply the browser table-grant revocation
+`20261007104544_revoke_browser_table_grants` takes `anon` off every write and `TRUNCATE`, and cuts `authenticated` back to the verbs and columns the app actually uses on eleven tables. It also drops `feature_requests_author_edit`, which let an author mark their own request planned. No app change goes with it. A live dry run, rolled back, passed all 20 app writes before and after, and refused all 19 unused ones. Applying it is the owner's call. Once it is applied, rename the file to the version live records.
 
 ### 4. Redeploy the factory and registries (#73 + #75)
 ✅ **Done.** Deployed 2026-10-06 with `scripts/deploy-contracts.sh` from the admin key. The app has used the new set since its 2026-10-07 rebuild.

@@ -137,6 +137,7 @@ Migrations are tracked SQL in [supabase/migrations/](../supabase/migrations/), n
 
 - **Never edit an applied migration.** Add a new one that corrects it.
 - **Start with a header comment** that says what the migration fixes and why. If it depends on app code being live first, say so under `DEPLOY ORDER`. [20261007100549_profiles_column_grants.sql](../supabase/migrations/20261007100549_profiles_column_grants.sql) is an example.
+- **Revoke before you grant.** Supabase gives every new table in `public` every privilege for `anon` and `authenticated`, and a `GRANT` only adds to that. So start a new table's grants with `revoke all on public.<table> from anon, authenticated;`, then grant back only what the app reads and writes through the user client. Where it writes only some columns, grant those columns: `grant update (col)` narrows nothing while a table-wide `UPDATE` remains. Don't narrow a table the app writes with `.upsert()`. [20261007104544_revoke_browser_table_grants.sql](../supabase/migrations/20261007104544_revoke_browser_table_grants.sql) covers the tables that predate this rule.
 - **Apply** with `supabase link --project-ref <ref> && supabase db push`. Applying to the live project is the owner's call.
 - **Regenerate the types** afterwards: `supabase gen types typescript --project-id <ref> > src/lib/supabase/database.types.ts`.
 
