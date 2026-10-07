@@ -80,6 +80,10 @@ export function IdentityRegistryPanel() {
 
   const [loading, setLoading] = useState(false);
   const [kycRequests, setKycRequests] = useState<QueueRow[]>([]);
+  // Whether the queue has been read. "No pending requests" is a claim about
+  // the queue, so it shows only after a read succeeded, never after one failed.
+  const [queueState, setQueueState] = useState<"loading" | "ready" | "failed">("loading");
+  const [queueError, setQueueError] = useState<string | null>(null);
 
   // The managed attestor key the platform holds for this reviewer, and whether
   // the registry has appointed it. A KYC attestor approves through this key,
@@ -122,26 +126,30 @@ export function IdentityRegistryPanel() {
   // reviewer can always look at a case and turn away an obviously bad one.
 
   const fetchKycRequests = useCallback(async () => {
+    const fail = (message: string) => {
+      setQueueState("failed");
+      setQueueError(message);
+      toast({ title: "Failed to load KYC requests", description: message, variant: "destructive" });
+    };
+    setQueueState((s) => (s === "failed" ? "loading" : s));
     try {
       const res = await getKycRequests();
       if (res.success && res.requests) {
         setKycRequests(res.requests as QueueRow[]);
+        setQueueState("ready");
+        setQueueError(null);
       } else {
-        toast({
-          title: "Failed to load KYC requests",
-          description: (res as { error?: string }).error || "Unknown server error",
-          variant: "destructive",
-        });
+        fail((res as { error?: string }).error || "Unknown server error");
       }
     } catch (err: any) {
       console.error("Failed to fetch KYC requests:", err);
-      toast({
-        title: "Failed to load KYC requests",
-        description: err.message || String(err),
-        variant: "destructive",
-      });
+      fail(err?.message || String(err));
     }
   }, [toast]);
+
+  // A tab opened before a deploy calls server actions the new build no longer
+  // has, and every read fails until the page is reloaded.
+  const staleTab = Boolean(queueError && /Server Action .* was not found on the server/i.test(queueError));
 
   useEffect(() => {
     fetchKycRequests();
@@ -386,7 +394,36 @@ export function IdentityRegistryPanel() {
         </CardHeader>
 
         <div className="flex-1 overflow-y-auto max-h-[75vh] p-6 md:p-8 space-y-6">
-          {pendingList.length === 0 ? (
+          {queueState === "failed" ? (
+            <div role="alert" className="flex flex-col items-center justify-center py-24 text-center">
+              <AlertTriangle className="h-12 w-12 text-destructive/70 mb-3" />
+              <h3 className="text-base font-semibold text-foreground">
+                Couldn&apos;t load the KYC requests
+              </h3>
+              <p className="text-sm text-muted-foreground max-w-md mt-1.5">
+                {staleTab
+                  ? "This page is from an earlier version of the app. Reload it to load the requests."
+                  : "The queue could not be read, so whether anything is pending is unknown."}
+              </p>
+              {!staleTab && queueError && (
+                <p className="text-xs text-muted-foreground/80 max-w-md mt-2 break-words">{queueError}</p>
+              )}
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-4"
+                onClick={() => (staleTab ? window.location.reload() : fetchKycRequests())}
+              >
+                <RefreshCw className="mr-2 h-4 w-4" />
+                {staleTab ? "Reload page" : "Try again"}
+              </Button>
+            </div>
+          ) : queueState === "loading" && pendingList.length === 0 ? (
+            <div role="status" className="flex items-center justify-center gap-2 py-24 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Loading requests…
+            </div>
+          ) : pendingList.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-24 text-center">
               <FileCode className="h-12 w-12 text-muted-foreground/50 mb-3" />
               <h3 className="text-base font-semibold text-foreground">No Pending Requests</h3>
