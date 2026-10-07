@@ -199,6 +199,12 @@ export function AdminDashboard() {
   };
   const visibleViews = myRole ? VIEWS_BY_ROLE[myRole] : [];
   const canSee = (v: typeof adminView) => visibleViews.includes(v);
+  // Cards and feed items link into other tabs. A link into one this role
+  // cannot open used to switch to it anyway, and since no view renders for an
+  // unseen tab, the role got a blank page. Links go through here instead.
+  const showView = (v: typeof adminView) => {
+    if (canSee(v)) setAdminView(v);
+  };
 
   // Hide and lock. Offered to the roles can_restrict_projects() accepts — the
   // database checks again on every change, so this only decides what shows.
@@ -217,7 +223,7 @@ export function AdminDashboard() {
   useEffect(() => {
     if (myRole && !canSee(adminView)) setAdminView(visibleViews[0] ?? "projects");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [myRole]);
+  }, [myRole, adminView]);
 
   // Pending KYC count, polled.
   const { data: kycData } = useSWR("/api/admin/kyc-count", fetcher, {
@@ -439,22 +445,24 @@ export function AdminDashboard() {
         });
       });
 
-    // Pending KYC requests
-    kycRequests
-      .filter((r) => r.status === "pending")
-      .forEach((r) => {
-        items.push({
-          id: `kyc-verify-${r.address}`,
-          type: "kyc",
-          title: `KYC: ${r.fullName}`,
-          description: `Email: ${r.email} • Doc: ${r.documentType}`,
-          badgeText: "KYC Pending",
-          badgeVariant: "outline",
-          actionLabel: "Verify",
-          onAction: () => setAdminView("identity"),
-          urgency: "medium",
+    // Pending KYC requests, for the roles that can act on them
+    if (canSee("identity")) {
+      kycRequests
+        .filter((r) => r.status === "pending")
+        .forEach((r) => {
+          items.push({
+            id: `kyc-verify-${r.address}`,
+            type: "kyc",
+            title: `KYC: ${r.fullName}`,
+            description: `Email: ${r.email} • Doc: ${r.documentType}`,
+            badgeText: "KYC Pending",
+            badgeVariant: "outline",
+            actionLabel: "Verify",
+            onAction: () => showView("identity"),
+            urgency: "medium",
+          });
         });
-      });
+    }
 
     // Milestone proofs submitted
     projects.forEach((p) => {
@@ -483,7 +491,8 @@ export function AdminDashboard() {
       const urgencyScore = { high: 3, medium: 2, low: 1 };
       return urgencyScore[b.urgency] - urgencyScore[a.urgency];
     });
-  }, [projects, kycRequests, openProjectDetails]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- canSee/showView follow myRole
+  }, [projects, kycRequests, openProjectDetails, myRole]);
 
   return (
     <>
@@ -673,22 +682,30 @@ export function AdminDashboard() {
                   false claims beside one true one makes the true one hard to
                   trust, so they are gone rather than fixed — there is nothing
                   behind them to fix. */}
-              <div className="grid gap-4 md:grid-cols-2">
-                <InteractiveStatCard
-                  title="Pending KYC"
-                  value={kycData !== undefined ? kycData.count : null}
-                  icon={<UserCheck className="h-5 w-5 text-accent" />}
-                  onClick={() => setAdminView("identity")}
-                  glowColor="hover:shadow-accent/5 hover:border-accent/20"
-                />
-                <InteractiveStatCard
-                  title="Platform Vault"
-                  value={platformInfo?.feeWalletAddress ? "View" : null}
-                  icon={<Vault className="h-5 w-5 text-emerald-500" />}
-                  onClick={() => setAdminView("vault")}
-                  glowColor="hover:shadow-emerald-500/5 hover:border-emerald-500/20"
-                />
-              </div>
+              {/* Each card opens a tab, so a role sees only the cards for tabs
+                  it can open. */}
+              {(canSee("identity") || canSee("vault")) && (
+                <div className="grid gap-4 md:grid-cols-2">
+                  {canSee("identity") && (
+                    <InteractiveStatCard
+                      title="Pending KYC"
+                      value={kycData !== undefined ? kycData.count : null}
+                      icon={<UserCheck className="h-5 w-5 text-accent" />}
+                      onClick={() => showView("identity")}
+                      glowColor="hover:shadow-accent/5 hover:border-accent/20"
+                    />
+                  )}
+                  {canSee("vault") && (
+                    <InteractiveStatCard
+                      title="Platform Vault"
+                      value={platformInfo?.feeWalletAddress ? "View" : null}
+                      icon={<Vault className="h-5 w-5 text-emerald-500" />}
+                      onClick={() => showView("vault")}
+                      glowColor="hover:shadow-emerald-500/5 hover:border-emerald-500/20"
+                    />
+                  )}
+                </div>
+              )}
 
               {/* Action Feed & Status Grid */}
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
