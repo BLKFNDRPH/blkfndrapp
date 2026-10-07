@@ -154,6 +154,44 @@ export type Database = {
         }
         Relationships: []
       }
+      email_preferences: {
+        Row: {
+          refunds: boolean
+          reviews: boolean
+          unsubscribe_token: string
+          updated_at: string
+          updates: boolean
+          user_id: string
+          votes: boolean
+        }
+        Insert: {
+          refunds?: boolean
+          reviews?: boolean
+          unsubscribe_token?: string
+          updated_at?: string
+          updates?: boolean
+          user_id: string
+          votes?: boolean
+        }
+        Update: {
+          refunds?: boolean
+          reviews?: boolean
+          unsubscribe_token?: string
+          updated_at?: string
+          updates?: boolean
+          user_id?: string
+          votes?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "email_preferences_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       feature_request_decisions: {
         Row: {
           approve: boolean
@@ -328,10 +366,30 @@ export type Database = {
           },
         ]
       }
+      notification_once: {
+        Row: {
+          created_at: string
+          key: string
+        }
+        Insert: {
+          created_at?: string
+          key: string
+        }
+        Update: {
+          created_at?: string
+          key?: string
+        }
+        Relationships: []
+      }
       notifications: {
         Row: {
           caption: string
           created_at: string
+          email_attempts: number
+          email_category: string | null
+          email_error: string | null
+          email_sent_at: string | null
+          email_status: string | null
           id: string
           is_read: boolean
           project_id: string | null
@@ -342,6 +400,11 @@ export type Database = {
         Insert: {
           caption?: string
           created_at?: string
+          email_attempts?: number
+          email_category?: string | null
+          email_error?: string | null
+          email_sent_at?: string | null
+          email_status?: string | null
           id?: string
           is_read?: boolean
           project_id?: string | null
@@ -352,6 +415,11 @@ export type Database = {
         Update: {
           caption?: string
           created_at?: string
+          email_attempts?: number
+          email_category?: string | null
+          email_error?: string | null
+          email_sent_at?: string | null
+          email_status?: string | null
           id?: string
           is_read?: boolean
           project_id?: string | null

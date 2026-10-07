@@ -26,8 +26,9 @@ Read-only checks, not inferred from merges: the deployed `/_next/static` bundle,
 | **Vault release rule (#99) and money majority** | ✅ Live for new projects since 2026-10-06. The factory deploys vault wasm `e9009410…`, as `/api/vault-wasm-hash` confirms ([item 2](#2-switch-the-factory-to-the-99-vault-wasm)) |
 | **Factory and registries (#73, #75)** | ✅ Redeployed 2026-10-06 and live in the app since 2026-10-07: factory `CBRUIRJX…`, attestation `CDEN2LU4…`, identity `CAILTHEY…`, admin roster `CAKANFZH…`, treasury `CAGMEGMS…`. Projects #1–#11 keep the previous set ([item 4](#4-redeploy-the-factory-and-registries-73--75)) |
 | **Operations Vault cutover** | ⚠️ Half done. The app points at the new vault, but the old one still holds 25 XLM, the new one 0, and the new treasury's ops funding is unset |
-| **`profiles` column grants (#70)** | ❌ Not applied. `authenticated` can still `UPDATE profiles.stellar_public_key` |
-| **KYC linked-wallet policy (#89)** | ❌ Not applied, and it has to follow the grants above |
+| **`profiles` column grants (#70)** | ✅ Applied 2026-10-07 (`20261007100549`). The browser can update only `display_name` and `avatar_url` ([item 3](#3--apply-the-two-pending-migrations)) |
+| **KYC linked-wallet policy (#89)** | ✅ In `20261006155050`, applied 2026-10-06 |
+| **Email** | ⏳ Built (#138); sends nothing until a Resend key is set and the sending domain is verified ([item 3c](#3c-switch-on-email)) |
 | **Project hide/lock (#85)** | ✅ Migration applied, 4 restrictions in use |
 | **IPFS reads** | ⏳ #104 (merged 2026-10-02) sends the Pinata Gateway Key, but it only helps once the host runs #104 and has `PINATA_GATEWAY_KEY` set ([item 3b](#3b-set-pinata_gateway_key-on-the-host)). Until then the dedicated gateway refuses (401) and reads fall back to the rate-limited shared gateway |
 
@@ -97,7 +98,7 @@ Every app-layer change below is live, because the host was rebuilt from `main`. 
 - **Factory, attestation, identity, admin roster and treasury**, redeployed 2026-10-06 from source (#73, #75) and live in the app since 2026-10-07. The factory routes fees to the new treasury [`CAGMEGMS…NRO3TQPZW`](https://stellar.expert/explorer/testnet/contract/CAGMEGMS6MS6ENADUWDRW3GQ4XRBDYFFKHMRFVDEBHFCZW7NRO3TQPZW). Addresses and transactions are in [smart-contracts.md](docs/smart-contracts.md#the-registry-redeploy).
 - **Operations Vault** [`CCVXM3YP…NQG7FDSN`](https://stellar.expert/explorer/testnet/contract/CCVXM3YPPEMWG4INHFTZ4NBJ3PQW3ZUNYIZMBJBNYQOMSNOENQG7FDSN), which the app now points at. It is unfunded until [item 1](#1-finish-the-operations-vault-cutover) is done.
 
-**Applied 2026-10-07:** `20261007100549_profiles_column_grants` (was `20260809160000`). `20261001160000_kyc_filed_against_linked_wallet` is a no-op now: `20261006155050_kyc_wallet_optional_at_submit` superseded it.
+**Applied 2026-10-07:** `20261007100549_profiles_column_grants` (was `20260809160000`). Also `20261007104401_notification_emails`: the email queue on `notifications`, `email_preferences` and `notification_once`, and the browser narrowed to `update (is_read)` on `notifications` (it held table-wide `UPDATE`). `20261001160000_kyc_filed_against_linked_wallet` is a no-op now: `20261006155050_kyc_wallet_optional_at_submit` superseded it.
 
 Current hashes come from a fresh `bash scripts/build-contracts.sh`. The wasm embeds absolute build paths, so a hash only reproduces on the same paths (see item 8).
 
@@ -142,6 +143,15 @@ Without a Gateway Key, the dedicated gateway (`PINATA_GATEWAY_URL`, `nft.blkfndr
 - **#104 landed the fix on `main`.** It cherry-picks #91's late commit, `900082d`, plus one addition: the indexer no longer follows redirects, which would otherwise carry the key to another host.
 - **Host action:** add `PINATA_GATEWAY_KEY` to the Portainer stack environment, then **Update the stack**. It is a runtime variable, so no rebuild is needed, but a plain `docker restart` keeps the old environment. See [deployment.md](docs/deployment.md).
 - **Success:** the app logs stop showing `nft.blkfndr.com answered 401`.
+
+### 3c. Switch on email
+Notifications are also emailed once Resend is set up (#138). Until then the bell works as before, and the "one day left to vote" reminders still reach it.
+1. Create a Resend account, add the sending domain (`blkfndr.com`, or a subdomain with `EMAIL_FROM` set to match) and add the DNS records it lists. Wait until it shows as verified.
+2. Create an API key with sending access and paste it into the admin console under **Settings → Resend API key**.
+3. Update the stack once, so `notification-emails-cron` starts.
+4. Run the cron's dry run ([deployment.md](docs/deployment.md#notification-emails-cron)) and check `wouldSend`.
+
+The free plan sends 100 emails a day. Each person can turn off votes, refunds, receipts and (admins) reviews in Settings, or from any email.
 
 ### 4. Redeploy the factory and registries (#73 + #75)
 ✅ **Done.** Deployed 2026-10-06 with `scripts/deploy-contracts.sh` from the admin key. The app has used the new set since its 2026-10-07 rebuild.
@@ -193,7 +203,7 @@ The 20% cap and the three-wallet floor count addresses, not people. The open pol
 | `getAdminAuditLogAction` | The audit log is written, but has no viewer |
 | `attestationClient()` | A builder's track record is never shown |
 
-The Settings "Resend API key" is saved but never read, because nothing sends email.
+The Settings "Resend API key" is read by the notification emails cron since #138 ([item 3c](#3c-switch-on-email)).
 
 ### 8. Known defects (found, not yet fixed)
 
@@ -225,7 +235,7 @@ These were verified with harnesses, but not with a real wallet or account:
 
 ## Next
 1. Finish the Operations Vault cutover (item 1): two owner votes.
-2. Apply the two migrations (item 3): a one-command push, in order. Set the gateway key on the host (item 3b), a one-variable stack update.
+2. Set the gateway key on the host (item 3b), a one-variable stack update, and switch on email (item 3c): a Resend account, its DNS records and the key in Settings.
 3. Launch the first project on the new factory and check it becomes #12 (item 4).
 4. After 2026-10-13 14:14:52 UTC, finish the reference deployment's Project B (`bash scripts/reference-scenario.sh project-b-finish`) and add its transactions to the deliverable evidence.
 5. Start Phase 1 of the [Web3-accessibility redesign](docs/design/web3-accessibility-redesign.md): copy, information architecture and flow, with no chain changes. #103 was its first item.
