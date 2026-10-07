@@ -28,7 +28,7 @@ Read-only checks, not inferred from merges: the deployed `/_next/static` bundle,
 | **Operations Vault cutover** | ⚠️ Half done. The app points at the new vault, but the old one still holds 25 XLM, the new one 0, and the new treasury's ops funding is unset |
 | **`profiles` column grants (#70)** | ✅ Applied 2026-10-07 (`20261007100549`). The browser can update only `display_name` and `avatar_url` ([item 3](#3--apply-the-two-pending-migrations)) |
 | **KYC linked-wallet policy (#89)** | ✅ In `20261006155050`, applied 2026-10-06 |
-| **Email** | ⏳ Built (PR_EMAIL); sends nothing until a Resend key is set and the sending domain is verified ([item 3c](#3c-switch-on-email)) |
+| **Email** | ⏳ Built (#138); sends nothing until a Resend key is set and the sending domain is verified ([item 3c](#3c-switch-on-email)) |
 | **Project hide/lock (#85)** | ✅ Migration applied, 4 restrictions in use |
 | **IPFS reads** | ⏳ #104 (merged 2026-10-02) sends the Pinata Gateway Key, but it only helps once the host runs #104 and has `PINATA_GATEWAY_KEY` set ([item 3b](#3b-set-pinata_gateway_key-on-the-host)). Until then the dedicated gateway refuses (401) and reads fall back to the rate-limited shared gateway |
 
@@ -145,7 +145,7 @@ Without a Gateway Key, the dedicated gateway (`PINATA_GATEWAY_URL`, `nft.blkfndr
 - **Success:** the app logs stop showing `nft.blkfndr.com answered 401`.
 
 ### 3c. Switch on email
-Notifications are also emailed once Resend is set up (PR_EMAIL). Until then the bell works as before, and the "one day left to vote" reminders still reach it.
+Notifications are also emailed once Resend is set up (#138). Until then the bell works as before, and the "one day left to vote" reminders still reach it.
 1. Create a Resend account, add the sending domain (`blkfndr.com`, or a subdomain with `EMAIL_FROM` set to match) and add the DNS records it lists. Wait until it shows as verified.
 2. Create an API key with sending access and paste it into the admin console under **Settings → Resend API key**.
 3. Update the stack once, so `notification-emails-cron` starts.
@@ -203,7 +203,7 @@ The 20% cap and the three-wallet floor count addresses, not people. The open pol
 | `getAdminAuditLogAction` | The audit log is written, but has no viewer |
 | `attestationClient()` | A builder's track record is never shown |
 
-The Settings "Resend API key" is read by the notification emails cron since PR_EMAIL ([item 3c](#3c-switch-on-email)).
+The Settings "Resend API key" is read by the notification emails cron since #138 ([item 3c](#3c-switch-on-email)).
 
 ### 8. Known defects (found, not yet fixed)
 
