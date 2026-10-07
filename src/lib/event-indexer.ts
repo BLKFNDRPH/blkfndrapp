@@ -15,6 +15,7 @@ import { readVaultState } from "./vault-state";
 import { currencyForToken } from "./currencies";
 import { LISTING_LIMITS, clampText } from "./listing-limits";
 import { getCursor, setCursor, recordEvent, markProcessed } from "./data/events";
+import { notifyForVaultEvent } from "./data/vault-notifications";
 import { upsertProjectFromChain, upsertMilestones } from "./data/projects";
 import { createAdminClient } from "./supabase/admin";
 import type { Enums } from "./supabase/database.types";
@@ -426,7 +427,15 @@ async function handleEvent(topic1: string, topic2: string, payload: any[], contr
     case "MILESTN/APPROVE":
     case "MILESTN/RELEASE":
     case "MILESTN/FAILED":
+    // settle_stalled moves the vault to refunding and emits only this; it was
+    // missing here, so a stalled vault's row kept its old status.
+    case "VAULT/STALLED":
       await syncVault(contractId, ledger);
+      // After the re-read, so the project row is current. A notification
+      // problem is logged and never fails the event.
+      await notifyForVaultEvent(key, payload, contractId).catch((err) =>
+        console.error(`[Indexer] Could not notify for ${key} on ${contractId}:`, err),
+      );
       return;
 
     case "ATTEST/RECORDED":
