@@ -92,6 +92,24 @@ async function requireLinkedWallet(
   }
 }
 
+/** The identity panel in the admin console. */
+const IDENTITY_PANEL = "/admin?view=identity";
+
+/**
+ * Tell the KYC reviewers a check is waiting, in the bell and by email. Nothing
+ * told them before: a submission sat in the queue until someone happened to
+ * open the panel.
+ */
+async function tellReviewers(title: string) {
+  await notifyAdmins(
+    title,
+    "Documents are waiting to be checked. Review them from Identity Verification in the admin console.",
+    undefined,
+    KYC_REVIEWER_ROLES,
+    { url: IDENTITY_PANEL, email: true },
+  );
+}
+
 /**
  * File or resubmit the caller's own KYC.
  *
@@ -165,6 +183,7 @@ export async function submitOwnKyc(input: unknown) {
       }
       throw new Error(`Could not save KYC submission: ${error.message}`);
     }
+    await tellReviewers("New identity check to review");
     return;
   }
 
@@ -198,6 +217,7 @@ export async function submitOwnKyc(input: unknown) {
   if (!existing.stellar_address && parsed.stellarAddress) {
     await attachOwnKycWallet();
   }
+  await tellReviewers("An identity check was resubmitted");
 }
 
 /**
@@ -287,6 +307,7 @@ export async function attachOwnKycWallet(): Promise<{
       "An applicant approved without a wallet has attached one. Record it from the identity panel so they can open a vault.",
       undefined,
       KYC_REVIEWER_ROLES,
+      { url: IDENTITY_PANEL, email: true },
     );
   }
 
@@ -413,6 +434,8 @@ export async function decideSubmission(
           ? "You can open a vault for your project."
           : "A reviewer approved your documents. Set up a wallet and attach it on the verification page to finish.",
     url: "/profile/kyc-attestation",
+    // The applicant was told "we'll notify you by email".
+    email: "account",
   });
 }
 

@@ -207,6 +207,8 @@ async function tellBuilder(
       caption: message.caption,
       url: "/profile?tab=projects",
       projectId: project.id,
+      // Their own project, changed by someone else: not behind a switch.
+      email: "account",
     });
   } catch (err) {
     console.error("[restrictions] Could not notify the builder of", vaultAddress, err);

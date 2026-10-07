@@ -8,6 +8,7 @@ import {
 import { requireCaller, requireAdmin, requireWalletOwnerOrAdmin, authFailure } from "@/lib/auth/guards";
 import { setMilestoneProof, getProjectByVault } from "@/lib/data/projects";
 import { notify, notifyAdmins } from "@/lib/data/notifications";
+import { getSecret } from "@/lib/secrets";
 import {
   submitOwnKyc,
   attachOwnKycWallet,
@@ -75,18 +76,22 @@ export async function submitKycRequest(
  */
 export async function remindMeToSetUpWallet(
   path: string,
-): Promise<{ success: true } | { success: false; error: string }> {
+): Promise<{ success: true; emailedTo: string | null } | { success: false; error: string }> {
   try {
     const caller = await requireCaller();
     const url =
       typeof path === "string" && /^\/(?!\/)[A-Za-z0-9/_?=&.%-]*$/.test(path) ? path : "/profile?tab=wallet";
+    // Emailed too, when email is set up: they asked for it, so it isn't behind
+    // a switch. The notification emails cron sends it within the minute.
     await notify({
       userId: caller.userId,
       title: "Set up your wallet on a computer",
       caption: "Open BLKFNDR on a computer and follow this link to finish setting up your wallet.",
       url,
+      email: "account",
     });
-    return { success: true as const };
+    const emailedTo = caller.email && (await getSecret("resend_api_key")) ? caller.email : null;
+    return { success: true as const, emailedTo };
   } catch (error) {
     return authFailure(error) ?? { success: false, error: "Couldn't save the reminder. Try again." };
   }

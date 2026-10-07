@@ -115,8 +115,9 @@ Every exported async function in a `"use server"` file is a public HTTP endpoint
 | Action | Who may call | What it does |
 |---|---|---|
 | `runImproveListingQuality(input)` | Signed in | Runs the Genkit listing review (Gemini 2.5 Flash). Returns `{ suggestions[], flags[], overallQualityScore }`, or `null` when signed out, when the model fails, or without `GEMINI_API_KEY` |
-| `submitKycRequest(input)` | Signed in | Files or resubmits the caller's own KYC, through their own session. The address must be the caller's linked wallet. An approved check cannot be resubmitted, and a resubmission cannot change the address |
+| `submitKycRequest(input)` | Signed in | Files or resubmits the caller's own KYC, through their own session. The address must be the caller's linked wallet. An approved check cannot be resubmitted, and a resubmission cannot change the address. Tells the KYC reviewers, in the bell and by email |
 | `getMyKycStatus()` | Signed in | The caller's own status fields |
+| `remindMeToSetUpWallet(path)` | Signed in | Puts a link back to the wallet setup step in the caller's notifications and queues it for email (`account`). Returns `{ success, emailedTo }`; `emailedTo` is the caller's address when a Resend key is set, else `null`. `path` must be a path on this site |
 | `getKycRequests(status?)` | KYC reviewer | The review queue, without identity fields |
 | `getKycSubmission(id)` | KYC reviewer | One full record plus a 5-minute signed URL to the document |
 | `updateKycRequestStatus(id, status, reason?)` | KYC reviewer | Records approve/reject in the database and notifies the applicant. Writes nothing on chain |
@@ -147,6 +148,14 @@ All public. Form fields are validated with zod, and any `next` path is checked t
 | Action | Who may call | What it does |
 |---|---|---|
 | `updateUserDisplayName(newName)` | Signed in | Updates the caller's own display name (1–80 characters). RLS confines the write to their row |
+| `getMyEmailSettings()` | Signed in | `{ email, preferences: { votes, refunds, updates, reviews }, isAdmin }`. A switch with no saved row is on |
+| `setMyEmailPreference(switch, on)` | Signed in | Saves one of the caller's email switches and returns all four. Written by the service role, keyed on the session's user id |
+
+### [src/app/email/unsubscribe/actions.ts](../src/app/email/unsubscribe/actions.ts)
+
+| Action | Who may call | What it does |
+|---|---|---|
+| `unsubscribeFromEmail(token, switch)` | Anyone holding the token | Turns that one switch off for the token's owner. The token, from an email's unsubscribe link, is the only authority, and it can't turn anything on. `{ success }`, or `error: "invalid"` for an unknown token or switch |
 
 ### [src/actions/admins.ts](../src/actions/admins.ts)
 
@@ -247,9 +256,10 @@ Linking a wallet writes `profiles.stellar_public_key` with the service role, aft
 | `GET` | `/api/user/funds` | Signed in | `?address=G…` (optional) | Stake receipts from indexed `DEPOSIT/CONTRIB` events: `[{ fund_id, project_id, contributor, amount, usdc_amount, share_percentage, fee_paid, fund_date, vault_address }]`. Without `address`, the 500 most recent on the platform. `usdc_amount` repeats `amount` whatever the asset, and `share_percentage` and `fee_paid` are always `"0"`: legacy fields kept for the client |
 | `GET` | `/api/user-by-address` | Signed in | `?address=G…` | The public profile linked to that wallet (`id, display_name, avatar_url, stellar_public_key, wallet_status`), or `null` |
 | `POST` | `/api/user-by-addresses` | Signed in | `{ addresses: string[] }` | `{ [address]: profile }`. Invalid addresses are dropped; at most 200 are looked up |
-| `GET` | `/api/notifications` | Signed in | — | Up to 200 of the caller's notifications, newest first: `[{ id, userId, title, caption, timestamp, isRead, url, object }]`. `object` is the project row id |
+| `GET` | `/api/notifications` | Signed in | — | Up to 200 of the caller's notifications, newest first: `[{ id, userId, title, caption, timestamp, isRead, url, object }]`. `object` is the project's public number, or `null` |
 | `PATCH` | `/api/notifications` | Signed in | `{ ids: uuid[] }`, at most 200 | `{ success: true }`. Marks them read |
 | `DELETE` | `/api/notifications` | Signed in | `?id=<uuid>` or `?all=true` | `{ success: true }`. Dismisses one or all |
+| `POST` | `/api/email/unsubscribe` | The token in the query | `?t=<unsubscribe token>&c=votes\|refunds\|updates\|reviews` | `{ success: true }`, or `404` for an unknown token or switch. The one-click target of every email's `List-Unsubscribe` header (RFC 8058). POST only, so a link scanner can't trigger it |
 
 The two profile lookups are signed-in only because contributor addresses are public on the ledger; anonymous access would make them a deanonymization oracle. Every notifications handler runs through the caller's own session, so RLS, not a filter in the route, confines it to their rows.
 
@@ -282,10 +292,12 @@ The two profile lookups are signed-in only because contributor addresses are pub
 | `POST` | `/api/ops-funding` | `triggerOpsFunding()` in [src/lib/ops-funding.ts](../src/lib/ops-funding.ts) | `{ success: true, status: "funded" \| "skipped", detail, amount? }` |
 | `POST` | `/api/settle-stalled` | `triggerSettleStalled()` in [src/lib/settle-stalled.ts](../src/lib/settle-stalled.ts) | `{ success: true, status: "done" \| "skipped", detail, reclaimed, checked, vaults? }` |
 | `POST` | `/api/keep-alive` | `runKeepAlive()` in [src/lib/ttl-keeper.ts](../src/lib/ttl-keeper.ts). Body `{ "dryRun": true }` reports what is due and its simulated cost without sending | `{ success: true, status: "done" \| "skipped" \| "dry-run", detail, entries[], restored, extended, feeXlm }` |
+| `POST` | `/api/governance-keeper` | `runGovernanceKeeper()` in [src/lib/governance-keeper.ts](../src/lib/governance-keeper.ts). Body `{ "dryRun": true }` reports what is due without sending | `{ success: true, status: "done" \| "skipped", detail, checked, actions[] }` |
+| `POST` | `/api/notification-emails` | `queueVoteReminders()` in [src/lib/data/vote-reminders.ts](../src/lib/data/vote-reminders.ts), then `sendNotificationEmails()` in [src/lib/email/notification-emails.ts](../src/lib/email/notification-emails.ts). Body `{ "dryRun": true }` reports both and writes and sends nothing | `{ success: true, reminders: { due, created }, emails: { status: "done" \| "skipped" \| "stopped", detail, sent, skipped, failed, retrying, expired, wouldSend? } }` |
 
 Every machine route requires `Authorization: Bearer <INDEXER_SECRET>`, compared in constant time. With `INDEXER_SECRET` unset, every request is refused. An unexpected error returns `500` with `{ success: false, error }`.
 
-The three that transact are signed by `OPS_FUNDING_SUBMITTER_SECRET`, a funded account with no owner authority, since each call is permissionless. Without it they return a skip, except a keep-alive dry run, which only simulates. The gates live in the contracts or in the TTLs, so any schedule is safe: an extra call skips. The compose stack calls them on a timer; see [Architecture](architecture.md#scheduled-jobs).
+The four that transact are signed by `OPS_FUNDING_SUBMITTER_SECRET`, a funded account with no owner authority, since each call is permissionless. Without it they return a skip, except a keep-alive dry run, which only simulates. The gates live in the contracts or in the TTLs, so any schedule is safe: an extra call skips. The compose stack calls them on a timer; see [Architecture](architecture.md#scheduled-jobs).
 
 ---
 
