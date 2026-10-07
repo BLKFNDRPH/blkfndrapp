@@ -39,7 +39,9 @@ export function NotificationBell() {
   const { user } = useAuth();
   const router = useRouter();
   const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [unreadCount, setUnreadCount] = useState(0);
+  // Read off the list rather than kept beside it, so the badge can't drift
+  // from what is shown when a request fails partway.
+  const unreadCount = notifications.filter(n => !n.isRead).length;
   // What needs this person now (open votes, money waiting). Worked out from
   // the ledger on every poll, so an item leaves once it is done.
   const [decisions, setDecisions] = useState<Decision[]>([]);
@@ -71,7 +73,6 @@ export function NotificationBell() {
       if (!res.ok) return;
       const data: Notification[] = await res.json();
       setNotifications(data);
-      setUnreadCount(data.filter(n => !n.isRead).length);
 
       // Anything unread that appeared since the last poll is surfaced, so a
       // decision taken while the user sits on another page reaches them there
@@ -125,50 +126,79 @@ export function NotificationBell() {
     };
   }, [fetchNotifications]);
 
+  // Opening the panel marks what was unread as read, once the server agrees.
+  // A refusal leaves the dots and the badge as they are and the next open
+  // tries again. No toast: the person opened a panel, they didn't ask for this.
   const handleOpenChange = async (open: boolean) => {
     setIsOpen(open);
     if (open && unreadCount > 0) {
       const unreadIds = notifications.filter(n => !n.isRead).map(n => n.id);
       try {
-        await fetch('/api/notifications', {
+        const res = await fetch('/api/notifications', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ ids: unreadIds }),
         });
-        setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
-        setUnreadCount(0);
+        if (!res.ok) throw new Error(`PATCH /api/notifications answered ${res.status}`);
+        // Only the ones sent: a poll may have brought in more meanwhile.
+        const marked = new Set(unreadIds);
+        setNotifications(prev => prev.map(n => (marked.has(n.id) ? { ...n, isRead: true } : n)));
       } catch (err) {
         console.error('Failed to mark as read:', err);
       }
     }
   };
 
+  // A dismiss the server refused leaves the list as it is and says so. These
+  // used to empty the list whatever the answer, so a Clear that failed every
+  // time looked done until the next load brought everything back.
+  const sayNotRemoved = (title: string, status?: number) =>
+    toast({
+      variant: 'destructive',
+      title,
+      description:
+        status === 401
+          ? 'Your session has ended. Sign in again, then try once more.'
+          : 'Nothing was removed. Try again in a moment.',
+    });
+
   const handleDismiss = async (e: React.MouseEvent, notificationId: string) => {
     e.stopPropagation();
     e.preventDefault();
+    let res: Response;
     try {
-      await fetch(`/api/notifications?id=${notificationId}`, { method: 'DELETE' });
-      setNotifications(prev => prev.filter(n => n.id !== notificationId));
-      setUnreadCount(prev => {
-        const notif = notifications.find(n => n.id === notificationId);
-        return notif && !notif.isRead ? prev - 1 : prev;
-      });
+      res = await fetch(`/api/notifications?id=${notificationId}`, { method: 'DELETE' });
     } catch (err) {
       console.error('Failed to dismiss notification:', err);
+      sayNotRemoved("Couldn't remove that notification");
+      return;
     }
+    if (!res.ok) {
+      console.error(`Failed to dismiss notification: DELETE answered ${res.status}`);
+      sayNotRemoved("Couldn't remove that notification", res.status);
+      return;
+    }
+    setNotifications(prev => prev.filter(n => n.id !== notificationId));
   };
 
   const handleDismissAll = async (e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
     if (!user) return;
+    let res: Response;
     try {
-      await fetch(`/api/notifications?all=true`, { method: 'DELETE' });
-      setNotifications([]);
-      setUnreadCount(0);
+      res = await fetch(`/api/notifications?all=true`, { method: 'DELETE' });
     } catch (err) {
       console.error('Failed to dismiss all notifications:', err);
+      sayNotRemoved("Couldn't clear your notifications");
+      return;
     }
+    if (!res.ok) {
+      console.error(`Failed to dismiss all notifications: DELETE answered ${res.status}`);
+      sayNotRemoved("Couldn't clear your notifications", res.status);
+      return;
+    }
+    setNotifications([]);
   };
 
   // The notification's object is the project id, so the button is a real link
