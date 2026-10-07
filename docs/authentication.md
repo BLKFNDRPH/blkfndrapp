@@ -200,7 +200,7 @@ Each row has one `admin_role`. The console offers four groups ([src/lib/admin-ro
 |---|---|---|---|
 | `owner` | Owner | Holds a share and votes. The only role that may edit the roster (`is_owner()`), vote on project approvals and decide feature requests. `has_admin_role(x)` is true for an owner for every `x`. | Their own wallet, in Freighter |
 | `platform_admin` | Platform Administrator | Bans and platform health (`platform_bans` RLS), hiding and locking projects, KYC review (in code) | Their own wallet, in Freighter |
-| `kyc_manager` | KYC Attestor | KYC review and on-chain attestation (`kyc_requests` RLS) | Platform-managed attestor key. They never connect a wallet. |
+| `kyc_manager` | KYC Attestor | KYC review and on-chain attestation (in code, `requireKycReviewer`) | Platform-managed attestor key. They never connect a wallet. |
 | `project_approver` | Project Administrator | Project moderation (`project_moderation` RLS), hiding and locking projects | Their own wallet, in Freighter |
 | `accountant` | Accountant | Read-only. No write policy names it. Not offered when adding someone. | — |
 
@@ -334,6 +334,7 @@ The same rule is in the database. [20261006155050_kyc_wallet_optional_at_submit.
 ### Review
 
 - Identity columns on `kyc_requests` are granted to no browser role. Reviewers read them through the service-role client, one record at a time, in `getSubmissionForReview`, behind `requireKycReviewer()`.
+- Review runs on the server only. `kyc_requests` has no reviewer policy, so a reviewer's own session sees and changes only their own check, like any applicant. Every list, read and decision goes through the service-role client after `requireKycReviewer()`. [20261007170000](../supabase/migrations/20261007170000_kyc_review_server_only.sql) dropped the `kyc_manager` select and update policies. The update policy had let any KYC manager or owner rewrite any check straight through PostgREST: approve it without the on-chain attestation, swap its details hash, or repoint its document.
 - The document is served as a signed URL that expires after 5 minutes. The bucket has no read policy for any browser role.
 - **Approve** (`attestKycAction`): the server signs the attestation on the identity registry with the reviewer's managed key, then records the decision. The chain write comes first, so a failed attestation never leaves a check marked approved.
 - **Reject** (`updateKycRequestStatus`): records the decision with the reviewer's reason (up to 500 characters).

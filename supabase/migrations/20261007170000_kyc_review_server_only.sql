@@ -1,0 +1,36 @@
+-- KYC review runs on the server only. A reviewer's browser session gets no
+-- access to other applicants' checks.
+--
+-- 20260809100000 (moderator_roles) gave anyone with has_admin_role('kyc_manager'),
+-- meaning every KYC manager and every owner, two policies on kyc_requests so they
+-- could review through their own session. The app never used them. Every
+-- reviewer read and every decision runs with the service role in
+-- src/lib/data/kyc.ts, after requireKycReviewer(): listSubmissionsForReview,
+-- getSubmissionForReview, decideSubmission, attestSubmission and
+-- revokeSubmissionAttestation. The pending counts (api/admin/kyc-count,
+-- getHealth) and the renewal reminders use the service role too. A session
+-- client only ever touches the caller's own row (submitOwnKyc,
+-- getOwnSubmission), and the applicant policies cover that.
+--
+-- kyc_manager_decides is the hole. The column UPDATE grant from 20260806190754
+-- covers status, details_hash, document_path and the identity details, so with
+-- this policy any KYC manager or owner could rewrite any applicant's row
+-- straight through PostgREST. They could:
+--   * mark a check approved without the on-chain attestation, which the server
+--     writes before it records an approval;
+--   * swap the details hash the attestation commits to;
+--   * point document_path at another applicant's file.
+-- Policies are OR'd, so it also let an owner or KYC manager who is an applicant
+-- approve their own check, or edit it once approved. The applicant policy
+-- refuses both.
+--
+-- kyc_manager_reads_submissions exposes less, because the identity columns are
+-- granted to no browser role. It still showed every applicant's user id,
+-- wallet, status, document type and expiry, and rejection reason to the browser
+-- session of every owner and KYC manager. Nothing reads it, so it goes too.
+--
+-- The applicant policies are unchanged. The service role bypasses RLS, so the
+-- review flow is unaffected.
+
+drop policy if exists kyc_manager_decides on public.kyc_requests;
+drop policy if exists kyc_manager_reads_submissions on public.kyc_requests;
