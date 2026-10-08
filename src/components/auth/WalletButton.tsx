@@ -52,7 +52,7 @@ export function WalletButton() {
             <PracticeNetworkBadge />
           </div>
           <DialogDescription className="text-xs text-muted-foreground">
-            The wallet you confirm stakes, votes and refunds with.
+            The Stellar wallet you sign stakes, votes and refunds with.
           </DialogDescription>
         </DialogHeader>
         <div className="py-2">

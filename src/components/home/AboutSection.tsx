@@ -1,5 +1,6 @@
 import { Building2, HandCoins, Vote, FileCheck } from "lucide-react";
 import { SectionHeading } from "./SectionHeading";
+import { IS_PRACTICE_NETWORK } from "@/lib/network";
 
 /**
  * "How a vault works": the four steps and the four platform rules, in the words
@@ -16,13 +17,13 @@ const STEPS = [
     step: "1",
     icon: Building2,
     title: "A project gets its own vault.",
-    body: "The builder locks a deposit inside it first.",
+    body: "It's a Soroban smart contract on Stellar. The builder locks a deposit inside it first.",
   },
   {
     step: "2",
     icon: HandCoins,
     title: "People stake.",
-    body: "From $5. Every stake is recorded publicly.",
+    body: "From $5. Every stake is recorded on-chain.",
   },
   {
     step: "3",
@@ -33,7 +34,7 @@ const STEPS = [
   {
     step: "4",
     icon: FileCheck,
-    title: "Every outcome goes on the record.",
+    title: "Every outcome is recorded on-chain.",
     body: "Delivered stages pay the builder; failed stages return money and the deposit to stakeholders.",
   },
 ];
@@ -104,7 +105,8 @@ export function AboutSection() {
         </dl>
 
         <p className="mt-6 text-center text-xs text-muted-foreground">
-          Platform rules as currently set on the practice network.
+          Platform rules as currently set in the contracts on Stellar{" "}
+          {IS_PRACTICE_NETWORK ? "Testnet" : "Mainnet"}.
         </p>
       </div>
     </section>

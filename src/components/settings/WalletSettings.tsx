@@ -41,13 +41,13 @@ import { WalletSetupFlow } from "@/components/wallet/WalletSetupFlow";
  * Someone with no wallet on their account gets the guided setup
  * (WalletSetupFlow, the Phase 1 shell of the brief's wizard). Someone whose
  * wallet is linked but not connected in this browser gets one button,
- * "Reconnect". Connected, it shows the account ID and the way to disconnect.
+ * "Reconnect". Connected, it shows the wallet address and the way to disconnect.
  * Nothing here moves money; connecting proves control of a wallet and links it
  * to the account.
  */
 
 export const WALLET_EXPLAINER =
-  "A wallet holds the key to your money. It lives on your device, not with BLKFNDR. You'll use it to confirm each stake, vote and refund.";
+  "A Stellar wallet holds the keys to your money. They live on your device, not with BLKFNDR. You'll use it to sign each stake, vote and refund.";
 
 const FREIGHTER_SITE = "https://freighter.app";
 
@@ -55,7 +55,7 @@ const INSTALL_STEPS = [
   "Install Freighter from freighter.app (free, in Chrome, Firefox, Brave or Edge).",
   "Create a new wallet and set a password.",
   "Write down the recovery words on paper and keep them safe; nobody can restore them for you.",
-  ...(IS_PRACTICE_NETWORK ? ["Switch the wallet to the test network."] : []),
+  ...(IS_PRACTICE_NETWORK ? ["Switch Freighter to Testnet."] : []),
   "Come back here and press Check again.",
 ];
 
@@ -69,12 +69,12 @@ export function WalletChip({ label }: { label: string }) {
   );
 }
 
-/** "Practice network", or nothing at all on the main network. */
+/** "Testnet", or nothing at all on Mainnet. */
 export function PracticeNetworkBadge() {
   if (!IS_PRACTICE_NETWORK) return null;
   return (
     <Badge className="border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-700 hover:bg-amber-500/10 dark:text-amber-300">
-      Practice network
+      Testnet
     </Badge>
   );
 }
@@ -247,11 +247,11 @@ export function WalletPanel({
       await navigator.clipboard.writeText(activeAddress);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-      toast({ title: "Account ID copied" });
+      toast({ title: "Address copied" });
     } catch {
       toast({
         title: "Couldn't copy",
-        description: "Select the ID and copy it yourself.",
+        description: "Select the address and copy it yourself.",
         variant: "destructive",
       });
     }
@@ -303,7 +303,7 @@ export function WalletPanel({
 
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
             <span className="text-sm text-muted-foreground">
-              Account ID{" "}
+              Wallet address{" "}
               <span className="font-mono text-foreground">...{lastFour}</span>
             </span>
             <button
@@ -312,7 +312,7 @@ export function WalletPanel({
               className="text-xs font-medium text-foreground underline underline-offset-4 hover:text-primary"
               aria-expanded={showFullId}
             >
-              {showFullId ? "Hide full ID" : "Show full ID"}
+              {showFullId ? "Hide full address" : "Show full address"}
             </button>
           </div>
 
@@ -322,7 +322,7 @@ export function WalletPanel({
                 Technical details
               </p>
               <p className="text-xs text-muted-foreground">
-                Your account ID. Like a bank account number: safe to share.
+                Your Stellar public key. Safe to share: it&apos;s how others send you funds.
               </p>
               <div className="mt-2 flex items-start gap-2">
                 <code className="min-w-0 flex-1 break-all font-mono text-xs leading-relaxed text-foreground">
@@ -334,7 +334,7 @@ export function WalletPanel({
                   size="icon"
                   className="h-8 w-8 shrink-0"
                   onClick={handleCopy}
-                  aria-label="Copy account ID"
+                  aria-label="Copy wallet address"
                 >
                   {copied ? (
                     <Check className="h-4 w-4 text-emerald-500" />
@@ -354,7 +354,7 @@ export function WalletPanel({
               className="inline-flex items-center gap-1.5 text-sm font-medium text-foreground underline underline-offset-4 hover:text-primary"
             >
               <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
-              See the public record
+              View on Stellar Expert
             </a>
             <p className="mt-1 text-xs text-muted-foreground">{EXPLORER_EXPLAINER}</p>
           </div>
@@ -399,7 +399,7 @@ export function WalletPanel({
             <WalletChip label={hasLinkedWallet ? "Wallet: reconnect" : "Wallet: not set up"} />
             <p className="text-sm text-muted-foreground">
               {hasLinkedWallet
-                ? "Your wallet is linked to this account but not connected in this browser. Reconnect it to confirm stakes, votes and refunds."
+                ? "Your wallet is linked to this account but not connected in this browser. Reconnect it to sign stakes, votes and refunds."
                 : WALLET_EXPLAINER}
             </p>
           </div>
@@ -413,7 +413,7 @@ export function WalletPanel({
           {isConnecting ? (
             <>
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-              Waiting for your wallet...
+              Waiting for Freighter...
             </>
           ) : (
             actionLabel
@@ -460,10 +460,10 @@ export function WalletPanel({
       {failure?.kind === "not-detected" && !isPhone && (
         <div className="rounded-xl border border-border bg-muted/20 p-4">
           <p className="text-sm font-semibold text-foreground">
-            We can&apos;t see your wallet yet
+            We can&apos;t see Freighter yet
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
-            If it&apos;s installed, make sure it&apos;s unlocked. Otherwise, here is how to set one up.
+            If it&apos;s installed, make sure it&apos;s unlocked. Otherwise, here is how to set it up.
           </p>
           <ol className="mt-3 space-y-2">
             {INSTALL_STEPS.map((step, index) => (

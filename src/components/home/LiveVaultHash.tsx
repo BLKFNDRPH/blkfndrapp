@@ -50,8 +50,8 @@ export function LiveVaultHash({ factoryExplorerUrl }: { factoryExplorerUrl: stri
   }
   return (
     <p className="mt-2 text-xs text-muted-foreground">
-      Could not read it from the network just now. The factory&apos;s storage is
-      public —{" "}
+      Could not read it from the Soroban RPC just now. The factory&apos;s
+      contract storage is on-chain —{" "}
       <a
         href={factoryExplorerUrl}
         target="_blank"
@@ -59,7 +59,7 @@ export function LiveVaultHash({ factoryExplorerUrl }: { factoryExplorerUrl: stri
         title={EXPLORER_EXPLAINER}
         className="underline underline-offset-2"
       >
-        see the public record
+        view it on Stellar Expert
       </a>
       .
     </p>

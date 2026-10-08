@@ -357,7 +357,7 @@ export default function VerifyIdentityPage() {
             </p>
             <p className="text-sm text-muted-foreground">
               A reviewer approved your documents. Your verification counts once it&apos;s attached to the
-              wallet you&apos;ll open vaults from, and a reviewer has recorded it on the public record.
+              wallet you&apos;ll open vaults from, and a reviewer has attested it on-chain.
             </p>
             {linked ? (
               <Button type="button" onClick={attach} disabled={attaching}>
@@ -379,11 +379,11 @@ export default function VerifyIdentityPage() {
       case "approved-unrecorded":
         return (
           <div className="space-y-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-5">
-            <p className="font-semibold">Approved. Being recorded.</p>
+            <p className="font-semibold">Approved. Being recorded on-chain.</p>
             <p className="text-sm text-muted-foreground">
               {onRecord === null
-                ? "We couldn't check the public record just now. If your verification isn't on it yet, a reviewer records it next; you'll get a notification."
-                : "A reviewer records your verification on the public record next, and you'll get a notification when it's done. Then you can open a vault."}
+                ? "We couldn't read the on-chain record just now. If your verification isn't attested on-chain yet, a reviewer records it next; you'll get a notification."
+                : "A reviewer attests your verification on-chain next, and you'll get a notification when it's done. Then you can open a vault."}
             </p>
             {onRecord === null && (
               <Button type="button" variant="outline" size="sm" onClick={load}>
@@ -421,7 +421,7 @@ export default function VerifyIdentityPage() {
           <p className="font-semibold">Your verification is on a different wallet</p>
           <p>
             It&apos;s attached to the wallet ending …{filed!.slice(-4)}, but the wallet set up on your
-            account now ends …{linked.slice(-4)}. Switch back to …{filed!.slice(-4)} in your wallet and set
+            account now ends …{linked.slice(-4)}. Switch back to …{filed!.slice(-4)} in Freighter and set
             it up on your account again, or contact support to move the verification.
           </p>
           <div className="flex flex-wrap gap-2">
@@ -458,7 +458,7 @@ export default function VerifyIdentityPage() {
             <div>
               <dt className="text-muted-foreground">Attached wallet</dt>
               <dd className="font-medium">
-                {filed ? `Account ID …${filed.slice(-4)}` : "None yet"}
+                {filed ? `Wallet address …${filed.slice(-4)}` : "None yet"}
                 {!filed && linked && phase === "pending" && (
                   <Button
                     type="button"
@@ -488,7 +488,7 @@ export default function VerifyIdentityPage() {
                 : "Your name, ID number, date of birth and address are never shown on this page. Only a reviewer can see them. Once they've decided, we delete your document. Your ID number, date of birth and address are deleted then too, or, if they approve before you've attached a wallet, once you attach one."
               : submission.status === "approved" && !filed
                 ? "Your document has been deleted. Your ID number, date of birth and address are kept only until you attach your wallet, then deleted too."
-                : "Your document, ID number, date of birth and address have been deleted. We keep your name and a one-way fingerprint of your details."}
+                : "Your document, ID number, date of birth and address have been deleted. We keep your name and a one-way SHA-256 hash of your details."}
           </p>
         </section>
       )}

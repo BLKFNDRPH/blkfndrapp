@@ -192,7 +192,7 @@ export function StakesTab({
                       className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
                     >
                       <ExternalLink className="h-3 w-3" aria-hidden="true" />
-                      Verify on the public record
+                      Verify on Stellar Expert
                     </a>
                     <p className="text-[11px] text-muted-foreground">{EXPLORER_EXPLAINER}</p>
                   </div>

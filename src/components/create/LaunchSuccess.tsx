@@ -47,7 +47,7 @@ export function LaunchSuccess({ opened, onStartAnother }: { opened: OpenedVault;
       <p className="mt-2 break-words text-lg font-medium">{opened.title}</p>
       <p className="mx-auto mt-3 max-w-lg text-sm text-muted-foreground">
         {opened.alreadyOpened ? (
-          "Nothing new was paid or confirmed. If it isn't in Projects yet, it will be within a minute or two."
+          "Nothing new was signed or paid. If it isn't in Projects yet, it will be within a minute or two."
         ) : (
           <>
             Your deposit is locked in it, and people can stake as soon as it shows in Projects. It

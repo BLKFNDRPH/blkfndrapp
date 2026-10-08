@@ -52,9 +52,9 @@ export function CostCard({
       case "fee-short":
         return { text: "Needs a little more XLM for the fee", tone: "short" as const };
       case "no-account":
-        return { text: "Not activated yet", tone: "short" as const };
+        return { text: "Not funded on the ledger yet", tone: "short" as const };
       case "no-trustline":
-        return { text: currency === "XLM" ? "Not set up for this currency" : "Not set up for dollars yet", tone: "short" as const };
+        return { text: currency === "XLM" ? "No trustline for this asset" : `No ${currency} trustline yet`, tone: "short" as const };
       case "signed-out":
         return { text: "Sign in to check", tone: "muted" as const };
       case "no-wallet":
@@ -91,7 +91,7 @@ export function CostCard({
           </div>
           <p className="text-xs text-muted-foreground">
             About {networkFeeMoney(feeXlm, xlmUsd)} on a normal day, a little more for each stage, paid from your
-            wallet. You see the exact figure before you confirm.
+            wallet in XLM to the Stellar network. You see the exact figure before you sign.
           </p>
         </div>
         <div className="flex justify-between gap-3 border-t border-border pt-2.5 font-semibold">

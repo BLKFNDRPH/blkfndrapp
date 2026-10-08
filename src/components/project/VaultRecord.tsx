@@ -80,7 +80,7 @@ function Verify({ line }: { line: RecordLine }) {
     <div className="space-y-1.5 rounded-lg bg-muted/40 p-3 text-sm">
       <p className="font-medium">Verify this</p>
       <p className="flex flex-wrap items-center gap-2 text-muted-foreground">
-        Reference{" "}
+        Transaction hash{" "}
         {hash === undefined ? (
           <span>looking it up…</span>
         ) : hash ? (
@@ -88,7 +88,7 @@ function Verify({ line }: { line: RecordLine }) {
             <span className="font-mono text-foreground">
               {hash.slice(0, 4)}…{hash.slice(-4)}
             </span>
-            <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={copy} aria-label="Copy the reference">
+            <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={copy} aria-label="Copy the transaction hash">
               {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
             </Button>
           </>
@@ -96,7 +96,7 @@ function Verify({ line }: { line: RecordLine }) {
           <span>couldn&apos;t be looked up just now</span>
         )}
       </p>
-      <p className="text-muted-foreground">Recorded {when(line.at, true)}</p>
+      <p className="text-muted-foreground">Recorded on-chain {when(line.at, true)}</p>
       {hash && (
         <a
           href={`${EXPLORER_BASE}/tx/${hash}`}
@@ -104,7 +104,7 @@ function Verify({ line }: { line: RecordLine }) {
           rel="noopener noreferrer"
           className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
         >
-          See it on the public ledger
+          View on Stellar Expert
           <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
         </a>
       )}
@@ -190,7 +190,7 @@ export function VaultRecord({
           {ledgerUrl && (
             <Button asChild variant="ghost" size="sm" className="gap-1.5">
               <a href={ledgerUrl} target="_blank" rel="noopener noreferrer">
-                Open on the public ledger
+                View on Stellar Expert
                 <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
               </a>
             </Button>
@@ -203,7 +203,7 @@ export function VaultRecord({
   if (lines.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">
-        Nothing recorded yet. The vault opens when the builder&apos;s deposit lands.
+        Nothing recorded on-chain yet. The vault opens when the builder&apos;s deposit lands.
       </p>
     );
   }
@@ -214,8 +214,8 @@ export function VaultRecord({
     <section aria-label="The vault's record" className="space-y-3">
       <div className="space-y-1">
         <p className="text-sm text-muted-foreground">
-          Indexed from the public ledger by our indexer. Every line can be verified on an
-          independent site.
+          Indexed from the Stellar ledger by our indexer. Every line can be verified on Stellar
+          Expert, an independent block explorer.
         </p>
         {freshness && (
           <p className="flex items-center gap-2 text-xs text-muted-foreground">

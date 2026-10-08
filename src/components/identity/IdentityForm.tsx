@@ -441,7 +441,7 @@ export function IdentityForm({
           <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
             Your verification is attached to the wallet ending …{filedWallet!.slice(-4)}, but the wallet
             set up on your account now ends …{walletToAttach.slice(-4)}. Switch back to …
-            {filedWallet!.slice(-4)} in your wallet and set it up on your account again, or{" "}
+            {filedWallet!.slice(-4)} in Freighter and set it up on your account again, or{" "}
             <a href="mailto:hello@blkfndr.com" className="font-medium underline">
               contact support
             </a>{" "}
@@ -494,7 +494,7 @@ export function IdentityForm({
           {wallet
             ? "Once they've decided, we delete your document, ID number, date of birth and address."
             : "Once they've decided, we delete your document. Your ID number, date of birth and address are deleted then too, or, if they approve before you've set up a wallet, once you attach one."}{" "}
-          We keep your name and a one-way fingerprint of your details.
+          We keep your name and a one-way SHA-256 hash of your details.
         </p>
       </div>
     </form>

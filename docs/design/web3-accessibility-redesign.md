@@ -18,6 +18,8 @@
 >
 > Everything else in the brief is still open. Track progress in [progress.md](../../progress.md).
 
+> **Vocabulary change (owner, 2026-10-08).** Web3 terms are back in the interface. The rows of the [Vocabulary](#vocabulary) table that replaced Testnet, Stellar and Soroban, on-chain, transaction and transaction hash, sign and signature, wallet address (public key), trustline, Friendbot and Freighter are reverted: the app says Testnet, not "practice mode", and "View on Stellar Expert", not "See the public record". The project rows stay as written: stake, stakeholder, vault, stage, payout, goal, builder's deposit, the plain status pills, "Approve this payout" and dollars-first amounts.
+
 
 ## Summary
 

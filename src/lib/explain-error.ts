@@ -107,9 +107,9 @@ export interface ExplainContext {
 
 export const NOTHING_MOVED = "Nothing left your wallet.";
 const ONLY_FEE =
-  "Your money didn't leave your wallet. Only the network fee, a few cents at most, was charged.";
+  "Your funds didn't leave your wallet. Only the network fee, a few cents of XLM at most, was charged.";
 const MAYBE_MOVED =
-  "It may have gone through. Check your activity before trying again, so nothing is sent twice.";
+  "The transaction may have gone through. Check your activity before trying again, so nothing is sent twice.";
 
 const NOUN: Record<MoneyAction, string> = {
   stake: "Stake",
@@ -119,13 +119,13 @@ const NOUN: Record<MoneyAction, string> = {
   close: "Stage close",
   "close-vault": "Vault close",
   refund: "Refund",
-  "enable-dollars": "Dollars",
+  "enable-dollars": "Trustline",
   activate: "Wallet",
 };
 
-/** "Stake not sent", "Vote not sent", "Dollars not enabled", "Wallet not activated". */
+/** "Stake not sent", "Vote not sent", "Trustline not added", "Wallet not activated". */
 function notDone(action: MoneyAction): string {
-  if (action === "enable-dollars") return "Dollars not enabled";
+  if (action === "enable-dollars") return "Trustline not added";
   if (action === "activate") return "Wallet not activated";
   return `${NOUN[action]} not sent`;
 }
@@ -412,13 +412,13 @@ function fromTokenCode(code: number, ctx: ExplainContext, technical: string): Ou
   switch (code) {
     case TOKEN.TrustlineMissing:
       return outcome("no-trustline", ctx, technical, {
-        body: "Your wallet can't hold dollars yet. Enable dollars in your wallet, then try again.",
+        body: "Your wallet has no USDC trustline yet. Add the trustline, then try again.",
         primary: FIX_WALLET,
         tone: "neutral",
       });
     case TOKEN.AccountMissing:
       return outcome("no-account", ctx, technical, {
-        body: "Your wallet isn't activated yet. Activate it, then try again.",
+        body: "Your wallet's Stellar account isn't activated yet: it needs its first XLM to exist on the ledger. Activate it, then try again.",
         primary: FIX_WALLET,
         tone: "neutral",
       });
@@ -431,7 +431,7 @@ function fromTokenCode(code: number, ctx: ExplainContext, technical: string): Ou
       });
     case TOKEN.BalanceDeauthorized:
       return outcome("not-enough-money", ctx, technical, {
-        body: "The issuer of these dollars has frozen them in your wallet, so they can't be staked.",
+        body: "The USDC issuer has frozen this asset in your wallet (trustline deauthorized), so it can't be staked.",
         primary: CLOSE,
         secondary: undefined,
       });
@@ -457,7 +457,7 @@ export function explainError(error: unknown, ctx: ExplainContext): Outcome {
   if (name === "PlatformLockError") {
     return outcome("paused", ctx, technical, {
       title: `${NOUN[ctx.action]} paused`,
-      body: "BLKFNDR paused new stakes in this listing. Votes already open and refunds still work; the vault itself has no pause.",
+      body: "BLKFNDR paused new stakes in this listing. Votes already open and refunds still work; the vault contract itself has no pause.",
       primary: CLOSE,
       secondary: undefined,
       tone: "neutral",
@@ -466,16 +466,16 @@ export function explainError(error: unknown, ctx: ExplainContext): Outcome {
 
   // The wallet answered without a signature.
   if (name === "FreighterDeclined") {
-    if (/timed out|didn't confirm/i.test(text)) {
+    if (/timed out|didn't (confirm|sign)/i.test(text)) {
       return outcome("expired", ctx, technical, {
         title: "Request timed out",
-        body: "The request timed out after 5 minutes. If a wallet window is still open, close it; approving it now does nothing.",
+        body: "The signature request timed out after 5 minutes. If a Freighter window is still open, close it; signing it now does nothing.",
         tone: "neutral",
       });
     }
     return outcome("declined", ctx, technical, {
-      title: "Not approved",
-      body: "You didn't approve it in your wallet.",
+      title: "Not signed",
+      body: "You rejected the signature request in your wallet.",
       moneyLine: "Nothing was moved or charged.",
       tone: "neutral",
     });
@@ -484,7 +484,7 @@ export function explainError(error: unknown, ctx: ExplainContext): Outcome {
   if (/different account than the one linked/i.test(text)) {
     return outcome("wrong-account", ctx, technical, {
       title: "Different account",
-      body: "Your wallet approved with a different account than the one linked here. Switch accounts in your wallet and try again.",
+      body: "Your wallet signed with a different address than the one linked here. Switch accounts in Freighter and try again.",
       primary: RETRY,
       secondary: { label: "Manage wallet", intent: "fix-wallet" },
       tone: "neutral",
@@ -504,7 +504,7 @@ export function explainError(error: unknown, ctx: ExplainContext): Outcome {
   // record of it and nothing can be sent from it.
   if (/Account not found/i.test(text)) {
     return outcome("no-account", ctx, technical, {
-      body: "Your wallet isn't activated yet. Activate it, then try again.",
+      body: "Your wallet's Stellar account isn't activated yet: it needs its first XLM to exist on the ledger. Activate it, then try again.",
       primary: FIX_WALLET,
       tone: "neutral",
     });
@@ -513,7 +513,7 @@ export function explainError(error: unknown, ctx: ExplainContext): Outcome {
   // Archived contract storage: the SDK refuses to build until it is renewed.
   if (name === "ExpiredStateError" || /restore some contract state/i.test(text)) {
     return outcome("storage-renewal", ctx, technical, {
-      body: "The vault's storage needs a one-off renewal, which BLKFNDR does automatically every day. Try again in a few minutes.",
+      body: "The vault contract's storage TTL expired and needs restoring, which BLKFNDR does automatically every day. Try again in a few minutes.",
     });
   }
 
@@ -521,10 +521,10 @@ export function explainError(error: unknown, ctx: ExplainContext): Outcome {
   if (name === "TransactionStillPending" || /for transaction to complete, but it did not/i.test(text)) {
     return outcome("sent-unconfirmed", ctx, technical, {
       title: `${NOUN[ctx.action]} sent, not yet confirmed`,
-      body: "It was sent, but we couldn't confirm it yet. Don't try again right away.",
+      body: "The transaction was submitted, but the ledger hasn't confirmed it yet. Don't try again right away.",
       moneyLine: MAYBE_MOVED,
       primary: { label: "Check my activity", intent: "check-activity" },
-      secondary: { label: "Look it up on the public record", intent: "public-record" },
+      secondary: { label: "Look it up on Stellar Expert", intent: "public-record" },
       tone: "neutral",
     });
   }
@@ -532,10 +532,10 @@ export function explainError(error: unknown, ctx: ExplainContext): Outcome {
   // Included in a ledger and failed there: the fee was charged.
   if (name === "LedgerFailedError") {
     return outcome("failed-on-ledger", ctx, technical, {
-      body: "The network ran it and it didn't go through.",
+      body: "The transaction failed on the ledger.",
       moneyLine: ONLY_FEE,
       primary: RETRY,
-      secondary: { label: "Look it up on the public record", intent: "public-record" },
+      secondary: { label: "Look it up on Stellar Expert", intent: "public-record" },
     });
   }
 
@@ -543,7 +543,7 @@ export function explainError(error: unknown, ctx: ExplainContext): Outcome {
   if (/txTooLate|tx_too_late/i.test(text)) {
     return outcome("expired", ctx, technical, {
       title: "Request expired",
-      body: "It waited too long before it was sent, so the network turned it down. Try again.",
+      body: "The signed transaction expired before it reached the network (it's valid for 5 minutes), so the network rejected it. Try again.",
       tone: "neutral",
     });
   }
@@ -552,7 +552,7 @@ export function explainError(error: unknown, ctx: ExplainContext): Outcome {
   // network's minimum balance.
   if (/txInsufficientBalance|tx_insufficient_balance|op_low_reserve|txInsufficientFee/i.test(text)) {
     return outcome("not-enough-xlm", ctx, technical, {
-      body: "Your wallet needs a little more XLM, the network's own currency, to pay the network fee.",
+      body: "Your wallet needs a little more XLM, Stellar's native asset, to pay the network fee and keep its minimum balance.",
       primary: FIX_WALLET,
       tone: "neutral",
     });
@@ -589,13 +589,13 @@ export function explainError(error: unknown, ctx: ExplainContext): Outcome {
   // The network refused the transaction without running it.
   if (name === "SendFailedError" || /Sending the transaction to the network failed/i.test(text)) {
     return outcome("rejected", ctx, technical, {
-      body: "The network didn't accept it. Try again in a moment.",
+      body: "The network rejected the transaction without running it. Try again in a moment.",
     });
   }
 
   if (/Failed to fetch|NetworkError|network error|ECONNREFUSED|ETIMEDOUT|socket hang up|status code 50[234]/i.test(text)) {
     return outcome("network", ctx, technical, {
-      body: "We couldn't reach the network. Check your connection and try again.",
+      body: "We couldn't reach the Stellar network. Check your connection and try again.",
       tone: "neutral",
     });
   }

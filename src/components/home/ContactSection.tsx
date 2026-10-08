@@ -46,14 +46,14 @@ const CHANNELS = [
   {
     icon: ShieldAlert,
     title: "Security disclosures",
-    body: "Found something in the vault code or the app. Report it privately first and give us a window to fix it before you publish.",
+    body: "Found something in the Soroban contracts or the app. Report it privately first and give us a window to fix it before you publish.",
     action: CONTACT.security,
     href: `mailto:${CONTACT.security}`,
   },
   {
     icon: Github,
     title: "Source and issues",
-    body: "The vault code, the app and the docs are public. Read the code, open an issue, or check a deployment against the program fingerprints.",
+    body: "The vault contracts, the app and the docs are public. Read the code, open an issue, or check a deployment against the wasm hashes.",
     action: "BLKFNDRPH/blkfndrapp",
     href: CONTACT.repo,
   },
@@ -102,7 +102,7 @@ export function ContactSection() {
         <SectionHeading
           eyebrow="Contact"
           title="Talk to the people building it"
-          lead="Whether you are bringing a project to BLKFNDR, weighing up a stake in one, or you have found a hole in the vault code, there is a direct way to reach us."
+          lead="Whether you are bringing a project to BLKFNDR, weighing up a stake in one, or you have found a hole in the vault contracts, there is a direct way to reach us."
         />
 
         <div className="mt-14 grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] lg:gap-12">

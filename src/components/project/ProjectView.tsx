@@ -603,8 +603,8 @@ export function ProjectView({
       ? `Your stake ${ownStakeView.primary}`
       : null
     : !user
-      ? "Sign in with Google or email, then approve in a wallet you control. We'll walk you through it."
-      : "Approve in a wallet you control. We'll walk you through it.";
+      ? "Sign in with Google or email, then sign the transaction in a wallet you control. We'll walk you through it."
+      : "Sign the transaction in a wallet you control. We'll walk you through it.";
 
   // Recording a passed deadline on the vault. The governance keeper does this
   // on its own (src/lib/governance-keeper.ts), and refunds work without it
@@ -818,7 +818,7 @@ export function ProjectView({
         {creatorAddress && (
           <div>
             <dt className="text-xs uppercase tracking-wide text-muted-foreground">
-              Builder&apos;s account ID
+              Builder&apos;s wallet address
             </dt>
             <dd className="font-mono text-xs break-all">{creatorAddress}</dd>
           </div>
@@ -826,7 +826,7 @@ export function ProjectView({
         {project.vaultAddress && (
           <div>
             <dt className="text-xs uppercase tracking-wide text-muted-foreground">
-              Vault address
+              Vault contract address
             </dt>
             <dd className="font-mono text-xs break-all">{project.vaultAddress}</dd>
           </div>
@@ -839,7 +839,7 @@ export function ProjectView({
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
             >
-              Open this vault on the public ledger (stellar.expert)
+              View the vault contract on Stellar Expert
               <ExternalLink className="h-3 w-3" aria-hidden="true" />
             </a>
             <p className="text-xs text-muted-foreground">{EXPLORER_EXPLAINER}</p>
@@ -850,12 +850,12 @@ export function ProjectView({
             {isCloseVaultOpen ? (
               <MoneyActionPanel
                 context={{ action: "close-vault" }}
-                title="Record the deadline on the vault"
-                sentence="This writes on the vault that its deadline has passed, so its status catches up everywhere. Refunds already work without it. Nothing leaves your wallet except a small network fee."
+                title="Record the deadline on-chain"
+                sentence="This transaction tells the vault contract its deadline has passed, so its status catches up everywhere. Refunds already work without it. Nothing leaves your wallet except a small network fee."
                 rows={[]}
-                walletShows="a request to update the vault, with no money moving"
+                walletShows="a transaction that calls the vault contract, with no money moving"
                 prepare={() => prepareSettleVault(project.vaultAddress!)}
-                successTitle="The vault has recorded its deadline."
+                successTitle="The deadline is recorded on-chain."
                 onSuccess={() => {
                   refreshProject(project.id);
                   refreshAfterTx(freighterWalletAddress ?? undefined);
@@ -873,8 +873,8 @@ export function ProjectView({
                   Close it now
                 </Button>
                 <p className="text-xs text-muted-foreground">
-                  Records on the vault that its deadline has passed. Refunds work without it. Anyone
-                  can do this for a small network fee from their wallet.
+                  Records on-chain that the vault&apos;s deadline has passed. Refunds work without it.
+                  Anyone can do this for a small network fee from their wallet.
                 </p>
               </>
             )}

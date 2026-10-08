@@ -5,10 +5,10 @@ import { ChevronDown, Code2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
- * The one place on the landing page where technical material is allowed:
- * program fingerprints, contract addresses, build commands and test names.
- * Collapsed by default so the page reads in plain words; everything inside it
- * stays on the page so the custody claims above remain checkable.
+ * Where the landing page keeps its deepest technical material: wasm hashes,
+ * contract addresses, build commands and test names. Collapsed by default so
+ * the page stays easy to scan; everything inside it stays on the page so the
+ * custody claims above remain checkable.
  *
  * A small stateful disclosure rather than a dependency: the project has no
  * accordion primitive and this increment adds no packages.

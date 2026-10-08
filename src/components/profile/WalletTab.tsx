@@ -62,7 +62,7 @@ export function WalletTab({
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      // "Show full ID" in the panel above shows it for copying by hand.
+      // "Show full address" in the panel above shows it for copying by hand.
     }
   };
 
@@ -83,7 +83,7 @@ export function WalletTab({
             What your wallet holds
             {IS_PRACTICE_NETWORK && (
               <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300">
-                practice money
+                Testnet
               </span>
             )}
           </p>
@@ -100,12 +100,12 @@ export function WalletTab({
                   Dollars <span className="text-muted-foreground">(USDC)</span>
                 </dt>
                 <dd className="font-semibold">
-                  {usdcRaw !== null ? formatUsd(rawToUnits(usdcRaw), "always") : "Not enabled yet"}
+                  {usdcRaw !== null ? formatUsd(rawToUnits(usdcRaw), "always") : "Trustline not added"}
                 </dd>
               </div>
               <div className="flex items-center justify-between gap-3 px-3 py-2.5">
                 <dt>
-                  XLM <span className="text-muted-foreground">(the network&apos;s own currency, for fees)</span>
+                  XLM <span className="text-muted-foreground">(Stellar&apos;s native asset, for fees)</span>
                 </dt>
                 <dd className="text-right font-semibold">
                   {xlmRaw !== null ? (
@@ -114,7 +114,7 @@ export function WalletTab({
                       {formatToken(rawToUnits(xlmRaw), "XLM")}
                     </>
                   ) : (
-                    "Not activated yet"
+                    "Not funded on the ledger yet"
                   )}
                 </dd>
               </div>
@@ -135,11 +135,11 @@ export function WalletTab({
 
           {IS_PRACTICE_NETWORK && state === "ready" && (
             <div className="space-y-2 rounded-xl border border-border p-3 text-sm">
-              <p className="font-medium">Add practice dollars</p>
+              <p className="font-medium">Add testnet USDC</p>
               <p className="text-muted-foreground">
-                Circle, the company behind USDC, gives practice dollars for free. On their page pick
-                Stellar Testnet, paste your account ID (this button copies it), and press Send. You get
-                20 practice dollars every 2 hours, straight to your wallet.
+                Circle, the company behind USDC, runs a free testnet USDC faucet. On their page pick
+                Stellar Testnet, paste your wallet address (this button copies it), and press Send. You
+                get 20 testnet USDC every 2 hours, straight to your wallet.
               </p>
               <div className="flex flex-wrap gap-2">
                 <Button
@@ -151,11 +151,11 @@ export function WalletTab({
                   }}
                 >
                   <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
-                  Get practice dollars
+                  Get testnet USDC
                 </Button>
                 <Button size="sm" variant="ghost" className="gap-1.5" onClick={copyId}>
                   {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                  {copied ? "Copied" : `Copy account ID ...${address.slice(-4)}`}
+                  {copied ? "Address copied" : `Copy wallet address ...${address.slice(-4)}`}
                 </Button>
                 <Button size="sm" variant="ghost" onClick={onRefresh}>
                   Check again
@@ -166,7 +166,7 @@ export function WalletTab({
 
           <p className="text-xs text-muted-foreground">
             {IS_PRACTICE_NETWORK
-              ? "Practice money can't be cashed out. Moving real money to a bank or card arrives with the main network."
+              ? "Testnet funds have no real value and can't be cashed out. Moving real money to a bank or card arrives with Mainnet."
               : "Held by your wallet, not by BLKFNDR."}
           </p>
         </section>

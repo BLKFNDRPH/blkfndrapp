@@ -268,7 +268,7 @@ export function IdentityRegistryPanel() {
             : {
                 title: "Documents approved",
                 description:
-                  "The applicant has no wallet yet and has been told to attach one. Record it from Approved Creators once they do.",
+                  "The applicant has no wallet yet and has been told to attach one. Record it on-chain from Approved Creators once they do.",
               },
         );
         fetchKycRequests();

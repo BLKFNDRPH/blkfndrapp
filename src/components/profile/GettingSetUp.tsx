@@ -49,7 +49,7 @@ export function GettingSetUp({
       await activatePractice(walletAddress);
       onChanged();
     } catch {
-      setProblem("The practice faucet didn't answer. Try again in a minute.");
+      setProblem("Friendbot, the Stellar Testnet faucet, didn't answer. Try again in a minute.");
     } finally {
       setBusy(false);
     }
@@ -73,12 +73,12 @@ export function GettingSetUp({
           {
             key: "xlm",
             done: activated,
-            title: "Practice XLM added",
-            hint: "Activates your wallet and covers network fees. Free on the practice network.",
+            title: "Testnet XLM added",
+            hint: "Friendbot funds your account with free testnet XLM, which activates it on the ledger and pays network fees.",
             action: (
               <Button size="sm" variant="outline" disabled={!hasWallet || busy} onClick={activate}>
                 {busy && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" aria-hidden="true" />}
-                {busy ? "Adding…" : "Add"}
+                {busy ? "Funding…" : "Get testnet XLM"}
               </Button>
             ),
           },

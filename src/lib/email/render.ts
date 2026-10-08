@@ -20,7 +20,7 @@ export interface NotificationEmailInput {
   settingsUrl: string;
   /** Absolute link that turns this category off. Null for account emails. */
   unsubscribeUrl: string | null;
-  /** Running on the test network, where the money is practice money. */
+  /** Running on the Stellar Testnet, where the XLM and USDC are test tokens. */
   practice: boolean;
 }
 
@@ -49,7 +49,7 @@ const WHY: Record<EmailCategory, string> = {
 const PROMISE = "We only email about vaults you're part of and your own account. Never marketing.";
 
 const PRACTICE =
-  "Practice mode: BLKFNDR runs on Stellar's test network, so the money here is practice money.";
+  "Testnet: BLKFNDR runs on the Stellar Testnet, so the XLM and USDC here are test tokens with no real value.";
 
 function escapeHtml(value: string): string {
   return value

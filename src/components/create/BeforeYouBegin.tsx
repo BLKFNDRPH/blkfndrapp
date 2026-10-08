@@ -155,7 +155,7 @@ export function BeforeYouBegin({
             tone="waiting"
             title="Verified identity"
             hint={hint}
-            status="Approved, with one step left before it counts: attach your wallet, or wait for a reviewer to record it."
+            status="Approved, but not yet recorded on-chain: attach your wallet, or wait for a reviewer to record it."
           >
             <Button asChild size="sm" variant="outline">
               <Link href="/profile/kyc-attestation">See what's left</Link>
@@ -197,7 +197,7 @@ export function BeforeYouBegin({
       tone={address ? "done" : "todo"}
       title="A wallet you control"
       hint="Opening a vault uses your own wallet, because the deposit and every payout are tied to it. BLKFNDR never holds its key."
-      status={address ? `Set up · account ID …${address.slice(-4)}` : "Not set up yet"}
+      status={address ? `Set up · wallet address …${address.slice(-4)}` : "Not set up yet"}
     >
       {!address && (
         <Button asChild size="sm">
@@ -233,17 +233,17 @@ export function BeforeYouBegin({
         return <Row tone="loading" title={title} hint={moneyHint} status="Checking your wallet…" />;
       case "unknown":
         return (
-          <Row tone="todo" title={title} hint={moneyHint} status="We can't read your wallet right now. Your wallet still shows the final amount before you confirm.">
+          <Row tone="todo" title={title} hint={moneyHint} status="We can't read your wallet right now. Your wallet still shows the final amount before you sign.">
             {checkAgain}
           </Row>
         );
       case "no-account":
         return (
-          <Row tone="todo" title={title} hint={moneyHint} status="Your wallet hasn't been activated yet. A new wallet is empty until it receives its first XLM.">
+          <Row tone="todo" title={title} hint={moneyHint} status="Your Stellar account isn't activated yet. It needs its first XLM to exist on the ledger.">
             {IS_PRACTICE_NETWORK && (
               <Button type="button" size="sm" onClick={readiness.activate} disabled={busy !== null}>
                 {busy === "activate" && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
-                {busy === "activate" ? "Activating…" : "Activate with practice XLM"}
+                {busy === "activate" ? "Activating…" : "Get testnet XLM"}
               </Button>
             )}
             {checkAgain}
@@ -258,8 +258,8 @@ export function BeforeYouBegin({
             hint={moneyHint}
             status={
               isDollar
-                ? "Your wallet isn't set up to hold dollars yet. You approve this once in your wallet; it sets aside 0.5 XLM of your own while it's on."
-                : "Your wallet isn't set up to hold this currency yet."
+                ? "Your wallet has no USDC trustline yet. You sign this once in your wallet; it sets aside 0.5 XLM of your own as a reserve while it's on."
+                : "Your wallet has no trustline for this asset yet."
             }
           >
             <Button
@@ -269,7 +269,7 @@ export function BeforeYouBegin({
               disabled={busy !== null}
             >
               {busy === "enable" && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
-              {busy === "enable" ? "Waiting for your wallet…" : isDollar ? "Enable dollars" : "Enable it"}
+              {busy === "enable" ? "Waiting for your wallet…" : isDollar ? "Add a USDC trustline" : "Add the trustline"}
             </Button>
             {checkAgain}
             {fixError}
@@ -286,9 +286,9 @@ export function BeforeYouBegin({
             {isDollar && IS_PRACTICE_NETWORK && address && (
               <>
                 <p className="basis-full text-sm text-muted-foreground">
-                  Circle, the company behind USDC, gives practice dollars for free: 20 every 2 hours.
-                  On their page pick Stellar Testnet, paste your account ID (this button copies it) and
-                  press Send. Or lower your deposit, or switch the vault to XLM.
+                  Circle, the company behind USDC, gives testnet USDC for free from its faucet: 20 every
+                  2 hours. On their page pick Stellar Testnet, paste your wallet address (this button
+                  copies it) and press Send. Or lower your deposit, or switch the vault to XLM.
                 </p>
                 <Button
                   type="button"
@@ -300,7 +300,7 @@ export function BeforeYouBegin({
                   }}
                 >
                   {copied ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />}
-                  {copied ? "Account ID copied" : "Get practice dollars"}
+                  {copied ? "Address copied" : "Get testnet USDC"}
                 </Button>
                 {canSwitchToXlm && (
                   <Button type="button" size="sm" variant="outline" onClick={onSwitchToXlm}>
@@ -312,7 +312,7 @@ export function BeforeYouBegin({
             {(!isDollar || !IS_PRACTICE_NETWORK) && address && (
               <Button type="button" size="sm" variant="outline" className="gap-1.5" onClick={copyId}>
                 {copied ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : <Copy className="h-3.5 w-3.5" aria-hidden="true" />}
-                {copied ? "Copied" : "Copy your account ID to add money"}
+                {copied ? "Copied" : "Copy your wallet address to add money"}
               </Button>
             )}
             {checkAgain}

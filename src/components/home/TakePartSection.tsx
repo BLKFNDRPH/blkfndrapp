@@ -17,19 +17,19 @@ const LEVELS = [
   {
     icon: Eye,
     title: "Watch",
-    body: "No account needed. Read any vault's full money record and see every vote. Sign in to follow one.",
+    body: "No account needed. Read any vault's full on-chain record and see every vote. Sign in to follow one.",
     cta: { label: "Browse projects", href: "/projects" },
   },
   {
     icon: HandCoins,
     title: "Stake",
-    body: "Sign in with Google or email. Stake from $5 and approve in a wallet you control; we walk you through setup. In practice mode you add free practice money to your own wallet from your Wallet tab.",
+    body: "Sign in with Google or email. Stake from $5 and sign each transaction in a Stellar wallet you control; we walk you through setup. On Testnet you add free test tokens to your own wallet from your Wallet tab.",
     cta: { label: "See how staking works", href: "#how-it-works" },
   },
   {
     icon: KeyRound,
     title: "Steward",
-    body: "Already run a wallet of your own? Set it up here, see every address and fee, and open vaults for your own projects.",
+    body: "Already run a Stellar wallet of your own? Connect it here, see every address and fee, and open vaults for your own projects.",
     cta: { label: "Set up your wallet", href: "/profile?tab=wallet" },
   },
 ];

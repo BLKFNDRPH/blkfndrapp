@@ -375,7 +375,7 @@ export function NotificationBell() {
                             <Button asChild variant="secondary" size="sm" className="h-7 group-focus:bg-primary/20 group-focus:text-accent-foreground group-focus:hover:bg-primary/30">
                               <Link href={notif.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
                                 <ExternalLink className="mr-2 h-3 w-3" />
-                                See the public record
+                                View on Stellar Expert
                               </Link>
                             </Button>
                           )}

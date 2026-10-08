@@ -15,7 +15,7 @@ const PROTECTIONS = [
   {
     icon: Users,
     title: "Stakeholders never show us an ID.",
-    body: "Taking part needs a wallet, not a passport. Only builders verify their identity, so stakeholders know a real, checked person is behind a project.",
+    body: "Taking part needs a Stellar wallet, not a passport. Only builders verify their identity, so stakeholders know a real, checked person is behind a project.",
   },
   {
     icon: Trash2,
@@ -24,8 +24,8 @@ const PROTECTIONS = [
   },
   {
     icon: Fingerprint,
-    title: "What's kept is a fingerprint, not your details.",
-    body: "The public record holds a one-way fingerprint of the verified details. It proves the check happened, and it can't be turned back into them.",
+    title: "What's kept is a hash, not your details.",
+    body: "The on-chain identity registry holds a one-way SHA-256 hash of the verified details. It proves the check happened, and it can't be turned back into them.",
   },
   {
     icon: EyeOff,
@@ -40,7 +40,7 @@ const PROTECTIONS = [
   {
     icon: KeyRound,
     title: "Your wallet keys stay with you.",
-    body: "BLKFNDR never holds the keys to your wallet, so it can't move your stake or cast your vote.",
+    body: "BLKFNDR never holds your wallet's private keys, so it can't sign a transaction that moves your stake or casts your vote.",
   },
 ];
 
@@ -57,8 +57,8 @@ const VISIBILITY = [
     open: true,
   },
   {
-    what: "The fingerprint of a builder's verified details",
-    who: "Public, on the identity registry. It can't be turned back into the details.",
+    what: "The hash of a builder's verified details",
+    who: "Public, on the on-chain identity registry. It can't be turned back into the details.",
     open: true,
   },
   {
@@ -136,7 +136,7 @@ export function PrivacySection() {
           </ul>
         </div>
 
-        {/* Everything technical lives in here, and only in here. */}
+        {/* The deletion mechanics and the audit live in here. */}
         <div className="mt-16">
           <AuditorAccordion
             title="For auditors and developers"
@@ -151,12 +151,12 @@ export function PrivacySection() {
                     kyc_requests_drop_identity_after_decision
                   </code>
                   , clears the document&apos;s path on any decision. It clears the ID number, date of birth, address
-                  and email once the fingerprint is final. The file is deleted through the Storage API, and a sweep
+                  and email once the hash is final. The file is deleted through the Storage API, and a sweep
                   removes any file no check points at.
                 </p>
                 <p>
-                  The fingerprint is SHA-256 of the name, date of birth, document type, ID number, expiry, address and
-                  wallet, written to the identity registry as the attestation. Anyone holding the same details can
+                  The hash is SHA-256 of the name, date of birth, document type, ID number, expiry, address and
+                  wallet address, written on-chain to the identity registry as the attestation. Anyone holding the same details can
                   recompute it. Nobody holding only the hash can recover them.
                 </p>
                 <p>
