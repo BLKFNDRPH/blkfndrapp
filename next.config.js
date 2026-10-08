@@ -1,3 +1,39 @@
+// The Stellar network is fixed at build time (src/lib/network.ts), because every
+// NEXT_PUBLIC_ value is inlined into the bundle. A build whose endpoints belong
+// to the other network signs for one network and talks to the other, and every
+// transaction fails without saying why, so refuse it here. Mainnet also has no
+// default RPC to fall back to.
+(function checkStellarNetwork() {
+  const network = process.env.NEXT_PUBLIC_STELLAR_NETWORK;
+  const isPublic = network === "public";
+  const rpcUrl = process.env.NEXT_PUBLIC_SOROBAN_RPC_URL || "";
+  const horizonUrl = process.env.NEXT_PUBLIC_HORIZON_URL || "";
+
+  if (network && network !== "public" && network !== "testnet") {
+    console.warn(
+      `NEXT_PUBLIC_STELLAR_NETWORK is "${network}", which means Testnet. Set it to "public" for Mainnet.`,
+    );
+  }
+  if (isPublic && !rpcUrl) {
+    throw new Error(
+      "NEXT_PUBLIC_STELLAR_NETWORK=public needs NEXT_PUBLIC_SOROBAN_RPC_URL: Mainnet has no default Soroban RPC.",
+    );
+  }
+  const otherNetwork = isPublic ? /testnet|futurenet/i : /mainnet|\/\/horizon\.stellar\.org/i;
+  for (const [name, url] of [
+    ["NEXT_PUBLIC_SOROBAN_RPC_URL", rpcUrl],
+    ["NEXT_PUBLIC_HORIZON_URL", horizonUrl],
+  ]) {
+    if (otherNetwork.test(url)) {
+      throw new Error(
+        `${name} points at ${isPublic ? "a test network" : "Mainnet"} but NEXT_PUBLIC_STELLAR_NETWORK ` +
+          `builds for ${isPublic ? "Mainnet" : "Testnet"}. Set NEXT_PUBLIC_STELLAR_NETWORK=` +
+          `${isPublic ? "testnet" : "public"} or fix the URL.`,
+      );
+    }
+  }
+})();
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // Enable standalone output for Docker deployments

@@ -17,13 +17,13 @@ The rule of thumb: **the money path never goes through the server.** A stake, a 
 
 Each contract has a generated TypeScript binding under `src/packages/<contract>/src`. See [Smart Contracts](smart-contracts.md) for every entrypoint.
 
-All clients are built in one place, [src/lib/stellar-clients.ts](../src/lib/stellar-clients.ts):
+All clients are built in one place, [src/lib/stellar-clients.ts](../src/lib/stellar-clients.ts). The network itself is decided in [src/lib/network.ts](../src/lib/network.ts) from `NEXT_PUBLIC_STELLAR_NETWORK` (`public` is Mainnet; unset or anything else is Testnet), and stellar-clients re-exports it:
 
 | Export | What it is |
 |---|---|
-| `SOROBAN_RPC_URL` | `NEXT_PUBLIC_SOROBAN_RPC_URL`, default `https://soroban-testnet.stellar.org` |
-| `HORIZON_URL` | `NEXT_PUBLIC_HORIZON_URL`, default `https://horizon-testnet.stellar.org` |
-| `NETWORK_PASSPHRASE` | Hard-coded to `Networks.TESTNET`. A mainnet deployment needs a code change here as well as new URLs |
+| `SOROBAN_RPC_URL` | `NEXT_PUBLIC_SOROBAN_RPC_URL`. Testnet default `https://soroban-testnet.stellar.org`; Mainnet has no default and the build fails without it |
+| `HORIZON_URL` | `NEXT_PUBLIC_HORIZON_URL`, default `https://horizon-testnet.stellar.org` or `https://horizon.stellar.org` |
+| `NETWORK_PASSPHRASE` | `Networks.TESTNET` or `Networks.PUBLIC`. Wallet connect, wallet linking and every signature use this one value |
 | `vaultClient(address)` | A project's vault |
 | `factoryClient()`, `identityClient()`, `attestationClient()`, `adminClient()`, `operationsClient()` | Fixed addresses from `NEXT_PUBLIC_BLKFNDR_*_CONTRACT_ID`. Each throws a clear error when its variable is unset |
 | `treasuryClient(address)` | The fee treasury. Its address is read from the factory (`get_fee_wallet`), never from configuration |
@@ -304,7 +304,7 @@ The four that transact are signed by `OPS_FUNDING_SUBMITTER_SECRET`, a funded ac
 
 ## 4. Horizon
 
-Horizon serves read-only account data. It is used for display and pre-flight checks, never for an authorization decision. The base URL is `HORIZON_URL` (testnet unless `NEXT_PUBLIC_HORIZON_URL` is set), and the calls run in the browser through `horizonClient` in [src/lib/stellar.ts](../src/lib/stellar.ts).
+Horizon serves read-only account data. It is used for display and pre-flight checks, never for an authorization decision. The base URL is `HORIZON_URL` (the network's SDF Horizon unless `NEXT_PUBLIC_HORIZON_URL` is set), and the calls run in the browser through `horizonClient` in [src/lib/stellar.ts](../src/lib/stellar.ts).
 
 | Function | Horizon call | Used by |
 |---|---|---|

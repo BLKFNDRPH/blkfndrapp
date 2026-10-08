@@ -72,10 +72,15 @@ services:
         - NEXT_PUBLIC_STELLAR_XLM_TOKEN_ID=${NEXT_PUBLIC_STELLAR_XLM_TOKEN_ID:-}
         - NEXT_PUBLIC_STELLAR_USDC_TOKEN_ID=${NEXT_PUBLIC_STELLAR_USDC_TOKEN_ID:-}
 
-        # ── Network endpoints ────────────────────────────────────────────────
-        # BOTH DEFAULT TO TESTNET if left empty. A mainnet stack that omits
-        # them builds cleanly and then quietly talks to testnet, which looks
-        # like "no projects appear" rather than like a misconfiguration.
+        # ── Network ──────────────────────────────────────────────────────────
+        # "public" builds for Mainnet; empty or anything else builds for
+        # Testnet. It decides the passphrase Freighter is checked against and
+        # signs with when connecting, linking and transacting, so a Mainnet
+        # stack must set it. Rebuild after changing it.
+        - NEXT_PUBLIC_STELLAR_NETWORK=${NEXT_PUBLIC_STELLAR_NETWORK:-}
+        # Both default to Testnet's endpoints on a Testnet build. A Mainnet
+        # build must set the RPC URL (there is no SDF Mainnet RPC to default
+        # to), and the build fails if either URL names the other network.
         - NEXT_PUBLIC_SOROBAN_RPC_URL=${NEXT_PUBLIC_SOROBAN_RPC_URL:-}
         - NEXT_PUBLIC_HORIZON_URL=${NEXT_PUBLIC_HORIZON_URL:-}
 

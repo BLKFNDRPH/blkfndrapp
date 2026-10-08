@@ -1,4 +1,4 @@
-import { Networks } from "@stellar/stellar-sdk";
+import { SOROBAN_RPC_URL, HORIZON_URL, NETWORK_PASSPHRASE } from "@/lib/network";
 import { Client as VaultClient } from "@/packages/blkfndr_vault/src";
 import { Client as FactoryClient } from "@/packages/blkfndr_factory/src";
 import { Client as AttestationClient } from "@/packages/blkfndr_attestation/src";
@@ -16,11 +16,8 @@ import { Client as OperationsClient } from "@/packages/blkfndr_operations/src";
  * problem it was.
  */
 
-export const SOROBAN_RPC_URL =
-  process.env.NEXT_PUBLIC_SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org";
-export const HORIZON_URL =
-  process.env.NEXT_PUBLIC_HORIZON_URL || "https://horizon-testnet.stellar.org";
-export const NETWORK_PASSPHRASE = Networks.TESTNET;
+// The network itself is decided in network.ts, from NEXT_PUBLIC_STELLAR_NETWORK.
+export { SOROBAN_RPC_URL, HORIZON_URL, NETWORK_PASSPHRASE };
 
 export const FACTORY_ID = process.env.NEXT_PUBLIC_BLKFNDR_FACTORY_CONTRACT_ID;
 export const ATTESTATION_ID = process.env.NEXT_PUBLIC_BLKFNDR_ATTESTATION_CONTRACT_ID;
