@@ -196,6 +196,11 @@ By default a query runs through the **caller's own session** (`createClient()`: 
 | `kyc.ts` | KYC submissions, document URLs, attest/revoke, renewal, deleting decided documents | Identity columns, signed URLs, decisions, after `requireKycReviewer` |
 | `profiles.ts` | Profiles, wallet linking | Writing the linked wallet, only after the signature check |
 | `notifications.ts` | Notifications | `notify` and `notifyAdmins`, since the recipient is not the caller |
+| `vault-notifications.ts` | Notifications produced from vault events, called by the indexer | Finding the stakeholders and builder of a vault, and notifying them |
+| `vote-reminders.ts`, `kyc-reminders.ts` | "One day left to vote" and identity-renewal reminders, found by a scan the notification emails cron runs | Reading the indexed events and checks, claiming each reminder once in `notification_once` |
+| `email-preferences.ts` | Email switches and unsubscribe tokens | Everything (RLS with no policies), gated by the session or the unsubscribe token |
+| `vault-record.ts` | The Record tab (`/api/projects/[id]/record`) | Reading `contract_events`, after the project is read through the caller's session so a hidden project returns nothing |
+| `decisions.ts` | "Needs you" (`/api/me/decisions`) | Reading `contract_events` for the caller's own linked wallet |
 | `platform.ts` | Platform settings, wallet-link challenges | Everything (no browser grants), behind `requireAdmin` for settings |
 | `admins.ts` | The admin roster, audit log | Looking up an existing account, recording a managed key, writing audit entries. The roster row itself is written through the caller's session |
 | `moderation.ts` | Bans, platform health | The Auth-level ban, health counts |

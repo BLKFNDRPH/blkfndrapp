@@ -129,7 +129,7 @@ A build of `main` does not have one canonical hash. The wasm embeds absolute car
 
 ## Platform parameters
 
-Read from the live factory on 2026-10-07 (`stellar contract invoke --send=no`, read-only). Amounts are in base units of the project's token: 1 unit = 10,000,000 base units (7 decimals). A project is denominated in USDC or XLM.
+Read from the live factory on 2026-10-08 (`stellar contract invoke --send=no`, read-only). Amounts are in base units of the project's token: 1 unit = 10,000,000 base units (7 decimals). A project is denominated in USDC or XLM.
 
 | Parameter | Factory getter | Live value |
 |---|---|---|
@@ -138,7 +138,7 @@ Read from the live factory on 2026-10-07 (`stellar contract invoke --send=no`, r
 | Milestone voting window | `get_voting_window` | 604,800 s (7 days) |
 | Minimum bond | `get_bond_percentage` | 500 bps (5% of the goal) |
 | Factory admin | `get_admin` | `GDR4TPUF…` (the deployer key, not the treasury) |
-| Last project id issued | `get_project_count` | 11, so the next project is #12 |
+| Last project id issued | `get_project_count` | 22. This factory started at #12 (2026-10-07) |
 
 The previous factory charged 300 base units, almost certainly a leftover from the earlier percentage model (300 bps = 3%). Changing the fee needs `update_platform_fee` from the factory admin, or a treasury `SetFee` vote once the treasury is the factory admin.
 

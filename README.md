@@ -33,11 +33,15 @@ Release authority is contribution-weighted rather than held by appointed signers
 | Four admin groups, user bans, platform health, KYC review | ✅ Live |
 | Supabase schema, RLS, and auth | ✅ Applied, verified, and the app runs on it |
 | MongoDB | ✅ Fully removed |
-| TypeScript contract bindings | ✅ Generated from source. The factory, attestation, identity and admin bindings are ahead of their deployed contracts until the redeploy in [progress.md](progress.md) |
+| TypeScript contract bindings | ✅ Generated from source, matching every deployed contract since the 2026-10-06 redeploy |
 | Listing moderation — owner-consensus approval, platform-level hide and lock | ✅ Live |
 | Per-milestone delivery proof, shown to stakeholders before they vote | ✅ Live |
+| Plain-language interface: project pages, stake sheet, votes and refunds, profile, opening a vault, identity check without a wallet first, wallet setup | ✅ Live. Web3 terms (Testnet, on-chain, transaction, wallet address) are used where they apply |
+| Vault Record tab, notifications and "Needs you" inbox | ✅ Live |
+| Email notifications and vote-closing reminders | ⏳ Built; sends nothing until a Resend key is set |
+| Identity documents and details deleted once a check is decided; verification renews when the ID expires | ✅ Live. See [privacy.md](docs/privacy.md) |
 | Event indexer, stalled-vault keeper, storage keep-alive, governance keeper that sends carried payouts and closes lapsed stages (compose crons) | ✅ Live |
-| Mainnet | 🔜 Planned, not deployed |
+| Mainnet | 🔜 Planned, not deployed. The app takes its network from one build variable, `NEXT_PUBLIC_STELLAR_NETWORK` |
 | AI listing quality analysis | ✅ Live (Genkit + Gemini 2.5 Flash) |
 | AI query analysis & sentiment tracking | 📝 Documented, not implemented |
 
@@ -84,7 +88,7 @@ This rule applies to vaults the factory creates after its wasm hash was switched
 | **Auth** | Supabase Auth — email/password and Google; Freighter for wallet linking |
 | **Storage** | Supabase Storage (identity documents, deleted after the decision), Pinata IPFS (listing metadata, media, milestone proof photos) |
 | **AI** | Google Genkit + Gemini 2.5 Flash |
-| **Deployment** | Docker Compose on Portainer: the app plus four cron services (indexer, ops funding, stalled-vault keeper, storage keep-alive) |
+| **Deployment** | Docker Compose on Portainer: the app plus six cron services (indexer, ops funding, stalled-vault keeper, storage keep-alive, governance keeper, notification emails) |
 
 ## Smart Contracts
 
@@ -111,7 +115,7 @@ The current source, deployed on 2026-10-06 with `scripts/deploy-contracts.sh` an
 | Treasury (fee destination + governance) | [`CAGMEGMS...NRO3TQPZW`](https://stellar.expert/explorer/testnet/contract/CAGMEGMS6MS6ENADUWDRW3GQ4XRBDYFFKHMRFVDEBHFCZW7NRO3TQPZW) |
 | Operations Vault (gas budget) | [`CCVXM3YP...NQG7FDSN`](https://stellar.expert/explorer/testnet/contract/CCVXM3YPPEMWG4INHFTZ4NBJ3PQW3ZUNYIZMBJBNYQOMSNOENQG7FDSN) |
 
-The treasury is the factory's fee wallet, so the app reads its address from the factory rather than from configuration. Every contract is configured by a constructor inside its own deploy transaction (H-03), and attestation records are keyed by vault (#73). Project ids continue from the previous factory, so the first new project is #12. The approved builders' KYC was copied into the new identity registry. The full record is in [smart-contracts.md](docs/smart-contracts.md#the-registry-redeploy).
+The treasury is the factory's fee wallet, so the app reads its address from the factory rather than from configuration. Every contract is configured by a constructor inside its own deploy transaction (H-03), and attestation records are keyed by vault (#73). Project ids continue from the previous factory: the first new project was #12, opened 2026-10-07, and the factory had issued #22 by 2026-10-08. The approved builders' KYC was copied into the new identity registry. The full record is in [smart-contracts.md](docs/smart-contracts.md#the-registry-redeploy).
 
 The Operations Vault was redeployed on 2026-09-28. Its predecessor `CDZXCWKY…` still holds 25 XLM until the owners vote it across ([progress.md](progress.md#1-finish-the-operations-vault-cutover)).
 
@@ -135,7 +139,7 @@ Platform parameters as deployed, read from the factory on 2026-10-07:
 - **Voting window:** 7 days.
 - **Minimum bond:** 5% of the goal.
 
-The factory's admin is still the deployer key, not the treasury, so these change by one signature until the admin is handed over ([progress.md](progress.md#4b-hand-the-factory-admin-to-the-treasury)).
+The factory's admin is still the deployer key, not the treasury, so these change by one signature until the admin is handed over ([progress.md](progress.md#2-hand-the-factory-admin-to-the-treasury)).
 
 The contract suite has 183 tests: vault 56, treasury 45, operations 25, factory 17, attestation 16, identity 15 and admin 9.
 
