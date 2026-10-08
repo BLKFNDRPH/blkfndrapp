@@ -39,15 +39,15 @@ import { remindMeToSetUpWallet } from "@/app/actions";
  * after something failed: why a wallet, which wallet, installing it, the two
  * approvals connecting asks for (each explained before its window opens), and
  * done. Phase 1 wraps today's Freighter connect, so the one wallet offered is
- * Freighter and its name appears only in steps 2 to 4.
+ * Freighter, named wherever the person acts in it.
  *
  * Phones have no browser extensions, so a phone gets step 1 and then a plain
  * card saying wallets on phones aren't supported yet, with a reminder it can
  * leave for itself on a computer. It never sees an install checklist it can't
  * follow.
  *
- * Nothing here moves money. Connecting lets the site see the account ID and
- * links the wallet to the account with a one-time code the wallet approves.
+ * Nothing here moves money. Connecting lets the site see the wallet address and
+ * links the wallet to the account with a one-time code the wallet signs.
  */
 
 const FREIGHTER_SITE = "https://freighter.app";
@@ -65,16 +65,16 @@ function failureOf(error: unknown): Failure {
           fix: "install",
         };
       case "locked":
-        return { message: "Your wallet is locked. Unlock it, then press Check again.", fix: "check" };
+        return { message: "Freighter is locked. Unlock it, then press Check again.", fix: "check" };
       case "declined":
         return {
-          message: "You didn't allow the site. Nothing happened. Allow it to continue.",
+          message: "You didn't allow this site in Freighter. Nothing happened. Allow it to continue.",
           fix: "retry",
         };
       case "wrong-network":
         return {
           message:
-            "Your wallet is on the main network. Switch it to the test network (step 3 shows how), then press Check again.",
+            "Freighter is on Mainnet. Switch it to Testnet (step 3 shows how), then press Check again.",
           fix: "network",
         };
       default:
@@ -299,8 +299,8 @@ export function WalletSetupFlow({
             <p className="font-semibold">Why you need a wallet</p>
           </div>
           <ul className="space-y-2 text-sm text-muted-foreground">
-            <li>A wallet holds the key to your money. It lives on your device, not with BLKFNDR.</li>
-            <li>You&apos;ll use it to confirm each thing you do here: staking, voting, collecting refunds.</li>
+            <li>A Stellar wallet holds the keys to your money. They live on your device, not with BLKFNDR.</li>
+            <li>You&apos;ll use it to sign each transaction you make here: staking, voting, collecting refunds.</li>
             <li>
               No one, including us, can move your money or reset your wallet. That&apos;s the point, and it&apos;s
               why the recovery words matter.
@@ -386,8 +386,8 @@ export function WalletSetupFlow({
                 <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-semibold">4</span>
                 <div className="space-y-1">
                   <p>
-                    Switch the wallet to the test network. Freighter shows its network at the top of its window;
-                    choose Test Net there.
+                    Switch Freighter to Testnet. It shows its network at the top of its window; choose Test Net
+                    there.
                   </p>
                   <p
                     className={cn(
@@ -395,7 +395,7 @@ export function WalletSetupFlow({
                       network === "match" ? "text-emerald-600 dark:text-emerald-400" : network === "mismatch" ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground",
                     )}
                   >
-                    {network === "match" ? "Test network, good" : network === "mismatch" ? "Still on the main network" : "We'll check this when you connect."}
+                    {network === "match" ? "On Testnet, good" : network === "mismatch" ? "Still on Mainnet" : "We'll check this when you connect."}
                   </p>
                 </div>
               </li>
@@ -452,14 +452,15 @@ export function WalletSetupFlow({
             <div className="rounded-lg border border-border p-3 text-sm">
               <p className="font-medium">1 · Allow this site</p>
               <p className="text-muted-foreground">
-                This lets BLKFNDR see your account ID. It can&apos;t see your recovery words or move money.
+                This lets BLKFNDR see your wallet address (your Stellar public key). It can&apos;t see your
+                recovery words or move money.
               </p>
             </div>
             <div className="rounded-lg border border-border p-3 text-sm">
               <p className="font-medium">2 · Prove it&apos;s yours</p>
               <p className="text-muted-foreground">
-                Your wallet approves a one-time code. It&apos;s free, moves nothing, and attaches this wallet to your
-                BLKFNDR account.
+                Freighter signs a one-time code. It isn&apos;t a transaction: it&apos;s free, moves nothing, and
+                attaches this wallet to your BLKFNDR account.
               </p>
             </div>
           </div>
@@ -514,34 +515,34 @@ export function WalletSetupFlow({
             <div className="space-y-1 rounded-lg border border-border p-3 text-sm">
               <div className="flex items-center justify-between gap-2">
                 <span>
-                  Your account ID <span className="font-mono">…{address.slice(-4)}</span>
+                  Your wallet address <span className="font-mono">…{address.slice(-4)}</span>
                 </span>
-                <Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={copyId} aria-label="Copy your account ID">
+                <Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={copyId} aria-label="Copy your wallet address">
                   {copied ? <Check className="h-4 w-4 text-emerald-500" /> : <Copy className="h-4 w-4" />}
                 </Button>
               </div>
               <p className="break-all font-mono text-xs text-muted-foreground">{address}</p>
-              <p className="text-xs text-muted-foreground">This is like a bank account number: safe to share.</p>
+              <p className="text-xs text-muted-foreground">Your Stellar public key. Safe to share: it&apos;s how others send you funds.</p>
             </div>
           )}
           {IS_PRACTICE_NETWORK && activation === "needed" && (
             <div className="space-y-2 rounded-lg border border-border p-3 text-sm">
               <p>
-                A new wallet is empty until it receives its first XLM, which also pays network fees. On the practice
-                network it&apos;s free.
+                Your Stellar account isn&apos;t activated yet: it needs its first XLM to exist on the ledger. Friendbot,
+                the Stellar Testnet faucet, funds it with free testnet XLM, which activates it and pays network fees.
               </p>
               <Button type="button" size="sm" onClick={activate}>
-                Add practice XLM
+                Get testnet XLM
               </Button>
             </div>
           )}
           {activation === "working" && (
             <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> Adding practice XLM…
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> Getting testnet XLM from Friendbot…
             </p>
           )}
           {activation === "done" && IS_PRACTICE_NETWORK && (
-            <p className="text-sm text-muted-foreground">Your wallet has practice XLM for network fees.</p>
+            <p className="text-sm text-muted-foreground">Your account is funded with testnet XLM for network fees.</p>
           )}
           {activation === "failed" && activationProblem && (
             <p role="alert" className="text-sm text-destructive">

@@ -120,7 +120,7 @@ export function LaunchReviewDialog({
             <div className="space-y-4 text-sm text-left">
               <p className="break-words">
                 <span className="font-semibold text-foreground">{review?.title}</span> gets its own
-                vault as soon as you confirm.
+                vault as soon as you sign.
               </p>
 
               {review && (
@@ -145,7 +145,7 @@ export function LaunchReviewDialog({
                   <Row label="Listing fee" note="Flat, paid to BLKFNDR" value={money(review.platformFee)} />
                   <Row
                     label={unusual ? "Network fee today, at most" : "Network fee, at most"}
-                    note="Paid from your wallet in XLM. Whatever isn't used comes back."
+                    note="Paid from your wallet in XLM to the Stellar network. Whatever isn't used comes back."
                     value={networkFeeMoney(review.networkFeeXlm, review.xlmUsd)}
                     className={unusual ? "bg-amber-500/10" : undefined}
                   />
@@ -178,14 +178,14 @@ export function LaunchReviewDialog({
               {unusual && review && (
                 <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-foreground">
                   That network fee is far above the usual{" "}
-                  {networkFeeMoney(openingFeeXlm(review.stages), review.xlmUsd)}. It most likely means storage
-                  every vault shares has lapsed, and this opening would pay its one-off renewal. You can
-                  go ahead, or wait and try again later.
+                  {networkFeeMoney(openingFeeXlm(review.stages), review.xlmUsd)}. It most likely means the
+                  storage TTL of the contract code every vault shares has expired, and this opening would
+                  pay its one-off restore. You can go ahead, or wait and try again later.
                 </p>
               )}
 
               <p>
-                You&apos;ll confirm this once in your wallet. Nothing is paid until you approve there,
+                You&apos;ll sign one transaction in your wallet. Nothing is paid until you sign there,
                 and the request expires after about five minutes.
               </p>
             </div>
@@ -194,7 +194,7 @@ export function LaunchReviewDialog({
         <AlertDialogFooter>
           <AlertDialogCancel onClick={() => decide(false)}>Not yet</AlertDialogCancel>
           <AlertDialogAction onClick={() => decide(true)}>
-            {unusual ? "Open it anyway" : "Confirm in your wallet"}
+            {unusual ? "Open it anyway" : "Sign the transaction"}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

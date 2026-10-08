@@ -363,8 +363,8 @@ export async function attachOwnKycWallet(): Promise<{
 
   if (updated.status === "approved") {
     await notifyAdmins(
-      "An approved identity check is ready to record",
-      "An applicant approved without a wallet has attached one. Record it from the identity panel so they can open a vault.",
+      "An approved identity check is ready to record on-chain",
+      "An applicant approved without a wallet has attached one. Record it on-chain from the identity panel so they can open a vault.",
       undefined,
       KYC_REVIEWER_ROLES,
       { url: IDENTITY_PANEL, email: true },
@@ -563,7 +563,7 @@ export async function attestSubmission(submissionId: string) {
   // A turned-down check's hash commits to the document that was refused. It
   // can be recorded only after the applicant resubmits and it is approved.
   if (sub.status === "rejected") {
-    throw new Error("This check was turned down, so there is nothing to record. It can be approved once the applicant submits again.");
+    throw new Error("This check was turned down, so there is nothing to record on-chain. It can be approved once the applicant submits again.");
   }
   // Recording an approval whose ID has expired would put a lapsed
   // verification back on the record. The applicant renews it instead.
@@ -607,7 +607,7 @@ export async function attestSubmission(submissionId: string) {
     // by a revoke and a fresh attest. If the attest fails after the revoke, the
     // check stays pending and a retry attests it from scratch.
     const onRecord = await recordedHash(sub.stellar_address);
-    if (onRecord === null) throw new Error("Could not read the public record for this wallet. Try again.");
+    if (onRecord === null) throw new Error("Could not read the on-chain attestation for this wallet. Try again.");
     if (onRecord !== sub.details_hash.toLowerCase()) {
       await signRevocation({ keyRef: email, subject: sub.stellar_address });
       await signAttestation({ keyRef: email, subject: sub.stellar_address, kycHashHex: sub.details_hash });

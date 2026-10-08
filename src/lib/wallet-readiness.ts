@@ -82,14 +82,14 @@ export async function readWalletReadiness(
  */
 export async function activatePractice(address: string): Promise<void> {
   if (!IS_PRACTICE_NETWORK) {
-    throw new Error("Activation by faucet only exists on the practice network.");
+    throw new Error("Friendbot only exists on Stellar Testnet.");
   }
   const res = await fetch(`https://friendbot.stellar.org/?addr=${encodeURIComponent(address)}`);
   if (res.ok) return;
   const body = await res.text().catch(() => "");
   // An address the faucet has already funded is already active.
   if (/already exists|createAccountAlreadyExist|op_already_exists/i.test(body)) return;
-  throw new Error(`The practice faucet answered ${res.status}. ${body.slice(0, 300)}`);
+  throw new Error(`Friendbot answered ${res.status}. ${body.slice(0, 300)}`);
 }
 
 /**
@@ -108,7 +108,7 @@ export async function enableAsset(
     freighterSigner(address).signTransaction(xdr),
 ): Promise<string> {
   if (asset.isNative || !asset.issuer) {
-    throw new Error("XLM needs no enabling.");
+    throw new Error("XLM needs no trustline.");
   }
   const account = await horizonClient.loadAccount(address);
   const fee = await horizonClient
@@ -131,7 +131,7 @@ export async function enableAsset(
     const codes = (error as { response?: { data?: { extras?: { result_codes?: unknown } } } })
       ?.response?.data?.extras?.result_codes;
     throw new Error(
-      `Enabling ${asset.code} was refused by the network. ${codes ? JSON.stringify(codes) : String(error)}`,
+      `Adding the ${asset.code} trustline was refused by the network. ${codes ? JSON.stringify(codes) : String(error)}`,
     );
   }
 }

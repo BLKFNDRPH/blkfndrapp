@@ -59,7 +59,7 @@ export function MoneyActionPanel({
   /** What the wallet window shows, for its preview. */
   walletShows: string;
   prepare: () => Promise<PreparedAction>;
-  /** "Recorded. Your approval counts." */
+  /** "Recorded on-chain. Your approval counts." */
   successTitle: string;
   successBody?: ReactNode;
   /** After the ledger confirms: refresh figures behind the panel. */
@@ -140,7 +140,7 @@ export function MoneyActionPanel({
         <>
           <p className="font-semibold">Sign in to continue</p>
           <p className="text-sm text-muted-foreground">
-            Sign in with Google or email, then confirm in your wallet.
+            Sign in with Google or email, then sign the transaction in your wallet.
           </p>
           <div className="flex flex-col gap-2 sm:flex-row-reverse">
             <Button type="button" className="h-10 flex-1" onClick={() => signInToContinue()}>
@@ -157,15 +157,15 @@ export function MoneyActionPanel({
       <>
         <p className="font-semibold">
           {user.stellarPublicKey
-            ? "Reconnect your wallet to confirm"
-            : "You'll need a wallet to confirm this; we'll guide you."}
+            ? "Reconnect your wallet to sign"
+            : "You'll need a Stellar wallet to sign this; we'll guide you."}
         </p>
         {freighterWalletAddress ? (
           <Button type="button" className="h-10 w-full" onClick={run}>
             Continue
           </Button>
         ) : (
-          <WalletPanel purpose="to confirm this" />
+          <WalletPanel purpose="to sign this" />
         )}
         <Button type="button" variant="ghost" className="h-9 w-full" onClick={onClose}>
           Not now
@@ -179,7 +179,7 @@ export function MoneyActionPanel({
       <div role="status" aria-live="polite" className="flex flex-col items-center gap-2 py-4 text-center">
         <Loader2 className="h-6 w-6 animate-spin text-primary" aria-hidden="true" />
         <p className="font-semibold">Preparing…</p>
-        <p className="text-sm text-muted-foreground">Checking the vault will accept this.</p>
+        <p className="text-sm text-muted-foreground">Simulating the transaction against the vault contract.</p>
       </div>,
     );
   }
@@ -208,7 +208,7 @@ export function MoneyActionPanel({
               className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
             >
               <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
-              See the public record
+              View on Stellar Expert
             </a>
             <p className="text-xs text-muted-foreground">{EXPLORER_EXPLAINER}</p>
           </div>

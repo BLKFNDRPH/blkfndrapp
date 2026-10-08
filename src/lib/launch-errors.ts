@@ -59,14 +59,14 @@ export type LaunchFailure =
 const FACTORY_RULES: Record<number, string> = {
   1: "This wallet isn't allowed to make that change.",
   12: "Your deposit is below the minimum. Raise it to at least the minimum shown on the form.",
-  13: "Something in this listing doesn't meet the rules for a vault, such as the goal, the stages or the deadline. Check the form and try again.",
+  13: "Something in this listing doesn't meet the vault contract's rules, such as the goal, the stages or the deadline. Check the form and try again.",
 };
 
 /** Vault errors raised while a new vault sets itself up (contracts/blkfndr-vault/src/lib.rs). */
 const VAULT_RULES: Record<number, string> = {
-  6: "Something in this listing doesn't meet the rules for a vault, such as the goal, the stages or the deadline. Check the form and try again.",
+  6: "Something in this listing doesn't meet the vault contract's rules, such as the goal, the stages or the deadline. Check the form and try again.",
   7: "The deadline has to be in the future.",
-  12: "Your identity verification isn't active for this wallet. Check it on your profile, then try again.",
+  12: "Your identity verification isn't active on-chain for this wallet. Check it on your profile, then try again.",
 };
 
 const NEW_VAULT = /topics:\[fn_call, (C[A-Z2-7]{55}), initialize\]/;

@@ -202,7 +202,7 @@ export const FreighterWalletProvider = ({
           ?.signerAddress;
         if (signerAddress && signerAddress !== publicKey) {
           throw new Error(
-            "Your wallet is using a different account than the one linked here. Switch accounts in your wallet and try again.",
+            "Your wallet is using a different account than the one linked here. Switch accounts in Freighter and try again.",
           );
         }
       } catch (signErr) {
@@ -219,7 +219,7 @@ export const FreighterWalletProvider = ({
           throw signErr;
         }
         throw new Error(
-          "Your wallet couldn't confirm the code. Make sure it's unlocked and on the practice network, then try again. Nothing was moved or charged.",
+          "Your wallet couldn't sign the code. Make sure Freighter is unlocked and on Testnet, then try again. Nothing was moved or charged.",
         );
       }
 

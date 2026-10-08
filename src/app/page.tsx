@@ -7,6 +7,7 @@ import { ArrowRight, ShieldCheck, Lock, Users } from "lucide-react";
 import { ProjectList } from "@/components/project/ProjectList";
 import type { Project } from "@/lib/types";
 import { CityScape } from "@/components/layout/CityScape";
+import { StellarLogo } from "@/components/layout/StellarLogo";
 import TextPressure from "@/components/layout/TextPressure";
 import { useProjects, usePlatformInfo } from "@/context/BlockchainContext";
 import { Button } from "@/components/ui/button";
@@ -22,9 +23,9 @@ import { PrivacySection } from "@/components/home/PrivacySection";
 import { ContactSection } from "@/components/home/ContactSection";
 
 const HERO_CHIPS = [
-  { icon: Lock, label: "Money sits in the project's vault, not in a BLKFNDR account" },
+  { icon: Lock, label: "Money sits in the project's on-chain vault, not in a BLKFNDR account" },
   { icon: Users, label: "Stakeholders vote on every payout" },
-  { icon: ShieldCheck, label: "Nobody at BLKFNDR can open a vault" },
+  { icon: ShieldCheck, label: "The vault contract has no admin key: BLKFNDR can't open it" },
 ];
 
 const SECTION_LINKS = [
@@ -92,20 +93,22 @@ export default function Home() {
           <div className="grid items-center gap-10 sm:gap-12 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)] lg:gap-8">
             {/* Copy */}
             <div className="min-w-0 text-center lg:text-left">
-              {IS_PRACTICE_NETWORK ? (
-                <div className="inline-flex items-center gap-2 rounded-full border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-200">
-                  <span
-                    className="h-1.5 w-1.5 rounded-full bg-amber-400"
-                    aria-hidden="true"
-                  />
-                  Practice mode
-                  <span
-                    className="mx-1 h-1 w-1 rounded-full bg-amber-400/60"
-                    aria-hidden="true"
-                  />
-                  real money launch coming
-                </div>
-              ) : null}
+              <div className="inline-flex items-center gap-2 rounded-full border border-accent/30 bg-accent/10 px-3 py-1.5 text-xs font-medium text-foreground/90">
+                <StellarLogo
+                  className="h-4 w-4 fill-current text-foreground"
+                  aria-hidden="true"
+                />
+                Built on Stellar &amp; Soroban
+                {IS_PRACTICE_NETWORK ? (
+                  <>
+                    <span
+                      className="mx-1 h-1 w-1 rounded-full bg-accent/60"
+                      aria-hidden="true"
+                    />
+                    Live on Testnet
+                  </>
+                ) : null}
+              </div>
 
               {/*
                 Decorative: TextPressure renders its own <h1> of one span per
@@ -133,10 +136,10 @@ export default function Home() {
               </h1>
 
               <p className="mx-auto mt-5 max-w-xl text-base leading-relaxed text-foreground/70 sm:text-lg lg:mx-0">
-                Every project keeps its money in its own locked vault. Nothing
-                leaves it until the stakeholders vote, and the whole history is
-                public. BLKFNDR can&apos;t open it, and you can check that
-                yourself.
+                Every project keeps its money in its own vault, a Soroban smart
+                contract on Stellar. Nothing leaves it until the stakeholders
+                vote, and the whole history is on-chain. BLKFNDR can&apos;t open
+                it, and you can check that yourself.
               </p>
 
               <div className="mt-8 flex flex-col items-center gap-3 sm:flex-row sm:justify-center lg:justify-start">
@@ -212,8 +215,8 @@ export default function Home() {
                 Featured projects
               </h2>
               <p className="mt-2 text-base text-muted-foreground sm:text-lg">
-                Each one keeps its money in its own vault, with a public record
-                anyone can read.
+                Each one keeps its money in its own on-chain vault, with a
+                record anyone can verify on the Stellar ledger.
               </p>
             </div>
             {isLoading ? (

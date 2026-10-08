@@ -30,7 +30,7 @@ const COPY: Record<AuthMode, { title: string; subtitle: string }> = {
   signin: {
     title: "Sign in to",
     subtitle:
-      "Follow vaults, stake from $5 and vote on payouts. To move money you'll also set up a wallet you control; we'll guide you right after this (about five minutes).",
+      "Follow vaults, stake from $5 and vote on payouts. To move money you'll also set up a Stellar wallet you control; we'll guide you right after this (about five minutes).",
   },
   signup: {
     title: "Create your",
@@ -81,7 +81,7 @@ export function LoginDialog({ isOpen, onClose }: LoginDialogProps) {
         </div>
 
         <p className="pt-2 text-center text-xs text-neutral-500">
-          Already use a wallet of your own? Sign in first, then set it up from Settings.
+          Already use Freighter? Sign in first, then connect it from Settings.
         </p>
       </DialogContent>
     </Dialog>

@@ -49,7 +49,7 @@ export function RestrictionNotice({
             reviews it. Everything else keeps working here: the builder can
             still open a vote, stakeholders can still vote, and refunds and
             approved payouts are unaffected. Nobody, including BLKFNDR, can
-            lock the vault itself.
+            lock the vault contract itself.
           </p>
         </div>
       )}

@@ -70,8 +70,8 @@ export function VerificationRecord({
         <DialogHeader>
           <DialogTitle>Your verification record</DialogTitle>
           <DialogDescription>
-            A public note that this account ID passed an identity check. Your documents and details
-            are never published.
+            An on-chain attestation that this wallet address passed an identity check. Your documents
+            and details are never published.
           </DialogDescription>
         </DialogHeader>
         <dl className="divide-y rounded-lg border text-sm">
@@ -89,11 +89,11 @@ export function VerificationRecord({
           )}
           <div className="flex justify-between gap-4 px-3 py-2">
             <dt className="text-muted-foreground">Attached wallet</dt>
-            <dd className="font-medium">Account ID …{wallet.slice(-4)}</dd>
+            <dd className="font-medium">Wallet address …{wallet.slice(-4)}</dd>
           </div>
           <div className="space-y-1 px-3 py-2">
             <div className="flex items-center justify-between gap-4">
-              <dt className="text-muted-foreground">Reference</dt>
+              <dt className="text-muted-foreground">Attested hash</dt>
               <dd className="flex items-center gap-1.5 font-medium">
                 {reference === undefined
                   ? "Reading…"
@@ -101,7 +101,7 @@ export function VerificationRecord({
                     ? `${reference.slice(0, 4)}…${reference.slice(-4)}`
                     : "Couldn't read it just now"}
                 {reference && (
-                  <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={copy} aria-label="Copy the reference">
+                  <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={copy} aria-label="Copy the hash">
                     {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
                   </Button>
                 )}
@@ -113,8 +113,9 @@ export function VerificationRecord({
           </div>
         </dl>
         <p className="text-xs text-muted-foreground">
-          The reference is a fingerprint of the details you submitted. Anyone holding those details
-          can check it matches; nobody can work the details out from it.
+          It&apos;s a one-way SHA-256 hash of the details you submitted, attested on-chain by the
+          reviewer. Anyone holding those details can check it matches; nobody can work the details
+          out from it.
         </p>
       </DialogContent>
     </Dialog>

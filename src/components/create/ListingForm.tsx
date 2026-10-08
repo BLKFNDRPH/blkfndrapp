@@ -235,7 +235,7 @@ function ToastDetail({ message, detail, txUrl }: { message: string; detail?: str
       <span className="block">{message}</span>
       {txUrl && (
         <a href={txUrl} target="_blank" rel="noopener noreferrer" className="block underline">
-          See the public record
+          View on Stellar Expert
         </a>
       )}
       {detail && (
@@ -281,11 +281,11 @@ const LAUNCH_STATUS: Record<LaunchStage, string> = {
   verifying: "Checking your identity and your deposit…",
   uploading: "Saving your picture and details…",
   deduping: "Making sure this vault wasn't already opened…",
-  preparing: "Preparing your confirmation…",
-  review: "Review the details, then confirm in your wallet.",
-  signing: "Waiting for you to confirm in your wallet (the request expires in about 5 minutes)…",
-  submitting: "Confirmed. Sending it to the network…",
-  confirming: "Sent. Waiting for the network, about 10 seconds. Keep this page open.",
+  preparing: "Preparing your transaction…",
+  review: "Review the details, then sign the transaction in your wallet.",
+  signing: "Waiting for you to sign the transaction in Freighter (the request expires in about 5 minutes)…",
+  submitting: "Signed. Submitting transaction…",
+  confirming: "Submitted. Waiting for the ledger to confirm, about 10 seconds. Keep this page open.",
 };
 
 /** The currency choice, in words a builder can choose between. */
@@ -296,7 +296,7 @@ const CURRENCY_CHOICES: Record<Currency, { title: string; body: string }> = {
   },
   XLM: {
     title: "XLM",
-    body: "The network's own currency. Its dollar value moves every day, so your goal and payouts will too.",
+    body: "Stellar's native asset. Its dollar value moves every day, so your goal and payouts will too.",
   },
 };
 
@@ -853,7 +853,7 @@ export function ListingForm() {
           title: "Your last vault didn't open",
           description: (
             <ToastDetail
-              message={`The network refused ${name}, so no vault was opened and no deposit was taken; only the network fee was charged.`}
+              message={`The transaction for ${name} failed on-chain, so no vault was opened and no deposit was taken; only the network fee was charged.`}
               txUrl={txUrl}
             />
           ),
@@ -869,10 +869,10 @@ export function ListingForm() {
         return true;
       default:
         toast({
-          title: "Your last vault isn't confirmed yet",
+          title: "Your last vault isn't confirmed on-chain yet",
           description: (
             <ToastDetail
-              message={`${name} was sent, but the network couldn't be reached to confirm it. Check it before trying again, so you don't open a second vault.`}
+              message={`${name} was submitted, but the network couldn't be reached to confirm it. Check it before trying again, so you don't open a second vault.`}
               txUrl={txUrl}
             />
           ),
@@ -926,7 +926,7 @@ export function ListingForm() {
     setBondBlocker(null);
     readiness.refresh();
     toast({
-      title: asset.code === "USDC" ? "Dollars are on in your wallet" : `${asset.code} is on in your wallet`,
+      title: `${asset.code} trustline added`,
       description: "Press Review and open the vault again to continue.",
     });
   };
@@ -1044,7 +1044,7 @@ export function ListingForm() {
         title: "Couldn't check your identity",
         description: (
           <ToastDetail
-            message="The identity record couldn't be read just now, so nothing was sent. Try again in a moment."
+            message="The on-chain identity registry couldn't be read just now, so nothing was sent. Try again in a moment."
             detail={err?.message}
           />
         ),
@@ -1227,7 +1227,7 @@ export function ListingForm() {
         clearDraft();
         toast({
           title: "This draft already opened a vault",
-          description: "Nothing new was paid or confirmed.",
+          description: "Nothing new was signed or paid.",
         });
         refreshAfterTx(activeAddress);
         setOpened({ title: values.title, projectId: String(existing.projectId), alreadyOpened: true });
@@ -1306,7 +1306,7 @@ export function ListingForm() {
         title: "The vault didn't open",
         description: (
           <ToastDetail
-            message="The network refused it, so no vault was opened and no deposit or listing fee was taken; only the network fee was charged. Check the form and try again."
+            message="The transaction failed on-chain, so no vault was opened and no deposit or listing fee was taken; only the network fee was charged. Check the form and try again."
             txUrl={hash ? `${EXPLORER_BASE}/tx/${hash}` : undefined}
           />
         ),
@@ -1408,7 +1408,7 @@ export function ListingForm() {
       if (!approved) {
         toast({
           title: "Not opened",
-          description: "Nothing was confirmed or sent.",
+          description: "Nothing was signed or submitted.",
         });
         return;
       }
@@ -1480,7 +1480,7 @@ export function ListingForm() {
         }
         if (outcome.status === "UNKNOWN") {
           toast({
-            title: "Sent, but not confirmed yet",
+            title: "Submitted, but not confirmed on-chain yet",
             description: (
               <ToastDetail
                 message="Don't worry about pressing Review again: it checks on this one first, even after a reload, so you can't open a second vault or be charged twice."
@@ -1503,8 +1503,8 @@ export function ListingForm() {
       // something had broken.
       if (error instanceof FreighterDeclined) {
         toast({
-          title: "Not confirmed",
-          description: "Nothing was sent and nothing was charged.",
+          title: "Not signed",
+          description: "You declined the signature request in your wallet. Nothing was submitted and nothing was charged.",
         });
         return;
       }
@@ -1553,7 +1553,7 @@ export function ListingForm() {
       out.push({ text: "Your identity check is still under review. The vault can open once it's approved." });
     } else if (identity === "approved") {
       out.push({
-        text: "Your identity is approved, with one step left before it counts.",
+        text: "Your identity is approved, but not yet recorded on-chain for this wallet.",
         actions: [{ label: "See what's left", href: "/profile/kyc-attestation" }],
       });
     }
@@ -1567,9 +1567,9 @@ export function ListingForm() {
         break;
       case "no-account":
         out.push({
-          text: "Your wallet hasn't been activated yet.",
+          text: "Your Stellar account isn't activated yet. It needs its first XLM to exist on the ledger.",
           actions: IS_PRACTICE_NETWORK
-            ? [{ label: "Activate with practice XLM", onClick: () => void readiness.activate() }]
+            ? [{ label: "Get testnet XLM", onClick: () => void readiness.activate() }]
             : undefined,
         });
         break;
@@ -1578,11 +1578,11 @@ export function ListingForm() {
         out.push({
           text:
             selectedCurrency === "XLM"
-              ? "Your wallet isn't set up for this currency yet."
-              : "Your wallet isn't set up to hold dollars yet.",
+              ? "Your wallet has no trustline for this asset yet."
+              : `Your wallet has no ${selectedCurrency} trustline yet.`,
           actions: [
             {
-              label: selectedCurrency === "XLM" ? "Enable it" : "Enable dollars",
+              label: selectedCurrency === "XLM" ? "Add the trustline" : `Add a ${selectedCurrency} trustline`,
               onClick: () => void readiness.enable(asset),
             },
           ],
@@ -1596,7 +1596,7 @@ export function ListingForm() {
             ...(selectedCurrency !== "XLM" && IS_PRACTICE_NETWORK && builderAddress
               ? [
                   {
-                    label: "Get practice dollars",
+                    label: "Get testnet USDC",
                     href: PRACTICE_DOLLARS_FAUCET,
                     external: true,
                     // The faucet asks for the account ID; it goes to the clipboard.
@@ -1675,7 +1675,7 @@ export function ListingForm() {
     if (!activeAddress) {
       toast({
         title: "Connecting your wallet…",
-        description: "Approve the connection in your wallet to continue.",
+        description: "Approve the connection in Freighter to continue.",
       });
       const connectedAddress = await handleConnectFreighter();
       if (!connectedAddress) return;

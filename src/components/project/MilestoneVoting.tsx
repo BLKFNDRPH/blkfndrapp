@@ -708,7 +708,7 @@ export function MilestoneVoting({
                   title={`Open the ${stageName} vote`}
                   sentence={`Stakeholders get ${windowDays} days to approve the ${money(amount)} payout for ${stageName}. Nothing moves until they do.`}
                   rows={[{ label: "Payout if approved", value: money(amount) }]}
-                  walletShows="a request to open the vote, with no money moving"
+                  walletShows="a transaction to open the vote, with no money moving"
                   prepare={() => prepareOpenMilestoneVote({ vaultAddress, milestoneId: m.id })}
                   successTitle={`The ${stageName} vote is open.`}
                   successBody={`Stakeholders have ${windowDays} days to vote.`}
@@ -736,7 +736,7 @@ export function MilestoneVoting({
                   ]}
                   walletShows="your vote, with no money leaving your wallet"
                   prepare={() => prepareApproveMilestone({ vaultAddress, milestoneId: m.id })}
-                  successTitle="Recorded. Your approval counts."
+                  successTitle="Recorded on-chain. Your approval counts."
                   onSuccess={afterAction}
                   onClose={close}
                 />
@@ -796,9 +796,9 @@ export function MilestoneVoting({
                 <MoneyActionPanel
                   context={{ action: "close" }}
                   title="Close the stage"
-                  sentence={`This records that ${stageName} failed its vote. Refunds open for every stakeholder, with a share of the builder's deposit. Nothing leaves your wallet except a small network fee.`}
+                  sentence={`This records on-chain that ${stageName} failed its vote. Refunds open for every stakeholder, with a share of the builder's deposit. Nothing leaves your wallet except a small network fee.`}
                   rows={[{ label: "Stage", value: stageName }]}
-                  walletShows="a request to close the stage, with no money leaving your wallet"
+                  walletShows="a transaction to close the stage, with no money leaving your wallet"
                   prepare={() => prepareSettleLapsedMilestone({ vaultAddress, milestoneId: m.id })}
                   successTitle={`${stageName} is closed. Refunds are open.`}
                   onSuccess={afterAction}

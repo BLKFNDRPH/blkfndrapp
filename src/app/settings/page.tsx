@@ -59,7 +59,7 @@ export default function SettingsPage() {
               <PracticeNetworkBadge />
             </div>
             <CardDescription>
-              The wallet you confirm stakes, votes and refunds with. It lives on your device, not with BLKFNDR.
+              The Stellar wallet you sign stakes, votes and refunds with. Its keys live on your device, not with BLKFNDR.
             </CardDescription>
           </CardHeader>
           <CardContent>

@@ -40,15 +40,15 @@ export type WalletConnectFailure =
 /** The plain-language sentence for each failure, one fix each. */
 export const WALLET_CONNECT_MESSAGES: Record<WalletConnectFailure, string> = {
   "not-detected":
-    "We can't see your wallet yet. Make sure it's installed and unlocked, then try again.",
+    "We can't see Freighter yet. Make sure it's installed and unlocked, then try again.",
   declined:
-    "You didn't allow this site in your wallet. Nothing happened. Allow it to continue.",
+    "You didn't allow this site in Freighter. Nothing happened. Allow it to continue.",
   locked:
-    "Your wallet is locked or has no account chosen. Unlock it, pick an account, then try again.",
+    "Your wallet is locked or has no account chosen. Unlock Freighter, pick an account, then try again.",
   "wrong-network":
-    "Your wallet is on the main network. Switch it to the test network in its settings, then try again.",
+    "Your wallet is on Mainnet. Switch Freighter to Testnet in its settings, then try again.",
   unavailable:
-    "Your wallet didn't respond. Make sure it's unlocked, then try again.",
+    "Your wallet didn't respond. Make sure Freighter is unlocked, then try again.",
 };
 
 /**
@@ -94,7 +94,7 @@ export const ANOTHER_ACCOUNT_MESSAGE =
 
 /** The person turned down the one-time code in their wallet. */
 export const CODE_DECLINED_MESSAGE =
-  "You didn't approve the code, so the wallet isn't set up yet. Nothing was moved or charged.";
+  "You didn't sign the code, so the wallet isn't set up yet. Nothing was moved or charged.";
 
 /** A connect failure with its code attached, so screens can branch on it. */
 export class WalletConnectError extends Error {

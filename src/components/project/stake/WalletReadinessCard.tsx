@@ -72,7 +72,7 @@ export function WalletReadinessCard({
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      // The ID is shown under "Show full ID" in the wallet panel too.
+      // The address is shown under "Show full address" in the wallet panel too.
     }
   };
 
@@ -106,7 +106,7 @@ export function WalletReadinessCard({
 
   const accountId = (
     <span className="inline-flex items-center gap-1.5">
-      <span className="text-muted-foreground">Account ID</span>
+      <span className="text-muted-foreground">Wallet address</span>
       <span className="font-mono">...{address.slice(-4)}</span>
       <button
         type="button"
@@ -149,7 +149,7 @@ export function WalletReadinessCard({
     return (
       <div className="rounded-xl border border-border bg-muted/20 p-3 text-sm text-muted-foreground">
         We can&apos;t read your wallet right now. You can still continue; your wallet will show the
-        final amount before you confirm.
+        final amount before you sign.
       </div>
     );
   }
@@ -160,24 +160,24 @@ export function WalletReadinessCard({
 
       {state === "no-account" && (
         <div className="space-y-2 text-sm">
-          <p className="font-medium text-foreground">Activate your wallet</p>
+          <p className="font-medium text-foreground">Activate your Stellar account</p>
           {IS_PRACTICE_NETWORK ? (
             <>
               <p className="text-muted-foreground">
-                A new wallet is empty until it receives its first deposit. The practice network&apos;s
-                free faucet sends it practice XLM, the network&apos;s own currency, which also covers
-                network fees. It goes straight to your wallet.
+                A new Stellar account isn&apos;t on the ledger until it receives its first XLM.
+                Friendbot, the Stellar Testnet faucet, funds your account with testnet XLM, which
+                activates it on the ledger and pays network fees. It goes straight to your wallet.
               </p>
               <Button type="button" className="h-9" onClick={activate} disabled={busy !== null}>
                 {busy === "activate" && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
-                {busy === "activate" ? "Activating…" : "Activate with practice XLM"}
+                {busy === "activate" ? "Activating…" : "Get testnet XLM"}
               </Button>
             </>
           ) : (
             <>
               <p className="text-muted-foreground">
-                A new wallet is empty until it receives its first deposit. Send a little XLM to it
-                from another wallet or an exchange to activate it.
+                A new Stellar account isn&apos;t on the ledger until it receives its first XLM. Send
+                a little XLM to your wallet address from another wallet or an exchange to activate it.
               </p>
               <p className="text-sm">{accountId}</p>
             </>
@@ -188,17 +188,17 @@ export function WalletReadinessCard({
       {state === "no-trustline" && (
         <div className="space-y-2 text-sm">
           <p className="font-medium text-foreground">
-            {isDollar ? "Enable dollars in your wallet" : "Enable this currency in your wallet"}
+            {isDollar ? "Your wallet has no USDC trustline yet" : "Your wallet has no trustline for this asset yet"}
           </p>
           <p className="text-muted-foreground">
-            Your wallet has to say yes to holding {isDollar ? "dollars (USDC)" : readiness?.asset?.code ?? "it"}{" "}
-            before anyone can send {isDollar ? "them" : "it"}. You&apos;ll approve this once in your
-            wallet. It costs under a cent and sets aside 0.5 XLM of your own while it&apos;s
-            on, which you get back if you turn it off. Nothing goes to BLKFNDR.
+            A trustline lets your Stellar account hold {isDollar ? "dollars (USDC)" : readiness?.asset?.code ?? "it"};{" "}
+            nobody can send {isDollar ? "them" : "it"} to you without one. You&apos;ll sign this once in
+            your wallet. It costs under a cent and reserves 0.5 XLM of your own while the trustline
+            exists, which you get back if you remove it. Nothing goes to BLKFNDR.
           </p>
           <Button type="button" className="h-9" onClick={enable} disabled={busy !== null || !readiness?.asset}>
             {busy === "enable" && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
-            {busy === "enable" ? "Waiting for your wallet…" : isDollar ? "Enable dollars" : "Enable it"}
+            {busy === "enable" ? "Waiting for your wallet…" : isDollar ? "Add a USDC trustline" : "Add a trustline"}
           </Button>
         </div>
       )}
@@ -211,9 +211,9 @@ export function WalletReadinessCard({
           {isDollar && IS_PRACTICE_NETWORK ? (
             <>
               <p className="text-muted-foreground">
-                Circle, the company behind USDC, gives practice dollars for free. On their page pick
-                Stellar Testnet, paste your account ID (this button copies it), and press Send. You
-                get 20 practice dollars every 2 hours, straight to your wallet. Then come back and
+                Circle, the company behind USDC, gives testnet USDC for free. On their page pick
+                Stellar Testnet, paste your wallet address (this button copies it), and press Send.
+                You get 20 testnet USDC every 2 hours, straight to your wallet. Then come back and
                 press Check again.
               </p>
               <Button
@@ -225,7 +225,7 @@ export function WalletReadinessCard({
                 }}
               >
                 <ExternalLink className="h-4 w-4" aria-hidden="true" />
-                Get practice dollars
+                Get testnet USDC
               </Button>
               <p className="text-xs">{accountId}</p>
             </>
@@ -233,7 +233,7 @@ export function WalletReadinessCard({
             <>
               <p className="text-muted-foreground">
                 Add USDC to your wallet from an exchange, sending it on the Stellar network to your
-                account ID. It goes straight to your wallet. Or stake a smaller amount.
+                wallet address. It goes straight to your wallet. Or stake a smaller amount.
               </p>
               <p className="text-xs">{accountId}</p>
             </>

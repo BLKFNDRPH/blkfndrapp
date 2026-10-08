@@ -218,7 +218,7 @@ export function RecordCheckDialog({
               <p className="text-sm text-muted-foreground">
                 This is the renewal that was turned down.
                 {target?.verifiedUntil
-                  ? ` The public record still holds the earlier approval, valid until ${formatDay(target.verifiedUntil)}.`
+                  ? ` The identity registry on-chain still holds the earlier approval, valid until ${formatDay(target.verifiedUntil)}.`
                   : ""}
               </p>
             )}
@@ -245,7 +245,7 @@ export function RecordCheckDialog({
                 <dd className="break-all text-right font-mono text-xs">{wallet}</dd>
               </div>
               <div className="flex justify-between gap-4 px-3 py-2">
-                <dt className="shrink-0 text-muted-foreground">Fingerprint</dt>
+                <dt className="shrink-0 text-muted-foreground">Hash</dt>
                 <dd className="text-right font-mono text-xs" title={record.details_hash}>
                   {record.details_hash.slice(0, 10)}…{record.details_hash.slice(-10)}
                 </dd>
@@ -259,8 +259,9 @@ export function RecordCheckDialog({
                   <p className="font-semibold">Documents and personal details are deleted after attestation</p>
                   <p className="text-muted-foreground">
                     The ID scan, ID number, date of birth, home address and email were permanently deleted once this
-                    check was decided. Only what&apos;s above is kept. The fingerprint is a one-way hash of the
-                    details; it&apos;s what the public record holds, and it can&apos;t be turned back into them.
+                    check was decided. Only what&apos;s above is kept. The hash is a one-way SHA-256 of the
+                    details; it&apos;s what the identity registry holds on-chain, and it can&apos;t be turned back
+                    into them.
                   </p>
                 </div>
               </div>
@@ -363,12 +364,12 @@ export function RecordCheckDialog({
               {result === "not-on-record" && (
                 <p className="flex items-start gap-2 rounded-lg border border-border bg-muted/40 p-3 text-sm">
                   <CircleHelp className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-                  This wallet has no verification on the public record, so there is nothing to compare with.
+                  This wallet has no verification in the on-chain identity registry, so there is nothing to compare with.
                 </p>
               )}
               {result === "unreadable" && (
                 <p className="rounded-lg border border-border bg-muted/40 p-3 text-sm">
-                  Couldn&apos;t read the public record just now. Try again.
+                  Couldn&apos;t read the on-chain identity registry just now. Try again.
                 </p>
               )}
             </div>

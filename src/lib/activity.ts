@@ -1,8 +1,8 @@
 /**
  * A wallet's recent activity as sentences a person reads like a bank
  * statement: "Staked $25 in Solar Pump", "Collected $21.05 from Harbour Mill",
- * "Enabled dollars in your wallet". The raw operation (its type, the contract
- * function, the transaction reference) stays available for "Verify".
+ * "Added a USDC trustline". The raw operation (its type, the contract
+ * function, the transaction hash) stays available for "Verify".
  *
  * Pure: takes the Horizon-derived item and a lookup from vault address to
  * project title, returns words. No network.
@@ -76,18 +76,18 @@ export function describeActivity(
 
   switch (item.type) {
     case "create_account":
-      // In XLM, not dollars: a starting balance of practice XLM reads more
+      // In XLM, not dollars: a starting balance of testnet XLM reads more
       // honestly as "10,000 XLM" than as a dollar figure.
       return {
         sentence:
           main && !main.amount.startsWith("-")
-            ? `Wallet activated with ${formatToken(Math.abs(parseFloat(main.amount)), "XLM")}`
-            : "Activated a wallet",
+            ? `Stellar account activated with ${formatToken(Math.abs(parseFloat(main.amount)), "XLM")}`
+            : "Activated a Stellar account",
         amount: main ? `${main.amount.startsWith("-") ? "−" : "+"}${formatToken(Math.abs(parseFloat(main.amount)), "XLM")}` : null,
         failed,
       };
     case "change_trust":
-      return say(/^Remove/i.test(item.label) ? "Turned off a currency in your wallet" : /USDC/.test(item.label) ? "Enabled dollars in your wallet" : "Enabled a currency in your wallet");
+      return say(/^Remove/i.test(item.label) ? "Removed a trustline" : /USDC/.test(item.label) ? "Added a USDC trustline" : "Added a trustline");
     case "payment":
     case "path_payment_strict_send":
     case "path_payment_strict_receive":
@@ -97,7 +97,7 @@ export function describeActivity(
       return say("Payment");
     case "invoke_host_function":
       if (/Deploy contract/i.test(item.label)) return say("Opened a vault");
-      return say(item.contract_function ? `${item.label} in${where}` : "An action on the network");
+      return say(item.contract_function ? `${item.label} in${where}` : "A smart contract call");
     default:
       return say(item.label);
   }

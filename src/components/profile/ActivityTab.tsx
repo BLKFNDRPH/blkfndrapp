@@ -82,7 +82,7 @@ export function ActivityTab({
         </div>
       ) : items.length === 0 ? (
         <p className="rounded-xl border border-dashed border-border p-8 text-center text-muted-foreground">
-          Nothing yet. Your stakes, votes and refunds will show here, with a receipt for each.
+          Nothing yet. Your stakes, votes and refunds will show here, each with its transaction.
         </p>
       ) : (
         <ul className="divide-y divide-border rounded-xl border border-border bg-card">
@@ -120,10 +120,10 @@ export function ActivityTab({
                   </summary>
                   <div className="mt-2 space-y-1 text-xs text-muted-foreground">
                     {line.failed && (
-                      <p>The network ran it and it didn&apos;t go through. Only the network fee was charged.</p>
+                      <p>The transaction reached the ledger and failed. Only the network fee was charged.</p>
                     )}
                     <p>
-                      Reference{" "}
+                      Transaction hash{" "}
                       <span className="font-mono">
                         {item.transaction_hash.slice(0, 4)}…{item.transaction_hash.slice(-4)}
                       </span>
@@ -135,7 +135,7 @@ export function ActivityTab({
                       className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
                     >
                       <ExternalLink className="h-3 w-3" aria-hidden="true" />
-                      See the public record
+                      View on Stellar Expert
                     </a>
                     <p>{EXPLORER_EXPLAINER}</p>
                   </div>

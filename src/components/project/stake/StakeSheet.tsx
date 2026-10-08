@@ -49,7 +49,7 @@ import {
  *
  * It opens for everyone, signed in or not, so a person can read exactly what
  * staking involves before being asked for anything. The steps after "Review
- * and confirm" are: the vault simulates the stake (its refusals surface here,
+ * and sign" are: the vault simulates the stake (its refusals surface here,
  * before any wallet window), a preview of what the wallet will show, the
  * wallet itself, the send, the ledger, and a receipt in place. Every failure
  * becomes an outcome card from explainError.
@@ -335,7 +335,7 @@ export function StakeSheet({ project, onClose }: { project: Project; onClose: ()
           <span className="[overflow-wrap:anywhere]">Stake in {project.title}</span>
           {IS_PRACTICE_NETWORK && (
             <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300">
-              practice
+              Testnet
             </span>
           )}
         </p>
@@ -371,7 +371,7 @@ export function StakeSheet({ project, onClose }: { project: Project; onClose: ()
         </div>
         <dl className="divide-y divide-border/60 rounded-xl border border-border bg-muted/20 text-sm">
           <div className="flex justify-between gap-3 px-3 py-2">
-            <dt className="text-muted-foreground">Recorded</dt>
+            <dt className="text-muted-foreground">Recorded on-chain</dt>
             <dd>
               {new Date(step.at).toLocaleString("en-GB", {
                 day: "numeric",
@@ -383,7 +383,7 @@ export function StakeSheet({ project, onClose }: { project: Project; onClose: ()
           </div>
           {ref && (
             <div className="flex items-center justify-between gap-3 px-3 py-2">
-              <dt className="text-muted-foreground">Reference</dt>
+              <dt className="text-muted-foreground">Transaction hash</dt>
               <dd className="flex items-center gap-2 font-mono text-xs">
                 {ref}
                 <button
@@ -396,7 +396,7 @@ export function StakeSheet({ project, onClose }: { project: Project; onClose: ()
                     } catch {}
                   }}
                   className="text-primary"
-                  aria-label="Copy the reference"
+                  aria-label="Copy the transaction hash"
                 >
                   {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
                 </button>
@@ -422,7 +422,7 @@ export function StakeSheet({ project, onClose }: { project: Project; onClose: ()
               className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
             >
               <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
-              See the public record
+              View on Stellar Expert
             </a>
             <p className="text-xs text-muted-foreground">{EXPLORER_EXPLAINER}</p>
           </div>
@@ -450,7 +450,7 @@ export function StakeSheet({ project, onClose }: { project: Project; onClose: ()
         <div role="status" aria-live="polite" className="flex flex-col items-center gap-3 py-6 text-center">
           <Loader2 className="h-7 w-7 animate-spin text-primary" aria-hidden="true" />
           <p className="font-semibold">Preparing…</p>
-          <p className="text-sm text-muted-foreground">Checking the vault will accept this stake.</p>
+          <p className="text-sm text-muted-foreground">Simulating the stake against the vault contract.</p>
         </div>
       </section>
     );
@@ -610,10 +610,10 @@ export function StakeSheet({ project, onClose }: { project: Project; onClose: ()
                         </button>
                       </TooltipTrigger>
                       <TooltipContent className="max-w-xs text-left">
-                        Every action on the network costs a small fee in XLM, the network&apos;s own
-                        currency: usually one or two cents, a little more the first time you stake in a
-                        vault. You see the exact fee before you confirm.
-                        {IS_PRACTICE_NETWORK ? " In practice mode, your wallet's practice XLM covers it." : ""}
+                        Every transaction on Stellar costs a small fee in XLM, Stellar&apos;s native
+                        asset: usually one or two cents, a little more the first time you stake in a
+                        vault. You see the exact fee before you sign.
+                        {IS_PRACTICE_NETWORK ? " On Testnet, your wallet's testnet XLM covers it." : ""}
                       </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
@@ -656,8 +656,8 @@ export function StakeSheet({ project, onClose }: { project: Project; onClose: ()
             <div className="space-y-3 rounded-xl border border-border bg-muted/20 p-4">
               <p className="font-semibold">
                 {user.stellarPublicKey
-                  ? "Reconnect your wallet to confirm"
-                  : "You'll need a wallet to confirm this; we'll guide you."}
+                  ? "Reconnect your wallet to sign"
+                  : "You'll need a wallet to sign this; we'll guide you."}
               </p>
               <WalletPanel purpose={`to stake in ${project.title}`} />
             </div>
@@ -680,7 +680,7 @@ export function StakeSheet({ project, onClose }: { project: Project; onClose: ()
               disabled={!canReview}
               onClick={() => amountRaw && prepare(amountRaw)}
             >
-              Review and confirm
+              Review and sign
             </Button>
             <Button type="button" variant="outline" className="h-10 flex-1" onClick={onClose}>
               Cancel

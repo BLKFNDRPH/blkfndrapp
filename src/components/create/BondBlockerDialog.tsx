@@ -90,31 +90,32 @@ export function BondBlockerDialog({
           <AlertDialogTitle className="flex items-center gap-2">
             <Shield className="h-5 w-5 text-amber-500" />
             {problem?.reason === "no-account"
-              ? "This wallet hasn't been activated yet"
+              ? "This Stellar account isn't activated yet"
               : problem?.reason === "insufficient"
                 ? `Not enough ${currencyName(problem.asset)} for the deposit and listing fee`
                 : problem?.reason === "network-fee"
                   ? "Not enough XLM for the network fee"
-                  : `Your wallet can't hold ${asset ? currencyName(asset) : "this currency"} yet`}
+                  : `Your wallet has no ${asset ? `${asset.code} ` : ""}trustline yet`}
           </AlertDialogTitle>
           <AlertDialogDescription asChild>
             <div className="space-y-3 text-sm text-left">
               {problem?.reason === "no-trustline" && (
                 <>
                   <p>
-                    Opening the vault moves your deposit into it straight away. Your wallet hasn&apos;t
-                    said yes to holding {isDollar ? "dollars (USDC)" : problem.asset.code} yet, so there is
+                    Opening the vault moves your deposit into it straight away. Your wallet has no
+                    {" "}{problem.asset.code} trustline yet, so it can&apos;t hold any, and there is
                     nothing for the deposit to come from. Nothing has been opened or charged.
                   </p>
                   {canEnable ? (
                     <p>
-                      It takes one approval in your wallet. It sets aside 0.5 XLM of your own while
-                      it&apos;s on, which you get back if you turn it off. Nothing goes to BLKFNDR.
+                      It takes one signature in your wallet. The trustline sets aside 0.5 XLM of your own
+                      as a reserve while it&apos;s on, which you get back if you remove it. Nothing goes to
+                      BLKFNDR.
                     </p>
                   ) : (
                     <p>
-                      Allow {problem.asset.code} in your wallet&apos;s settings, then come back and press
-                      Review again.
+                      Add a {problem.asset.code} trustline in Freighter, then come back and press Review
+                      again.
                     </p>
                   )}
                 </>
@@ -159,7 +160,7 @@ export function BondBlockerDialog({
                   </dl>
                   <p>
                     {isDollar && IS_PRACTICE_NETWORK
-                      ? "Add practice dollars from “Enough in that wallet” at the top of the page, or lower your deposit; it only has to reach the minimum shown on the form."
+                      ? "Get testnet USDC from “Enough in that wallet” at the top of the page, or lower your deposit; it only has to reach the minimum shown on the form."
                       : "Add money to your wallet, or lower your deposit; it only has to reach the minimum shown on the form."}
                   </p>
                 </>
@@ -168,8 +169,9 @@ export function BondBlockerDialog({
               {problem?.reason === "network-fee" && (
                 <>
                   <p>
-                    Every vault opening pays a network fee in XLM, whatever the vault&apos;s currency, and
-                    the network won&apos;t take it from the small XLM reserve it keeps on your account.
+                    Every vault opening pays a Stellar network fee in XLM, whatever the vault&apos;s
+                    currency, and the network won&apos;t take it from the small XLM reserve your account
+                    keeps on the ledger.
                     Nothing has been opened or charged.
                   </p>
                   <dl className="divide-y rounded-lg border text-foreground">
@@ -189,14 +191,16 @@ export function BondBlockerDialog({
               {problem?.reason === "no-account" && (
                 <>
                   <p>
-                    A new wallet is empty until it receives its first XLM, so it can&apos;t hold a
-                    deposit or confirm anything yet. Nothing has been opened or charged.
+                    A new Stellar account doesn&apos;t exist on the ledger until it receives its first
+                    XLM, so it can&apos;t hold a deposit or sign a transaction yet. Nothing has been
+                    opened or charged.
                   </p>
                   <p>
                     {canActivate
-                      ? "The practice network's free faucet sends practice XLM straight to your wallet. It also covers network fees."
+                      ? "Friendbot, the Stellar Testnet faucet, funds your account with testnet XLM, which activates it on the ledger and pays network fees."
                       : "Send a little XLM to it from another wallet or an exchange, then press Review again."}
-                    {!problem.asset.isNative && " After that, your wallet also needs to allow dollars; the next step offers it."}
+                    {!problem.asset.isNative &&
+                      ` After that, your wallet also needs a ${problem.asset.code} trustline; the next step offers it.`}
                   </p>
                 </>
               )}
@@ -233,12 +237,12 @@ export function BondBlockerDialog({
                 {problem?.reason === "no-account"
                   ? working
                     ? "Activating…"
-                    : "Activate with practice XLM"
+                    : "Get testnet XLM"
                   : working
                     ? "Waiting for your wallet…"
-                    : isDollar
-                      ? "Enable dollars"
-                      : `Enable ${asset?.code ?? "it"}`}
+                    : asset
+                      ? `Add a ${asset.code} trustline`
+                      : "Add the trustline"}
               </Button>
             </>
           ) : (

@@ -198,7 +198,7 @@ export function RefundSheet({ project, onClose }: { project: Project; onClose: (
         {elsewhere ? (
           <p>
             Your stake is held by the wallet ending ...{linkedAddress.slice(-4)}, which isn&apos;t the
-            one connected now. Switch to that account in your wallet, then reopen this.
+            one connected now. Switch to that account in Freighter, then reopen this.
           </p>
         ) : (
           <p>
@@ -266,7 +266,7 @@ export function RefundSheet({ project, onClose }: { project: Project; onClose: (
 
       <p className="text-sm text-muted-foreground">
         Refunds aren&apos;t pushed to you automatically. The vault only pays an account that asks,
-        which is what stops anyone else from ever moving your money. Confirm once in your wallet and
+        which is what stops anyone else from ever moving your money. Sign once in your wallet and
         it&apos;s yours within seconds.
       </p>
 
@@ -276,12 +276,12 @@ export function RefundSheet({ project, onClose }: { project: Project; onClose: (
           title="Collect your refund"
           sentence={`This moves ${show(comingBack)} from the ${project.title} vault to your wallet.`}
           rows={[{ label: "Coming back to you", value: show(comingBack) }]}
-          walletShows={`a refund request: ${exact(comingBack)} comes to you`}
+          walletShows={`a refund transaction: ${exact(comingBack)} comes to you`}
           prepare={() => prepareClaimRefund({ vaultAddress: project.vaultAddress! })}
           successTitle="Your refund is in your wallet."
           successBody={
             IS_PRACTICE_NETWORK
-              ? "It's there as practice dollars. Practice money can't be cashed out, but you can stake it again."
+              ? `It's there as testnet ${currency}. Testnet funds have no real value and can't be cashed out, but you can stake them again.`
               : "It's in your wallet. You can stake it in another project, keep it, or move it out."
           }
           onSuccess={() => {

@@ -7,12 +7,12 @@ import { IS_PRACTICE_NETWORK } from "@/lib/network";
 import type { SendPhase } from "@/hooks/use-stellar-contract";
 
 /**
- * The moment a money action leaves the page for the wallet, narrated.
+ * The moment a money action leaves the page for the wallet to sign, narrated.
  *
  * Before: a card saying exactly what the wallet will show and where to press,
  * so its window is not a surprise. After the press: a countdown while the
- * wallet is open (its requests lapse after five minutes), then "Sending", then
- * "Waiting for the network". The calling sheet owns the outcome; this only
+ * wallet is open (its requests lapse after five minutes), then "Submitting",
+ * then "Waiting for the ledger". The calling sheet owns the outcome; this only
  * shows where things are.
  */
 
@@ -69,7 +69,7 @@ export function WalletConfirm({
         <div className="rounded-xl border border-dashed border-border p-3">
           <p className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             <Wallet className="h-3.5 w-3.5" aria-hidden="true" />
-            Your wallet opens next
+            Your wallet opens next to sign
           </p>
           <ol className="space-y-1.5 text-sm text-foreground">
             <li>
@@ -78,14 +78,14 @@ export function WalletConfirm({
             </li>
             {IS_PRACTICE_NETWORK && (
               <li>
-                <span className="text-muted-foreground">2.</span> It says the network is the test
-                network. That&apos;s the practice network, and it&apos;s right.
+                <span className="text-muted-foreground">2.</span> It shows the network as Testnet.
+                That&apos;s right: BLKFNDR runs on the Stellar Testnet.
               </li>
             )}
             <li className="flex items-start gap-1.5">
               <span className="text-muted-foreground">{IS_PRACTICE_NETWORK ? "3." : "2."}</span>
               <span>
-                Check it, then press <span className="font-semibold">Approve</span>.
+                Check it, then press <span className="font-semibold">Approve</span> to sign.
               </span>
               <MousePointerClick className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" aria-hidden="true" />
             </li>
@@ -114,12 +114,12 @@ function PhaseView({ phase }: { phase: SendPhase }) {
       {phase === "sending" ? (
         <>
           <CheckCircle2 className="h-8 w-8 text-emerald-500" aria-hidden="true" />
-          <p className="font-semibold">Approved. Sending…</p>
+          <p className="font-semibold">Signed. Submitting transaction…</p>
         </>
       ) : (
         <>
           <Loader2 className="h-8 w-8 animate-spin text-primary" aria-hidden="true" />
-          <p className="font-semibold">Sent. Waiting for the network</p>
+          <p className="font-semibold">Submitted. Waiting for the ledger to confirm</p>
           <p className="max-w-xs text-sm text-muted-foreground">
             Usually under 10 seconds. Keep this tab open.
           </p>
@@ -162,16 +162,16 @@ function WaitingForWallet() {
           transform="rotate(-90 24 24)"
         />
       </svg>
-      <p className="font-semibold">Waiting for you in your wallet</p>
+      <p className="font-semibold">Waiting for your signature in your wallet</p>
       <p className="text-sm text-muted-foreground">
-        {minutes}:{seconds} left. Wallet requests expire after 5 minutes.
+        {minutes}:{seconds} left. Signature requests expire after 5 minutes.
       </p>
       <details className="text-sm">
         <summary className="cursor-pointer text-primary underline-offset-4 hover:underline">
           Can&apos;t see the window?
         </summary>
         <p className="mt-2 max-w-xs text-muted-foreground">
-          It may be behind this tab or under the extension icon at the top right of your browser.
+          It may be behind this tab or under the Freighter extension icon at the top right of your browser.
         </p>
       </details>
     </div>

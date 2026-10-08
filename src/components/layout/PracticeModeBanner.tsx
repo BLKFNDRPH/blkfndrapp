@@ -10,23 +10,23 @@ import {
 import { IS_PRACTICE_NETWORK } from "@/lib/network";
 
 /**
- * The one place the app says, in plain words, that the money here is not real.
+ * The banner that says the app runs on the Stellar Testnet, so the funds here
+ * are test tokens.
  *
- * Replaces every "Testnet" badge and "Live on testnet" pill. Shown only on a
- * practice network. Dismissing it collapses it to a thin line that still reads
- * "Practice mode", because a visitor who hid it an hour ago must never mistake
- * a practice balance for a real one. The collapsed state is remembered per
- * browser; it is a convenience, so a storage failure simply shows the full
+ * Shown only on a test network. Dismissing it collapses it to a thin line that
+ * still reads "Testnet", because a visitor who hid it an hour ago must never
+ * mistake a testnet balance for a real one. The collapsed state is remembered
+ * per browser; it is a convenience, so a storage failure simply shows the full
  * banner again.
  */
 
 const STORAGE_KEY = "blkfndr.practice-banner.collapsed";
 
 export const PRACTICE_BANNER_SENTENCE =
-  "Practice mode: the dollars here are practice dollars. Nothing you add or stake is real money.";
+  "Testnet: BLKFNDR runs on the Stellar Testnet. The XLM and USDC here are test tokens with no real value.";
 
 export const PRACTICE_POPOVER =
-  "BLKFNDR is running on a test network. The money here is practice money: added free in the app straight into a wallet only you hold, and impossible to cash out. Real money arrives when we move to the main network.";
+  "Every vault is a real Soroban smart contract and every stake and vote is a real transaction, but on the Stellar Testnet. Testnet XLM comes free from Friendbot and testnet USDC from Circle's faucet, straight into a wallet only you hold, and neither can be cashed out. Real funds arrive when BLKFNDR moves to Mainnet.";
 
 export function PracticeModeBanner() {
   const [collapsed, setCollapsed] = useState(false);
@@ -56,9 +56,9 @@ export function PracticeModeBanner() {
         type="button"
         onClick={() => remember(false)}
         className="block w-full bg-amber-500/15 py-0.5 text-center text-[11px] font-medium text-amber-700 dark:text-amber-300"
-        aria-label="Practice mode. Show what this means."
+        aria-label="Testnet. Show what this means."
       >
-        Practice mode
+        Testnet
       </button>
     );
   }
@@ -89,7 +89,7 @@ export function PracticeModeBanner() {
         type="button"
         onClick={() => remember(true)}
         className="ml-1 rounded-full p-1 hover:bg-amber-500/20"
-        aria-label="Collapse the practice-mode banner"
+        aria-label="Collapse the testnet banner"
       >
         <X className="h-3.5 w-3.5" aria-hidden="true" />
       </button>

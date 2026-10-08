@@ -16,24 +16,24 @@ import { AuditorAccordion } from "./AuditorAccordion";
 import { EXPLORER_BASE, EXPLORER_EXPLAINER, IS_PRACTICE_NETWORK } from "@/lib/network";
 
 /**
- * "How your money is protected": six plain cards, the comparison table in plain
- * words, and one collapsed disclosure that holds everything an auditor needs.
+ * "How your money is protected": six cards, the comparison table, and one
+ * collapsed disclosure that holds everything an auditor needs.
  *
- * Nothing technical renders outside the disclosure: no hash, no address, no
- * shell command, no test name. The claims above it stay checkable because the
- * disclosure keeps every one of those artefacts on the page.
+ * The raw artefacts (wasm hashes, contract addresses, the build command, test
+ * names) sit in the disclosure. The claims above it stay checkable because the
+ * disclosure keeps every one of them on the page.
  */
 
 const PROTECTIONS = [
   {
     icon: Landmark,
     title: "Your money is in the project's vault, not in a BLKFNDR account.",
-    body: null,
+    body: "Each vault is its own Soroban smart contract on Stellar.",
   },
   {
     icon: Lock,
     title: "The vault has no button for us.",
-    body: "Its code contains no instruction that lets BLKFNDR move money, and anyone can check that.",
+    body: "Its smart contract has no function that lets BLKFNDR move money, and anyone can check that.",
   },
   {
     icon: Users,
@@ -52,7 +52,7 @@ const PROTECTIONS = [
   },
   {
     icon: FileCheck,
-    title: "Proof is stored where it can't be quietly swapped later,",
+    title: "Proof is stored on IPFS, where it can't be quietly swapped later,",
     body: "and every listing gets an automatic quality check before it goes live.",
   },
 ];
@@ -61,7 +61,7 @@ const BAD_BUILDER = [
   {
     needs: "A master key or team account that can take the money out",
     blkfndr:
-      "There is none. Money leaves the vault only when stakeholders vote it out, and anyone can carry out a payout they approved.",
+      "There is none: the vault contract has no admin key. Money leaves the vault only when stakeholders vote it out, and anyone can carry out a payout they approved.",
   },
   {
     needs: "All the money at once, before anything is built",
@@ -86,7 +86,7 @@ const BAD_BUILDER = [
   {
     needs: "A clean slate for the next project",
     blkfndr:
-      "A permanent public record of every project a builder has closed, and how it ended.",
+      "A permanent on-chain record of every project a builder has closed, and how it ended.",
   },
 ];
 
@@ -157,7 +157,7 @@ export function SecuritySection() {
         <SectionHeading
           eyebrow="Protection"
           title="How your money is protected"
-          lead="Most places that take your money ask you to trust the people running them. Here the vault's own rules do the work: nobody at BLKFNDR can pay the builder, hold back a refund or edit a project's history, because the vault has no way to let us."
+          lead="Most places that take your money ask you to trust the people running them. Here the vault's own rules, written into its smart contract, do the work: nobody at BLKFNDR can pay the builder, hold back a refund or edit a project's on-chain history, because the contract has no way to let us."
         />
 
         <div className="mt-14 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
@@ -219,11 +219,11 @@ export function SecuritySection() {
           </ul>
         </div>
 
-        {/* Everything technical lives in here, and only in here. */}
+        {/* The raw artefacts an auditor checks live in here. */}
         <div className="mt-16">
           <AuditorAccordion
             title="For auditors and developers"
-            intro="If you can read code, here is everything you need to check us: program fingerprints, contract addresses and the command that rebuilds them."
+            intro="If you can read code, here is everything you need to check us: wasm hashes, contract addresses and the command that rebuilds them."
           >
             <div className="grid gap-8 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] lg:items-start">
               {/* The 20% cap, worked through */}
@@ -345,8 +345,8 @@ export function SecuritySection() {
                 </div>
 
                 <p className="mt-5 text-xs text-muted-foreground">
-                  Contract addresses. Each link opens the public record:{" "}
-                  {EXPLORER_EXPLAINER}
+                  Contract addresses. Each link opens the contract on Stellar
+                  Expert. {EXPLORER_EXPLAINER}
                 </p>
                 <ul className="mt-3 space-y-2.5">
                   {CONTRACTS.map(({ label, id }) => (
@@ -382,13 +382,13 @@ export function SecuritySection() {
 
                 <p className="mt-5 text-xs leading-relaxed text-muted-foreground">
                   {IS_PRACTICE_NETWORK
-                    ? "Deployed to Stellar testnet. "
-                    : "Deployed to the Stellar public network. "}
+                    ? "Deployed to Stellar Testnet. "
+                    : "Deployed to Stellar Mainnet. "}
                   The vault&apos;s release rules alone are pinned by 56 passing
                   tests, with the treasury and operations vault adding 45 and 25
                   more.
                   {IS_PRACTICE_NETWORK
-                    ? " Mainnet is planned and not yet deployed — treat anything on testnet as a live rehearsal, not a place to commit money you need back."
+                    ? " Mainnet is planned and not yet deployed — treat anything on Testnet as a live rehearsal, not a place to commit money you need back."
                     : null}
                 </p>
               </div>

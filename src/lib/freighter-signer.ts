@@ -43,8 +43,8 @@ interface FreighterError {
  * know that approving it now does nothing.
  */
 export const NO_SIGNATURE_MESSAGE =
-  "Your wallet didn't confirm, so the request was cancelled or timed out (a request left open for about five minutes is dropped). " +
-  "If a wallet window is still open, close it; approving it now does nothing. " +
+  "Your wallet didn't sign, so the request was cancelled or timed out (a request left open for about five minutes is dropped). " +
+  "If a Freighter window is still open, close it; signing it now does nothing. " +
   "Nothing was moved or charged.";
 
 /** No signature came back, and the reason was the person at the keyboard. */
@@ -65,15 +65,15 @@ export function describeFreighterError(error: FreighterError): string {
 
   switch (error.code) {
     case -4:
-      return "You didn't approve it. Nothing was moved or charged.";
+      return "You rejected the signature request in your wallet. Nothing was moved or charged.";
     case -3:
-      return `Your wallet couldn't read this request. Reload the page and try again. Nothing was moved or charged.${technical}`;
+      return `Your wallet couldn't read this signature request. Reload the page and try again. Nothing was moved or charged.${technical}`;
     case -2:
-      return `Your wallet couldn't reach the network. Check your connection and try again. Nothing was moved or charged.${technical}`;
+      return `Your wallet couldn't reach the Stellar network. Check your connection and try again. Nothing was moved or charged.${technical}`;
     case -1:
-      return `Your wallet hit a problem on its side. Unlock it and try again. Nothing was moved or charged.${technical}`;
+      return `Your wallet hit a problem on its side. Unlock Freighter and try again. Nothing was moved or charged.${technical}`;
     default:
-      return `Your wallet couldn't confirm this. Try again. Nothing was moved or charged.${technical}`;
+      return `Your wallet couldn't sign this. Try again. Nothing was moved or charged.${technical}`;
   }
 }
 
@@ -98,9 +98,9 @@ function requireSignedBy(
 ) {
   if (!signerAddress || signerAddress === publicKey) return;
   throw new Error(
-    "Your wallet is using a different account than the one linked here. Switch accounts in your wallet and try again. " +
+    "Your wallet is using a different account than the one linked here. Switch accounts in Freighter and try again. " +
       "Nothing was moved or charged. " +
-      `(Technical details: this ${what} is for ${shortenAddress(publicKey)}; your wallet confirmed as ${shortenAddress(signerAddress)}.)`,
+      `(Technical details: this ${what} is for ${shortenAddress(publicKey)}; your wallet signed as ${shortenAddress(signerAddress)}.)`,
   );
 }
 
@@ -158,8 +158,8 @@ export function freighterSigner(publicKey: string) {
 
       if (!res?.signedAuthEntry) {
         throw new FreighterDeclined(
-          "Your wallet didn't confirm, so the request was cancelled or timed out. " +
-            "If a wallet window is still open, close it; approving it now does nothing. Nothing was moved or charged.",
+          "Your wallet didn't sign, so the request was cancelled or timed out. " +
+            "If a Freighter window is still open, close it; signing it now does nothing. Nothing was moved or charged.",
         );
       }
       requireSignedBy(publicKey, res.signerAddress, "authorisation");
