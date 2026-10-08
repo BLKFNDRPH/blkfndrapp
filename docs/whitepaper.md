@@ -190,7 +190,7 @@ This matters beyond pricing. A platform earning a percentage of every project ha
 
 It also means no fee stands between a stakeholder's deposit and the weight it carries: the whole deposit is theirs to reclaim and, up to the 20% cap, to vote with.
 
-The fee recorded in the testnet factory today is 300 base units — 0.00003 of the project's token, effectively nothing. It is most likely left over from an earlier percentage model (300 basis points). The amount is a platform setting; the shape is not. There is no percentage setting to change.
+The fee recorded in the testnet factory today is 1 unit of the project's token: 1 USDC on a USDC project, 1 XLM on an XLM project. The previous factory charged 300 base units (0.00003), a leftover from an earlier percentage model (300 basis points). The amount is a platform setting; the shape is not. There is no percentage setting to change.
 
 ### **5.2 Where the fee goes**
 
@@ -244,13 +244,13 @@ Authorization is enforced by the database, not only by the application:
 
 ### **6.3 Verifiability**
 
-A reader should not have to take this document's word for any of it. The factory records the hash of the vault code it deploys, and the homepage reads it live from the factory. As of 2026-10-02:
+A reader should not have to take this document's word for any of it. The factory records the hash of the vault code it deploys, and the homepage reads it live from the factory. As of 2026-10-08:
 
 ```
-blkfndr_vault.wasm  sha256:70e5f3a81a3d66155b46780f0c7bc1bd7574721d5477865f7a2cd471d9746b53
+blkfndr_vault.wasm  sha256:e9009410b9cbb4c5bfb7cca747812dcad6a044d09c648a1e392a84fe7e182d95
 ```
 
-Any vault's code can be fetched from the network and compared with that hash. `scripts/build-contracts.sh` rebuilds the contracts from source, with one caveat: the wasm embeds absolute build paths, so a rebuild matches byte-for-byte only on the same paths. A pinned build environment would remove that caveat. Deployed contract addresses are listed in the [README](../README.md) and are viewable on stellar.expert.
+Projects created before 2026-10-06 run the earlier `70e5f3a8…` or `9c20bca3…`. Any vault's code can be fetched from the network and compared with that hash. `scripts/build-contracts.sh` rebuilds the contracts from source, with one caveat: the wasm embeds absolute build paths, so a rebuild matches byte-for-byte only on the same paths. A pinned build environment would remove that caveat. Deployed contract addresses are listed in the [README](../README.md) and are viewable on stellar.expert.
 
 ---
 
@@ -271,11 +271,11 @@ A protocol that claimed to eliminate risk would be lying, and the omissions are 
 
 ## **8. Platform Parameters**
 
-Read from the testnet factory on 2026-10-02, except where a row names a contract constant.
+Read from the testnet factory on 2026-10-08, except where a row names a contract constant.
 
 | Parameter | Value |
 |---|---|
-| Platform fee | Flat, builder-paid at creation, in the project's token. Currently 300 base units (0.00003) |
+| Platform fee | Flat, builder-paid at creation, in the project's token. Currently 1 unit |
 | Minimum stake | 5 units of the project's token |
 | Minimum bond | 5% of the funding goal |
 | Milestone voting window | 7 days |

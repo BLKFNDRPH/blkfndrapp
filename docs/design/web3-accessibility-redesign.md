@@ -8,15 +8,27 @@
 >
 > **How to use it:** paste the Design principles and the Vocabulary table into Claude Design as standing instructions, then paste one "Prompt N" block at a time, in order. The last section has the full steps.
 
-> **Status since this brief (updated 2026-10-02).** The brief is a dated snapshot; its file:line references point at `a4ffb48`. These items have shipped on `main` since and are live:
+> **Status since this brief (updated 2026-10-08).** The brief is a dated snapshot; its file:line references point at `a4ffb48`. **Phase 1 is built, and Phase 2 has started.** Everything below is on `main` and live on testnet:
 >
 > | Item in the brief | Shipped in |
 > |---|---|
 > | Phantom 3% fee on the stake screen (`phantom-3-percent-fee`) | #101 — the stake dialog shows the stake alone and says no platform fee is taken from stakes |
 > | Signed-out press on "Fund with USDC" does nothing; Google sign-in loses the project (`oauth-return-loses-the-project`, `login-redirect-loses-the-project`) | #102 — sign-in opens above the project dialog, and the project reopens after sign-in, in the fund flow when that was the intent |
 > | "awaiting multi-sig verification" toast; one footer proof button that only reached the first milestone | #103 — per-milestone proof in each milestone card, with the brief's copy ("Your proof is saved. Stakeholders can now see it when they vote.") |
+> | Prompts 1, 2 and 4: landing, header, cards, filters, sign-in | #108 |
+> | Prompt 3: project page with tabs | #115 — every project is a page at `/projects/[id]` |
+> | Prompts 5, 6 and 10: stake sheet, confirm and outcome, wallet readiness | #116 |
+> | Prompts 11 and 12: stage decisions and refund sheet | #117, landed as #118 |
+> | Prompt 8: profile | #120 |
+> | Prompt 13: open a vault | #124 |
+> | Prompt 7: identity verification without a wallet first | #127 |
+> | Prompt 9: wallet setup wizard, Phase 1 shell | #129 |
+> | Phase 2: governance cron (open decision 5) | #131 — sends carried payouts, closes lapsed stages and settles missed goals every 15 minutes |
+> | Phase 2: Record tab, full timeline | #132 — read from the indexer's existing `contract_events`; no `vault_events` table was needed |
+> | Phase 2: notify() producers and Decisions inbox | #134 — the bell's "Needs you" |
+> | Phase 2: email through Resend | #138 — built; sends nothing until a Resend key is set |
 >
-> Everything else in the brief is still open. Track progress in [progress.md](../../progress.md).
+> Still open from Phase 2: Stellar Wallets Kit, fee-bump sponsorship and the Funds check sheet's sponsored trustline. Phases 3 and 4 haven't started. Track progress in [progress.md](../../progress.md).
 
 > **Vocabulary change (owner, 2026-10-08).** Web3 terms are back in the interface. The rows of the [Vocabulary](#vocabulary) table that replaced Testnet, Stellar and Soroban, on-chain, transaction and transaction hash, sign and signature, wallet address (public key), trustline, Friendbot and Freighter are reverted: the app says Testnet, not "practice mode", and "View on Stellar Expert", not "See the public record". The project rows stay as written: stake, stakeholder, vault, stage, payout, goal, builder's deposit, the plain status pills, "Approve this payout" and dollars-first amounts.
 

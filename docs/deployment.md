@@ -657,8 +657,9 @@ exception: its structs are unchanged, so either order works.
 
 ## Pending live operations
 
-Merged is not the same as live. The Operations Vault cutover votes, two
-unapplied migrations and the factory and registry redeploy are tracked in
+Merged is not the same as live. The Operations Vault cutover votes, the
+factory admin handover, switching on email, the Pinata Gateway Key and the
+unapplied browser table-grant migration are tracked in
 **[progress.md](../progress.md)** under "Not yet done".
 They are not repeated here.
 

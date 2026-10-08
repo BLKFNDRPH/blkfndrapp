@@ -29,7 +29,7 @@
 # Usage:
 #   scripts/deploy-contracts.sh --network testnet --source my-key
 #
-# Replacing the live set (progress.md item 4):
+# Replacing the live set (as on 2026-10-06; see docs/smart-contracts.md, "The registry redeploy"):
 #   scripts/deploy-contracts.sh --network testnet --source ba-escrow-deployer \
 #     --first-project-id <live get_project_count + 1> \
 #     --shareholders-from <live treasury> \
