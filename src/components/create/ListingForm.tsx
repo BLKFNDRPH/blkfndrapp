@@ -40,7 +40,7 @@ import {
   rememberLaunch,
   type InFlightLaunch,
 } from "@/lib/launch-in-flight";
-import { EXPLORER_BASE } from "@/lib/network";
+import { EXPLORER_BASE, NETWORK_PASSPHRASE, SOROBAN_RPC_URL } from "@/lib/network";
 import { rpc } from "@stellar/stellar-sdk";
 import { BondBlockerDialog } from "./BondBlockerDialog";
 import { LaunchBlockedDialog, type LaunchProblem } from "./LaunchBlockedDialog";
@@ -104,9 +104,6 @@ const DEFAULT_DEADLINE_MS = () => {
   const ms = Date.now() + 30 * 24 * 60 * 60 * 1000;
   return ms - (ms % 60_000);
 };
-
-const NETWORK_PASSPHRASE = "Test SDF Network ; September 2015";
-const SOROBAN_RPC_URL = "https://soroban-testnet.stellar.org";
 
 const FACTORY_ID = process.env.NEXT_PUBLIC_BLKFNDR_FACTORY_CONTRACT_ID || "";
 const IDENTITY_ID = process.env.NEXT_PUBLIC_BLKFNDR_IDENTITY_CONTRACT_ID || "";

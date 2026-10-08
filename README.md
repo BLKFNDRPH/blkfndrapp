@@ -202,7 +202,8 @@ cargo test --workspace
 | `NEXT_PUBLIC_BLKFNDR_ATTESTATION_CONTRACT_ID` | Yes | Attestation registry contract ID |
 | `NEXT_PUBLIC_BLKFNDR_OPERATIONS_CONTRACT_ID` | Recommended | Operations Vault contract ID. Its governance panel reads "Not configured" without it |
 | `NEXT_PUBLIC_STELLAR_XLM_TOKEN_ID` | Yes | XLM token contract ID (also `_USDC_`) |
-| `NEXT_PUBLIC_SOROBAN_RPC_URL`, `NEXT_PUBLIC_HORIZON_URL` | Optional | RPC and Horizon endpoints. Default to testnet. The network passphrase is pinned to testnet in code, so these alone do not make a mainnet build |
+| `NEXT_PUBLIC_STELLAR_NETWORK` | Optional | `public` builds for Mainnet; unset is Testnet. Sets the passphrase wallets connect, link and sign with |
+| `NEXT_PUBLIC_SOROBAN_RPC_URL`, `NEXT_PUBLIC_HORIZON_URL` | Testnet: optional | RPC and Horizon endpoints. Default to Testnet's. A Mainnet build must set the RPC URL |
 | `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | Optional | Map on a project's Location section |
 | `APP_URLS` | Optional | Extra allowed origins, comma-separated, for a host answering on several domains. Read at runtime, so a change needs the container recreated (a stack update), not a rebuild. Use https only on a public host |
 | `PINATA_JWT` | Yes | Pinata API JWT for IPFS uploads. Server-only. An owner can instead store it in the Supabase Vault from the console, which then takes precedence |

@@ -72,11 +72,19 @@ function failureOf(error: unknown): Failure {
           fix: "retry",
         };
       case "wrong-network":
-        return {
-          message:
-            "Freighter is on Mainnet. Switch it to Testnet (step 3 shows how), then press Check again.",
-          fix: "network",
-        };
+        // Step 3 only covers switching networks on Testnet; Freighter starts on
+        // Mainnet, so a Mainnet build has no step to send anyone back to.
+        return IS_PRACTICE_NETWORK
+          ? {
+              message:
+                "Freighter is on Mainnet. Switch it to Testnet (step 3 shows how), then press Check again.",
+              fix: "network",
+            }
+          : {
+              message:
+                "Freighter is on Testnet. Choose Main Net at the top of its window, then press Check again.",
+              fix: "check",
+            };
       default:
         return { message: error.message, fix: "check" };
     }

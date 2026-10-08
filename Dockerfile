@@ -41,8 +41,13 @@ ARG NEXT_PUBLIC_BLKFNDR_ATTESTATION_CONTRACT_ID
 ARG NEXT_PUBLIC_BLKFNDR_OPERATIONS_CONTRACT_ID
 ARG NEXT_PUBLIC_STELLAR_XLM_TOKEN_ID
 ARG NEXT_PUBLIC_STELLAR_USDC_TOKEN_ID
-# Both default to TESTNET in src/lib/stellar-clients.ts. A mainnet deployment
-# that leaves them unset builds cleanly and then talks to testnet.
+# "public" builds for Mainnet; unset or anything else builds for Testnet. It
+# picks the passphrase the wallet connects, links and signs with, so without
+# this ARG a Mainnet stack would still build a Testnet bundle (src/lib/network.ts).
+ARG NEXT_PUBLIC_STELLAR_NETWORK
+# Both default to Testnet's endpoints on a Testnet build (src/lib/network.ts).
+# A Mainnet build needs the RPC URL set, and next.config.js fails the build if
+# either names the other network.
 ARG NEXT_PUBLIC_SOROBAN_RPC_URL
 ARG NEXT_PUBLIC_HORIZON_URL
 ARG NEXT_PUBLIC_APP_URL
@@ -59,6 +64,7 @@ ENV NEXT_PUBLIC_BLKFNDR_ATTESTATION_CONTRACT_ID=$NEXT_PUBLIC_BLKFNDR_ATTESTATION
 ENV NEXT_PUBLIC_BLKFNDR_OPERATIONS_CONTRACT_ID=$NEXT_PUBLIC_BLKFNDR_OPERATIONS_CONTRACT_ID
 ENV NEXT_PUBLIC_STELLAR_XLM_TOKEN_ID=$NEXT_PUBLIC_STELLAR_XLM_TOKEN_ID
 ENV NEXT_PUBLIC_STELLAR_USDC_TOKEN_ID=$NEXT_PUBLIC_STELLAR_USDC_TOKEN_ID
+ENV NEXT_PUBLIC_STELLAR_NETWORK=$NEXT_PUBLIC_STELLAR_NETWORK
 ENV NEXT_PUBLIC_SOROBAN_RPC_URL=$NEXT_PUBLIC_SOROBAN_RPC_URL
 ENV NEXT_PUBLIC_HORIZON_URL=$NEXT_PUBLIC_HORIZON_URL
 ENV NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL

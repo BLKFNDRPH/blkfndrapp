@@ -5,7 +5,7 @@ import { NETWORK_PASSPHRASE } from "@/lib/stellar-clients";
 import { horizonClient } from "@/lib/stellar";
 import { bondAssetFor, tokenBalance, type BondAsset, type TokenBalance } from "@/lib/bond-readiness";
 import { freighterSigner } from "@/lib/freighter-signer";
-import { IS_PRACTICE_NETWORK } from "@/lib/network";
+import { FRIENDBOT_URL } from "@/lib/network";
 
 /**
  * Is this wallet ready to stake in a vault, and if not, what one thing is
@@ -81,10 +81,10 @@ export async function readWalletReadiness(
  * XLM. The faucet pays the address directly. Practice network only.
  */
 export async function activatePractice(address: string): Promise<void> {
-  if (!IS_PRACTICE_NETWORK) {
+  if (!FRIENDBOT_URL) {
     throw new Error("Friendbot only exists on Stellar Testnet.");
   }
-  const res = await fetch(`https://friendbot.stellar.org/?addr=${encodeURIComponent(address)}`);
+  const res = await fetch(`${FRIENDBOT_URL}/?addr=${encodeURIComponent(address)}`);
   if (res.ok) return;
   const body = await res.text().catch(() => "");
   // An address the faucet has already funded is already active.

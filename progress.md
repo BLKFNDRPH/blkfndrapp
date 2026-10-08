@@ -228,7 +228,6 @@ The Settings "Resend API key" is read by the notification emails cron since #138
 |---|---|
 | [FundDialog.tsx](src/components/project/FundDialog.tsx) | The balance it compares a stake with is the token's whole `balance()`, which includes amounts locked by open DEX offers and, for XLM, the minimum reserve. A stake within that margin passes the dialog and is refused by contribute's simulation with a raw error. It also lets through stakes below the vault's `min_contribution` (5 units), and the close-to-goal auto-fill rounds to 4 decimals, which can overshoot the goal or round to 0 and lock the field |
 | [profile/page.tsx:1245](src/app/profile/page.tsx) | The "most investors" sort counts `r.investor`, but receipts carry `contributor` |
-| 5 files, 6 places (profile ×2, KYC page, ListingForm, ProjectDetailsDialog, IdentityRegistryPanel) | Hard-code the testnet Soroban RPC URL instead of using `stellar-clients`. `stellar-clients` itself pins `Networks.TESTNET`. Both block mainnet |
 | [Header.tsx](src/components/layout/Header.tsx) | The side-menu Admin link follows on-chain admin status, not the roster, so console-only admins don't see it |
 | [profiles.ts:168](src/lib/data/profiles.ts) | `syncAdminClaim` still writes `app_metadata.role`, which nothing reads, and the landing security copy still says roles come from `app_metadata` |
 | MilestoneVoting | Offers vote buttons on refunding or completed vaults. A window that closes while open is judged on stale data until reload |

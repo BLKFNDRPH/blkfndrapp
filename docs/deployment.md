@@ -225,8 +225,9 @@ ones the Genkit plugin and compose read.
 | `NEXT_PUBLIC_BLKFNDR_OPERATIONS_CONTRACT_ID` | Yes | [stellar-clients.ts](../src/lib/stellar-clients.ts), [managed-wallet.ts](../src/lib/managed-wallet.ts) | Operations Vault. Unset, the governance panel shows "Not configured" |
 | `NEXT_PUBLIC_STELLAR_XLM_TOKEN_ID` | At least one currency | [currencies.ts](../src/lib/currencies.ts) | A currency left blank is not offered when creating a project |
 | `NEXT_PUBLIC_STELLAR_USDC_TOKEN_ID` | At least one currency | [currencies.ts](../src/lib/currencies.ts) | Same |
-| `NEXT_PUBLIC_SOROBAN_RPC_URL` | No. Defaults to testnet | [stellar-clients.ts](../src/lib/stellar-clients.ts) | `https://soroban-testnet.stellar.org` |
-| `NEXT_PUBLIC_HORIZON_URL` | No. Defaults to testnet | [stellar-clients.ts](../src/lib/stellar-clients.ts) | `https://horizon-testnet.stellar.org` |
+| `NEXT_PUBLIC_STELLAR_NETWORK` | No. Defaults to testnet | [network.ts](../src/lib/network.ts) | `public` for Mainnet. Picks the passphrase that wallet connect, linking and signing use |
+| `NEXT_PUBLIC_SOROBAN_RPC_URL` | Testnet: no. **Mainnet: yes.** The build fails if empty | [network.ts](../src/lib/network.ts) | Testnet default `https://soroban-testnet.stellar.org`. SDF runs no Mainnet RPC |
+| `NEXT_PUBLIC_HORIZON_URL` | No | [network.ts](../src/lib/network.ts) | Defaults to `https://horizon-testnet.stellar.org`, or `https://horizon.stellar.org` on Mainnet |
 | `NEXT_PUBLIC_APP_URL` | Yes in production | [auth/app-origin.ts](../src/lib/auth/app-origin.ts) | Public origin, `https://` included. Must match the Supabase Site URL. Read only by the server, but still inlined at build |
 | `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | No | [ProjectLocation.tsx](../src/components/project/ProjectLocation.tsx) | Unset shows a Maps link instead of an embedded map. Restrict the key by HTTP referrer, since every visitor can read it |
 
@@ -315,15 +316,19 @@ merged.
 | `SETTLE_STALLED_INTERVAL_SECONDS` | `86400` | Seconds between settle-stalled runs |
 | `KEEP_ALIVE_INTERVAL_SECONDS` | `86400` | Seconds between keep-alive runs |
 
-### Testnet only, today
+### Choosing the network
 
-Setting mainnet RPC and Horizon URLs does not make a mainnet deployment.
-[stellar-clients.ts](../src/lib/stellar-clients.ts) hard-codes
-`Networks.TESTNET` as the network passphrase, and five places hard-code the
-testnet Soroban RPC URL instead of using `stellar-clients`: the profile page
-(twice), the KYC attestation page, `ListingForm` and `IdentityRegistryPanel`
-(the project page, `ProjectView`, reads them from `lib/stellar`). Mainnet
-needs a code change first.
+The network is a build arg, like every `NEXT_PUBLIC_` value.
+[network.ts](../src/lib/network.ts) derives the passphrase, the endpoint
+defaults, Friendbot and the explorer links from `NEXT_PUBLIC_STELLAR_NETWORK`,
+and nothing else in `src` names a network. A Mainnet stack sets:
+
+- `NEXT_PUBLIC_STELLAR_NETWORK=public`
+- `NEXT_PUBLIC_SOROBAN_RPC_URL`, a Mainnet RPC provider (SDF runs none)
+- the Mainnet contract and token ids, which differ from Testnet's
+
+Then rebuild. `next.config.js` fails the build if Mainnet has no RPC URL, or
+if either endpoint names the other network.
 
 ## Quick start
 

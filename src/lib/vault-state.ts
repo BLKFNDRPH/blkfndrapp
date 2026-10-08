@@ -5,9 +5,8 @@
 // totals, bond status, or milestone release flags into ProjectCache must source
 // them from here.
 
-import { Networks } from "@stellar/stellar-sdk";
 import { Client as VaultClient } from "@/packages/blkfndr_vault/src";
-import { SOROBAN_RPC_URL } from "@/lib/stellar";
+import { NETWORK_PASSPHRASE, SOROBAN_RPC_URL } from "@/lib/stellar";
 
 /** Stroops per unit — Stellar assets carry 7 decimal places. */
 export const STROOPS = 10_000_000;
@@ -60,7 +59,7 @@ export async function readVaultState(vaultAddress: string): Promise<VaultState |
     const client = new VaultClient({
       contractId: vaultAddress,
       rpcUrl: SOROBAN_RPC_URL,
-      networkPassphrase: Networks.TESTNET,
+      networkPassphrase: NETWORK_PASSPHRASE,
     });
 
     const [stateSim, infoSim] = await Promise.all([

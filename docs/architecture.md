@@ -219,7 +219,7 @@ Authorization is enforced by the database, not only by application code. The pub
 
 ### Smart contracts — Soroban
 
-Seven Rust contracts; see [Smart Contracts](smart-contracts.md) for the full API and for where the deployed contracts differ from source. Clients are built in [src/lib/stellar-clients.ts](../src/lib/stellar-clients.ts). The network passphrase is fixed to testnet in code.
+Seven Rust contracts; see [Smart Contracts](smart-contracts.md) for the full API and for where the deployed contracts differ from source. Clients are built in [src/lib/stellar-clients.ts](../src/lib/stellar-clients.ts). The network passphrase and endpoints come from [src/lib/network.ts](../src/lib/network.ts): Testnet unless `NEXT_PUBLIC_STELLAR_NETWORK=public`.
 
 ### AI — Genkit + Gemini
 
@@ -371,7 +371,8 @@ blkfndrapp/
 │   │   ├── data/               # Server-only data-access layer
 │   │   ├── supabase/           # Session and service-role clients, generated DB types
 │   │   ├── event-indexer.ts    # Chain → Postgres
-│   │   ├── stellar-clients.ts  # Contract clients, RPC/Horizon URLs
+│   │   ├── network.ts          # Which network: passphrase, RPC/Horizon URLs, explorer
+│   │   ├── stellar-clients.ts  # Contract clients
 │   │   ├── stellar.ts          # Horizon reads
 │   │   ├── ttl-keeper.ts       # Shared storage keep-alive
 │   │   ├── ops-funding.ts      # Monthly treasury → Operations Vault trigger

@@ -13,6 +13,7 @@ import {
   ANOTHER_ACCOUNT_MESSAGE,
   CODE_DECLINED_MESSAGE,
 } from "@/lib/freighter-connect";
+import { NETWORK_NAME, NETWORK_PASSPHRASE } from "@/lib/network";
 import { FreighterWalletContext } from "./FreighterWalletContext";
 
 /**
@@ -147,8 +148,11 @@ export const FreighterWalletProvider = ({
 
       let signaturePayload: string | number[] = "";
       try {
+        // The passphrase tells Freighter which network the request is for. It
+        // isn't part of what gets signed (SEP-53 hashes the message alone), so
+        // the server's check of the signature is the same on every network.
         const signResult = await signMessage(nonce, {
-          networkPassphrase: "Test SDF Network ; September 2015",
+          networkPassphrase: NETWORK_PASSPHRASE,
           address: publicKey,
         });
 
@@ -219,7 +223,7 @@ export const FreighterWalletProvider = ({
           throw signErr;
         }
         throw new Error(
-          "Your wallet couldn't sign the code. Make sure Freighter is unlocked and on Testnet, then try again. Nothing was moved or charged.",
+          `Your wallet couldn't sign the code. Make sure Freighter is unlocked and on ${NETWORK_NAME}, then try again. Nothing was moved or charged.`,
         );
       }
 

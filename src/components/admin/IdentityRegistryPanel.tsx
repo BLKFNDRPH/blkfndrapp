@@ -37,12 +37,11 @@ import {
   DialogFooter,
 } from "../ui/dialog";
 import { cn } from "@/lib/utils";
+import { NETWORK_PASSPHRASE, SOROBAN_RPC_URL } from "@/lib/network";
 import { formatDay, renewalState } from "@/lib/kyc/renewal";
 import { RecordCheckDialog, type RecordTarget } from "./RecordCheckDialog";
 import { CaseDocument } from "./CaseDocument";
 
-const NETWORK_PASSPHRASE = "Test SDF Network ; September 2015";
-const SOROBAN_RPC_URL = "https://soroban-testnet.stellar.org";
 const IDENTITY_ID = process.env.NEXT_PUBLIC_BLKFNDR_IDENTITY_CONTRACT_ID || "";
 
 /**

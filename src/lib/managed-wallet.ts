@@ -6,7 +6,6 @@ import {
   Contract,
   Asset,
   BASE_FEE,
-  Networks,
   nativeToScVal,
   scValToNative,
   rpc,
@@ -17,6 +16,7 @@ import {
   SOROBAN_RPC_URL,
   type Signer,
 } from "@/lib/stellar-clients";
+import { FRIENDBOT_URL } from "@/lib/network";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 /**
@@ -47,9 +47,6 @@ import { createAdminClient } from "@/lib/supabase/admin";
  * to which attestor and whether the registry has appointed it. Only the private
  * half lives in the Vault, and only this module ever asks for it.
  */
-
-const FRIENDBOT = "https://friendbot.stellar.org";
-const IS_TESTNET = NETWORK_PASSPHRASE === Networks.TESTNET;
 
 /** The native-asset (XLM) contract, so gas can move to and from a managed wallet
  *  as token transfers — the only way a contract like the Operations Vault can
@@ -179,8 +176,8 @@ export async function signRevocation(params: {
  * does nothing on mainnet — there the wallet is funded by an owner-voted release
  * from the Operations Vault, which is the only source of its gas.
  */
-async function friendbotFund(publicKey: string): Promise<void> {
-  const res = await fetch(`${FRIENDBOT}?addr=${encodeURIComponent(publicKey)}`);
+async function friendbotFund(friendbot: string, publicKey: string): Promise<void> {
+  const res = await fetch(`${friendbot}?addr=${encodeURIComponent(publicKey)}`);
   if (res.ok) return;
   const body = await res.text().catch(() => "");
   if (body.includes("op_already_exists") || body.includes("already_exist")) return;
@@ -204,7 +201,7 @@ export async function provisionManagedWallet(keyRef: string): Promise<string> {
   const existing = await getManagedSecret(keyRef);
   const kp = existing ? Keypair.fromSecret(existing) : Keypair.random();
   if (!existing) await storeManagedSecret(keyRef, kp.secret());
-  if (IS_TESTNET) await friendbotFund(kp.publicKey());
+  if (FRIENDBOT_URL) await friendbotFund(FRIENDBOT_URL, kp.publicKey());
   return kp.publicKey();
 }
 
