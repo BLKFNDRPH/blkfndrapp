@@ -114,6 +114,7 @@ export type Database = {
       }
       contract_events: {
         Row: {
+          attempts: number
           contract_id: string
           created_at: string
           error: string | null
@@ -127,6 +128,7 @@ export type Database = {
           topic2: string
         }
         Insert: {
+          attempts?: number
           contract_id: string
           created_at?: string
           error?: string | null
@@ -140,6 +142,7 @@ export type Database = {
           topic2?: string
         }
         Update: {
+          attempts?: number
           contract_id?: string
           created_at?: string
           error?: string | null

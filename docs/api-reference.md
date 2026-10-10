@@ -178,7 +178,7 @@ All require `has_admin_role('platform_admin')`, that is a platform administrator
 | `getUsersAction()` | Every profile with its ban state |
 | `banUserAction(userId, reason)` | Records the ban (hides the user's listings through RLS) and sets the Supabase Auth ban (blocks sign-in) |
 | `unbanUserAction(userId)` | Lifts both |
-| `getHealthAction()` | Counts of users, projects, pending KYC, bans and events, plus the indexer cursor and when it last moved |
+| `getHealthAction()` | Counts of users, projects, pending KYC, bans and events (all, unprocessed, and given up on after their last attempt), plus the indexer cursor and when it last moved |
 
 ### [src/actions/project-moderation.ts](../src/actions/project-moderation.ts)
 
@@ -291,7 +291,7 @@ The two profile lookups are signed-in only because contributor addresses are pub
 
 | Method | Route | Calls | Response |
 |---|---|---|---|
-| `GET`, `POST` | `/api/indexer` | `runIndexer()` in [src/lib/event-indexer.ts](../src/lib/event-indexer.ts) | `{ success, count, failed, currentLedger, metadata, creatorsNamed }`. `success` is false when an event handler failed |
+| `GET`, `POST` | `/api/indexer` | `runIndexer()` in [src/lib/event-indexer.ts](../src/lib/event-indexer.ts) | `{ success, count, failed, gaveUp, currentLedger, metadata, creatorsNamed }`. `success` is false when an event handler failed. `gaveUp` lists the events this pass skipped after their fifth failed attempt (`{ id, kind, contractId, ledger, attempts, error }`); each stays unprocessed. A call made while a pass is running waits for that pass and returns its result |
 | `POST` | `/api/ops-funding` | `triggerOpsFunding()` in [src/lib/ops-funding.ts](../src/lib/ops-funding.ts) | `{ success: true, status: "funded" \| "skipped", detail, amount? }` |
 | `POST` | `/api/settle-stalled` | `triggerSettleStalled()` in [src/lib/settle-stalled.ts](../src/lib/settle-stalled.ts) | `{ success: true, status: "done" \| "skipped", detail, reclaimed, checked, vaults? }` |
 | `POST` | `/api/keep-alive` | `runKeepAlive()` in [src/lib/ttl-keeper.ts](../src/lib/ttl-keeper.ts). Body `{ "dryRun": true }` reports what is due and its simulated cost without sending | `{ success: true, status: "done" \| "skipped" \| "dry-run", detail, entries[], restored, extended, feeXlm }` |

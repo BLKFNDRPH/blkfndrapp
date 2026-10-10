@@ -127,7 +127,7 @@ The flow is in [src/ai/flows/improve-listing-quality.ts](../src/ai/flows/improve
 
 **New vaults.** A vault the factory deploys inside the scanned range is read too, from its `FACTORY/DEPLOY`'s ledger, in the same pass. Its address reaches `projects` only once that DEPLOY is handled, yet its first events sit in the same transaction: `initialize` emits `VAULT/INIT` and `BOND/POSTED` just before the factory emits DEPLOY. The indexer used to skip them, so most vaults' Record tabs had no line for the builder's deposit; [supabase/backfills](../supabase/backfills) restores those rows. The scan lives in [src/lib/indexer-scan.ts](../src/lib/indexer-scan.ts), and `npm test` runs it against a stand-in RPC.
 
-**How events are handled.** Events are recorded in `contract_events`, where `event_id` is unique, in ledger order, except that a DEPLOY goes before the new vault's events from the same call, so the project row exists under its id before they re-read it. A new event is handled, then marked with `processed_at`, or with its `error` if the handler threw. A failure stops the pass.
+**How events are handled.** Events are handled in ledger order, except that a DEPLOY goes before the new vault's events from the same call, so the project row exists under its id before they re-read it. Each is recorded in `contract_events`, where `event_id` is unique, as attempt 1, then handled and marked with `processed_at`, or with its `error` if the handler threw. A failure stops the pass. The loop is `handleEvents` in [src/lib/indexer-scan.ts](../src/lib/indexer-scan.ts). Only one pass runs at a time: one that is called while another is running waits for it and returns its result.
 
 | Event | Handling |
 |---|---|
@@ -137,8 +137,21 @@ The flow is in [src/ai/flows/improve-listing-quality.ts](../src/ai/flows/improve
 
 **The cursor.** With every event handled, the cursor moves to where the scan reached, quiet ledgers included. It never moves past a group that did not finish scanning, a new vault's included. After a failure it stays at the last ledger that was fully handled, which is always before the failed event's ledger: the events after it in that ledger were never recorded.
 
-**Known gap.** A failed event is not retried. On the next pass it is already in `contract_events`, so `recordEvent` reports it as seen and the indexer skips it; the events after it are read again. A later event from the same vault re-syncs the vault. A failed `FACTORY/DEPLOY` leaves its project out of `projects`. The next pass then reads the vault's own events as a new vault's, and `syncVault` files it under its vault address, with a placeholder title, rather than its project id.
+**Retries.** The cursor stops before a failed event, so the next pass reads it again. Its row has no `processed_at`, so the pass retries it, adding one to `contract_events.attempts` before the handler runs, so an attempt cut short by a redeploy counts too. An event recorded earlier with `processed_at` set is skipped. After five attempts (`MAX_ATTEMPTS`), the pass gives up on the event. It leaves the row unprocessed, with its last `error`, logs it, lists it under `gaveUp` in the run's result, and moves on, so the cursor can pass it. Retrying forever would hold every project's indexing behind one event, and the factory is permissionless. The console's health view counts unprocessed events and says how many were given up on.
 
+What a given-up event leaves behind:
+
+- A vault event: the vault's figures stay as they were until its next event re-syncs it.
+- A `FACTORY/DEPLOY`: its project has no row, so the vault's own events, handled after it in the same pass, make `syncVault` file the project under its vault address, with a placeholder title.
+
+To re-run a given-up event while it is still inside the RPC's retention (about 7 days), reset its attempts and move the cursor back to the ledger before it:
+
+```sql
+update public.contract_events set attempts = 0 where event_id = '<event id>';
+update public.indexer_state set value = <its ledger - 1> where key = 'last_processed_ledger';
+```
+
+The next pass reads everything from that ledger on again, skips what is already handled and retries the event. A pass that was already running when you made the change can move the cursor forward again, so check afterwards that the row's `attempts` went up or `processed_at` was set, and repeat if neither did. A re-run `FACTORY/DEPLOY` repairs a row its vault's events filed under the vault address: `upsertProjectFromChain` upserts on `vault_address` and writes the real `project_id`, the title and `created_on_chain_at`.
 **Two repair passes** run after every pass. Both are best effort and cannot fail the run:
 
 - `resolvePendingMetadata` retries up to five projects still titled `Project #<id>` that have a metadata CID. A gateway that was down when `FACTORY/DEPLOY` was handled no longer leaves the placeholder in place for good.

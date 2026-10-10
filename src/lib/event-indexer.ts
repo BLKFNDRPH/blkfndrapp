@@ -11,11 +11,11 @@ if (typeof window === "undefined") {
 import { rpc } from "@stellar/stellar-sdk";
 import { getIPFSFetchUrls } from "./pinata-client";
 import { SOROBAN_RPC_URL, FACTORY_ID } from "./stellar-clients";
-import { collectEvents, cursorAfterPass } from "./indexer-scan";
+import { collectEvents, cursorAfterPass, handleEvents, type EventStore } from "./indexer-scan";
 import { readVaultState } from "./vault-state";
 import { currencyForToken } from "./currencies";
 import { LISTING_LIMITS, clampText } from "./listing-limits";
-import { getCursor, setCursor, recordEvent, markProcessed } from "./data/events";
+import { getCursor, setCursor, recordEvent, countAttempt, markHandled, markFailed } from "./data/events";
 import { notifyForVaultEvent } from "./data/vault-notifications";
 import { upsertProjectFromChain, upsertMilestones } from "./data/projects";
 import { createAdminClient } from "./supabase/admin";
@@ -28,7 +28,8 @@ import type { Enums } from "./supabase/database.types";
  *
  *   * an event was written with `processed: true` before its handler ran, so a
  *     handler that threw left it permanently marked done and never retried.
- *     `processed_at` is now set only on success, and a failure is recorded.
+ *     `processed_at` is now set only on success, a failure is recorded, and a
+ *     later pass retries it (see handleEvents in indexer-scan.ts).
  *   * the ledger cursor advanced to the highest ledger seen even when handlers
  *     threw, so failures silently skipped work. The cursor now advances only
  *     past events that were actually handled.
@@ -428,7 +429,51 @@ async function handleEvent(topic1: string, topic2: string, payload: any[], contr
   }
 }
 
-export async function runIndexer() {
+/** contract_events, as the pass in indexer-scan.ts uses it. */
+const eventStore: EventStore = {
+  record: (event) =>
+    recordEvent({
+      eventId: event.id,
+      ledger: event.ledger,
+      ledgerClosedAt: event.ledgerClosedAt,
+      contractId: event.contractId,
+      topic1: event.topic1,
+      topic2: event.topic2,
+      payload: event.payload,
+    }),
+  countAttempt,
+  markHandled,
+  markFailed,
+};
+
+const RUNNING_PASS = Symbol.for("blkfndr.indexer.pass");
+type IndexerResult = Awaited<ReturnType<typeof indexOnce>>;
+
+/**
+ * One indexer pass, or the one already running.
+ *
+ * The cron starts a pass every minute and an admin's transaction starts one
+ * too, so two can overlap. That used to be harmless: recording an event was
+ * the claim on it, and only one pass could record it. A retry has no such
+ * claim. A second pass would take an event the first was still handling for a
+ * failed one, run it alongside, and spend one of its attempts. A caller that
+ * arrives mid-pass now waits for that pass and gets its result.
+ *
+ * Kept on globalThis rather than in a module variable, so the guard holds even
+ * if the route and the server action load separate copies of this module.
+ */
+export function runIndexer(): Promise<IndexerResult> {
+  const slot = globalThis as unknown as Record<symbol, Promise<IndexerResult> | undefined>;
+  const pass =
+    slot[RUNNING_PASS] ??
+    indexOnce().finally(() => {
+      slot[RUNNING_PASS] = undefined;
+    });
+  slot[RUNNING_PASS] = pass;
+  return pass;
+}
+
+async function indexOnce() {
   if (!FACTORY_ID) {
     return { success: false, error: "NEXT_PUBLIC_BLKFNDR_FACTORY_CONTRACT_ID is not set" };
   }
@@ -462,51 +507,23 @@ export async function runIndexer() {
     latestLedger,
   });
 
-  let processed = 0;
-  let failed = 0;
-  // Only advances past events that were actually handled.
-  let safeLedger = startLedger - 1;
-  let failedLedger: number | null = null;
-
-  for (const event of events) {
-    const isNew = await recordEvent({
-      eventId: event.id,
-      ledger: event.ledger,
-      ledgerClosedAt: event.ledgerClosedAt,
-      contractId: event.contractId,
-      topic1: event.topic1,
-      topic2: event.topic2,
-      payload: event.payload as never,
-    });
-
-    if (!isNew) {
-      safeLedger = Math.max(safeLedger, event.ledger);
-      continue;
-    }
-
-    try {
-      await handleEvent(
+  // New events are handled and failed ones retried; see handleEvents.
+  const { processed, failed, gaveUp, handledThrough, failedLedger } = await handleEvents({
+    events,
+    startLedger,
+    store: eventStore,
+    handle: (event) =>
+      handleEvent(
         event.topic1,
         event.topic2,
         Array.isArray(event.payload) ? event.payload : [event.payload],
         event.contractId,
         event.ledger,
         event.ledgerClosedAt ?? undefined,
-      );
-      await markProcessed(event.id);
-      processed++;
-      safeLedger = Math.max(safeLedger, event.ledger);
-    } catch (err) {
-      // Recorded and visible, and the cursor stops short of its ledger.
-      await markProcessed(event.id, String(err));
-      failed++;
-      failedLedger = event.ledger;
-      console.error(`[Indexer] Failed to handle ${event.id}:`, err);
-      break;
-    }
-  }
+      ),
+  });
 
-  const nextCursor = cursorAfterPass({ scannedThrough, handledThrough: safeLedger, failedLedger });
+  const nextCursor = cursorAfterPass({ scannedThrough, handledThrough, failedLedger });
   const advanced = nextCursor >= startLedger;
   if (advanced) {
     await setCursor(nextCursor);
@@ -534,6 +551,8 @@ export async function runIndexer() {
     success: failed === 0,
     count: processed,
     failed,
+    // Events skipped this pass after their last attempt. Each stays unprocessed.
+    gaveUp,
     currentLedger: advanced ? nextCursor : stored,
     metadata,
     creatorsNamed,

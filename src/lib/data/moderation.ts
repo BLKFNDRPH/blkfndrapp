@@ -3,6 +3,7 @@ import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireCaller } from "@/lib/supabase/auth";
+import { MAX_ATTEMPTS } from "@/lib/indexer-scan";
 
 /**
  * The platform administrator's tools: banning users, and reading the platform's
@@ -114,6 +115,8 @@ export interface PlatformHealth {
   pendingKyc: number;
   bannedUsers: number;
   unprocessedEvents: number;
+  /** Unprocessed events the indexer has stopped retrying. Each needs a person. */
+  givenUpEvents: number;
   totalEvents: number;
   lastProcessedLedger: number | null;
   indexerUpdatedAt: string | null;
@@ -134,23 +137,29 @@ export async function getHealth(): Promise<PlatformHealth> {
   // gated, so the admin client is the right layer.
   const supabase = createAdminClient();
 
-  const [users, projects, kyc, bans, events, indexer] = await Promise.all([
+  // The event figures are counts, not rows: a read of the rows stops at the
+  // API's 1,000-row limit, and the unprocessed count is how a skipped event is
+  // noticed.
+  const events = () => supabase.from("contract_events").select("event_id", { count: "exact", head: true });
+  const [users, projects, kyc, bans, allEvents, unprocessed, givenUp, indexer] = await Promise.all([
     supabase.from("profiles").select("id", { count: "exact", head: true }),
     supabase.from("projects").select("project_id", { count: "exact", head: true }),
     supabase.from("kyc_requests").select("id", { count: "exact", head: true }).eq("status", "pending"),
     supabase.from("platform_bans").select("user_id", { count: "exact", head: true }),
-    supabase.from("contract_events").select("event_id, processed_at"),
+    events(),
+    events().is("processed_at", null),
+    events().is("processed_at", null).gte("attempts", MAX_ATTEMPTS),
     supabase.from("indexer_state").select("value, updated_at").eq("key", "last_processed_ledger").maybeSingle(),
   ]);
 
-  const eventRows = events.data ?? [];
   return {
     users: users.count ?? 0,
     projects: projects.count ?? 0,
     pendingKyc: kyc.count ?? 0,
     bannedUsers: bans.count ?? 0,
-    unprocessedEvents: eventRows.filter((e) => e.processed_at === null).length,
-    totalEvents: eventRows.length,
+    unprocessedEvents: unprocessed.count ?? 0,
+    givenUpEvents: givenUp.count ?? 0,
+    totalEvents: allEvents.count ?? 0,
     lastProcessedLedger: indexer.data?.value ?? null,
     indexerUpdatedAt: indexer.data?.updated_at ?? null,
   };
