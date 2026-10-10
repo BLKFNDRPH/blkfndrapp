@@ -152,6 +152,9 @@ update public.indexer_state set value = <its ledger - 1> where key = 'last_proce
 ```
 
 The next pass reads everything from that ledger on again, skips what is already handled and retries the event. A pass that was already running when you made the change can move the cursor forward again, so check afterwards that the row's `attempts` went up or `processed_at` was set, and repeat if neither did. A re-run `FACTORY/DEPLOY` repairs a row its vault's events filed under the vault address: `upsertProjectFromChain` upserts on `vault_address` and writes the real `project_id`, the title and `created_on_chain_at`.
+
+**What a builder controls.** The metadata CID and the document behind it are the builder's, and the factory checks neither. A NUL in a payload string becomes U+FFFD before the event is stored, because Postgres refuses `\u0000`. Without that, the event could never be recorded, and the pass would throw on it every time without moving the cursor. Metadata text is read only from strings and numbers, and `milestones` only from a list. Anything else used to make the DEPLOY handler throw on every attempt.
+
 **Two repair passes** run after every pass. Both are best effort and cannot fail the run:
 
 - `resolvePendingMetadata` retries up to five projects still titled `Project #<id>` that have a metadata CID. A gateway that was down when `FACTORY/DEPLOY` was handled no longer leaves the placeholder in place for good.

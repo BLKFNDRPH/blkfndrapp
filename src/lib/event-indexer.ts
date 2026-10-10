@@ -174,6 +174,31 @@ async function syncVault(vaultAddress: string, ledger?: number) {
 }
 
 /**
+ * A metadata value as text: a string or a number, and nothing else.
+ *
+ * The document is the creator's, and its shape is no more trusted than its
+ * length. `String()` throws on an object whose `toString` is not a function,
+ * and Postgres refuses a NUL. Either made the DEPLOY handler fail on every
+ * attempt, which holds every project's indexing behind it until the indexer
+ * gives up on that DEPLOY.
+ */
+function metaText(value: unknown): string {
+  const text = typeof value === "string" ? value : typeof value === "number" ? String(value) : "";
+  return text.replaceAll("\u0000", "");
+}
+
+/** A milestone id from the document; NaN unless it is a string or a number. */
+function metaId(value: unknown): number {
+  return typeof value === "string" || typeof value === "number" ? Number(value) : NaN;
+}
+
+/** The document's milestone entries. Anything but a list of objects reads as none. */
+function metaMilestones(metadata: any): Record<string, unknown>[] {
+  const list = metadata?.milestones;
+  return Array.isArray(list) ? list.filter((m) => m !== null && typeof m === "object") : [];
+}
+
+/**
  * The project copy a resolved metadata document supplies.
  *
  * Creator-supplied and never verified, so every text field is bounded here
@@ -183,25 +208,23 @@ async function syncVault(vaultAddress: string, ledger?: number) {
  */
 function metadataFields(metadata: any) {
   return {
-    title: clampText(String(metadata.title ?? "").trim(), LISTING_LIMITS.title) || undefined,
-    tagline: clampText(String(metadata.tagline ?? ""), LISTING_LIMITS.tagline),
-    description: clampText(String(metadata.description ?? ""), LISTING_LIMITS.description),
-    category: String(metadata.category ?? "") || "General",
-    imageUrl: String(metadata.imageUrl ?? ""),
-    location: clampText(String(metadata.location ?? ""), LISTING_LIMITS.location),
+    title: clampText(metaText(metadata.title).trim(), LISTING_LIMITS.title) || undefined,
+    tagline: clampText(metaText(metadata.tagline), LISTING_LIMITS.tagline),
+    description: clampText(metaText(metadata.description), LISTING_LIMITS.description),
+    category: metaText(metadata.category) || "General",
+    imageUrl: metaText(metadata.imageUrl),
+    location: clampText(metaText(metadata.location), LISTING_LIMITS.location),
   };
 }
 
 function milestoneCopy(metadata: any, milestoneId: number) {
-  const meta = (metadata?.milestones ?? []).find((x: any) => Number(x.id) === milestoneId);
+  const meta = metaMilestones(metadata).find((x) => metaId(x.id) === milestoneId);
+  const title = metaText(meta?.title);
+  const description = metaText(meta?.description);
   return {
-    ...(meta?.title
-      ? { title: clampText(String(meta.title), LISTING_LIMITS.milestoneTitle) }
-      : {}),
-    ...(meta?.description
-      ? {
-          description: clampText(String(meta.description), LISTING_LIMITS.milestoneDescription),
-        }
+    ...(title ? { title: clampText(title, LISTING_LIMITS.milestoneTitle) } : {}),
+    ...(description
+      ? { description: clampText(description, LISTING_LIMITS.milestoneDescription) }
       : {}),
   };
 }
@@ -318,14 +341,14 @@ export async function resolvePendingMetadata() {
       continue;
     }
 
-    for (const m of metadata.milestones ?? []) {
-      const copy = milestoneCopy(metadata, Number(m.id));
+    for (const m of metaMilestones(metadata)) {
+      const copy = milestoneCopy(metadata, metaId(m.id));
       if (Object.keys(copy).length === 0) continue;
       await admin
         .from("project_milestones")
         .update(copy)
         .eq("project_id", project.id)
-        .eq("milestone_id", Number(m.id));
+        .eq("milestone_id", metaId(m.id));
     }
     resolved++;
   }

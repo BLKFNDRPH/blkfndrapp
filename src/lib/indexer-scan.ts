@@ -75,6 +75,23 @@ export function cursorLedger(cursor: string): number {
   return (id & 0xffffffffn) === 0xffffffffn ? ledger : ledger - 1;
 }
 
+/**
+ * A decoded value Postgres will store. A Soroban string is raw bytes, and the
+ * factory takes any metadata CID, so a builder can put a NUL byte in theirs,
+ * which DEPLOY and VAULT/INIT both carry. Postgres refuses "\u0000" in jsonb and
+ * in text alike, so such an event could never be recorded: the pass threw on it
+ * every time and the cursor never moved again, with no row to count attempts
+ * on. Each NUL becomes U+FFFD, which no real CID contains.
+ */
+function storable(value: unknown): unknown {
+  if (typeof value === "string") return value.replaceAll("\u0000", "\uFFFD");
+  if (Array.isArray(value)) return value.map(storable);
+  if (value !== null && typeof value === "object" && Object.getPrototypeOf(value) === Object.prototype) {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [storable(k), storable(v)]));
+  }
+  return value;
+}
+
 function decode(raw: RpcEvent): ContractEvent {
   const topics = (raw.topic ?? []).map((t) => String(scValToNative(t)));
   return {
@@ -92,7 +109,7 @@ function decode(raw: RpcEvent): ContractEvent {
     contractId: String(raw.contractId),
     topic1: topics[0] ?? "",
     topic2: topics[1] ?? "",
-    payload: scValToNative(raw.value),
+    payload: storable(scValToNative(raw.value)),
   };
 }
 

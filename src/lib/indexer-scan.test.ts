@@ -397,3 +397,31 @@ test("an event handled but not marked handled is retried rather than taken for d
   assert.notEqual(rows.get(DEPLOY_ID)!.processedAt, null);
   assert.deepEqual(handled, ["FACTORY/DEPLOY", "FACTORY/DEPLOY", "VAULT/INIT", "BOND/POSTED", "DEPOSIT/CONTRIB"]);
 });
+
+test("a NUL in a builder's metadata CID is stored as U+FFFD", async () => {
+  const cid = "bafy\u0000\u0000x";
+  // Through XDR and back, as the RPC hands values over.
+  const wire = (v: xdr.ScVal) => xdr.ScVal.fromXDR(v.toXDR());
+  const chain = [
+    event(NEW_VAULT, DEPLOY_LEDGER, 19, 2, ["VAULT", "INIT"], wire(vec(u64(23), str(cid)))),
+    event(FACTORY, DEPLOY_LEDGER, 19, 4, ["FACTORY", "DEPLOY"], wire(vec(u64(23), addr(NEW_VAULT), addr(BUILDER), str(cid)))),
+  ];
+  const rpc = standInRpc(chain, DEPLOY_LEDGER + 10);
+
+  const { events } = await collectEvents({
+    getEvents: rpc.getEvents,
+    contractIds: [FACTORY],
+    startLedger: DEPLOY_LEDGER,
+    latestLedger: DEPLOY_LEDGER + 10,
+  });
+
+  assert.deepEqual(kinds(events), ["FACTORY/DEPLOY", "VAULT/INIT"]);
+  const [deploy, init] = events;
+  assert.equal((deploy.payload as unknown[])[3], "bafy\uFFFD\uFFFDx");
+  assert.equal((init.payload as unknown[])[1], "bafy\uFFFD\uFFFDx");
+  // Nothing Postgres refuses is left to send.
+  for (const e of events) {
+    const body = JSON.stringify(e.payload, (_k, v) => (typeof v === "bigint" ? v.toString() : v));
+    assert.ok(!body.includes("\\u0000"), `${kind(e)} would still be refused`);
+  }
+});
