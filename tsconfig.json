@@ -17,6 +17,9 @@
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
+    // Tests run on Node's own TypeScript support (`npm test`), which resolves
+    // only imports that name the file, extension included.
+    "allowImportingTsExtensions": true,
     "jsx": "react-jsx",
     "incremental": true,
     "plugins": [

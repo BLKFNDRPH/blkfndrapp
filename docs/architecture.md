@@ -125,7 +125,9 @@ The flow is in [src/ai/flows/improve-listing-quality.ts](../src/ai/flows/improve
 
 **What it scans.** The factory plus every `vault_address` in `projects`, in groups of five per `getEvents` filter, 200 events per page. The RPC scans a bounded window of about 10,000 ledgers per request, and an empty window returns no events but a cursor at its end. So an empty page does not mean "caught up". The indexer follows the RPC's cursor, decoding the ledger from its TOID, until it reaches the latest ledger, for up to 60 pages per group (enough to cross the RPC's whole retention). Without this, a quiet stretch longer than one window left every later pass rescanning the same empty window.
 
-**How events are handled.** Events are sorted and recorded in `contract_events`, where `event_id` is unique. A new event is handled, then marked with `processed_at`, or with its `error` if the handler threw. A failure stops the pass.
+**New vaults.** A vault the factory deploys inside the scanned range is read too, from its `FACTORY/DEPLOY`'s ledger, in the same pass. Its address reaches `projects` only once that DEPLOY is handled, yet its first events sit in the same transaction: `initialize` emits `VAULT/INIT` and `BOND/POSTED` just before the factory emits DEPLOY. The indexer used to skip them, so most vaults' Record tabs had no line for the builder's deposit; [supabase/backfills](../supabase/backfills) restores those rows. The scan lives in [src/lib/indexer-scan.ts](../src/lib/indexer-scan.ts), and `npm test` runs it against a stand-in RPC.
+
+**How events are handled.** Events are recorded in `contract_events`, where `event_id` is unique, in ledger order, except that a DEPLOY goes before the new vault's events from the same call, so the project row exists under its id before they re-read it. A new event is handled, then marked with `processed_at`, or with its `error` if the handler threw. A failure stops the pass.
 
 | Event | Handling |
 |---|---|
@@ -133,9 +135,9 @@ The flow is in [src/ai/flows/improve-listing-quality.ts](../src/ai/flows/improve
 | `VAULT/*`, `BOND/*`, `DEPOSIT/*`, `MILESTN/*` | `syncVault` re-reads the vault and refreshes its figures, status and milestone flags. The event says *when* to look, not *what* is true. It keeps the project id, title and creation time already on the row |
 | `ATTEST/RECORDED` | Ignored; the record is read from the chain when needed |
 
-**The cursor.** With every event handled, the cursor moves to where the scan reached, quiet ledgers included. It never moves past a group that did not finish scanning. After a failure it stays at the last ledger that was fully handled.
+**The cursor.** With every event handled, the cursor moves to where the scan reached, quiet ledgers included. It never moves past a group that did not finish scanning, a new vault's included. After a failure it stays at the last ledger that was fully handled, which is always before the failed event's ledger: the events after it in that ledger were never recorded.
 
-**Known gap.** A failed event is not retried. On the next pass it is already in `contract_events`, so `recordEvent` reports it as seen and the indexer skips it. A later event from the same vault re-syncs the vault, but a failed `FACTORY/DEPLOY` leaves its project out of `projects`, and so out of the watched set, until the row is cleared by hand.
+**Known gap.** A failed event is not retried. On the next pass it is already in `contract_events`, so `recordEvent` reports it as seen and the indexer skips it; the events after it are read again. A later event from the same vault re-syncs the vault. A failed `FACTORY/DEPLOY` leaves its project out of `projects`. The next pass then reads the vault's own events as a new vault's, and `syncVault` files it under its vault address, with a placeholder title, rather than its project id.
 
 **Two repair passes** run after every pass. Both are best effort and cannot fail the run:
 

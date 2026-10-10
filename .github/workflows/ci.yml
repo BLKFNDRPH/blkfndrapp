@@ -29,6 +29,9 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Test
+        run: npm test
+
       - name: Audit production dependencies
         # Advisory: reports without failing the build, so a new advisory in a
         # transitive dependency does not block an unrelated change.
