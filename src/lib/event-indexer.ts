@@ -11,11 +11,11 @@ if (typeof window === "undefined") {
 import { rpc } from "@stellar/stellar-sdk";
 import { getIPFSFetchUrls } from "./pinata-client";
 import { SOROBAN_RPC_URL, FACTORY_ID } from "./stellar-clients";
-import { collectEvents, cursorAfterPass } from "./indexer-scan";
+import { collectEvents, cursorAfterPass, handleEvents, type EventStore } from "./indexer-scan";
 import { readVaultState } from "./vault-state";
 import { currencyForToken } from "./currencies";
 import { LISTING_LIMITS, clampText } from "./listing-limits";
-import { getCursor, setCursor, recordEvent, markProcessed } from "./data/events";
+import { getCursor, setCursor, recordEvent, countAttempt, markHandled, markFailed } from "./data/events";
 import { notifyForVaultEvent } from "./data/vault-notifications";
 import { upsertProjectFromChain, upsertMilestones } from "./data/projects";
 import { createAdminClient } from "./supabase/admin";
@@ -28,7 +28,8 @@ import type { Enums } from "./supabase/database.types";
  *
  *   * an event was written with `processed: true` before its handler ran, so a
  *     handler that threw left it permanently marked done and never retried.
- *     `processed_at` is now set only on success, and a failure is recorded.
+ *     `processed_at` is now set only on success, a failure is recorded, and a
+ *     later pass retries it (see handleEvents in indexer-scan.ts).
  *   * the ledger cursor advanced to the highest ledger seen even when handlers
  *     threw, so failures silently skipped work. The cursor now advances only
  *     past events that were actually handled.
@@ -173,6 +174,31 @@ async function syncVault(vaultAddress: string, ledger?: number) {
 }
 
 /**
+ * A metadata value as text: a string or a number, and nothing else.
+ *
+ * The document is the creator's, and its shape is no more trusted than its
+ * length. `String()` throws on an object whose `toString` is not a function,
+ * and Postgres refuses a NUL. Either made the DEPLOY handler fail on every
+ * attempt, which holds every project's indexing behind it until the indexer
+ * gives up on that DEPLOY.
+ */
+function metaText(value: unknown): string {
+  const text = typeof value === "string" ? value : typeof value === "number" ? String(value) : "";
+  return text.replaceAll("\u0000", "");
+}
+
+/** A milestone id from the document; NaN unless it is a string or a number. */
+function metaId(value: unknown): number {
+  return typeof value === "string" || typeof value === "number" ? Number(value) : NaN;
+}
+
+/** The document's milestone entries. Anything but a list of objects reads as none. */
+function metaMilestones(metadata: any): Record<string, unknown>[] {
+  const list = metadata?.milestones;
+  return Array.isArray(list) ? list.filter((m) => m !== null && typeof m === "object") : [];
+}
+
+/**
  * The project copy a resolved metadata document supplies.
  *
  * Creator-supplied and never verified, so every text field is bounded here
@@ -182,25 +208,23 @@ async function syncVault(vaultAddress: string, ledger?: number) {
  */
 function metadataFields(metadata: any) {
   return {
-    title: clampText(String(metadata.title ?? "").trim(), LISTING_LIMITS.title) || undefined,
-    tagline: clampText(String(metadata.tagline ?? ""), LISTING_LIMITS.tagline),
-    description: clampText(String(metadata.description ?? ""), LISTING_LIMITS.description),
-    category: String(metadata.category ?? "") || "General",
-    imageUrl: String(metadata.imageUrl ?? ""),
-    location: clampText(String(metadata.location ?? ""), LISTING_LIMITS.location),
+    title: clampText(metaText(metadata.title).trim(), LISTING_LIMITS.title) || undefined,
+    tagline: clampText(metaText(metadata.tagline), LISTING_LIMITS.tagline),
+    description: clampText(metaText(metadata.description), LISTING_LIMITS.description),
+    category: metaText(metadata.category) || "General",
+    imageUrl: metaText(metadata.imageUrl),
+    location: clampText(metaText(metadata.location), LISTING_LIMITS.location),
   };
 }
 
 function milestoneCopy(metadata: any, milestoneId: number) {
-  const meta = (metadata?.milestones ?? []).find((x: any) => Number(x.id) === milestoneId);
+  const meta = metaMilestones(metadata).find((x) => metaId(x.id) === milestoneId);
+  const title = metaText(meta?.title);
+  const description = metaText(meta?.description);
   return {
-    ...(meta?.title
-      ? { title: clampText(String(meta.title), LISTING_LIMITS.milestoneTitle) }
-      : {}),
-    ...(meta?.description
-      ? {
-          description: clampText(String(meta.description), LISTING_LIMITS.milestoneDescription),
-        }
+    ...(title ? { title: clampText(title, LISTING_LIMITS.milestoneTitle) } : {}),
+    ...(description
+      ? { description: clampText(description, LISTING_LIMITS.milestoneDescription) }
       : {}),
   };
 }
@@ -317,14 +341,14 @@ export async function resolvePendingMetadata() {
       continue;
     }
 
-    for (const m of metadata.milestones ?? []) {
-      const copy = milestoneCopy(metadata, Number(m.id));
+    for (const m of metaMilestones(metadata)) {
+      const copy = milestoneCopy(metadata, metaId(m.id));
       if (Object.keys(copy).length === 0) continue;
       await admin
         .from("project_milestones")
         .update(copy)
         .eq("project_id", project.id)
-        .eq("milestone_id", Number(m.id));
+        .eq("milestone_id", metaId(m.id));
     }
     resolved++;
   }
@@ -428,7 +452,51 @@ async function handleEvent(topic1: string, topic2: string, payload: any[], contr
   }
 }
 
-export async function runIndexer() {
+/** contract_events, as the pass in indexer-scan.ts uses it. */
+const eventStore: EventStore = {
+  record: (event) =>
+    recordEvent({
+      eventId: event.id,
+      ledger: event.ledger,
+      ledgerClosedAt: event.ledgerClosedAt,
+      contractId: event.contractId,
+      topic1: event.topic1,
+      topic2: event.topic2,
+      payload: event.payload,
+    }),
+  countAttempt,
+  markHandled,
+  markFailed,
+};
+
+const RUNNING_PASS = Symbol.for("blkfndr.indexer.pass");
+type IndexerResult = Awaited<ReturnType<typeof indexOnce>>;
+
+/**
+ * One indexer pass, or the one already running.
+ *
+ * The cron starts a pass every minute and an admin's transaction starts one
+ * too, so two can overlap. That used to be harmless: recording an event was
+ * the claim on it, and only one pass could record it. A retry has no such
+ * claim. A second pass would take an event the first was still handling for a
+ * failed one, run it alongside, and spend one of its attempts. A caller that
+ * arrives mid-pass now waits for that pass and gets its result.
+ *
+ * Kept on globalThis rather than in a module variable, so the guard holds even
+ * if the route and the server action load separate copies of this module.
+ */
+export function runIndexer(): Promise<IndexerResult> {
+  const slot = globalThis as unknown as Record<symbol, Promise<IndexerResult> | undefined>;
+  const pass =
+    slot[RUNNING_PASS] ??
+    indexOnce().finally(() => {
+      slot[RUNNING_PASS] = undefined;
+    });
+  slot[RUNNING_PASS] = pass;
+  return pass;
+}
+
+async function indexOnce() {
   if (!FACTORY_ID) {
     return { success: false, error: "NEXT_PUBLIC_BLKFNDR_FACTORY_CONTRACT_ID is not set" };
   }
@@ -462,51 +530,23 @@ export async function runIndexer() {
     latestLedger,
   });
 
-  let processed = 0;
-  let failed = 0;
-  // Only advances past events that were actually handled.
-  let safeLedger = startLedger - 1;
-  let failedLedger: number | null = null;
-
-  for (const event of events) {
-    const isNew = await recordEvent({
-      eventId: event.id,
-      ledger: event.ledger,
-      ledgerClosedAt: event.ledgerClosedAt,
-      contractId: event.contractId,
-      topic1: event.topic1,
-      topic2: event.topic2,
-      payload: event.payload as never,
-    });
-
-    if (!isNew) {
-      safeLedger = Math.max(safeLedger, event.ledger);
-      continue;
-    }
-
-    try {
-      await handleEvent(
+  // New events are handled and failed ones retried; see handleEvents.
+  const { processed, failed, gaveUp, handledThrough, failedLedger } = await handleEvents({
+    events,
+    startLedger,
+    store: eventStore,
+    handle: (event) =>
+      handleEvent(
         event.topic1,
         event.topic2,
         Array.isArray(event.payload) ? event.payload : [event.payload],
         event.contractId,
         event.ledger,
         event.ledgerClosedAt ?? undefined,
-      );
-      await markProcessed(event.id);
-      processed++;
-      safeLedger = Math.max(safeLedger, event.ledger);
-    } catch (err) {
-      // Recorded and visible, and the cursor stops short of its ledger.
-      await markProcessed(event.id, String(err));
-      failed++;
-      failedLedger = event.ledger;
-      console.error(`[Indexer] Failed to handle ${event.id}:`, err);
-      break;
-    }
-  }
+      ),
+  });
 
-  const nextCursor = cursorAfterPass({ scannedThrough, handledThrough: safeLedger, failedLedger });
+  const nextCursor = cursorAfterPass({ scannedThrough, handledThrough, failedLedger });
   const advanced = nextCursor >= startLedger;
   if (advanced) {
     await setCursor(nextCursor);
@@ -534,6 +574,8 @@ export async function runIndexer() {
     success: failed === 0,
     count: processed,
     failed,
+    // Events skipped this pass after their last attempt. Each stays unprocessed.
+    gaveUp,
     currentLedger: advanced ? nextCursor : stored,
     metadata,
     creatorsNamed,

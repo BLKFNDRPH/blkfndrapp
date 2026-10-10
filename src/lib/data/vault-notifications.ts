@@ -12,10 +12,13 @@ import type { EmailCategory } from "@/lib/email/categories";
  * to collect. Without this, a stakeholder learned a vote had opened only by
  * revisiting the project, and a seven-day window could pass unseen.
  *
- * Called by the indexer for each new event, after the vault is re-synced. The
- * indexer records an event once and handles it only when it is new, so a
- * notification is produced at most once per event, and history is never
- * replayed into anyone's bell.
+ * Called by the indexer for each event it handles, after the vault is
+ * re-synced. An event is handled until one attempt succeeds, and a failed
+ * attempt fails in that re-sync, before this runs, so an event notifies once.
+ * The exception is an attempt that dies after notifying but before it is marked
+ * handled: the retry notifies again. History is never replayed into anyone's
+ * bell, because the indexer only handles events as it first reads them, or
+ * retries them shortly after.
  *
  * Only people whose wallet is set up on a BLKFNDR account can be reached: the
  * ledger names wallets, and an account is the only way to a person.

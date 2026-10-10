@@ -2,9 +2,13 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Address, Contract, StrKey, nativeToScVal, xdr } from "@stellar/stellar-sdk";
 import {
+  MAX_ATTEMPTS,
   collectEvents,
   cursorAfterPass,
+  handleEvents,
   type ContractEvent,
+  type EventRow,
+  type EventStore,
   type GetEvents,
   type RpcEvent,
 } from "./indexer-scan.ts";
@@ -199,4 +203,225 @@ test("after a failure the cursor stops before the failed event's ledger", () => 
   assert.equal(cursorAfterPass({ scannedThrough: 900, handledThrough: 450, failedLedger: 600 }), 450);
   // Never past a group that stopped scanning early.
   assert.equal(cursorAfterPass({ scannedThrough: 300, handledThrough: 450, failedLedger: 600 }), 300);
+});
+
+/**
+ * contract_events as the pass sees it, in memory: a new event is recorded as
+ * attempt 1, an existing one comes back as its row.
+ */
+function memoryStore({ failMarkHandled }: { failMarkHandled?: string } = {}) {
+  const rows = new Map<string, EventRow>();
+  const store: EventStore = {
+    async record(event) {
+      const row = rows.get(event.id);
+      if (row) return { ...row };
+      rows.set(event.id, { processedAt: null, attempts: 1, error: null });
+      return null;
+    },
+    async countAttempt(eventId, attempts) {
+      rows.get(eventId)!.attempts = attempts;
+    },
+    async markHandled(eventId) {
+      if (eventId === failMarkHandled) {
+        failMarkHandled = undefined;
+        throw new Error("could not write processed_at");
+      }
+      Object.assign(rows.get(eventId)!, { processedAt: "2026-10-10T15:00:00Z", error: null });
+    },
+    async markFailed(eventId, error) {
+      rows.get(eventId)!.error = error;
+    },
+  };
+  return { rows, store };
+}
+
+/** One pass as runIndexer runs it: read, handle, then move the cursor. */
+async function indexPass({
+  rpc,
+  store,
+  handle,
+  contractIds,
+  startLedger,
+  latestLedger,
+}: {
+  rpc: ReturnType<typeof standInRpc>;
+  store: EventStore;
+  handle: (event: ContractEvent) => Promise<void>;
+  contractIds: string[];
+  startLedger: number;
+  latestLedger: number;
+}) {
+  const { events, scannedThrough } = await collectEvents({
+    getEvents: rpc.getEvents,
+    contractIds,
+    startLedger,
+    latestLedger,
+  });
+  const outcome = await handleEvents({ events, startLedger, store, handle });
+  const cursor = cursorAfterPass({
+    scannedThrough,
+    handledThrough: outcome.handledThrough,
+    failedLedger: outcome.failedLedger,
+  });
+  return { ...outcome, cursor: cursor >= startLedger ? cursor : startLedger - 1 };
+}
+
+const kind = (e: ContractEvent) => `${e.topic1}/${e.topic2}`;
+const DEPLOY_ID = "0021855374877470720-0000000004";
+
+test("a failed DEPLOY is retried by the next pass, ahead of its vault's events", async (t) => {
+  t.mock.method(console, "error", () => {});
+  const latestLedger = DEPLOY_LEDGER + 500;
+  const rpc = standInRpc(CHAIN, latestLedger);
+  const { rows, store } = memoryStore();
+
+  const handled: string[] = [];
+  const attemptsSeen: number[] = [];
+  let deployCalls = 0;
+  const handle = async (e: ContractEvent) => {
+    if (kind(e) === "FACTORY/DEPLOY") {
+      // Counted before the handler runs, so an attempt cut short still counts.
+      attemptsSeen.push(rows.get(e.id)!.attempts);
+      if (++deployCalls === 1) throw new Error("Vault is not readable");
+    }
+    handled.push(kind(e));
+  };
+  // The vault's address reaches `projects` only once its DEPLOY is handled.
+  const contractIds = [FACTORY, KNOWN_VAULT];
+
+  const first = await indexPass({ rpc, store, handle, contractIds, startLedger: DEPLOY_LEDGER - 25_000, latestLedger });
+  assert.deepEqual(handled, ["DEPOSIT/CONTRIB"]);
+  assert.equal(first.failed, 1);
+  // The last ledger fully handled: the stake's, before the DEPLOY.
+  assert.equal(first.cursor, DEPLOY_LEDGER - 3_000);
+  assert.deepEqual(rows.get(DEPLOY_ID), { processedAt: null, attempts: 1, error: "Error: Vault is not readable" });
+  // The failure stopped the pass before the vault's own events were recorded.
+  assert.equal(rows.size, 2);
+
+  handled.length = 0;
+  const second = await indexPass({ rpc, store, handle, contractIds, startLedger: first.cursor + 1, latestLedger });
+  // Retried, not skipped as seen, and handled before the vault's events, so
+  // they find its project row under its id.
+  assert.deepEqual(handled, ["FACTORY/DEPLOY", "VAULT/INIT", "BOND/POSTED", "DEPOSIT/CONTRIB"]);
+  assert.equal(second.failed, 0);
+  assert.equal(second.processed, 4);
+  assert.equal(second.cursor, latestLedger);
+  assert.deepEqual(rows.get(DEPLOY_ID), { processedAt: "2026-10-10T15:00:00Z", attempts: 2, error: null });
+  assert.deepEqual(attemptsSeen, [1, 2]);
+
+  // Read again from the start, everything is found handled and nothing re-runs.
+  handled.length = 0;
+  const third = await indexPass({ rpc, store, handle, contractIds, startLedger: DEPLOY_LEDGER - 25_000, latestLedger });
+  assert.deepEqual(handled, []);
+  assert.equal(third.processed, 0);
+  assert.equal(third.cursor, latestLedger);
+});
+
+test(`after ${MAX_ATTEMPTS} failed attempts the event is left unprocessed and the cursor moves past it`, async (t) => {
+  const errors = t.mock.method(console, "error", () => {});
+  const latestLedger = DEPLOY_LEDGER + 500;
+  const rpc = standInRpc(CHAIN, latestLedger);
+  const { rows, store } = memoryStore();
+
+  const handled: string[] = [];
+  let deployCalls = 0;
+  const handle = async (e: ContractEvent) => {
+    if (kind(e) === "FACTORY/DEPLOY") {
+      deployCalls++;
+      throw new TypeError("(metadata?.milestones ?? []).find is not a function");
+    }
+    handled.push(kind(e));
+  };
+  const contractIds = [FACTORY, KNOWN_VAULT];
+
+  let startLedger = DEPLOY_LEDGER - 25_000;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const pass = await indexPass({ rpc, store, handle, contractIds, startLedger, latestLedger });
+    assert.equal(pass.failed, 1, `pass ${attempt} fails on the DEPLOY`);
+    assert.deepEqual(pass.gaveUp, []);
+    assert.equal(pass.cursor, DEPLOY_LEDGER - 3_000, `pass ${attempt} holds the cursor before it`);
+    assert.equal(rows.get(DEPLOY_ID)!.attempts, attempt);
+    startLedger = pass.cursor + 1;
+  }
+  assert.deepEqual(handled, ["DEPOSIT/CONTRIB"], "nothing after the DEPLOY ran while it was retried");
+
+  handled.length = 0;
+  const last = await indexPass({ rpc, store, handle, contractIds, startLedger, latestLedger });
+  assert.equal(deployCalls, MAX_ATTEMPTS, "the handler is not run again once the attempts are spent");
+  assert.deepEqual(last.gaveUp, [
+    {
+      id: DEPLOY_ID,
+      kind: "FACTORY/DEPLOY",
+      contractId: FACTORY,
+      ledger: DEPLOY_LEDGER,
+      attempts: MAX_ATTEMPTS,
+      error: "TypeError: (metadata?.milestones ?? []).find is not a function",
+    },
+  ]);
+  // The pass moves on: the vault's events are handled and the cursor passes it.
+  assert.deepEqual(handled, ["VAULT/INIT", "BOND/POSTED", "DEPOSIT/CONTRIB"]);
+  assert.equal(last.failed, 0);
+  assert.equal(last.cursor, latestLedger);
+  // Left unprocessed with its last error, for the health view to count.
+  assert.deepEqual(rows.get(DEPLOY_ID), {
+    processedAt: null,
+    attempts: MAX_ATTEMPTS,
+    error: "TypeError: (metadata?.milestones ?? []).find is not a function",
+  });
+  assert.ok(errors.mock.calls.some((c) => String(c.arguments[0]).startsWith(`[Indexer] Gave up on FACTORY/DEPLOY ${DEPLOY_ID}`)));
+});
+
+test("an event handled but not marked handled is retried rather than taken for done", async (t) => {
+  t.mock.method(console, "error", () => {});
+  const latestLedger = DEPLOY_LEDGER + 500;
+  const rpc = standInRpc(CHAIN, latestLedger);
+  const { rows, store } = memoryStore({ failMarkHandled: DEPLOY_ID });
+  const handled: string[] = [];
+  const handle = async (e: ContractEvent) => {
+    handled.push(kind(e));
+  };
+  const contractIds = [FACTORY, KNOWN_VAULT];
+
+  const first = await indexPass({ rpc, store, handle, contractIds, startLedger: DEPLOY_LEDGER - 100, latestLedger });
+  assert.equal(first.failed, 1);
+  assert.equal(first.cursor, DEPLOY_LEDGER - 101, "the cursor did not move");
+  assert.deepEqual(rows.get(DEPLOY_ID), {
+    processedAt: null,
+    attempts: 1,
+    error: "Error: could not write processed_at",
+  });
+
+  const second = await indexPass({ rpc, store, handle, contractIds, startLedger: first.cursor + 1, latestLedger });
+  assert.equal(second.failed, 0);
+  assert.equal(rows.get(DEPLOY_ID)!.attempts, 2);
+  assert.notEqual(rows.get(DEPLOY_ID)!.processedAt, null);
+  assert.deepEqual(handled, ["FACTORY/DEPLOY", "FACTORY/DEPLOY", "VAULT/INIT", "BOND/POSTED", "DEPOSIT/CONTRIB"]);
+});
+
+test("a NUL in a builder's metadata CID is stored as U+FFFD", async () => {
+  const cid = "bafy\u0000\u0000x";
+  // Through XDR and back, as the RPC hands values over.
+  const wire = (v: xdr.ScVal) => xdr.ScVal.fromXDR(v.toXDR());
+  const chain = [
+    event(NEW_VAULT, DEPLOY_LEDGER, 19, 2, ["VAULT", "INIT"], wire(vec(u64(23), str(cid)))),
+    event(FACTORY, DEPLOY_LEDGER, 19, 4, ["FACTORY", "DEPLOY"], wire(vec(u64(23), addr(NEW_VAULT), addr(BUILDER), str(cid)))),
+  ];
+  const rpc = standInRpc(chain, DEPLOY_LEDGER + 10);
+
+  const { events } = await collectEvents({
+    getEvents: rpc.getEvents,
+    contractIds: [FACTORY],
+    startLedger: DEPLOY_LEDGER,
+    latestLedger: DEPLOY_LEDGER + 10,
+  });
+
+  assert.deepEqual(kinds(events), ["FACTORY/DEPLOY", "VAULT/INIT"]);
+  const [deploy, init] = events;
+  assert.equal((deploy.payload as unknown[])[3], "bafy\uFFFD\uFFFDx");
+  assert.equal((init.payload as unknown[])[1], "bafy\uFFFD\uFFFDx");
+  // Nothing Postgres refuses is left to send.
+  for (const e of events) {
+    const body = JSON.stringify(e.payload, (_k, v) => (typeof v === "bigint" ? v.toString() : v));
+    assert.ok(!body.includes("\\u0000"), `${kind(e)} would still be refused`);
+  }
 });

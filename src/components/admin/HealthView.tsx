@@ -91,6 +91,8 @@ export function HealthView() {
   }, [treasury]);
 
   const indexer = ago(health?.indexerUpdatedAt ?? null);
+  const unprocessed = health?.unprocessedEvents ?? 0;
+  const givenUp = health?.givenUpEvents ?? 0;
 
   return (
     <div className="space-y-6">
@@ -132,10 +134,26 @@ export function HealthView() {
                 </div>
                 <span className="text-xs text-muted-foreground">
                   ledger {health?.lastProcessedLedger ?? "—"} ·{" "}
-                  {health?.unprocessedEvents ?? 0} event
-                  {health?.unprocessedEvents === 1 ? "" : "s"} unprocessed
+                  <span className={unprocessed > 0 ? "font-medium text-amber-600 dark:text-amber-400" : undefined}>
+                    {unprocessed} event{unprocessed === 1 ? "" : "s"} unprocessed
+                  </span>
                 </span>
               </div>
+
+              {givenUp > 0 && (
+                <div
+                  role="status"
+                  className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-sm"
+                >
+                  <CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" aria-hidden="true" />
+                  <p>
+                    {givenUp === 1
+                      ? "The indexer gave up on 1 event after repeated failures and moved on without it. Its project may show out-of-date figures until the event is re-run."
+                      : `The indexer gave up on ${givenUp} events after repeated failures and moved on without them. Their projects may show out-of-date figures until the events are re-run.`}{" "}
+                    The steps are under &ldquo;The event indexer&rdquo; in docs/architecture.md.
+                  </p>
+                </div>
+              )}
 
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <Metric icon={<Users className="h-4 w-4" />} label="Users" value={health?.users} />

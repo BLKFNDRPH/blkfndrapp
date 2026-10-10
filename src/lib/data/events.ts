@@ -38,8 +38,9 @@ export async function setCursor(ledger: number) {
 }
 
 /**
- * Record an event as seen. Returns false when it was already recorded, which is
- * how the caller skips work without a separate existence check.
+ * Record a new event as the indexer's first attempt at it, and return null. An
+ * event recorded before is left untouched and its row returned, so the caller
+ * can tell one already handled from one an earlier pass failed.
  */
 export async function recordEvent(event: {
   eventId: string;
@@ -49,7 +50,7 @@ export async function recordEvent(event: {
   topic1: string;
   topic2: string;
   payload: unknown;
-}): Promise<boolean> {
+}): Promise<{ processedAt: string | null; attempts: number; error: string | null } | null> {
   const admin = createAdminClient();
 
   const { error } = await admin.from("contract_events").insert({
@@ -60,31 +61,54 @@ export async function recordEvent(event: {
     topic1: event.topic1,
     topic2: event.topic2,
     payload: event.payload as never,
+    attempts: 1,
   });
 
+  if (!error) return null;
   // 23505 is a unique violation: we have seen this event before.
-  if (error?.code === "23505") return false;
-  if (error) throw new Error(`Could not record event: ${error.message}`);
-  return true;
+  if (error.code !== "23505") throw new Error(`Could not record event: ${error.message}`);
+
+  const { data, error: readError } = await admin
+    .from("contract_events")
+    .select("processed_at, attempts, error")
+    .eq("event_id", event.eventId)
+    .single();
+  if (readError) throw new Error(`Could not read event ${event.eventId}: ${readError.message}`);
+  return { processedAt: data.processed_at, attempts: data.attempts, error: data.error };
+}
+
+/** Count another attempt at an event the indexer is about to retry. */
+export async function countAttempt(eventId: string, attempts: number) {
+  const admin = createAdminClient();
+  const { error } = await admin.from("contract_events").update({ attempts }).eq("event_id", eventId);
+  if (error) throw new Error(`Could not count attempt ${attempts} at event ${eventId}: ${error.message}`);
 }
 
 /**
- * Mark an event handled, or record why it was not.
+ * Mark an event handled.
  *
  * The old version set `processed: true` at insert time, before the handler ran,
  * so a handler that threw left an event permanently marked done and never
- * retried. Here `processed_at` is only set on success.
+ * retried. Here `processed_at` is only set on success, and a write that fails
+ * throws, so the event is retried rather than left looking unfinished for good.
  */
-export async function markProcessed(eventId: string, error?: string) {
+export async function markHandled(eventId: string) {
   const admin = createAdminClient();
-  await admin
+  const { error } = await admin
     .from("contract_events")
-    .update(
-      error
-        ? { error: error.slice(0, 2000) }
-        : { processed_at: new Date().toISOString(), error: null },
-    )
+    .update({ processed_at: new Date().toISOString(), error: null })
     .eq("event_id", eventId);
+  if (error) throw new Error(`Could not mark event ${eventId} handled: ${error.message}`);
+}
+
+/** Record why the indexer's latest attempt at an event failed. */
+export async function markFailed(eventId: string, reason: string) {
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("contract_events")
+    .update({ error: reason.slice(0, 2000) })
+    .eq("event_id", eventId);
+  if (error) throw new Error(`Could not record that event ${eventId} failed: ${error.message}`);
 }
 
 /**
