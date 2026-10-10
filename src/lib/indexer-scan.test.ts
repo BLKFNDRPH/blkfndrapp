@@ -1,0 +1,202 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { Address, Contract, StrKey, nativeToScVal, xdr } from "@stellar/stellar-sdk";
+import {
+  collectEvents,
+  cursorAfterPass,
+  type ContractEvent,
+  type GetEvents,
+  type RpcEvent,
+} from "./indexer-scan.ts";
+
+/**
+ * One indexer pass's read, against a stand-in RPC that pages the way testnet's
+ * does: each request scans at most 10,000 ledgers, a short page's cursor marks
+ * the end of the window it scanned, and a full page's cursor is its last event.
+ *
+ * The deploy is project #22's, as testnet recorded it: create_vault in ledger
+ * 5088601, whose call emitted two token transfers, the new vault's VAULT/INIT
+ * and BOND/POSTED, and last the factory's FACTORY/DEPLOY. Before this pass read
+ * new vaults, only the DEPLOY was stored.
+ *
+ * Run with `npm test`.
+ */
+
+const FACTORY = "CBRUIRJXRU6NGHOSF5KMPUOFIXIANCPI43QC6JX2PKNOKD3QSAHPLINO";
+const KNOWN_VAULT = "CDP2DACVZYRRVU5DAP3PTARCTEQJG5ZYTAW7RV6HC7A5FXJKXV37EUTW";
+const NEW_VAULT = "CDLUNKTDXPCCOEBKE4UCWVVQ2UUCLD43LSCLAO64NKQV2APS7TDTRXAK";
+const BUILDER = "GAHZB3XQHP42PHAEM5MB2OQ4OWLYXQLW5B42TDFEQ5EWRCFHQMBCBAI7";
+const CID = "bafkreidegkae223zigi4g5ssl3xdxd2nxvmbrahvqf5wb3jibaiqcbqz6y";
+const TOKEN = StrKey.encodeContract(Buffer.alloc(32, 7));
+const STAKER = StrKey.encodeEd25519PublicKey(Buffer.alloc(32, 9));
+
+const DEPLOY_LEDGER = 5_088_601;
+const SCAN_WINDOW = 10_000;
+
+const pad = (n: bigint | number, width: number) => n.toString().padStart(width, "0");
+const toid = (ledger: number, tx: number) => (BigInt(ledger) << 32n) | (BigInt(tx) << 12n);
+
+const sym = (s: string) => xdr.ScVal.scvSymbol(s);
+const vec = (...items: xdr.ScVal[]) => xdr.ScVal.scvVec(items);
+const u64 = (n: number) => nativeToScVal(BigInt(n), { type: "u64" });
+const i128 = (n: bigint) => nativeToScVal(n, { type: "i128" });
+const str = (s: string) => nativeToScVal(s, { type: "string" });
+const addr = (a: string) => new Address(a).toScVal();
+
+function event(
+  contract: string,
+  ledger: number,
+  tx: number,
+  index: number,
+  topics: string[],
+  value: xdr.ScVal,
+): RpcEvent {
+  return {
+    id: `${pad(toid(ledger, tx), 19)}-${pad(index, 10)}`,
+    ledger,
+    ledgerClosedAt: "2026-10-08T13:36:32Z",
+    // As the SDK hands it over: a Contract, not a string.
+    contractId: new Contract(contract),
+    topic: topics.map(sym),
+    value,
+  };
+}
+
+const CHAIN: RpcEvent[] = [
+  // A stake in a vault the pass already watches, before the deploy.
+  event(KNOWN_VAULT, DEPLOY_LEDGER - 3_000, 4, 1, ["DEPOSIT", "CONTRIB"], vec(u64(12), addr(STAKER), i128(500_000_000n), i128(500_000_000n))),
+  // create_vault for project #22.
+  event(TOKEN, DEPLOY_LEDGER, 19, 0, ["transfer"], i128(2_750_000_000n)),
+  event(TOKEN, DEPLOY_LEDGER, 19, 1, ["transfer"], i128(10_000_000n)),
+  event(NEW_VAULT, DEPLOY_LEDGER, 19, 2, ["VAULT", "INIT"], vec(u64(22), str(CID))),
+  event(NEW_VAULT, DEPLOY_LEDGER, 19, 3, ["BOND", "POSTED"], vec(u64(22), i128(2_750_000_000n))),
+  event(FACTORY, DEPLOY_LEDGER, 19, 4, ["FACTORY", "DEPLOY"], vec(u64(22), addr(NEW_VAULT), addr(BUILDER), str(CID))),
+  // A stake in the new vault before the next pass.
+  event(TOKEN, DEPLOY_LEDGER + 40, 3, 0, ["transfer"], i128(1_000_000_000n)),
+  event(NEW_VAULT, DEPLOY_LEDGER + 40, 3, 1, ["DEPOSIT", "CONTRIB"], vec(u64(22), addr(STAKER), i128(1_000_000_000n), i128(1_000_000_000n))),
+];
+
+function compareIds(a: string, b: string) {
+  const [opA, indexA] = a.split("-").map(BigInt);
+  const [opB, indexB] = b.split("-").map(BigInt);
+  if (opA !== opB) return opA < opB ? -1 : 1;
+  return indexA < indexB ? -1 : indexA > indexB ? 1 : 0;
+}
+
+function standInRpc(chain: RpcEvent[], latestLedger: number, { unreachable }: { unreachable?: string } = {}) {
+  const calls: { contractIds: string[]; startLedger?: number; cursor?: string }[] = [];
+
+  const getEvents: GetEvents = async ({ startLedger, cursor, filters, limit }) => {
+    const contractIds = filters.flatMap((f) => f.contractIds);
+    calls.push({ contractIds, startLedger, cursor });
+    assert.ok(contractIds.length <= 5, "the RPC takes at most five contract ids per filter");
+    if (unreachable && contractIds.includes(unreachable)) throw new Error("RPC unavailable");
+
+    const from = cursor ? Number(BigInt(cursor.split("-")[0]) >> 32n) : startLedger!;
+    const end = Math.min(from + SCAN_WINDOW - 1, latestLedger);
+    const matching = chain
+      .filter((e) => contractIds.includes(String(e.contractId)))
+      .filter((e) => e.ledger >= from && e.ledger <= end)
+      .filter((e) => !cursor || compareIds(e.id, cursor) > 0)
+      .sort((a, b) => compareIds(a.id, b.id));
+
+    if (matching.length > limit) {
+      const page = matching.slice(0, limit);
+      return { events: page, cursor: page[page.length - 1].id, latestLedger };
+    }
+    const windowEnd = (BigInt(end) << 32n) | 0xffffffffn;
+    return { events: matching, cursor: `${pad(windowEnd, 19)}-4294967295`, latestLedger };
+  };
+
+  return { getEvents, calls };
+}
+
+const kinds = (events: ContractEvent[]) => events.map((e) => `${e.topic1}/${e.topic2}`);
+
+test("a vault deployed inside the range is read from its DEPLOY's ledger", async () => {
+  // Three empty scan windows before the deploy, so the factory's group pages.
+  const startLedger = DEPLOY_LEDGER - 25_000;
+  const latestLedger = DEPLOY_LEDGER + 500;
+  const rpc = standInRpc(CHAIN, latestLedger);
+
+  const { events, scannedThrough } = await collectEvents({
+    getEvents: rpc.getEvents,
+    contractIds: [FACTORY, KNOWN_VAULT],
+    startLedger,
+    latestLedger,
+  });
+
+  assert.deepEqual(kinds(events), [
+    "DEPOSIT/CONTRIB",
+    // The DEPLOY creates the project row, so it goes before the events its
+    // call emitted ahead of it.
+    "FACTORY/DEPLOY",
+    "VAULT/INIT",
+    "BOND/POSTED",
+    "DEPOSIT/CONTRIB",
+  ]);
+  assert.deepEqual(
+    events.map((e) => e.contractId),
+    [KNOWN_VAULT, FACTORY, NEW_VAULT, NEW_VAULT, NEW_VAULT],
+  );
+
+  const [, deploy, init, posted] = events;
+  assert.equal(deploy.id, "0021855374877470720-0000000004");
+  assert.equal(init.id, "0021855374877470720-0000000002");
+  assert.equal(posted.id, "0021855374877470720-0000000003");
+  assert.deepEqual(init.payload, [22n, CID]);
+  assert.deepEqual(posted.payload, [22n, 2_750_000_000n]);
+  assert.equal((deploy.payload as unknown[])[1], NEW_VAULT);
+
+  // The new vault was asked for from its deploy ledger, not from the start.
+  assert.ok(
+    rpc.calls.some((c) => c.contractIds.join() === NEW_VAULT && c.startLedger === DEPLOY_LEDGER),
+  );
+  assert.equal(scannedThrough, latestLedger);
+});
+
+test("the cursor stops short of the deploy ledger when the new vault can't be read", async (t) => {
+  t.mock.method(console, "error", () => {});
+  const latestLedger = DEPLOY_LEDGER + 500;
+  const rpc = standInRpc(CHAIN, latestLedger, { unreachable: NEW_VAULT });
+
+  const { events, scannedThrough } = await collectEvents({
+    getEvents: rpc.getEvents,
+    contractIds: [FACTORY, KNOWN_VAULT],
+    startLedger: DEPLOY_LEDGER - 25_000,
+    latestLedger,
+  });
+
+  // The DEPLOY is still handled this pass. The next pass starts at its ledger
+  // again, finds the vault watched, and reads its events then.
+  assert.deepEqual(kinds(events), ["DEPOSIT/CONTRIB", "FACTORY/DEPLOY"]);
+  assert.equal(scannedThrough, DEPLOY_LEDGER - 1);
+});
+
+test("a vault already watched is read once", async () => {
+  const latestLedger = DEPLOY_LEDGER + 500;
+  const rpc = standInRpc(CHAIN, latestLedger);
+
+  const { events, scannedThrough } = await collectEvents({
+    getEvents: rpc.getEvents,
+    contractIds: [FACTORY, KNOWN_VAULT, NEW_VAULT],
+    startLedger: DEPLOY_LEDGER - 100,
+    latestLedger,
+  });
+
+  assert.deepEqual(kinds(events), ["FACTORY/DEPLOY", "VAULT/INIT", "BOND/POSTED", "DEPOSIT/CONTRIB"]);
+  assert.equal(rpc.calls.length, 1);
+  assert.equal(scannedThrough, latestLedger);
+});
+
+test("after a failure the cursor stops before the failed event's ledger", () => {
+  // Everything handled: as far as the scan reached.
+  assert.equal(cursorAfterPass({ scannedThrough: 900, handledThrough: 450, failedLedger: null }), 900);
+  // The DEPLOY was handled, then the vault's VAULT/INIT in the same ledger
+  // failed. Stopping on that ledger would skip BOND/POSTED, never recorded.
+  assert.equal(cursorAfterPass({ scannedThrough: 900, handledThrough: 500, failedLedger: 500 }), 499);
+  // A failure in a later ledger keeps what was handled before it.
+  assert.equal(cursorAfterPass({ scannedThrough: 900, handledThrough: 450, failedLedger: 600 }), 450);
+  // Never past a group that stopped scanning early.
+  assert.equal(cursorAfterPass({ scannedThrough: 300, handledThrough: 450, failedLedger: 600 }), 300);
+});

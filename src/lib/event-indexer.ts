@@ -8,9 +8,10 @@ if (typeof window === "undefined") {
   https.globalAgent.options.family = 4;
 }
 
-import { rpc, scValToNative } from "@stellar/stellar-sdk";
+import { rpc } from "@stellar/stellar-sdk";
 import { getIPFSFetchUrls } from "./pinata-client";
 import { SOROBAN_RPC_URL, FACTORY_ID } from "./stellar-clients";
+import { collectEvents, cursorAfterPass } from "./indexer-scan";
 import { readVaultState } from "./vault-state";
 import { currencyForToken } from "./currencies";
 import { LISTING_LIMITS, clampText } from "./listing-limits";
@@ -37,26 +38,6 @@ const rpcServer = new rpc.Server(SOROBAN_RPC_URL);
 
 /** How far back to start when there is no cursor. */
 const COLD_START_LEDGERS = 10_000;
-const PAGE_SIZE = 200;
-/** Enough empty scan windows to cross the RPC's whole retention (~120k ledgers). */
-const MAX_PAGES = 60;
-
-/**
- * The last ledger a getEvents cursor has fully scanned.
- *
- * A cursor is a TOID: the ledger sits in the high 32 bits. The RPC scans a
- * bounded window per request (10,000 ledgers on testnet) and, when that window
- * is empty, returns no events and a cursor at its end. Knowing where the cursor
- * stands is the only way to tell "nothing more" from "nothing in this window".
- */
-function cursorLedger(cursor: string): number {
-  const [toid] = cursor.split("-");
-  const id = BigInt(toid);
-  const ledger = Number(id >> 32n);
-  // Low bits all set mean the whole ledger was scanned; otherwise it stopped
-  // partway through and only the ledger before is complete.
-  return (id & 0xffffffffn) === 0xffffffffn ? ledger : ledger - 1;
-}
 
 const VAULT_STATUS: Record<number, Enums<"project_status">> = {
   0: "raising",
@@ -473,111 +454,59 @@ export async function runIndexer() {
     return { success: true, count: 0, failed: 0, currentLedger: stored };
   }
 
-  const contractIds = await watchedContracts();
-  const events: any[] = [];
-  // The highest ledger every chunk has been scanned through. The cursor may move
-  // this far even when nothing happened — without that, a quiet stretch longer
-  // than one RPC scan window left every later run rescanning the same empty
-  // window, and new projects never reached the database.
-  let scannedThrough = latestLedger;
-
-  for (let i = 0; i < contractIds.length; i += 5) {
-    const chunk = contractIds.slice(i, i + 5);
-    let cursor: string | undefined;
-    let chunkThrough = startLedger - 1;
-
-    for (let page = 0; page < MAX_PAGES; page++) {
-      try {
-        const response: any = await rpcServer.getEvents({
-          ...(cursor ? { cursor } : { startLedger }),
-          filters: [{ type: "contract", contractIds: chunk }],
-          limit: PAGE_SIZE,
-        } as any);
-
-        const batch = response?.events ?? [];
-        events.push(...batch);
-
-        const next = response?.cursor ?? batch[batch.length - 1]?.pagingToken;
-        if (!next || next === cursor) break;
-        cursor = next;
-        chunkThrough = cursorLedger(next);
-
-        // A short page only means this scan window is exhausted, not the chain.
-        if (batch.length < PAGE_SIZE && chunkThrough >= (response?.latestLedger ?? latestLedger)) {
-          break;
-        }
-      } catch (err) {
-        console.error(`[Indexer] getEvents failed for ${chunk.join(", ")}:`, err);
-        break;
-      }
-    }
-
-    scannedThrough = Math.min(scannedThrough, chunkThrough);
-  }
-
-  events.sort((a, b) => String(a.id).localeCompare(String(b.id)));
+  // Vaults the factory deploys inside this range are read too; see collectEvents.
+  const { events, scannedThrough } = await collectEvents({
+    getEvents: (request) => rpcServer.getEvents(request as rpc.Api.GetEventsRequest),
+    contractIds: await watchedContracts(),
+    startLedger,
+    latestLedger,
+  });
 
   let processed = 0;
   let failed = 0;
   // Only advances past events that were actually handled.
   let safeLedger = startLedger - 1;
+  let failedLedger: number | null = null;
 
-  for (const raw of events) {
-    const topics = (raw.topic ?? []).map((t: any) => String(scValToNative(t)));
-    const payload = scValToNative(raw.value);
-
-    // `contractId` arrives as a Contract instance, not a string. Passing it on
-    // is silently destructive in both directions: it stores as a serialised
-    // Buffer rather than an address, and `new Contract(<Contract>)` throws
-    // "Invalid contract ID" — with the object's own toString in the message, so
-    // the error names a perfectly valid address and reads like an RPC fault.
-    // readVaultState catches that and returns null, and syncVault treats null as
-    // nothing-to-do, so every vault state change was dropped without a trace and
-    // a project's figures never moved past whatever DEPLOY first saw.
-    const contractId = String(raw.contractId);
-
+  for (const event of events) {
     const isNew = await recordEvent({
-      eventId: raw.id,
-      ledger: raw.ledger,
-      ledgerClosedAt: raw.ledgerClosedAt ?? null,
-      contractId,
-      topic1: topics[0] ?? "",
-      topic2: topics[1] ?? "",
-      payload: payload as never,
+      eventId: event.id,
+      ledger: event.ledger,
+      ledgerClosedAt: event.ledgerClosedAt,
+      contractId: event.contractId,
+      topic1: event.topic1,
+      topic2: event.topic2,
+      payload: event.payload as never,
     });
 
     if (!isNew) {
-      safeLedger = Math.max(safeLedger, raw.ledger);
+      safeLedger = Math.max(safeLedger, event.ledger);
       continue;
     }
 
     try {
       await handleEvent(
-        topics[0] ?? "",
-        topics[1] ?? "",
-        Array.isArray(payload) ? payload : [payload],
-        contractId,
-        raw.ledger,
-        raw.ledgerClosedAt,
+        event.topic1,
+        event.topic2,
+        Array.isArray(event.payload) ? event.payload : [event.payload],
+        event.contractId,
+        event.ledger,
+        event.ledgerClosedAt ?? undefined,
       );
-      await markProcessed(raw.id);
+      await markProcessed(event.id);
       processed++;
-      safeLedger = Math.max(safeLedger, raw.ledger);
+      safeLedger = Math.max(safeLedger, event.ledger);
     } catch (err) {
-      // Recorded, visible, and retryable — the cursor does not move past it.
-      await markProcessed(raw.id, String(err));
+      // Recorded and visible, and the cursor stops short of its ledger.
+      await markProcessed(event.id, String(err));
       failed++;
-      console.error(`[Indexer] Failed to handle ${raw.id}:`, err);
+      failedLedger = event.ledger;
+      console.error(`[Indexer] Failed to handle ${event.id}:`, err);
       break;
     }
   }
 
-  // With every event handled, the cursor moves to where the scan reached, quiet
-  // ledgers included. It never moves past a chunk that did not finish scanning.
-  const nextCursor = Math.min(
-    failed === 0 ? Math.max(safeLedger, scannedThrough) : safeLedger,
-    scannedThrough,
-  );
+  const nextCursor = cursorAfterPass({ scannedThrough, handledThrough: safeLedger, failedLedger });
   const advanced = nextCursor >= startLedger;
   if (advanced) {
     await setCursor(nextCursor);
