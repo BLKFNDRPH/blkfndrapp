@@ -2,6 +2,7 @@
 
 import React from "react";
 import "./BlueprintGrid.css";
+import { useDeferredMotion } from "@/hooks/use-deferred-motion";
 
 /**
  * The hero backdrop: a drafting grid that drifts, with a few dimension marks
@@ -10,8 +11,10 @@ import "./BlueprintGrid.css";
  * blueprint rather than deep space.
  */
 export function BlueprintGrid() {
+  // Still until the page has loaded and gone idle, and while off screen.
+  const motionRef = useDeferredMotion<HTMLDivElement>();
   return (
-    <div className="blueprint-grid" aria-hidden="true">
+    <div ref={motionRef} className="blueprint-grid" aria-hidden="true">
       <div className="blueprint-grid__fine" />
       <div className="blueprint-grid__coarse" />
       <div className="blueprint-grid__vignette" />

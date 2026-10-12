@@ -15,6 +15,11 @@
 //   --out    output directory            (default perf-reports/<timestamp>)
 //   --from   summarise the raw reports already in this directory, without
 //            running Lighthouse again (same --pages, --runs, --form)
+//   --throttling  simulate | devtools  (default simulate)
+//            devtools really slows the browser's CPU and network rather than
+//            estimating from a fast run. Slower, but it sees work that
+//            simulation cannot, such as React revealing streamed content on
+//            a later animation frame.
 //
 // Mobile is Lighthouse's default: a mid-range phone on simulated slow 4G with
 // a 4x CPU slowdown. Desktop is its desktop preset. Lab runs have no INP (it
@@ -54,6 +59,7 @@ function parseArgs(argv) {
     pages: "/,/projects,/projects/11,/projects/11?tab=stages",
     runs: "5",
     form: "both",
+    throttling: "simulate",
     out: "",
     from: "",
   };
@@ -74,13 +80,14 @@ function parseArgs(argv) {
     pages: args.pages.split(",").map((p) => p.trim()).filter(Boolean),
     runs,
     forms,
+    throttling: args.throttling === "devtools" ? "devtools" : "simulate",
     from: args.from,
     out: args.out || args.from || join("perf-reports", stamp),
   };
 }
 
 /** One Lighthouse run; the parsed report, or null when it produced none. */
-function runLighthouse(url, form, outFile) {
+function runLighthouse(url, form, outFile, throttling) {
   // A command string, quoted here, because npx on Windows is a .cmd and needs
   // a shell, which would otherwise split the URL at "&" or "?".
   const parts = [
@@ -89,6 +96,7 @@ function runLighthouse(url, form, outFile) {
     "--only-categories=performance",
     "--chrome-flags=--headless=new",
     "--quiet",
+    `--throttling-method=${throttling}`,
     ...(form === "desktop" ? ["--preset=desktop"] : []),
   ];
   const result = spawnSync(parts.join(" "), { shell: true, stdio: ["ignore", "ignore", "pipe"] });
@@ -188,7 +196,7 @@ function main() {
       for (let i = 1; i <= opts.runs; i++) {
         const slug = page.replace(/[^a-z0-9]+/gi, "_").replace(/^_|_$/g, "") || "home";
         const file = join(rawDir, `${form}-${slug}-${i}.json`);
-        const report = opts.from ? readReport(file) : runLighthouse(url, form, file);
+        const report = opts.from ? readReport(file) : runLighthouse(url, form, file, opts.throttling);
         if (!report) continue;
         const figures = extract(report);
         // A run Lighthouse could not complete (an interstitial, no page)
@@ -221,7 +229,7 @@ function main() {
     `# Lighthouse baseline: ${opts.base}`,
     "",
     `${new Date().toISOString().slice(0, 16).replace("T", " ")} UTC · ${LIGHTHOUSE} · median of ${opts.runs} runs per row.`,
-    "Mobile: simulated slow 4G, 4x CPU slowdown. Desktop: Lighthouse desktop preset.",
+    `Mobile: slow 4G, 4x CPU slowdown (${opts.throttling === "devtools" ? "applied in the browser" : "simulated"}). Desktop: Lighthouse desktop preset.`,
     "",
   ];
   for (const form of opts.forms) {

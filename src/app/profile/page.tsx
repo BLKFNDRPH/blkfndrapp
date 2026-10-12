@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -49,7 +49,7 @@ function usdcToken(): string | null {
   }
 }
 
-export default function ProfilePage() {
+function ProfileContent() {
   const { user, loading: authLoading, login } = useAuth();
   const { freighterWalletAddress } = useFreighterWallet();
   const router = useRouter();
@@ -180,18 +180,7 @@ export default function ProfilePage() {
 
   // ── Rendering ───────────────────────────────────────────────────────────
   if (authLoading) {
-    return (
-      <div className="container mx-auto space-y-6 py-10" role="status" aria-label="Loading your profile">
-        <div className="flex items-center gap-4">
-          <div className="h-20 w-20 animate-pulse rounded-full bg-muted" />
-          <div className="space-y-2">
-            <div className="h-6 w-40 animate-pulse rounded bg-muted" />
-            <div className="h-4 w-56 animate-pulse rounded bg-muted" />
-          </div>
-        </div>
-        <div className="h-32 animate-pulse rounded-xl bg-muted/50" />
-      </div>
-    );
+    return <ProfileSkeleton />;
   }
 
   if (!user) {
@@ -281,5 +270,33 @@ export default function ProfilePage() {
         )}
       </Tabs>
     </div>
+  );
+}
+
+function ProfileSkeleton() {
+  return (
+    <div className="container mx-auto space-y-6 py-10" role="status" aria-label="Loading your profile">
+      <div className="flex items-center gap-4">
+        <div className="h-20 w-20 animate-pulse rounded-full bg-muted" />
+        <div className="space-y-2">
+          <div className="h-6 w-40 animate-pulse rounded bg-muted" />
+          <div className="h-4 w-56 animate-pulse rounded bg-muted" />
+        </div>
+      </div>
+      <div className="h-32 animate-pulse rounded-xl bg-muted/50" />
+    </div>
+  );
+}
+
+/**
+ * The profile reads its tab and return path from the address with
+ * useSearchParams, which needs a Suspense boundary of its own now that the
+ * app no longer wraps every page in one (app/loading.tsx is gone).
+ */
+export default function ProfilePage() {
+  return (
+    <Suspense fallback={<ProfileSkeleton />}>
+      <ProfileContent />
+    </Suspense>
   );
 }

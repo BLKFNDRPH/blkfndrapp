@@ -103,3 +103,20 @@
     opacity: 0.7;
   }
 }
+
+/* Before the page has settled, and while off screen (see useDeferredMotion):
+   the same still frame reduced motion shows. The marks' stroke-dashoffset
+   animation repaints the whole hero-sized SVG every frame, which on a phone
+   competed with the first paint and hydration. */
+.blueprint-grid:not([data-motion="on"]) .blueprint-grid__fine,
+.blueprint-grid:not([data-motion="on"]) .blueprint-grid__coarse,
+.blueprint-grid:not([data-motion="on"]) .blueprint-mark path,
+.blueprint-grid:not([data-motion="on"]) .blueprint-mark circle {
+  animation: none;
+}
+
+.blueprint-grid:not([data-motion="on"]) .blueprint-mark path,
+.blueprint-grid:not([data-motion="on"]) .blueprint-mark circle {
+  stroke-dashoffset: 0;
+  opacity: 0.7;
+}
