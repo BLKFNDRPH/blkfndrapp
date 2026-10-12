@@ -4,6 +4,7 @@ import { DisplayNameForm } from "@/components/settings/DisplayNameForm";
 import { AppearanceSettings } from "@/components/settings/AppearanceSettings";
 import { EmailSettings } from "@/components/settings/EmailSettings";
 import { PracticeNetworkBadge, WalletSettings } from "@/components/settings/WalletSettings";
+import { AuthReady } from "@/components/auth/AuthReady";
 
 export default function SettingsPage() {
   return (
@@ -23,7 +24,9 @@ export default function SettingsPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <DisplayNameForm />
+            <AuthReady>
+              <DisplayNameForm />
+            </AuthReady>
           </CardContent>
         </Card>
 
@@ -48,7 +51,9 @@ export default function SettingsPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <EmailSettings />
+            <AuthReady>
+              <EmailSettings />
+            </AuthReady>
           </CardContent>
         </Card>
 
@@ -63,7 +68,9 @@ export default function SettingsPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <WalletSettings />
+            <AuthReady>
+              <WalletSettings />
+            </AuthReady>
           </CardContent>
         </Card>
       </div>

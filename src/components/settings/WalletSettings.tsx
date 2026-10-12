@@ -6,7 +6,6 @@ import { useAuth } from "@/context/AuthContext";
 import { useFreighterWallet } from "@/context/FreighterWalletContext";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -69,15 +68,7 @@ export function WalletChip({ label }: { label: string }) {
   );
 }
 
-/** "Testnet", or nothing at all on Mainnet. */
-export function PracticeNetworkBadge() {
-  if (!IS_PRACTICE_NETWORK) return null;
-  return (
-    <Badge className="border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-700 hover:bg-amber-500/10 dark:text-amber-300">
-      Testnet
-    </Badge>
-  );
-}
+export { PracticeNetworkBadge } from "./PracticeNetworkBadge";
 
 type Failure =
   | { kind: "not-detected" }

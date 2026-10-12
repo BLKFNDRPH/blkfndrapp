@@ -8,11 +8,9 @@ import {
   ReactNode,
   useEffect,
   useCallback,
-  useRef,
 } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { LoginDialog } from "@/components/auth/LoginDialog";
-import Loading from "@/app/loading";
 
 import { isStellarPublicKey } from "@/lib/freighter-connect";
 
@@ -62,28 +60,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<AppUser | null>(null);
   const [isLoginDialogOpen, setLoginDialogOpen] = useState(false);
   const [loginRole, setLoginRole] = useState<"user" | "admin">("user");
-  const [loadingTimedOut, setLoadingTimedOut] = useState(false);
-  const loadingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { toast } = useToast();
   const { data: session, status, refresh: refreshSession } = useAppSession();
   const loading = status === "loading";
-
-  useEffect(() => {
-    if (loading) {
-      setLoadingTimedOut(false);
-      loadingTimerRef.current = setTimeout(
-        () => setLoadingTimedOut(true),
-        10000,
-      );
-    } else {
-      if (loadingTimerRef.current) clearTimeout(loadingTimerRef.current);
-      setLoadingTimedOut(false);
-    }
-    return () => {
-      if (loadingTimerRef.current) clearTimeout(loadingTimerRef.current);
-    };
-  }, [loading]);
 
   const buildUserFromSession = useCallback(
     (sessionOverride?: { user: AppUser } | null): AppUser | null => {
@@ -187,8 +167,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [toast]);
 
-  const showLoading = loading && !loadingTimedOut;
-
   return (
     <AuthContext.Provider
       value={{
@@ -199,7 +177,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         refreshUser,
       }}
     >
-      {showLoading && <Loading />}
+      {/*
+        No full-screen overlay while the session is checked. There was one,
+        and the server rendered it too, so every page arrived covered by a
+        blurred layer that lifted only after the scripts ran and the session
+        answered: about two seconds of blank page on a fast laptop, ten on a
+        throttled phone, and a full-viewport blur to repaint. The page shows
+        at once; whatever depends on who is signed in waits on `loading`.
+      */}
       {children}
       <LoginDialog
         isOpen={isLoginDialogOpen}
