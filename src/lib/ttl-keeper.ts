@@ -377,7 +377,10 @@ export async function runKeepAlive(
   }
 
   const server = new rpc.Server(SOROBAN_RPC_URL);
-  const latest = (await server.getLatestLedger()).sequence;
+  // getHealth, not getLatestLedger: the latter decodes the whole latest ledger,
+  // other people's transactions included, and throws on any XDR the SDK
+  // predates.
+  const latest = (await server.getHealth()).latestLedger;
   const tracked = await collect(server);
 
   const entries: KeptEntry[] = tracked.map((t) => {
