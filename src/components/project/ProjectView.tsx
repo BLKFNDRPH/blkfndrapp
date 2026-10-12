@@ -1108,9 +1108,12 @@ export function ProjectView({
           </Tabs>
         </div>
 
-        {/* ---- Desktop: money and the action, in a sticky card ---- */}
+        {/* ---- Desktop: money and the action, in a sticky card ----
+            Capped at the viewport below the header and scrolled inside: the
+            open stake sheet is taller than a laptop screen, and a taller sticky
+            card kept "Review and sign" out of view until the page's end. */}
         {isDesktop && (
-          <aside className="sticky top-24 space-y-4 rounded-lg border bg-card p-5">
+          <aside className="sticky top-24 max-h-[calc(100vh-7rem)] space-y-4 overflow-y-auto rounded-lg border bg-card p-5">
             {moneyBlock}
             {hasAction && <div className="border-t pt-4">{actionArea}</div>}
           </aside>
