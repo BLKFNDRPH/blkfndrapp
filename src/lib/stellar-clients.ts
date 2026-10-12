@@ -1,4 +1,8 @@
-import { SOROBAN_RPC_URL, HORIZON_URL, NETWORK_PASSPHRASE } from "@/lib/network";
+import {
+  SOROBAN_RPC_URL as PUBLIC_SOROBAN_RPC_URL,
+  HORIZON_URL,
+  NETWORK_PASSPHRASE,
+} from "@/lib/network";
 import { Client as VaultClient } from "@/packages/blkfndr_vault/src";
 import { Client as FactoryClient } from "@/packages/blkfndr_factory/src";
 import { Client as AttestationClient } from "@/packages/blkfndr_attestation/src";
@@ -17,7 +21,21 @@ import { Client as OperationsClient } from "@/packages/blkfndr_operations/src";
  */
 
 // The network itself is decided in network.ts, from NEXT_PUBLIC_STELLAR_NETWORK.
-export { SOROBAN_RPC_URL, HORIZON_URL, NETWORK_PASSPHRASE };
+export { HORIZON_URL, NETWORK_PASSPHRASE };
+
+/**
+ * The Soroban RPC this side of the app talks to.
+ *
+ * Server code (the read routes, the indexer, the keepers) may have an endpoint
+ * of its own in SOROBAN_RPC_URL: a runtime setting, never inlined into the
+ * bundle, so a paid provider's keyed URL stays on the server. The browser
+ * always uses the public NEXT_PUBLIC_SOROBAN_RPC_URL, which it needs to
+ * simulate what the wallet will sign. Both must name the same network; only
+ * the public one is checked at build time.
+ */
+export const SOROBAN_RPC_URL =
+  (typeof window === "undefined" ? process.env.SOROBAN_RPC_URL : undefined) ||
+  PUBLIC_SOROBAN_RPC_URL;
 
 export const FACTORY_ID = process.env.NEXT_PUBLIC_BLKFNDR_FACTORY_CONTRACT_ID;
 export const ATTESTATION_ID = process.env.NEXT_PUBLIC_BLKFNDR_ATTESTATION_CONTRACT_ID;

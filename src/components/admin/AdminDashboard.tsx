@@ -81,7 +81,7 @@ import { formatCurrency } from "@/lib/formatters";
 import { Client as VaultClient, type ProjectInfo } from "@/packages/blkfndr_vault/src";
 import { StellarFormatter } from "@/lib/stellar-format";
 import { SOROBAN_RPC_URL, NETWORK_PASSPHRASE } from "@/lib/stellar";
-import { isMissingFunction } from "@/hooks/use-stellar-contract";
+import { isMissingFunction } from "@/lib/vote-panel";
 import {
   Dialog,
   DialogContent,

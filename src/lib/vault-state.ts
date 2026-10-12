@@ -7,6 +7,7 @@
 
 import { Client as VaultClient } from "@/packages/blkfndr_vault/src";
 import { NETWORK_PASSPHRASE, SOROBAN_RPC_URL } from "@/lib/stellar";
+import { cachedRead, remember } from "@/lib/read-cache";
 
 /** Stroops per unit — Stellar assets carry 7 decimal places. */
 export const STROOPS = 10_000_000;
@@ -79,7 +80,7 @@ export async function readVaultState(vaultAddress: string): Promise<VaultState |
       status = "pending";
     }
 
-    return {
+    const state: VaultState = {
       creator: String(info.creator),
       token: String(info.token),
       status,
@@ -98,8 +99,35 @@ export async function readVaultState(vaultAddress: string): Promise<VaultState |
         failed: Boolean(m.failed),
       })),
     };
+    // Every fresh read refreshes what the read routes serve, so the indexer's
+    // read after a stake or a vote updates the figures browsers see too.
+    remember(vaultStateKey(vaultAddress), state, VAULT_STATE_TTL_MS);
+    return state;
   } catch (error) {
     console.warn(`[vault-state] Failed to read vault ${vaultAddress}:`, error);
     return null;
   }
+}
+
+/** How long a vault's figures are served from the cache to browsers. */
+export const VAULT_STATE_TTL_MS = 10_000;
+
+function vaultStateKey(vaultAddress: string): string {
+  return `vault-state:${vaultAddress}`;
+}
+
+/**
+ * readVaultState through the read cache, for routes that serve browsers. Up
+ * to VAULT_STATE_TTL_MS old unless `fresh`; concurrent callers share a read.
+ */
+export function readVaultStateCached(
+  vaultAddress: string,
+  options: { fresh?: boolean } = {},
+): Promise<VaultState | null> {
+  return cachedRead(
+    vaultStateKey(vaultAddress),
+    VAULT_STATE_TTL_MS,
+    () => readVaultState(vaultAddress),
+    options,
+  );
 }
