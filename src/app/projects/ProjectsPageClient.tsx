@@ -113,14 +113,22 @@ function Legend() {
 
 export function ProjectsPageClient({
   initialCategories,
+  initialProjects,
   searchQuery,
 }: {
   /** The admin-managed categories, read by the server page. */
   initialCategories: string[];
+  /** The project list as the server read it, shown until the app's own copy loads. */
+  initialProjects: Project[];
   /** `?q=` from the header search, read by the server page. */
   searchQuery: string | null;
 }) {
-  const { projects: visibleProjects, isLoadingProjects } = useProjects();
+  const { projects: loadedProjects, isLoadingProjects: loadingFromContext } = useProjects();
+  // The server's copy until the app's shared list has loaded, so the page's
+  // first HTML (and the first client render) already has the cards.
+  const useInitial = loadingFromContext && loadedProjects.length === 0;
+  const visibleProjects = useInitial ? initialProjects : loadedProjects;
+  const isLoadingProjects = useInitial && initialProjects.length === 0;
   const { rate } = useXlmRate();
   const isDesktop = useMediaQuery("(min-width: 768px)");
 
