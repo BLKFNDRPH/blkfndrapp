@@ -61,6 +61,21 @@ export async function requireCaller(): Promise<AuthedCaller> {
   };
 }
 
+/**
+ * Whether the caller is signed in, verified like requireCaller but without
+ * the roster round trip. For deciding small privileges, such as a fresh chain
+ * read instead of a cached one, never for authorizing a write.
+ */
+export async function callerIsSignedIn(): Promise<boolean> {
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase.auth.getClaims();
+    return !error && !!data?.claims?.sub;
+  } catch {
+    return false;
+  }
+}
+
 export async function requireAdmin(): Promise<AuthedCaller> {
   const caller = await requireCaller();
   if (!caller.isAdmin) {

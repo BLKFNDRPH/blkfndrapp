@@ -140,6 +140,14 @@ services:
       # including port, so https://example.com does not match example.com:8443.
       - APP_URLS=${APP_URLS:-}
 
+      # ── Server-side Soroban RPC (optional, may be SECRET) ────────────────
+      # The endpoint server code reads the chain through: the read routes that
+      # serve browsers, the indexer and the keepers. Empty means the public
+      # NEXT_PUBLIC_SOROBAN_RPC_URL above. Runtime, not a build arg, so a paid
+      # provider's keyed URL never reaches the browser bundle; a restart picks
+      # up a change. It must name the same network as the public one.
+      - SOROBAN_RPC_URL=${SOROBAN_RPC_URL:-}
+
       # ── Pinata / IPFS (required to create projects, SECRET) ──────────────
       - PINATA_JWT=${PINATA_JWT:-}
       - PINATA_GATEWAY_URL=${PINATA_GATEWAY_URL:-}

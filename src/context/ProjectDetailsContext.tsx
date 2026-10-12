@@ -11,8 +11,7 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import type { Project } from "@/lib/types";
-import { Client as VaultClient } from "@/packages/blkfndr_vault/src";
-import { SOROBAN_RPC_URL, NETWORK_PASSPHRASE } from "@/lib/stellar";
+import { fetchVaultState, withVaultState } from "@/lib/live-project";
 import { useAuth } from "@/context/AuthContext";
 import {
   legacyProjectParam,
@@ -163,87 +162,27 @@ export const ProjectDetailsProvider = ({
   const loadSeq = useRef(0);
 
   const fetchProject = useCallback(
-    async (projectId: string, fallbackProject?: Project) => {
+    async (projectId: string, fallbackProject?: Project, fresh = false) => {
       const seq = ++loadSeq.current;
       const current = () => seq === loadSeq.current;
       setIsLoading(true);
       setError(null);
       try {
-        const read = await readProject(projectId);
+        // The listing and the ledger's word on its state and money, side by
+        // side. The vault is read by this app's server, which shares the
+        // answer for a few seconds; `fresh` asks past that, after the
+        // person's own action. A vault that cannot be read leaves the
+        // indexed copy showing. Persisting is the indexer's job.
+        const [read, state] = await Promise.all([
+          readProject(projectId),
+          fetchVaultState(projectId, { fresh }),
+        ]);
         if (!current()) return;
         if (read.kind === "ok") {
-          const freshProject = read.project;
-          if (freshProject.vaultAddress) {
-            try {
-              const vaultClient = new VaultClient({
-                contractId: freshProject.vaultAddress,
-                rpcUrl: SOROBAN_RPC_URL,
-                networkPassphrase: NETWORK_PASSPHRASE,
-              });
-
-              let liveState: number | undefined;
-              try {
-                const stateRes = await vaultClient.get_state();
-                liveState = stateRes.result;
-              } catch (stateErr) {
-                console.warn("Failed to fetch live on-chain state:", stateErr);
-              }
-
-              let info: any;
-              try {
-                const infoRes = await vaultClient.get_info();
-                info = infoRes.result;
-              } catch (infoErr) {
-                console.warn("Failed to fetch live on-chain info:", infoErr);
-              }
-
-              if (liveState !== undefined) {
-                const statusMap: Record<number, Project["status"]> = {
-                  0: "raising",
-                  1: "funded",
-                  2: "active",
-                  3: "failed",
-                  4: "refunding",
-                  5: "completed",
-                };
-
-                let mappedStatus = statusMap[liveState] || freshProject.status;
-
-                if (info) {
-                  freshProject.currentFunding = Number(info.raised_amount) / 10_000_000;
-                  freshProject.fundingGoal = Number(info.goal) / 10_000_000;
-                  freshProject.currentFundingRaw = info.raised_amount.toString();
-                  freshProject.fundingGoalRaw = info.goal.toString();
-                  freshProject.fundingDeadline = Number(info.deadline) * 1000;
-                  freshProject.bondPosted = info.bond_posted;
-                  freshProject.bondAmount = Number(info.bond_amount) / 10_000_000;
-                  freshProject.releasedTotal = Number(info.released_total) / 10_000_000;
-
-                  if (mappedStatus === "raising" && !info.bond_posted) {
-                    mappedStatus = "pending";
-                  }
-
-                  if (info.milestones && info.milestones.length > 0) {
-                    freshProject.milestones = (freshProject.milestones || []).map((m) => {
-                      const liveM = info.milestones.find((lm: any) => Number(lm.id) === m.id);
-                      return {
-                        ...m,
-                        released: liveM ? liveM.released : m.released,
-                        amount: liveM ? Number(liveM.amount) / 10_000_000 : m.amount,
-                      };
-                    });
-                  }
-                }
-
-                freshProject.status = mappedStatus;
-
-                // Persisting is the indexer's job.
-              }
-            } catch (chainErr) {
-              console.warn("Failed to fetch live on-chain project vault data, falling back to db cache:", chainErr);
-            }
-          }
-          if (!current()) return;
+          const freshProject =
+            state && read.project.vaultAddress
+              ? withVaultState(read.project, state)
+              : read.project;
           projectRef.current = freshProject;
           setProject(freshProject);
           setNotFound(false);
@@ -331,7 +270,9 @@ export const ProjectDetailsProvider = ({
     (projectId: string) => {
       const fallbackProject =
         projectRef.current?.id === projectId ? projectRef.current : undefined;
-      fetchProject(projectId, fallbackProject);
+      // Asked for by a person (a retry, or after their own stake or vote), so
+      // past the server's few seconds of cache.
+      fetchProject(projectId, fallbackProject, true);
     },
     [fetchProject],
   );

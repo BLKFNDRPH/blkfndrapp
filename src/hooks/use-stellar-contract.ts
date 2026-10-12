@@ -7,7 +7,6 @@ import {
   factoryClient,
   vaultClient,
   identityClient,
-  adminClient,
   simulate,
   type Signer,
 } from "@/lib/stellar-clients";
@@ -78,46 +77,6 @@ async function refuseIfLocked(vaultAddress: string, paused: string) {
       `This project is locked by the platform. ${paused} until it is unlocked.`,
     );
   }
-}
-
-/**
- * A milestone's distinct approving wallets against the number a release needs.
- *
- * `supported: false` is a definite answer, not a failed read: the vault was
- * deployed before the wallet floor existed and releases on weight alone. A
- * read that failed for any other reason is `null` from the hook instead, so a
- * flaky RPC can never make a vault that has the floor look like one without.
- */
-export type MilestoneWallets =
-  | { supported: true; approvals: number; required: number }
-  | { supported: false };
-
-/**
- * What a milestone's approvers put in between them, counted whole, against
- * the least a release needs: more than half the raise.
- *
- * `supported: false` is a definite answer: the vault predates the money
- * majority and releases on weight and wallets alone. A failed read is `null`
- * from the hook instead, for the same reason as `MilestoneWallets`.
- */
-export type MilestoneStake =
-  | { supported: true; approved: bigint; required: bigint }
-  | { supported: false };
-
-/**
- * The simulation reached the contract and the contract has no such function.
- *
- * Soroban reports this as `Error(WasmVm, MissingValue)`, with a diagnostic
- * event naming the "non-existent contract function". Network and RPC failures
- * never get this far — they surface from the HTTP client — and a contract that
- * has the function but panics reports a `Contract` error, so neither matches.
- */
-export function isMissingFunction(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  return (
-    message.includes("Error(WasmVm, MissingValue)") ||
-    message.includes("non-existent contract function")
-  );
 }
 
 /** Where a prepared money action is, for the sheet narrating it. */
@@ -369,127 +328,6 @@ export function useStellarContract() {
     [requireWallet],
   );
 
-  // ── Reads ────────────────────────────────────────────────────────────────
-
-  const getVaultInfo = useCallback(
-    (vaultAddress: string) =>
-      simulate(() => vaultClient(vaultAddress).get_info(), `get_info(${vaultAddress})`),
-    [],
-  );
-
-  /** What this wallet's vote is worth, after the 20% cap. */
-  const getVotingWeight = useCallback(
-    (vaultAddress: string, contributor: string) =>
-      simulate(
-        () => vaultClient(vaultAddress).get_voting_weight({ contributor }),
-        `get_voting_weight(${vaultAddress})`,
-      ),
-    [],
-  );
-
-  const hasVoted = useCallback(
-    (vaultAddress: string, milestoneId: number, contributor: string) =>
-      simulate(
-        () => vaultClient(vaultAddress).has_voted({ milestone_id: milestoneId, contributor }),
-        `has_voted(${vaultAddress})`,
-      ),
-    [],
-  );
-
-  /**
-   * Weight behind a milestone, the weight a release needs, and whether the
-   * window is open. The required weight is the contract's own: half the raise
-   * on vaults deployed before the wallet floor, half the capped total after.
-   * Null when the read fails, including a contract error such as an unknown id.
-   */
-  const getMilestoneVote = useCallback(
-    async (vaultAddress: string, milestoneId: number) => {
-      const result = await simulate(
-        () => vaultClient(vaultAddress).get_milestone_vote({ milestone_id: milestoneId }),
-        `get_milestone_vote(${vaultAddress}, ${milestoneId})`,
-      );
-      // A contract error comes back as an Err value rather than a throw.
-      if (!Array.isArray(result)) return null;
-      const [approved, required, open] = result;
-      return [BigInt(approved), BigInt(required), Boolean(open)] as const;
-    },
-    [],
-  );
-
-  /**
-   * Distinct wallets behind a milestone and how many a release needs. Not
-   * routed through `simulate`, which flattens every failure to null: this read
-   * has to tell a vault without the function apart from one that did not
-   * answer. Null means the answer is unknown.
-   */
-  const getMilestoneWallets = useCallback(
-    async (vaultAddress: string, milestoneId: number): Promise<MilestoneWallets | null> => {
-      const label = `get_milestone_wallets(${vaultAddress}, ${milestoneId})`;
-      try {
-        const tx = await vaultClient(vaultAddress).get_milestone_wallets({
-          milestone_id: milestoneId,
-        });
-        const result: unknown = tx.result;
-        if (!Array.isArray(result)) {
-          console.warn(`[stellar] ${label} returned`, result);
-          return null;
-        }
-        return {
-          supported: true,
-          approvals: Number(result[0]),
-          required: Number(result[1]),
-        };
-      } catch (error) {
-        if (isMissingFunction(error)) return { supported: false };
-        console.warn(`[stellar] ${label} failed:`, error);
-        return null;
-      }
-    },
-    [],
-  );
-
-  /**
-   * The approvers' combined stake behind a milestone and the least a release
-   * needs. Read like `getMilestoneWallets`, so a vault without the money
-   * majority is told apart from one that did not answer. Null means unknown.
-   */
-  const getMilestoneStake = useCallback(
-    async (vaultAddress: string, milestoneId: number): Promise<MilestoneStake | null> => {
-      const label = `get_milestone_stake(${vaultAddress}, ${milestoneId})`;
-      try {
-        const tx = await vaultClient(vaultAddress).get_milestone_stake({
-          milestone_id: milestoneId,
-        });
-        const result: unknown = tx.result;
-        if (!Array.isArray(result)) {
-          console.warn(`[stellar] ${label} returned`, result);
-          return null;
-        }
-        return {
-          supported: true,
-          approved: BigInt(result[0]),
-          required: BigInt(result[1]),
-        };
-      } catch (error) {
-        if (isMissingFunction(error)) return { supported: false };
-        console.warn(`[stellar] ${label} failed:`, error);
-        return null;
-      }
-    },
-    [],
-  );
-
-  const getPlatformTerms = useCallback(async () => {
-    const factory = factoryClient();
-    const [fee, minContribution, votingWindow, bondBps] = await Promise.all([
-      simulate(() => factory.get_platform_fee(), "get_platform_fee"),
-      simulate(() => factory.get_min_contribution(), "get_min_contribution"),
-      simulate(() => factory.get_voting_window(), "get_voting_window"),
-      simulate(() => factory.get_bond_percentage(), "get_bond_percentage"),
-    ]);
-    return { fee, minContribution, votingWindow, bondBps };
-  }, []);
-
   // ── Attestor roster ──────────────────────────────────────────────────────
   //
   // Who may write a KYC attestation. add/remove are admin-only on the registry,
@@ -544,26 +382,7 @@ export function useStellarContract() {
     [requireWallet],
   );
 
-  // ── Admin roster ─────────────────────────────────────────────────────────
-
-  const getAdmins = useCallback(
-    () => simulate(() => adminClient().get_admins(), "get_admins"),
-    [],
-  );
-
-  /**
-   * Where the factory currently sends listing fees.
-   *
-   * The console never read this, so the fee wallet field rendered empty whatever
-   * the factory actually held — which meant a fee wallet pointing somewhere
-   * wrong looked identical to one not yet configured. That is the worst way for
-   * this particular setting to fail, because the money has already moved by the
-   * time anyone notices.
-   */
-  const getFeeWallet = useCallback(
-    () => simulate(() => factoryClient().get_fee_wallet(), "get_fee_wallet"),
-    [],
-  );
+  // ── Factory admin ────────────────────────────────────────────────────────
 
   /**
    * Who administers the factory — the wallet whose signature its setters accept.
@@ -575,12 +394,6 @@ export function useStellarContract() {
    */
   const getFactoryAdmin = useCallback(
     () => simulate(() => factoryClient().get_admin(), "factory get_admin"),
-    [],
-  );
-
-  /** Who may edit the on-chain roster: add_admin and remove_admin are owner-only. */
-  const getAdminOwner = useCallback(
-    () => simulate(() => adminClient().get_owner(), "get_owner"),
     [],
   );
 
@@ -602,14 +415,6 @@ export function useStellarContract() {
     settleLapsedMilestone,
     settleVault,
     returnBond,
-    // read
-    getVaultInfo,
-    getVotingWeight,
-    hasVoted,
-    getMilestoneVote,
-    getMilestoneWallets,
-    getMilestoneStake,
-    getPlatformTerms,
     // attestor roster
     getIdentityAdmin,
     isAttestor,
@@ -618,9 +423,6 @@ export function useStellarContract() {
     // fee wallet
     updateFeeWallet,
     // admin
-    getAdmins,
-    getFeeWallet,
     getFactoryAdmin,
-    getAdminOwner,
   };
 }

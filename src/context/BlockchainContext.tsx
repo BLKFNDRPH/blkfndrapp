@@ -10,10 +10,9 @@ import React, {
   useRef,
   ReactNode,
 } from "react";
-import { useStellarContract } from "../hooks/use-stellar-contract";
 import type { Project, FundReceipt } from "../lib/types";
-import { Client as VaultClient } from "@/packages/blkfndr_vault/src";
-import { SOROBAN_RPC_URL, NETWORK_PASSPHRASE } from "@/lib/stellar";
+import type { PlatformSnapshot } from "@/lib/platform-reads";
+import { fetchVaultState, withVaultState } from "@/lib/live-project";
 
 interface PlatformInfo {
   /**
@@ -35,24 +34,11 @@ interface PlatformInfo {
   bondPercentage?: number;
 }
 
-interface AdminRoster {
-  admins: string[];
-  owner: string | null;
-}
-
-interface PlatformTerms {
-  feeStroops: number;
-  bondBps: number;
-  feeWallet: string;
-}
-
 interface BlockchainContextType {
-  /** Null until a page asks for it (usePlatformInfo) and both halves are read. */
+  /** Null until a page asks for it (usePlatformInfo, useAdminStatus) and it is read. */
   platformInfo: PlatformInfo | null;
-  /** Read the roster and the terms, once. usePlatformInfo calls this. */
+  /** Read the platform settings, once. usePlatformInfo and useAdminStatus call this. */
   requestPlatform: () => void;
-  /** Read only the admin roster, once. useAdminStatus calls this. */
-  requestRoster: () => void;
   projects: Project[];
   isLoadingProjects: boolean;
   userFunds: FundReceipt[];
@@ -76,18 +62,14 @@ interface BlockchainProviderProps {
 export const BlockchainProvider: React.FC<BlockchainProviderProps> = ({
   children,
 }) => {
-  const { getPlatformTerms, getAdmins, getAdminOwner, getFeeWallet } = useStellarContract();
-
-  // Platform settings are read on demand, not on every page. They used to be
-  // read for every visitor on every load (seven contract reads, plus an
-  // admin-only settings request that answered 401 for everyone else), and the
-  // home page waited for them before showing a single project, though only the
-  // admin console and the launch form use them. The roster is its own half
-  // because the header needs it, and only for someone with a wallet connected.
-  const [roster, setRoster] = useState<AdminRoster | null>(null);
-  const [terms, setTerms] = useState<PlatformTerms | null>(null);
-  const rosterLoad = useRef<Promise<void> | null>(null);
-  const termsLoad = useRef<Promise<void> | null>(null);
+  // Platform settings are read on demand, not on every page, and from this
+  // app's /api/platform rather than from the public RPC: the server reads the
+  // five values once a minute and shares them. They used to be read by every
+  // browser on every page, and the home page waited for them before showing a
+  // single project, though only the admin console, the launch form and the
+  // header's admin link use them.
+  const [platform, setPlatform] = useState<PlatformSnapshot | null>(null);
+  const platformLoad = useRef<Promise<void> | null>(null);
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoadingProjects, setIsLoadingProjects] = useState(true);
@@ -95,182 +77,71 @@ export const BlockchainProvider: React.FC<BlockchainProviderProps> = ({
   const [userFunds, setUserFunds] = useState<FundReceipt[]>([]);
   const [isLoadingFunds, setIsLoadingFunds] = useState(false);
 
-  /** Read the admin roster once; `force` reads it again. */
-  const loadRoster = useCallback(
-    (force = false) => {
-      if (rosterLoad.current && !force) return rosterLoad.current;
-      const load = Promise.all([
-        getAdmins(),
-        // Read rather than inferred. `admin` below used to be adminList[0],
-        // which is insertion order and not a statement about authority: after
-        // an ownership transfer the real owner sits wherever they happen to
-        // appear in the array, so the console credited the deployer and hid
-        // owner-only controls from the person who actually held them.
-        getAdminOwner().catch(() => null),
-      ])
-        .then(([admins, owner]) => {
-          setRoster({
-            admins: (admins as string[] | null) ?? [],
-            owner: (owner as string | null) ?? null,
-          });
-        })
-        .catch((error) => {
-          // Let the next caller try again rather than keep a failed read.
-          rosterLoad.current = null;
-          console.warn("Error fetching the admin roster:", error);
-        });
-      rosterLoad.current = load;
-      return load;
-    },
-    [getAdmins, getAdminOwner],
-  );
-
-  /** Read the factory's terms and fee wallet once; `force` reads them again. */
-  const loadTerms = useCallback(
-    (force = false) => {
-      if (termsLoad.current && !force) return termsLoad.current;
-      const load = Promise.all([
-        getPlatformTerms(),
-        // Read too, rather than left blank. The fee wallet field rendered empty
-        // whatever the factory actually held, so a fee wallet pointing at the
-        // wrong contract looked identical to one not yet configured — and by
-        // the time anyone noticed, the fees had already gone there.
-        getFeeWallet().catch(() => null),
-      ])
-        .then(([factoryTerms, feeWallet]) => {
-          setTerms({
-            feeStroops: Number(factoryTerms.fee ?? 0),
-            bondBps: Number(factoryTerms.bondBps ?? 500),
-            feeWallet: (feeWallet as string | null) ?? "",
-          });
-        })
-        .catch((error) => {
-          termsLoad.current = null;
-          console.warn("Error fetching platform terms:", error);
-        });
-      termsLoad.current = load;
-      return load;
-    },
-    [getPlatformTerms, getFeeWallet],
-  );
-
-  const requestRoster = useCallback(() => {
-    void loadRoster();
-  }, [loadRoster]);
+  /**
+   * Read the settings once; `fresh` reads them again, past the server's
+   * minute of cache (honoured for a signed-in caller, as after an admin edit).
+   */
+  const loadPlatform = useCallback((fresh = false) => {
+    if (platformLoad.current && !fresh) return platformLoad.current;
+    const load = fetch(`/api/platform${fresh ? "?fresh=1" : ""}`, { cache: "no-store" })
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`platform settings: HTTP ${res.status}`);
+        setPlatform((await res.json()) as PlatformSnapshot);
+      })
+      .catch((error) => {
+        // Let the next caller try again rather than keep a failed read.
+        platformLoad.current = null;
+        console.warn("Error fetching platform info:", error);
+      });
+    platformLoad.current = load;
+    return load;
+  }, []);
 
   const requestPlatform = useCallback(() => {
-    void loadRoster();
-    void loadTerms();
-  }, [loadRoster, loadTerms]);
+    void loadPlatform();
+  }, [loadPlatform]);
 
-  /** Read again whatever some page has already asked for, and nothing else. */
+  /** Read again if some page has already asked for the settings, and not otherwise. */
   const refreshPlatform = useCallback(async () => {
-    await Promise.all([
-      rosterLoad.current ? loadRoster(true) : null,
-      termsLoad.current ? loadTerms(true) : null,
-    ]);
-  }, [loadRoster, loadTerms]);
+    if (platformLoad.current) await loadPlatform(true);
+  }, [loadPlatform]);
 
   const platformInfo = useMemo<PlatformInfo | null>(() => {
-    if (!roster || !terms) return null;
+    if (!platform) return null;
     return {
-      admin: roster.owner ?? roster.admins[0] ?? "",
-      feeWalletAddress: terms.feeWallet,
-      multiSigAdmins: roster.admins,
-      platformFeeStroops: terms.feeStroops,
-      bondPercentage: terms.bondBps,
+      // Read rather than inferred. `admin` used to be the first on the list,
+      // which is insertion order and not a statement about authority: after
+      // an ownership transfer the real owner sits wherever they happen to
+      // appear, so the console credited the deployer and hid owner-only
+      // controls from the person who actually held them.
+      admin: platform.owner ?? platform.admins[0] ?? "",
+      // Read too, rather than left blank: a fee wallet pointing at the wrong
+      // contract must not look identical to one not yet configured.
+      feeWalletAddress: platform.feeWallet,
+      multiSigAdmins: platform.admins,
+      platformFeeStroops: platform.feeStroops,
+      bondPercentage: platform.bondBps,
     };
-  }, [roster, terms]);
+  }, [platform]);
 
+  /**
+   * A project still listed as raising after its deadline has very likely
+   * moved on at the vault. Show what the vault says for the first few, so the
+   * list does not offer stakes on a closed project. Persisting is the
+   * indexer's job; this only reflects the ledger.
+   */
   const reconcileStaleProjects = useCallback(async (loadedProjects: Project[]) => {
     const stale = loadedProjects.filter(
       (p) => p.status === "raising" && p.fundingDeadline && p.fundingDeadline < Date.now() && p.vaultAddress
     );
     if (stale.length === 0) return loadedProjects;
 
-    const toProcess = stale.slice(0, 5);
     const updatedMap = new Map<string, Project>();
-
     await Promise.all(
-      toProcess.map(async (p) => {
-        try {
-          const vaultClient = new VaultClient({
-            contractId: p.vaultAddress!,
-            rpcUrl: SOROBAN_RPC_URL,
-            networkPassphrase: NETWORK_PASSPHRASE,
-          });
-
-          let liveState: number | undefined;
-          try {
-            const stateRes = await vaultClient.get_state();
-            liveState = stateRes.result;
-          } catch (stateErr) {
-            console.warn(`Failed to fetch live on-chain state for ${p.id}:`, stateErr);
-          }
-
-          let info: any;
-          try {
-            const infoRes = await vaultClient.get_info();
-            info = infoRes.result;
-          } catch (infoErr) {
-            console.warn(`Failed to fetch live on-chain info for ${p.id}:`, infoErr);
-          }
-
-          if (liveState !== undefined) {
-            const statusMap: Record<number, Project["status"]> = {
-              0: "raising",
-              1: "funded",
-              2: "active",
-              3: "failed",
-              4: "refunding",
-              5: "completed",
-            };
-
-            let mappedStatus = statusMap[liveState] || p.status;
-
-            const freshProject: Project = {
-              ...p,
-              status: mappedStatus,
-            };
-
-            if (info) {
-              freshProject.currentFunding = Number(info.raised_amount) / 10_000_000;
-              freshProject.fundingGoal = Number(info.goal) / 10_000_000;
-              freshProject.currentFundingRaw = info.raised_amount.toString();
-              freshProject.fundingGoalRaw = info.goal.toString();
-              freshProject.fundingDeadline = Number(info.deadline) * 1000;
-              freshProject.bondPosted = info.bond_posted;
-              freshProject.bondAmount = Number(info.bond_amount) / 10_000_000;
-              freshProject.releasedTotal = Number(info.released_total) / 10_000_000;
-
-              if (mappedStatus === "raising" && !info.bond_posted) {
-                mappedStatus = "pending";
-                freshProject.status = mappedStatus;
-              }
-
-              if (info.milestones && info.milestones.length > 0) {
-                freshProject.milestones = (p.milestones || []).map((m) => {
-                  const liveM = info.milestones.find((lm: any) => Number(lm.id) === m.id);
-                  return {
-                    ...m,
-                    released: liveM ? liveM.released : m.released,
-                    amount: liveM ? Number(liveM.amount) / 10_000_000 : m.amount,
-                  };
-                });
-              }
-            }
-
-            // Persist to DB asynchronously. The server re-reads the vault
-            // itself rather than trusting figures posted from the browser.
-            // Persisting is the indexer's job; this view only reflects what
-            // the ledger currently says.
-
-            updatedMap.set(p.id, freshProject);
-          }
-        } catch (err) {
-          console.warn(`Failed to reconcile project ${p.id} from chain:`, err);
-        }
-      })
+      stale.slice(0, 5).map(async (p) => {
+        const state = await fetchVaultState(p.id);
+        if (state) updatedMap.set(p.id, withVaultState(p, state));
+      }),
     );
 
     if (updatedMap.size > 0) {
@@ -377,25 +248,23 @@ export const BlockchainProvider: React.FC<BlockchainProviderProps> = ({
     [projects],
   );
 
-  // Answered from the roster alone, so the header can ask without reading the
-  // factory's terms too.
   const isAdmin = useCallback(
     (address?: string) => {
-      if (!address || !roster) return false;
-      return (roster.owner ?? roster.admins[0]) === address;
+      if (!address || !platformInfo) return false;
+      return platformInfo.admin === address;
     },
-    [roster],
+    [platformInfo],
   );
 
   const isMultiSigAdmin = useCallback(
     (address?: string) => {
-      if (!address || !roster) return false;
-      return roster.admins.some((admin) => admin === address);
+      if (!address || !platformInfo) return false;
+      return platformInfo.multiSigAdmins.some((admin) => admin === address);
     },
-    [roster],
+    [platformInfo],
   );
 
-  // Initial load. Platform settings are not read here: see loadRoster.
+  // Initial load. Platform settings are not read here: see loadPlatform.
   useEffect(() => {
     refreshProjects();
   }, [refreshProjects]);
@@ -403,7 +272,6 @@ export const BlockchainProvider: React.FC<BlockchainProviderProps> = ({
   const value: BlockchainContextType = {
     platformInfo,
     requestPlatform,
-    requestRoster,
     projects,
     isLoadingProjects,
     userFunds,
@@ -458,12 +326,12 @@ export const useUserFunds = (address?: string) => {
   return { userFunds, isLoadingFunds, refreshUserFunds };
 };
 
-/** Whether this wallet is a platform admin. Reads the roster only once a wallet is given. */
+/** Whether this wallet is a platform admin. Reads the settings only once a wallet is given. */
 export const useAdminStatus = (address?: string) => {
-  const { isAdmin, isMultiSigAdmin, requestRoster } = useBlockchain();
+  const { isAdmin, isMultiSigAdmin, requestPlatform } = useBlockchain();
   useEffect(() => {
-    if (address) requestRoster();
-  }, [address, requestRoster]);
+    if (address) requestPlatform();
+  }, [address, requestPlatform]);
   return { hasAdminAccess: isAdmin(address) || isMultiSigAdmin(address) };
 };
 

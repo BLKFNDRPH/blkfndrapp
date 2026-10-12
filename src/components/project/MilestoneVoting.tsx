@@ -24,11 +24,15 @@ import { ExpandableText } from "@/components/ui/expandable-text";
 import { useAuth } from "@/context/AuthContext";
 import { useFreighterWallet } from "@/context/FreighterWalletContext";
 import { MoneyActionPanel } from "@/components/money-action/MoneyActionPanel";
+import { useStellarContract } from "@/hooks/use-stellar-contract";
 import {
-  useStellarContract,
+  decodeVotePanel,
   type MilestoneStake,
   type MilestoneWallets,
-} from "@/hooks/use-stellar-contract";
+  type PanelMilestone,
+  type VotePanel,
+  type VotePanelJson,
+} from "@/lib/vote-panel";
 import { currencyForToken, fromStroops } from "@/lib/currencies";
 import { describeMoney } from "@/lib/money";
 
@@ -49,15 +53,6 @@ import { describeMoney } from "@/lib/money";
  * the raise between them. The panel asks the vault which one it runs rather
  * than guessing.
  */
-
-interface VaultMilestone {
-  id: number;
-  amount: bigint;
-  released: boolean;
-  failed: boolean;
-  vote_opens_at: bigint;
-  approved_weight: bigint;
-}
 
 /** What the listing says about a milestone. Off-chain, so readable when the vault is not. */
 export interface MilestoneDetail {
@@ -81,6 +76,8 @@ export interface MilestoneVaultState {
 
 interface Props {
   vaultAddress: string;
+  /** The project the vault belongs to, which the server reads the vote by. */
+  projectId: string;
   /**
    * The listing's currency label, used only until the vault reports its own
    * token. It comes from creator-supplied metadata, so it is a claim about
@@ -148,7 +145,7 @@ function carriedOf(
   return true;
 }
 
-function phaseOf(m: VaultMilestone, windowEndsAt: number, carried: boolean | null): Phase {
+function phaseOf(m: PanelMilestone, windowEndsAt: number, carried: boolean | null): Phase {
   if (m.released) return "released";
   if (m.failed) return "failed";
   if (m.vote_opens_at === 0n) return "locked";
@@ -322,6 +319,7 @@ type StageAction = { id: number; kind: "approve" | "open" | "payout" | "close" }
 
 export function MilestoneVoting({
   vaultAddress,
+  projectId,
   currency: listedCurrency,
   creatorAddress,
   platformLocked = false,
@@ -333,19 +331,13 @@ export function MilestoneVoting({
   const { user } = useAuth();
   const { freighterWalletAddress } = useFreighterWallet();
   const {
-    getVaultInfo,
-    getVotingWeight,
-    hasVoted,
-    getMilestoneVote,
-    getMilestoneWallets,
-    getMilestoneStake,
     prepareOpenMilestoneVote,
     prepareApproveMilestone,
     prepareReleaseMilestone,
     prepareSettleLapsedMilestone,
   } = useStellarContract();
 
-  const [milestones, setMilestones] = useState<VaultMilestone[]>([]);
+  const [milestones, setMilestones] = useState<PanelMilestone[]>([]);
   const [raised, setRaised] = useState(0n);
   const [windowSecs, setWindowSecs] = useState(0);
   const [token, setToken] = useState<string | undefined>(undefined);
@@ -370,73 +362,54 @@ export function MilestoneVoting({
     !!creatorAddress &&
     (myAddress === creatorAddress || freighterWalletAddress === creatorAddress);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const info: any = await getVaultInfo(vaultAddress);
-      // A failed read is not an empty vault, and the last answer's buttons
-      // must not outlive it.
-      if (!info) {
-        setReadFailed(true);
-        setMilestones([]);
-        return;
+  /**
+   * Read the panel through this server, which reads the vault: one request
+   * instead of one RPC round trip per figure. `fresh` skips the server's few
+   * seconds of cache, after this person's own action; the server honours it
+   * only for someone signed in.
+   */
+  const load = useCallback(
+    async (fresh = false) => {
+      setLoading(true);
+      try {
+        const query = new URLSearchParams();
+        if (myAddress) query.set("address", myAddress);
+        if (fresh) query.set("fresh", "1");
+        let panel: VotePanel | null = null;
+        try {
+          const res = await fetch(
+            `/api/projects/${encodeURIComponent(projectId)}/votes?${query}`,
+            { cache: "no-store" },
+          );
+          if (res.ok) panel = decodeVotePanel((await res.json()) as VotePanelJson);
+        } catch (error) {
+          console.warn("Failed to read the vote panel:", error);
+        }
+        // A failed read is not an empty vault, and the last answer's buttons
+        // must not outlive it.
+        if (!panel) {
+          setReadFailed(true);
+          setMilestones([]);
+          return;
+        }
+        setReadFailed(false);
+
+        const { tally, mine } = panel;
+        setMilestones(tally.milestones);
+        setRaised(tally.raised);
+        setWindowSecs(tally.windowSecs);
+        setToken(tally.token ?? undefined);
+        setRequiredWeight(tally.requiredWeight);
+        setWallets(tally.wallets);
+        setStakes(tally.stakes);
+        setMyWeight(mine?.weight ?? 0n);
+        setVoted(mine?.voted ?? {});
+      } finally {
+        setLoading(false);
       }
-      setReadFailed(false);
-
-      const list: VaultMilestone[] = info.milestones ?? [];
-      setMilestones(list);
-      setRaised(BigInt(info.raised_amount ?? 0));
-      setWindowSecs(Number(info.voting_window_secs ?? 0));
-      setToken(info.token ? String(info.token) : undefined);
-
-      // Only a vote that has opened and not settled can still carry, so only
-      // those need counting. With none, ask once anyway: the answer also says
-      // which rule this vault runs, and the header explains it.
-      const live = list.filter((m) => !m.released && !m.failed && m.vote_opens_at !== 0n);
-      const counted = live.length > 0 ? live : list.slice(0, 1);
-
-      const [vote, counts, staked] = await Promise.all([
-        // The bar is the same for every milestone of a vault; one read serves all.
-        list.length > 0 ? getMilestoneVote(vaultAddress, list[0].id) : null,
-        Promise.all(
-          counted.map(async (m) => [m.id, await getMilestoneWallets(vaultAddress, m.id)] as const),
-        ),
-        Promise.all(
-          counted.map(async (m) => [m.id, await getMilestoneStake(vaultAddress, m.id)] as const),
-        ),
-      ]);
-      setRequiredWeight(vote ? vote[1] : null);
-      setWallets(Object.fromEntries(counts));
-      setStakes(Object.fromEntries(staked));
-
-      if (myAddress) {
-        const weight = await getVotingWeight(vaultAddress, myAddress);
-        setMyWeight(BigInt((weight as bigint | null) ?? 0n));
-
-        const results = await Promise.all(
-          list.map(async (m: VaultMilestone) => [
-            m.id,
-            Boolean(await hasVoted(vaultAddress, m.id, myAddress)),
-          ]),
-        );
-        setVoted(Object.fromEntries(results));
-      } else {
-        setMyWeight(0n);
-        setVoted({});
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, [
-    vaultAddress,
-    myAddress,
-    getVaultInfo,
-    getVotingWeight,
-    hasVoted,
-    getMilestoneVote,
-    getMilestoneWallets,
-    getMilestoneStake,
-  ]);
+    },
+    [projectId, myAddress],
+  );
 
   useEffect(() => {
     load();
@@ -489,7 +462,7 @@ export function MilestoneVoting({
 
   const windowDays = Math.max(1, Math.round(windowSecs / 86_400));
   const afterAction = () => {
-    load();
+    load(true);
     onChange?.();
   };
 
@@ -511,7 +484,7 @@ export function MilestoneVoting({
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border p-3 text-sm">
           <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" aria-hidden="true" />
           <span>We couldn&apos;t read the vote right now.</span>
-          <Button variant="link" size="sm" className="h-auto p-0" onClick={() => load()}>
+          <Button variant="link" size="sm" className="h-auto p-0" onClick={() => load(true)}>
             Try again
           </Button>
         </div>
@@ -554,7 +527,7 @@ export function MilestoneVoting({
         : `Each payout goes to a vote of the stakeholders, and no one person counts for more than 20%. Each vote stays open for ${windowDays} days. If it ends short, the stage fails and refunds open, with a share of the builder's deposit.`;
 
   const retry = (
-    <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={() => load()}>
+    <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={() => load(true)}>
       Try again
     </Button>
   );

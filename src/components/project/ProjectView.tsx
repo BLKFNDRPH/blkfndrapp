@@ -1030,6 +1030,7 @@ export function ProjectView({
               {showsStageVoting ? (
                 <MilestoneVoting
                   vaultAddress={project.vaultAddress!}
+                  projectId={project.id}
                   currency={project.currencyType ?? "USDC"}
                   creatorAddress={project.creatorAddress ?? project.creator}
                   platformLocked={isLocked}
