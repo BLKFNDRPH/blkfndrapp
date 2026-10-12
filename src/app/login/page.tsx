@@ -4,7 +4,7 @@ import { Suspense, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/hooks/use-toast";
-import Loading from "@/app/loading";
+import Loading from "@/components/layout/PageLoading";
 
 /**
  * Where the auth routes send the browser afterwards. Nobody stays here.
