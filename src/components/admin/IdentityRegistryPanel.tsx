@@ -186,8 +186,7 @@ export function IdentityRegistryPanel() {
           rpcUrl: SOROBAN_RPC_URL,
           networkPassphrase: NETWORK_PASSPHRASE,
         });
-        const tx = await client.is_attestor({ account: mine });
-        const sim = await tx.simulate();
+        const sim = await client.is_attestor({ account: mine });
         if (!cancelled) setManagedAppointed(Boolean(sim.result));
       } catch {
         if (!cancelled) setManagedAppointed(false);
@@ -362,7 +361,7 @@ export function IdentityRegistryPanel() {
     Promise.all(
       approvedAddresses.split(",").map(async (address) => {
         try {
-          const sim = await (await client.is_kyc_approved({ address })).simulate();
+          const sim = await client.is_kyc_approved({ address });
           return [address, Boolean(sim.result)] as const;
         } catch {
           return [address, null] as const;

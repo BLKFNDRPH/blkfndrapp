@@ -9,7 +9,7 @@ import type { Project } from "@/lib/types";
 import { CityScape } from "@/components/layout/CityScape";
 import { StellarLogo } from "@/components/layout/StellarLogo";
 import TextPressure from "@/components/layout/TextPressure";
-import { useProjects, usePlatformInfo } from "@/context/BlockchainContext";
+import { useProjects } from "@/context/BlockchainContext";
 import { Button } from "@/components/ui/button";
 import { IS_PRACTICE_NETWORK } from "@/lib/network";
 
@@ -38,11 +38,10 @@ const SECTION_LINKS = [
 
 export default function Home() {
   const { projects, isLoadingProjects } = useProjects();
-  const { isLoadingPlatform } = usePlatformInfo();
 
   const [featuredProjects, setFeaturedProjects] = useState<Project[]>([]);
 
-  const isLoading = isLoadingProjects || isLoadingPlatform;
+  const isLoading = isLoadingProjects;
 
   useEffect(() => {
     if (isLoading) return;

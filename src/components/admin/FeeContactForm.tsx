@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { usePlatformInfo } from "@/context/BlockchainContext";
 
 /**
  * The contact address for fee matters.
@@ -23,14 +22,27 @@ import { usePlatformInfo } from "@/context/BlockchainContext";
  */
 export function FeeContactForm() {
   const { toast } = useToast();
-  const { platformInfo } = usePlatformInfo();
   const [email, setEmail] = useState("");
   const [saving, startTransition] = useTransition();
   const [busy, setBusy] = useState(false);
 
+  // Read here, in the admin console, rather than by the app shell on every
+  // page, where it answered 401 for everyone who is not an admin.
   useEffect(() => {
-    if (platformInfo?.feeWalletEmail) setEmail(platformInfo.feeWalletEmail);
-  }, [platformInfo?.feeWalletEmail]);
+    let active = true;
+    fetch("/api/admin/platform-settings")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        // Never over what someone has started typing.
+        if (active && data?.feeWalletEmail) {
+          setEmail((current) => current || data.feeWalletEmail);
+        }
+      })
+      .catch((err) => console.warn("Failed to fetch platform settings:", err));
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const save = () => {
     setBusy(true);
