@@ -3,14 +3,7 @@
 import { useCallback } from "react";
 import type { AssembledTransaction } from "@stellar/stellar-sdk/contract";
 import { useFreighterWallet } from "@/context/FreighterWalletContext";
-import {
-  factoryClient,
-  vaultClient,
-  identityClient,
-  simulate,
-  type Signer,
-} from "@/lib/stellar-clients";
-import { freighterSigner } from "@/lib/freighter-signer";
+import type { Signer } from "@/lib/stellar-clients";
 import { LedgerFailedError } from "@/lib/explain-error";
 import { checkVaultLockAction } from "@/actions/project-restrictions";
 
@@ -51,7 +44,17 @@ export interface ApproveMilestoneParams extends MilestoneParams {
 // Signing goes through freighterSigner, which checks what the wallet actually
 // returned. Passing Freighter's raw result to the SDK meant a dismissed popup
 // surfaced as "Cannot read properties of undefined (reading 'switch')".
-const signerFor = (publicKey: string): Signer => freighterSigner(publicKey);
+const signerFor = async (publicKey: string): Promise<Signer> =>
+  (await import("@/lib/freighter-signer")).freighterSigner(publicKey);
+
+/**
+ * The contract clients, loaded on first use. They bring the whole Stellar SDK
+ * (about 440 KB compressed), and every page that can show a money action
+ * imports this hook, so loading them up front put the SDK on pages where
+ * nobody signs anything. Every call here is already async, so the first one
+ * pays for the load and the rest find it cached.
+ */
+const loadClients = () => import("@/lib/stellar-clients");
 
 /** The platform declined to build a transaction because the project is locked. */
 export class PlatformLockError extends Error {
@@ -152,7 +155,7 @@ export function useStellarContract() {
     async ({ vaultAddress, amount, contributor }: ContributeParams) => {
       const address = requireWallet(contributor);
       await refuseIfLocked(vaultAddress, "New stakes are paused");
-      const vault = vaultClient(vaultAddress, signerFor(address));
+      const vault = (await loadClients()).vaultClient(vaultAddress, await signerFor(address));
       const tx = await vault.contribute({ contributor: address, amount });
       return signAndSend(tx);
     },
@@ -169,7 +172,7 @@ export function useStellarContract() {
     async ({ vaultAddress, amount, contributor }: ContributeParams): Promise<PreparedAction> => {
       const address = requireWallet(contributor);
       await refuseIfLocked(vaultAddress, "New stakes are paused");
-      const vault = vaultClient(vaultAddress, signerFor(address));
+      const vault = (await loadClients()).vaultClient(vaultAddress, await signerFor(address));
       const tx = await vault.contribute({ contributor: address, amount });
       return toPrepared(tx);
     },
@@ -183,7 +186,7 @@ export function useStellarContract() {
   const prepareApproveMilestone = useCallback(
     async ({ vaultAddress, milestoneId, contributor }: ApproveMilestoneParams): Promise<PreparedAction> => {
       const address = requireWallet(contributor);
-      const vault = vaultClient(vaultAddress, signerFor(address));
+      const vault = (await loadClients()).vaultClient(vaultAddress, await signerFor(address));
       return toPrepared(
         await vault.approve_milestone({ contributor: address, milestone_id: milestoneId }),
       );
@@ -196,7 +199,7 @@ export function useStellarContract() {
     async ({ vaultAddress, milestoneId }: MilestoneParams): Promise<PreparedAction> => {
       const address = requireWallet();
       await refuseIfLocked(vaultAddress, "Opening stage votes is paused");
-      const vault = vaultClient(vaultAddress, signerFor(address));
+      const vault = (await loadClients()).vaultClient(vaultAddress, await signerFor(address));
       return toPrepared(await vault.open_milestone_vote({ milestone_id: milestoneId }));
     },
     [requireWallet],
@@ -206,7 +209,7 @@ export function useStellarContract() {
   const prepareReleaseMilestone = useCallback(
     async ({ vaultAddress, milestoneId }: MilestoneParams): Promise<PreparedAction> => {
       const address = requireWallet();
-      const vault = vaultClient(vaultAddress, signerFor(address));
+      const vault = (await loadClients()).vaultClient(vaultAddress, await signerFor(address));
       return toPrepared(await vault.release_milestone({ milestone_id: milestoneId }));
     },
     [requireWallet],
@@ -216,7 +219,7 @@ export function useStellarContract() {
   const prepareSettleLapsedMilestone = useCallback(
     async ({ vaultAddress, milestoneId }: MilestoneParams): Promise<PreparedAction> => {
       const address = requireWallet();
-      const vault = vaultClient(vaultAddress, signerFor(address));
+      const vault = (await loadClients()).vaultClient(vaultAddress, await signerFor(address));
       return toPrepared(await vault.settle_lapsed_milestone({ milestone_id: milestoneId }));
     },
     [requireWallet],
@@ -226,7 +229,7 @@ export function useStellarContract() {
   const prepareSettleVault = useCallback(
     async (vaultAddress: string): Promise<PreparedAction> => {
       const address = requireWallet();
-      const vault = vaultClient(vaultAddress, signerFor(address));
+      const vault = (await loadClients()).vaultClient(vaultAddress, await signerFor(address));
       return toPrepared(await vault.settle());
     },
     [requireWallet],
@@ -236,7 +239,7 @@ export function useStellarContract() {
   const prepareClaimRefund = useCallback(
     async ({ vaultAddress, contributor }: { vaultAddress: string; contributor?: string }): Promise<PreparedAction> => {
       const address = requireWallet(contributor);
-      const vault = vaultClient(vaultAddress, signerFor(address));
+      const vault = (await loadClients()).vaultClient(vaultAddress, await signerFor(address));
       return toPrepared(await vault.claim_refund({ contributor: address }));
     },
     [requireWallet],
@@ -245,7 +248,7 @@ export function useStellarContract() {
   const claimRefund = useCallback(
     async ({ vaultAddress, contributor }: { vaultAddress: string; contributor?: string }) => {
       const address = requireWallet(contributor);
-      const vault = vaultClient(vaultAddress, signerFor(address));
+      const vault = (await loadClients()).vaultClient(vaultAddress, await signerFor(address));
       const tx = await vault.claim_refund({ contributor: address });
       return signAndSend(tx);
     },
@@ -259,7 +262,7 @@ export function useStellarContract() {
     async ({ vaultAddress, milestoneId }: MilestoneParams) => {
       const address = requireWallet();
       await refuseIfLocked(vaultAddress, "Opening milestone votes is paused");
-      const vault = vaultClient(vaultAddress, signerFor(address));
+      const vault = (await loadClients()).vaultClient(vaultAddress, await signerFor(address));
       const tx = await vault.open_milestone_vote({ milestone_id: milestoneId });
       return signAndSend(tx);
     },
@@ -274,7 +277,7 @@ export function useStellarContract() {
   const approveMilestone = useCallback(
     async ({ vaultAddress, milestoneId, contributor }: ApproveMilestoneParams) => {
       const address = requireWallet(contributor);
-      const vault = vaultClient(vaultAddress, signerFor(address));
+      const vault = (await loadClients()).vaultClient(vaultAddress, await signerFor(address));
       const tx = await vault.approve_milestone({
         contributor: address,
         milestone_id: milestoneId,
@@ -288,7 +291,7 @@ export function useStellarContract() {
   const releaseMilestone = useCallback(
     async ({ vaultAddress, milestoneId }: MilestoneParams) => {
       const address = requireWallet();
-      const vault = vaultClient(vaultAddress, signerFor(address));
+      const vault = (await loadClients()).vaultClient(vaultAddress, await signerFor(address));
       const tx = await vault.release_milestone({ milestone_id: milestoneId });
       return signAndSend(tx);
     },
@@ -299,7 +302,7 @@ export function useStellarContract() {
   const settleLapsedMilestone = useCallback(
     async ({ vaultAddress, milestoneId }: MilestoneParams) => {
       const address = requireWallet();
-      const vault = vaultClient(vaultAddress, signerFor(address));
+      const vault = (await loadClients()).vaultClient(vaultAddress, await signerFor(address));
       const tx = await vault.settle_lapsed_milestone({ milestone_id: milestoneId });
       return signAndSend(tx);
     },
@@ -310,7 +313,7 @@ export function useStellarContract() {
   const settleVault = useCallback(
     async (vaultAddress: string) => {
       const address = requireWallet();
-      const vault = vaultClient(vaultAddress, signerFor(address));
+      const vault = (await loadClients()).vaultClient(vaultAddress, await signerFor(address));
       const tx = await vault.settle();
       return signAndSend(tx);
     },
@@ -321,7 +324,7 @@ export function useStellarContract() {
   const returnBond = useCallback(
     async (vaultAddress: string) => {
       const address = requireWallet();
-      const vault = vaultClient(vaultAddress, signerFor(address));
+      const vault = (await loadClients()).vaultClient(vaultAddress, await signerFor(address));
       const tx = await vault.return_bond();
       return signAndSend(tx);
     },
@@ -336,21 +339,26 @@ export function useStellarContract() {
 
   /** The registry's admin — the only wallet that may appoint attestors. */
   const getIdentityAdmin = useCallback(
-    () => simulate(() => identityClient().get_admin(), "identity get_admin"),
+    async () => {
+      const { simulate, identityClient } = await loadClients();
+      return simulate(() => identityClient().get_admin(), "identity get_admin");
+    },
     [],
   );
 
   /** Whether a wallet may attest. */
   const isAttestor = useCallback(
-    (account: string) =>
-      simulate(() => identityClient().is_attestor({ account }), `is_attestor(${account})`),
+    async (account: string) => {
+      const { simulate, identityClient } = await loadClients();
+      return simulate(() => identityClient().is_attestor({ account }), `is_attestor(${account})`);
+    },
     [],
   );
 
   const addAttestor = useCallback(
     async (account: string) => {
       const admin = requireWallet();
-      const tx = await identityClient(signerFor(admin)).add_attestor({ account });
+      const tx = await (await loadClients()).identityClient(await signerFor(admin)).add_attestor({ account });
       return signAndSend(tx);
     },
     [requireWallet],
@@ -359,7 +367,7 @@ export function useStellarContract() {
   const removeAttestor = useCallback(
     async (account: string) => {
       const admin = requireWallet();
-      const tx = await identityClient(signerFor(admin)).remove_attestor({ account });
+      const tx = await (await loadClients()).identityClient(await signerFor(admin)).remove_attestor({ account });
       return signAndSend(tx);
     },
     [requireWallet],
@@ -374,7 +382,7 @@ export function useStellarContract() {
   const updateFeeWallet = useCallback(
     async (address: string) => {
       const admin = requireWallet();
-      const tx = await factoryClient(signerFor(admin)).update_fee_wallet({
+      const tx = await (await loadClients()).factoryClient(await signerFor(admin)).update_fee_wallet({
         new_fee_wallet: address,
       });
       return signAndSend(tx);
@@ -393,7 +401,10 @@ export function useStellarContract() {
    * treasury is not yet that admin.
    */
   const getFactoryAdmin = useCallback(
-    () => simulate(() => factoryClient().get_admin(), "factory get_admin"),
+    async () => {
+      const { simulate, factoryClient } = await loadClients();
+      return simulate(() => factoryClient().get_admin(), "factory get_admin");
+    },
     [],
   );
 

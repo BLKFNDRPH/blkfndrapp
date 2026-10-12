@@ -23,7 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { ExpandableText } from "@/components/ui/expandable-text";
 import { useAuth } from "@/context/AuthContext";
 import { useFreighterWallet } from "@/context/FreighterWalletContext";
-import { MoneyActionPanel } from "@/components/money-action/MoneyActionPanel";
+import { LazyMoneyActionPanel } from "@/components/money-action/LazyMoneyActionPanel";
 import { useStellarContract } from "@/hooks/use-stellar-contract";
 import {
   decodeVotePanel,
@@ -676,7 +676,7 @@ export function MilestoneVoting({
                 </p>
               )}
               {open === "open" && (
-                <MoneyActionPanel
+                <LazyMoneyActionPanel
                   context={{ action: "open-vote" }}
                   title={`Open the ${stageName} vote`}
                   sentence={`Stakeholders get ${windowDays} days to approve the ${money(amount)} payout for ${stageName}. Nothing moves until they do.`}
@@ -698,7 +698,7 @@ export function MilestoneVoting({
                 </Button>
               )}
               {open === "approve" && (
-                <MoneyActionPanel
+                <LazyMoneyActionPanel
                   context={{ action: "vote" }}
                   title="Approve this payout"
                   sentence={`Approve the ${money(amount)} payout for ${stageName}? This is final; one vote per stakeholder. Not voting counts as no.`}
@@ -739,7 +739,7 @@ export function MilestoneVoting({
                 </Button>
               )}
               {open === "payout" && (
-                <MoneyActionPanel
+                <LazyMoneyActionPanel
                   context={{ action: "payout" }}
                   title="Send the approved payout"
                   sentence={`This sends ${money(amount)} from the vault to the builder, as the vote decided. Nothing leaves your wallet except a small network fee.`}
@@ -766,7 +766,7 @@ export function MilestoneVoting({
                 </Button>
               )}
               {open === "close" && (
-                <MoneyActionPanel
+                <LazyMoneyActionPanel
                   context={{ action: "close" }}
                   title="Close the stage"
                   sentence={`This records on-chain that ${stageName} failed its vote. Refunds open for every stakeholder, with a share of the builder's deposit. Nothing leaves your wallet except a small network fee.`}

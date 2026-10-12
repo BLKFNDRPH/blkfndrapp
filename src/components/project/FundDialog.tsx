@@ -1,8 +1,22 @@
 "use client";
 
+import dynamic from "next/dynamic";
+import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { Project } from "@/lib/types";
-import { StakeSheet } from "./stake/StakeSheet";
+
+// The sheet loads when the button is pressed (or a ?stake=1 link opens it):
+// it brings the wallet checks and the Stellar SDK, which a visitor reading
+// the project does not need.
+const StakeSheet = dynamic(() => import("./stake/StakeSheet").then((m) => m.StakeSheet), {
+  ssr: false,
+  loading: () => (
+    <div role="status" className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
+      <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+      Getting the stake sheet ready…
+    </div>
+  ),
+});
 
 /**
  * The stake button and, once pressed, the stake sheet in its place.

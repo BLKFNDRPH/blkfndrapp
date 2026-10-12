@@ -5,7 +5,7 @@ import { Check, Copy, ExternalLink, Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { EXPLORER_BASE, EXPLORER_EXPLAINER } from "@/lib/network";
-import { HORIZON_URL } from "@/lib/stellar-clients";
+import { HORIZON_URL } from "@/lib/network";
 import { describeRecord, horizonOperationId, RECORD_FILTERS, type RecordFilter, type RecordLine } from "@/lib/vault-record";
 // Type only, so the server-only module is erased rather than bundled.
 import type { VaultRecord as VaultRecordData } from "@/lib/data/vault-record";

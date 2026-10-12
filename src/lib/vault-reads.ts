@@ -163,3 +163,19 @@ export async function readMyVotes(
     voted: Object.fromEntries(voted),
   };
 }
+
+/**
+ * What a stakeholder still has in the vault, in its token's base units: what
+ * they put in, less any refund already collected. Null when the vault did not
+ * answer. Never cached: it is theirs, and it changes when they act.
+ */
+export async function readContributorBalance(
+  vaultAddress: string,
+  contributor: string,
+): Promise<bigint | null> {
+  const balance = await simulate(
+    () => vaultClient(vaultAddress).get_balance({ contributor }),
+    `get_balance(${vaultAddress})`,
+  );
+  return balance === null ? null : BigInt(balance as bigint);
+}
