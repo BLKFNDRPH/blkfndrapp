@@ -7,7 +7,8 @@ import { AlertTriangle, ArrowLeft, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CubeSpinner } from "@/components/ui/CubeSpinner";
 import { ProjectView } from "@/components/project/ProjectView";
-import { useProjectDetails } from "@/context/ProjectDetailsContext";
+import { ProjectDetailsSeed, useProjectDetails } from "@/context/ProjectDetailsContext";
+import type { Project } from "@/lib/types";
 import { useAuth } from "@/context/AuthContext";
 import { PROJECTS_PATH, type ProjectTab } from "@/lib/project-href";
 
@@ -83,7 +84,7 @@ function ProjectSkeleton() {
   );
 }
 
-function ProjectPageInner({ id }: { id: string }) {
+function ProjectPageInner({ id, initialProject }: { id: string; initialProject: Project | null }) {
   const {
     project,
     isLoading,
@@ -99,8 +100,15 @@ function ProjectPageInner({ id }: { id: string }) {
 
   // Ask the provider for this id on arrival; forget it on the way out. Moving
   // from one project's page to another's runs the cleanup and the load again.
+  // The server's copy, when it read this project, is where the page starts:
+  // it is what the server rendered, so the first client render matches, and
+  // the provider replaces it with the live vault figures once it has read
+  // them. Held in a ref so a new object for the same project does not reload.
+  const seed = initialProject?.id === id ? initialProject : null;
+  const seedRef = useRef(seed);
+  seedRef.current = seed;
   useEffect(() => {
-    loadProject(id);
+    loadProject(id, seedRef.current ?? undefined);
     return () => closeProjectDetails();
   }, [id, loadProject, closeProjectDetails]);
 
@@ -137,6 +145,14 @@ function ProjectPageInner({ id }: { id: string }) {
       else params.set("tab", next);
     });
   };
+
+  if (!project && seed && !notFound) {
+    return (
+      <ProjectDetailsSeed project={seed}>
+        <ProjectView tab={tab} onTabChange={setTab} />
+      </ProjectDetailsSeed>
+    );
+  }
 
   if (!project) {
     if (notFound) {
@@ -191,10 +207,17 @@ function ProjectPageInner({ id }: { id: string }) {
  * boundary; the skeleton it falls back to is the same one the loading state
  * shows, so nothing flashes between the two.
  */
-export function ProjectPageClient({ id }: { id: string }) {
+export function ProjectPageClient({
+  id,
+  initialProject = null,
+}: {
+  id: string;
+  /** The project as the server read it, so the page is in the first HTML. */
+  initialProject?: Project | null;
+}) {
   return (
     <Suspense fallback={<ProjectSkeleton />}>
-      <ProjectPageInner id={id} />
+      <ProjectPageInner id={id} initialProject={initialProject} />
     </Suspense>
   );
 }

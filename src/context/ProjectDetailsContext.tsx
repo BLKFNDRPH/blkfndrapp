@@ -8,6 +8,7 @@ import {
   useCallback,
   useEffect,
   useRef,
+  useMemo,
 } from "react";
 import { useRouter } from "next/navigation";
 import type { Project } from "@/lib/types";
@@ -353,3 +354,25 @@ export const useProjectDetails = () => {
   }
   return context;
 };
+
+/**
+ * Supplies a project the server already read, for as long as this provider
+ * has not loaded its own copy, so a page can render it on the server and the
+ * first client render matches. Once the provider holds a project, its value
+ * (with the live vault figures) wins, so the seed only ever covers the gap
+ * between the server's HTML and the client's first read.
+ */
+export function ProjectDetailsSeed({
+  project,
+  children,
+}: {
+  project: Project;
+  children: ReactNode;
+}) {
+  const context = useProjectDetails();
+  const value = useMemo(
+    () => (context.project ? context : { ...context, project }),
+    [context, project],
+  );
+  return <ProjectDetailsContext.Provider value={value}>{children}</ProjectDetailsContext.Provider>;
+}
