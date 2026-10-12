@@ -11,11 +11,25 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Wallet } from "lucide-react";
-import {
-  PracticeNetworkBadge,
-  WalletPanel,
-} from "@/components/settings/WalletSettings";
+import dynamic from "next/dynamic";
+import { Loader2, Wallet } from "lucide-react";
+import { PracticeNetworkBadge } from "@/components/settings/PracticeNetworkBadge";
+
+// The panel is loaded when the dialog first opens. Importing it here directly
+// put the whole Stellar SDK (about 440 KB compressed, 1.7 MB to parse) on every
+// page, since this button is in the header, for a dialog most visits never open.
+const WalletPanel = dynamic(
+  () => import("@/components/settings/WalletSettings").then((m) => m.WalletPanel),
+  {
+    ssr: false,
+    loading: () => (
+      <div role="status" className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+        Loading your wallet…
+      </div>
+    ),
+  },
+);
 
 /**
  * The header's wallet control. The dialog it opens is the same wallet panel

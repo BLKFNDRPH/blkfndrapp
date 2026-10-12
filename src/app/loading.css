@@ -1,15 +1,13 @@
+/* In the page's flow, under the header, rather than a fixed, blurred layer
+   over the whole viewport: this is the fallback every page's HTML starts
+   with while its content streams in, so the header and the layout paint at
+   once, and a phone is not asked to repaint a full-screen blur. */
 .loading-container {
   display: flex;
   justify-content: center;
   align-items: center;
-  height: 100%;
+  min-height: 60vh;
   width: 100%;
-  position: fixed;
-  top: 0;
-  left: 0;
-  background-color: hsl(var(--background) / 0.8);
-  backdrop-filter: blur(4px);
-  z-index: 9999;
 }
 
 .jumpy-cube {

@@ -57,35 +57,131 @@ const TextPressure: React.FC<TextPressureProps> = ({
     return Math.sqrt(dx * dx + dy * dy);
   };
 
+  // The pressure effect follows the pointer, and costs nothing when nothing
+  // moves. It used to run a frame loop forever, for every visitor, on or off
+  // screen, reading each letter's box between style writes, which forced a
+  // fresh layout of the variable font once per letter per frame: seconds of
+  // main thread on a phone, where no cursor ever moves. Now a frame runs only
+  // while the eased position is still catching up with the pointer, and only
+  // while the wordmark is on screen; reads come before writes in each frame;
+  // reduced motion gets the still wordmark.
   useEffect(() => {
-    if (!interactive) return;
+    const still = () => {
+      spansRef.current.forEach(span => {
+        if (!span) return;
+        span.style.opacity = '1';
+        span.style.fontVariationSettings = `'wght' 400, 'wdth' 100, 'slnt' 0`;
+      });
+    };
+
+    const reducedMotion =
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!interactive || reducedMotion) {
+      still();
+      return;
+    }
+
+    let rafId = 0;
+    let visible = true;
+
+    const frame = () => {
+      rafId = 0;
+      const mouse = mouseRef.current;
+      const cursor = cursorRef.current;
+      mouse.x += (cursor.x - mouse.x) / 15;
+      mouse.y += (cursor.y - mouse.y) / 15;
+      const settled = Math.abs(cursor.x - mouse.x) < 0.5 && Math.abs(cursor.y - mouse.y) < 0.5;
+      if (settled) {
+        mouse.x = cursor.x;
+        mouse.y = cursor.y;
+      }
+
+      const title = titleRef.current;
+      if (title) {
+        // Every read first, then every write: one layout per frame, not one per letter.
+        const maxDist = title.getBoundingClientRect().width / 2;
+        const centers = spansRef.current.map(span => {
+          if (!span) return null;
+          const rect = span.getBoundingClientRect();
+          return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+        });
+
+        const getAttr = (distance: number, minVal: number, maxVal: number) => {
+          const val = maxVal - Math.abs((maxVal * distance) / maxDist);
+          return Math.max(minVal, val + minVal);
+        };
+
+        spansRef.current.forEach((span, i) => {
+          const center = centers[i];
+          if (!span || !center) return;
+          const d = dist(mouse, center);
+          // Ranges are clamped to the font's own axes (wght 100..1000, wdth 25..151,
+          // slnt 0..-10deg) so cursor travel maps onto the axis instead of saturating.
+          const wdth = width ? Math.floor(getAttr(d, 25, 126)) : 100;
+          const wght = weight ? Math.floor(getAttr(d, 100, 900)) : 400;
+          const slntVal = italic ? (-10 * getAttr(d, 0, 1)).toFixed(2) : '0';
+          const alphaVal = alpha ? getAttr(d, 0, 1).toFixed(2) : '1';
+          span.style.opacity = alphaVal;
+          span.style.fontVariationSettings = `'wght' ${wght}, 'wdth' ${wdth}, 'slnt' ${slntVal}`;
+        });
+      }
+
+      if (!settled && visible) rafId = requestAnimationFrame(frame);
+    };
+
+    const wake = () => {
+      if (!rafId && visible) rafId = requestAnimationFrame(frame);
+    };
 
     const handleMouseMove = (e: MouseEvent) => {
       cursorRef.current.x = e.clientX;
       cursorRef.current.y = e.clientY;
+      wake();
     };
     const handleTouchMove = (e: TouchEvent) => {
       const t = e.touches[0];
       cursorRef.current.x = t.clientX;
       cursorRef.current.y = t.clientY;
+      wake();
     };
 
     window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('touchmove', handleTouchMove, { passive: false });
+    // Passive: this only reads the touch, and a non-passive listener on the
+    // window makes the browser wait on it before every scroll.
+    window.addEventListener('touchmove', handleTouchMove, { passive: true });
 
     if (containerRef.current) {
-      const { left, top, width, height } = containerRef.current.getBoundingClientRect();
-      mouseRef.current.x = left + width / 2;
-      mouseRef.current.y = top + height / 2;
+      const { left, top, width: w, height: h } = containerRef.current.getBoundingClientRect();
+      mouseRef.current.x = left + w / 2;
+      mouseRef.current.y = top + h / 2;
       cursorRef.current.x = mouseRef.current.x;
       cursorRef.current.y = mouseRef.current.y;
     }
 
+    const observer =
+      typeof IntersectionObserver === 'function' && containerRef.current
+        ? new IntersectionObserver(([entry]) => {
+            visible = entry.isIntersecting;
+            if (visible) wake();
+            else if (rafId) {
+              cancelAnimationFrame(rafId);
+              rafId = 0;
+            }
+          })
+        : null;
+    if (observer && containerRef.current) observer.observe(containerRef.current);
+
+    // One frame for the resting shape, centred on the wordmark.
+    wake();
+
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('touchmove', handleTouchMove);
+      observer?.disconnect();
+      if (rafId) cancelAnimationFrame(rafId);
     };
-  }, [interactive]);
+  }, [width, weight, italic, alpha, chars.length, interactive]);
 
   const setSize = () => {
     if (!containerRef.current || !titleRef.current) return;
@@ -124,63 +220,6 @@ const TextPressure: React.FC<TextPressureProps> = ({
     return () => window.removeEventListener('resize', setSize);
   }, [scale, text]);
 
-  useEffect(() => {
-    let rafId: number;
-    const animate = () => {
-      mouseRef.current.x += (cursorRef.current.x - mouseRef.current.x) / 15;
-      mouseRef.current.y += (cursorRef.current.y - mouseRef.current.y) / 15;
-
-      if (titleRef.current) {
-        const titleRect = titleRef.current.getBoundingClientRect();
-        const maxDist = titleRect.width / 2;
-
-        spansRef.current.forEach(span => {
-          if (!span) return;
-
-          const rect = span.getBoundingClientRect();
-          const charCenter = {
-            x: rect.x + rect.width / 2,
-            y: rect.y + rect.height / 2
-          };
-
-          const d = dist(mouseRef.current, charCenter);
-
-          const getAttr = (distance: number, minVal: number, maxVal: number) => {
-            const val = maxVal - Math.abs((maxVal * distance) / maxDist);
-            return Math.max(minVal, val + minVal);
-          };
-
-          // Ranges are clamped to the font's own axes (wght 100..1000, wdth 25..151,
-          // slnt 0..-10deg) so cursor travel maps onto the axis instead of saturating.
-          const wdth = width ? Math.floor(getAttr(d, 25, 126)) : 100;
-          const wght = weight ? Math.floor(getAttr(d, 100, 900)) : 400;
-          const slntVal = italic ? (-10 * getAttr(d, 0, 1)).toFixed(2) : '0';
-          const alphaVal = alpha ? getAttr(d, 0, 1).toFixed(2) : '1';
-
-          span.style.opacity = alphaVal;
-          span.style.fontVariationSettings = `'wght' ${wght}, 'wdth' ${wdth}, 'slnt' ${slntVal}`;
-        });
-      }
-
-      rafId = requestAnimationFrame(animate);
-    };
-
-    if (interactive) {
-      animate();
-    } else {
-      if (titleRef.current) {
-        spansRef.current.forEach(span => {
-          if (!span) return;
-          span.style.opacity = '1';
-          span.style.fontVariationSettings = `'wght' 400, 'wdth' 100, 'slnt' 0`;
-        });
-      }
-    }
-
-    return () => {
-      if (rafId) cancelAnimationFrame(rafId);
-    };
-  }, [width, weight, italic, alpha, chars.length, interactive]);
 
   return (
     <div ref={containerRef} className="relative w-full h-full overflow-hidden bg-transparent">
@@ -207,7 +246,7 @@ const TextPressure: React.FC<TextPressureProps> = ({
         style={{
           // Fallback stack matters: without one, a failed webfont drops the
           // wordmark to the browser's default serif at display size.
-          fontFamily: `'${fontFamily}', 'Inter', sans-serif`,
+          fontFamily: `'${fontFamily}', var(--font-inter), sans-serif`,
           fontSize: fontSize,
           color: textColor,
           lineHeight,
