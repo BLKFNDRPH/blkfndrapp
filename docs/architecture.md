@@ -164,6 +164,18 @@ The next pass reads everything from that ledger on again, skips what is already 
 
 The console's health view shows the cursor and when it last moved, which is the quickest way to spot a stalled indexer.
 
+### Rebuilding vault state from events
+
+The indexer re-reads a vault on each of its events, but the stored events are enough on their own. [src/lib/vault-replay.ts](../src/lib/vault-replay.ts) replays a vault's `contract_events` in order, using the same rules as the contract. From them it rebuilds the status, the amount raised and paid out, each stage (paid, failed, vote opened at, approval weight), the deposit (posted, returned) and every staker's balance. It also checks the running totals the events carry, so a missing or duplicated event shows up in the events themselves. Only the terms fixed when the vault opens come from the vault: the goal, the deadline and the stage ids, which no event carries. A raise past its deadline that nobody has settled reads as funded or failed, as `get_state` does.
+
+[scripts/replay-check.mjs](../scripts/replay-check.mjs) runs the replay for every vault and compares it field by field with `get_state`, `get_info`, `contributor_count` and `get_balance` for each staker. It is read-only, and exits 1 on any difference:
+
+```bash
+node --env-file=.env.local scripts/replay-check.mjs
+```
+
+A vault with events newer than the indexer's cursor is reported as "behind", not as a difference. Fields that older vault code does not have are skipped. On 2026-10-12, all 22 testnet vaults (141 stored events) matched. With one stake left out of the replay, the check reported the affected vault's raise, balance and running totals.
+
 ## Scheduled jobs
 
 Soroban has no cron, and nothing in the app triggers itself. [docker-compose.yml](../docker-compose.yml) therefore runs six small `curlimages/curl` services beside the app. Each waits for the app's healthcheck, then calls one route over the stack's internal network (`http://blkfndr-app:3000`) with `Authorization: Bearer $INDEXER_SECRET`, sleeps, and repeats.
