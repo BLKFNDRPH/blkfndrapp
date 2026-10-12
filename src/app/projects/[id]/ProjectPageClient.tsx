@@ -47,10 +47,19 @@ function BackToProjects() {
   );
 }
 
-/** The page's shape before the vault has been read: title bar, money, tabs. */
+/**
+ * The page's shape before the vault has been read: title bar, money, tabs.
+ * It is also what the server sends. At least a screen tall, as the loaded
+ * page always is: a shorter skeleton left the footer in view on a phone until
+ * the project arrived and pushed it below the fold, a layout shift of 0.16.
+ */
 function ProjectSkeleton() {
   return (
-    <div className="container mx-auto px-4 py-6 sm:px-6 lg:px-8" role="status" aria-live="polite">
+    <div
+      className="container mx-auto min-h-dvh px-4 py-6 sm:px-6 lg:px-8"
+      role="status"
+      aria-live="polite"
+    >
       <BackToProjects />
       <div className="mt-3 space-y-3 border-b pb-4">
         <div className="h-8 w-2/3 rounded bg-muted animate-pulse" />
