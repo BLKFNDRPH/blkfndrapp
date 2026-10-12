@@ -40,6 +40,16 @@ const nextConfig = {
   output: "standalone",
   serverExternalPackages: ["genkit", "@genkit-ai/ai", "@genkit-ai/googleai", "@genkit-ai/core"],
 
+  experimental: {
+    // Put each page's CSS in its HTML as <style> tags instead of separate
+    // stylesheets. The browser has to fetch every stylesheet before it paints
+    // anything; on a throttled phone the four this app splits into held the
+    // first paint back by an estimated 1.9 s. Production only. If a full
+    // Content-Security-Policy with style-src is added later, it must allow
+    // these inline styles.
+    inlineCss: true,
+  },
+
   // Baseline security headers on every response. A conservative, non-breaking
   // set: clickjacking (frame-ancestors + X-Frame-Options), MIME sniffing,
   // referrer and permissions hardening, and HSTS for the HTTPS origin. A full
