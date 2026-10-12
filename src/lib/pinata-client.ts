@@ -1,3 +1,5 @@
+import { parseCid } from "@/lib/project-image";
+
 export class PinataClient {
   /**
    * Upload a file to Pinata via the server-side API route
@@ -68,7 +70,8 @@ const SHARED_GATEWAY_HOST = "gateway.pinata.cloud";
  * Returns an empty list if the value is not a plausible bare CID.
  */
 export function getIPFSFetchUrls(cid: string): { url: string; headers: Record<string, string> }[] {
-  const value = normalizeCid(cid);
+  // parseCid also rules out path traversal and host injection.
+  const value = parseCid(cid);
   if (!value) return [];
 
   const dedicated = resolveGatewayHost();
@@ -79,24 +82,6 @@ export function getIPFSFetchUrls(cid: string): { url: string; headers: Record<st
     if (host !== SHARED_GATEWAY_HOST && gatewayKey) headers["x-pinata-gateway-token"] = gatewayKey;
     return { url: `https://${host}/ipfs/${value}`, headers };
   });
-}
-
-function normalizeCid(cid: string): string | null {
-  if (!cid) return null;
-
-  let value = cid.trim();
-  if (value.startsWith("ipfs://")) {
-    value = value.slice("ipfs://".length);
-  }
-  value = value.replace(/^\/+/, "").split(/[/?#]/)[0];
-
-  // CIDv0 (Qm..., base58) or CIDv1 (base32, starts with b). Restricting the
-  // character set also guarantees no path traversal or host injection.
-  const isCidV0 = /^Qm[1-9A-HJ-NP-Za-km-z]{44}$/.test(value);
-  const isCidV1 = /^b[a-z2-7]{50,}$/.test(value);
-  if (!isCidV0 && !isCidV1) return null;
-
-  return value;
 }
 
 /**

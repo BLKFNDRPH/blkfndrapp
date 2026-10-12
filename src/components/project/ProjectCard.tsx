@@ -198,6 +198,7 @@ export function ProjectCard({ project, showStatus = true }: ProjectCardProps) {
                 src={imageSrc || ""}
                 alt={project.title}
                 className="h-full w-full object-cover"
+                sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
                 fill
               />
             </div>

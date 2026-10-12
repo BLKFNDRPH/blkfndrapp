@@ -12,6 +12,7 @@ import { Project } from "@/lib/types";
 import { debounce } from "lodash";
 import { Card } from "../ui/card";
 import { projectHref } from "@/lib/project-href";
+import { resizedImageUrl } from "@/lib/project-image";
 import { Avatar, AvatarFallback, AvatarImage } from "../ui/avatar";
 import { describeMoney } from "@/lib/money";
 import { describeStatus } from "@/lib/project-status";
@@ -144,7 +145,7 @@ export function HeaderSearch({ isMobileOpen, setMobileOpen }: HeaderSearchProps)
                 }}
               >
                 <Avatar className="h-10 w-10 flex-shrink-0">
-                  <AvatarImage src={project.imageUrl} alt="" className="object-cover" />
+                  <AvatarImage src={resizedImageUrl(project.imageUrl, 64)} alt="" className="object-cover" />
                   <AvatarFallback>{project.title.charAt(0)}</AvatarFallback>
                 </Avatar>
                 <div className="min-w-0 flex-1">
