@@ -11,6 +11,7 @@
 - [Private Data](privacy.md)
 - [AI Features](ai-features.md)
 - [Deployment](deployment.md)
+- [Performance](performance.md)
 - [Contributing](contributing.md)
 - [Blueprint](blueprint.md)
 - Design

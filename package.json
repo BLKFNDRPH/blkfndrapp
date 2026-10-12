@@ -10,7 +10,8 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON \"src/**/*.test.ts\""
+    "test": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON \"src/**/*.test.ts\"",
+    "perf:baseline": "node scripts/perf-baseline.mjs"
   },
   "dependencies": {
     "@genkit-ai/googleai": "^1.28.0",
@@ -56,6 +57,7 @@
     "react-hook-form": "^7.54.2",
     "recharts": "^2.15.1",
     "server-only": "^0.0.1",
+    "sharp": "^0.34.5",
     "swr": "^2.4.2",
     "tailwind-merge": "^3.0.1",
     "tailwindcss-animate": "^1.0.7",

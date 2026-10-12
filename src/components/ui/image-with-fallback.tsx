@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from 'react';
+import { resizedImageUrl, resizedSrcSet } from '@/lib/project-image';
 
 interface ImageWithFallbackProps {
   src: string;
@@ -9,6 +10,16 @@ interface ImageWithFallbackProps {
   fill?: boolean;
   width?: number;
   height?: number;
+  /**
+   * How wide the picture is shown, as an <img sizes> value, so the browser
+   * picks a resized copy that fits. Defaults to the full viewport.
+   */
+  sizes?: string;
+  /**
+   * The picture the page is about, above the fold: fetched first and not
+   * lazily. Cards and thumbnails leave this off.
+   */
+  priority?: boolean;
   "data-ai-hint"?: string;
 }
 
@@ -23,24 +34,62 @@ interface ImageWithFallbackProps {
  */
 const FALLBACK_IMAGE = '/images/project-placeholder.svg';
 
-export function ImageWithFallback({ src, alt, className, fill = false, width, height, "data-ai-hint": dataAiHint }: ImageWithFallbackProps) {
-  const [imgSrc, setImgSrc] = useState(src || FALLBACK_IMAGE);
+/** The width asked for when the browser cannot use the srcset. */
+const DEFAULT_WIDTH = 640;
+
+/**
+ * Where a picture is in its fallbacks: the resized copy this site serves,
+ * then the original on IPFS (should resizing fail), then the placeholder.
+ */
+type Stage = 'resized' | 'original' | 'placeholder';
+
+export function ImageWithFallback({
+  src,
+  alt,
+  className,
+  fill = false,
+  width,
+  height,
+  sizes = '100vw',
+  priority = false,
+  "data-ai-hint": dataAiHint,
+}: ImageWithFallbackProps) {
+  const [stage, setStage] = useState<Stage>(src ? 'resized' : 'placeholder');
 
   useEffect(() => {
-    setImgSrc(src || FALLBACK_IMAGE);
+    setStage(src ? 'resized' : 'placeholder');
   }, [src]);
+
+  const srcSet = stage === 'resized' ? resizedSrcSet(src) : undefined;
+  const imgSrc =
+    stage === 'placeholder'
+      ? FALLBACK_IMAGE
+      : stage === 'resized'
+        ? resizedImageUrl(src, width ?? DEFAULT_WIDTH)
+        : src;
+
+  const onError = () => {
+    // A picture not on IPFS has no resized copy, so its first failure is the
+    // original's: straight to the placeholder.
+    if (stage === 'resized' && srcSet) setStage('original');
+    else setStage('placeholder');
+  };
 
   const imageProps: React.ImgHTMLAttributes<HTMLImageElement> & { "data-ai-hint"?: string } = {
     className,
-    alt,
     src: imgSrc,
+    srcSet,
+    sizes: srcSet ? sizes : undefined,
     width: fill ? undefined : width,
     height: fill ? undefined : height,
+    loading: priority ? 'eager' : 'lazy',
+    decoding: 'async',
+    fetchPriority: priority ? 'high' : undefined,
     style: fill ? { position: 'absolute', height: '100%', width: '100%', inset: 0, objectFit: 'cover' } : {},
-    onError: () => setImgSrc(FALLBACK_IMAGE),
+    onError,
     ...(dataAiHint && { "data-ai-hint": dataAiHint }),
   };
 
   // eslint-disable-next-line @next/next/no-img-element
-  return <img {...imageProps} />;
+  return <img alt={alt} {...imageProps} />;
 }

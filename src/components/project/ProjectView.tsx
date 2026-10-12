@@ -973,6 +973,8 @@ export function ProjectView({
                   src={project.imageUrl}
                   alt={project.title}
                   className="w-full h-full object-cover"
+                  sizes="(min-width: 1024px) calc(100vw - 30rem), 100vw"
+                  priority
                   fill
                 />
               </div>

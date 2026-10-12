@@ -29,6 +29,7 @@ import { PcbPattern } from "./PcbPattern";
 import { Avatar, AvatarImage, AvatarFallback } from "../ui/avatar";
 import { Separator } from "../ui/separator";
 import { projectHref } from "@/lib/project-href";
+import { resizedImageUrl } from "@/lib/project-image";
 import { AppearanceSettings } from "../settings/AppearanceSettings";
 import { NotificationBell } from "./NotificationBell";
 import { HeaderSearch } from "./HeaderSearch";
@@ -126,7 +127,7 @@ export default function Header() {
     >
       <Avatar className="h-7 w-7 border-2 border-primary/50">
         <AvatarImage
-          src={project.imageUrl}
+          src={resizedImageUrl(project.imageUrl, 64)}
           alt={project.title}
           className="object-cover"
         />
