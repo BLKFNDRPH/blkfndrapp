@@ -125,17 +125,32 @@ async function readChain(vault, stakers) {
 const short = (address) => `${address.slice(0, 4)}…${address.slice(-4)}`;
 const units = (raw) => (Number(raw) / 1e7).toLocaleString("en-US", { maximumFractionDigits: 7 });
 
-const [events, cursor, latest] = await Promise.all([
-  storedEvents(),
-  indexerCursor(),
-  server.getLatestLedger(),
-]);
+/**
+ * Which vaults the indexer is behind on, or null when the RPC could not say.
+ *
+ * Both reads decode XDR from other people's transactions (getLatestLedger
+ * returns the whole latest ledger), so an SDK older than the network can fail
+ * on a ledger it does not understand. That only costs the lag check: the
+ * comparison itself still runs, and a difference is then reported as a
+ * mismatch rather than excused as "behind".
+ */
+async function indexerLag(vaults, cursor) {
+  try {
+    const { sequence } = await server.getLatestLedger();
+    return { latest: sequence, ahead: sequence > cursor ? await vaultsAhead(vaults, cursor) : new Set() };
+  } catch (error) {
+    return { latest: null, ahead: null, error: String(error?.message ?? error) };
+  }
+}
+
+const [events, cursor] = await Promise.all([storedEvents(), indexerCursor()]);
 const now = BigInt(Math.floor(Date.now() / 1000));
 
 const deploys = events
   .filter((e) => e.topic1 === "FACTORY" && e.topic2 === "DEPLOY")
   .map((e) => ({ projectId: String(e.payload[0]), vault: String(e.payload[1]) }));
-const ahead = latest.sequence > cursor ? await vaultsAhead(deploys.map((d) => d.vault), cursor) : new Set();
+const lag = await indexerLag(deploys.map((d) => d.vault), cursor);
+const ahead = lag.ahead ?? new Set();
 
 const results = [];
 for (const { projectId, vault } of deploys) {
@@ -186,7 +201,8 @@ const summary = {
   checkedAt: new Date().toISOString(),
   network: PUBLIC ? "public" : "testnet",
   indexerCursor: cursor,
-  latestLedger: latest.sequence,
+  latestLedger: lag.latest,
+  indexerLagError: lag.error,
   storedEvents: events.length,
   vaults: results.length,
   match: results.filter((r) => r.result === "match").length,
@@ -199,7 +215,8 @@ if (JSON_OUT) {
 } else {
   console.log(
     `Replay check, ${summary.network}, ${summary.checkedAt}\n` +
-      `${summary.storedEvents} stored events; indexer at ledger ${cursor}, chain at ${latest.sequence}\n`,
+      `${summary.storedEvents} stored events; indexer at ledger ${cursor}, ` +
+      (lag.error ? `could not check indexer lag (${lag.error})\n` : `chain at ${lag.latest}\n`),
   );
   console.table(
     results.map((r) => ({
