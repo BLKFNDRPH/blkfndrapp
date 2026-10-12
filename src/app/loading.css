@@ -1,12 +1,17 @@
 /* In the page's flow, under the header, rather than a fixed, blurred layer
    over the whole viewport: this is the fallback every page's HTML starts
    with while its content streams in, so the header and the layout paint at
-   once, and a phone is not asked to repaint a full-screen blur. */
+   once, and a phone is not asked to repaint a full-screen blur.
+
+   At least a screen tall, so the footer starts below the fold. At 60vh the
+   footer sat in view under the spinner and jumped down when the page
+   arrived, which counted as a layout shift on every page that streams. */
 .loading-container {
   display: flex;
   justify-content: center;
   align-items: center;
-  min-height: 60vh;
+  min-height: 100vh;
+  min-height: 100dvh;
   width: 100%;
 }
 
