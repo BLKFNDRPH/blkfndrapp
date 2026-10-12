@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { Badge } from "@/components/ui/badge";
 import {
   Tooltip,
@@ -11,8 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FundDialog } from "./FundDialog";
-import { RefundSheet } from "./RefundSheet";
-import { MoneyActionPanel } from "@/components/money-action/MoneyActionPanel";
+import { LazyMoneyActionPanel } from "@/components/money-action/LazyMoneyActionPanel";
 import { useStellarContract } from "@/hooks/use-stellar-contract";
 import { Progress } from "@/components/ui/progress";
 import { useProjectDetails } from "@/context/ProjectDetailsContext";
@@ -49,7 +49,6 @@ import { cn } from "@/lib/utils";
 import { useFreighterWallet } from "@/context/FreighterWalletContext";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { getUserByCreatorId } from "@/lib/data.client";
-import { Client as VaultClient } from "@/packages/blkfndr_vault/src";
 import { describeMoney, describeRateAge, formatToken } from "@/lib/money";
 import { useXlmRate } from "@/lib/xlm-rate";
 import {
@@ -61,7 +60,12 @@ import {
 import { EXPLORER_BASE, EXPLORER_EXPLAINER } from "@/lib/network";
 import { projectHref, PROJECTS_PATH, type ProjectTab } from "@/lib/project-href";
 import type { Project } from "@/lib/types";
-import { SOROBAN_RPC_URL, NETWORK_PASSPHRASE } from "@/lib/stellar";
+
+// Shown only once a stakeholder asks to collect, and it brings the Stellar
+// SDK with it, so it loads then.
+const RefundSheet = dynamic(() => import("./RefundSheet").then((m) => m.RefundSheet), {
+  ssr: false,
+});
 
 /** The vault counts in stroops; a person reads whole tokens. */
 const STROOPS = 10_000_000;
@@ -429,23 +433,18 @@ export function ProjectView({
         });
 
       if (vaultAddress) {
-        const checkVaultBalance = async () => {
-          try {
-            const client = new VaultClient({
-              contractId: vaultAddress,
-              rpcUrl: SOROBAN_RPC_URL,
-              networkPassphrase: NETWORK_PASSPHRASE,
-              publicKey: activeAddress,
-            });
-            const balanceVal = await client.get_balance({ contributor: activeAddress });
-            const balNum = Number(balanceVal.result || 0);
-            setVaultContributorBalance(balNum);
-          } catch (e) {
+        // Read by this app's server, so the page does not load the Stellar
+        // SDK just to ask.
+        fetch(
+          `/api/projects/${encodeURIComponent(projectId)}/stake?address=${encodeURIComponent(activeAddress)}`,
+          { cache: "no-store" },
+        )
+          .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
+          .then((data: { balance: string }) => setVaultContributorBalance(Number(data.balance)))
+          .catch((e) => {
             console.error("Failed to query vault balance:", e);
             setVaultContributorBalance(0);
-          }
-        };
-        checkVaultBalance();
+          });
       } else {
         setVaultContributorBalance(0);
       }
@@ -847,7 +846,7 @@ export function ProjectView({
         {canCloseNow && (
           <div className="space-y-1.5 border-t border-border/60 pt-3">
             {isCloseVaultOpen ? (
-              <MoneyActionPanel
+              <LazyMoneyActionPanel
                 context={{ action: "close-vault" }}
                 title="Record the deadline on-chain"
                 sentence="This transaction tells the vault contract its deadline has passed, so its status catches up everywhere. Refunds already work without it. Nothing leaves your wallet except a small network fee."
