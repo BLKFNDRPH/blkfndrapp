@@ -305,8 +305,7 @@ export function AdminDashboard() {
               rpcUrl: SOROBAN_RPC_URL,
               networkPassphrase: NETWORK_PASSPHRASE,
             });
-            const infoTx = await vaultClient.get_info();
-            const infoRes = await infoTx.simulate();
+            const infoRes = await vaultClient.get_info();
             if (infoRes.result && infoRes.result.bond_amount !== undefined && active) {
               const liveBond = Number(infoRes.result.bond_amount) / 10_000_000;
               setLiveBondAmounts((prev) => ({
@@ -346,8 +345,7 @@ export function AdminDashboard() {
         rpcUrl: SOROBAN_RPC_URL,
         networkPassphrase: NETWORK_PASSPHRASE,
       });
-      const infoTx = await vaultClient.get_info();
-      const infoRes = await infoTx.simulate();
+      const infoRes = await vaultClient.get_info();
       let parsedInfo: ProjectInfo | { isLegacy: true } | null = null;
       try {
         parsedInfo = infoRes.result || null;

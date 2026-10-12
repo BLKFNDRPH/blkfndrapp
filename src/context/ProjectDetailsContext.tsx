@@ -183,8 +183,7 @@ export const ProjectDetailsProvider = ({
 
               let liveState: number | undefined;
               try {
-                const stateTx = await vaultClient.get_state();
-                const stateRes = await stateTx.simulate();
+                const stateRes = await vaultClient.get_state();
                 liveState = stateRes.result;
               } catch (stateErr) {
                 console.warn("Failed to fetch live on-chain state:", stateErr);
@@ -192,8 +191,7 @@ export const ProjectDetailsProvider = ({
 
               let info: any;
               try {
-                const infoTx = await vaultClient.get_info();
-                const infoRes = await infoTx.simulate();
+                const infoRes = await vaultClient.get_info();
                 info = infoRes.result;
               } catch (infoErr) {
                 console.warn("Failed to fetch live on-chain info:", infoErr);

@@ -105,14 +105,19 @@ export function treasuryClient(contractId: string, signer?: Signer) {
   return new TreasuryClient(base(contractId, signer));
 }
 
-/** Read a contract without signing. Returns null rather than throwing. */
+/**
+ * Read a contract without signing. Returns null rather than throwing.
+ *
+ * A binding call simulates as it is built, so its result is already there.
+ * Calling `.simulate()` on it again sends the same request a second time,
+ * which is how every read in the app used to cost two RPC round trips.
+ */
 export async function simulate<T>(
-  build: () => Promise<{ simulate: () => Promise<{ result: T }> }>,
+  build: () => Promise<{ result: T }>,
   label: string,
 ): Promise<T | null> {
   try {
-    const tx = await build();
-    const sim = await tx.simulate();
+    const sim = await build();
     return sim.result;
   } catch (error) {
     console.warn(`[stellar] ${label} failed:`, error);

@@ -437,8 +437,7 @@ export function ProjectView({
               networkPassphrase: NETWORK_PASSPHRASE,
               publicKey: activeAddress,
             });
-            const balanceTx = await client.get_balance({ contributor: activeAddress });
-            const balanceVal = await balanceTx.simulate();
+            const balanceVal = await client.get_balance({ contributor: activeAddress });
             const balNum = Number(balanceVal.result || 0);
             setVaultContributorBalance(balNum);
           } catch (e) {

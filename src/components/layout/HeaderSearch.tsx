@@ -16,6 +16,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "../ui/avatar";
 import { describeMoney } from "@/lib/money";
 import { describeStatus } from "@/lib/project-status";
 import { useXlmRate } from "@/lib/xlm-rate";
+import { useProjects } from "@/context/BlockchainContext";
 
 interface HeaderSearchProps {
   isMobileOpen?: boolean;
@@ -31,29 +32,24 @@ export function describeSearchRow(project: Project, xlmUsd: number | null): stri
 export function HeaderSearch({ isMobileOpen, setMobileOpen }: HeaderSearchProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
-  const [projects, setProjects] = useState<Project[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
   const isDesktop = useMediaQuery("(min-width: 950px)");
   const { rate } = useXlmRate();
 
-  useEffect(() => {
-    async function loadProjects() {
-      const res = await fetch("/api/projects");
-      const allProjects = await res.json();
+  // The list the app shell already loaded, rather than a second copy of it.
+  const { projects: allProjects } = useProjects();
+  const projects = useMemo(
+    () =>
       // Search is a public surface. A platform-hidden listing arrives only for a
       // viewer entitled to it (admin, builder, stakeholder), and is still not
       // something search should offer.
-      setProjects(
-        allProjects.filter(
-          (p: Project) =>
-            p.status !== "rejected" && p.status !== "hidden" && !p.restriction?.hidden,
-        ),
-      );
-    }
-    loadProjects();
-  }, []);
+      allProjects.filter(
+        (p) => p.status !== "rejected" && p.status !== "hidden" && !p.restriction?.hidden,
+      ),
+    [allProjects],
+  );
 
   const debouncedSearch = useMemo(
     () => debounce((query: string) => setDebouncedQuery(query), 300),

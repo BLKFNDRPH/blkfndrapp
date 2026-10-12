@@ -63,8 +63,8 @@ export async function readVaultState(vaultAddress: string): Promise<VaultState |
     });
 
     const [stateSim, infoSim] = await Promise.all([
-      client.get_state().then((tx) => tx.simulate()),
-      client.get_info().then((tx) => tx.simulate()),
+      client.get_state(),
+      client.get_info(),
     ]);
 
     const info: any = infoSim.result;

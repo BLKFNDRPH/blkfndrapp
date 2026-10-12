@@ -1020,8 +1020,7 @@ export function ListingForm() {
         // has never been created on the ledger, which is exactly the person
         // about to start verification with a fresh Freighter account.
       });
-      const tx = await identityClient.is_kyc_approved({ address: activeAddress });
-      const result = await tx.simulate();
+      const result = await identityClient.is_kyc_approved({ address: activeAddress });
       if (!result.result) {
         // Saved now rather than trusting the last debounce, so the draft is
         // here again when they come back.
