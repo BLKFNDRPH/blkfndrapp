@@ -404,3 +404,32 @@
     transform: scaleX(1);
   }
 }
+
+/* ---------- Before the page has settled, and while off screen ---------- */
+/* useDeferredMotion sets data-motion="on" once the page has loaded and gone
+   idle, and only while the vault is on screen. Until then it holds the same
+   finished frame reduced motion shows: SVG transforms are repainted on the
+   main thread every frame, which on a phone competed with the first paint. */
+
+.bv-stage:not([data-motion="on"]) .bv-coin,
+.bv-stage:not([data-motion="on"]) .bv-floor,
+.bv-stage:not([data-motion="on"]) .bv-bar__fill,
+.bv-stage:not([data-motion="on"]) .bv-funded,
+.bv-stage:not([data-motion="on"]) .bv-lock,
+.bv-stage:not([data-motion="on"]) .bv-beacon {
+  animation: none;
+}
+
+.bv-stage:not([data-motion="on"]) .bv-floor,
+.bv-stage:not([data-motion="on"]) .bv-funded {
+  opacity: 1;
+  transform: none;
+}
+
+.bv-stage:not([data-motion="on"]) .bv-coin {
+  opacity: 0;
+}
+
+.bv-stage:not([data-motion="on"]) .bv-bar__fill {
+  transform: scaleX(1);
+}

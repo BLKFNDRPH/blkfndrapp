@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { useDeferredMotion } from "@/hooks/use-deferred-motion";
 import "./BondedVaultAnimation.css";
 
 const COINS = [
@@ -30,8 +31,11 @@ const FLOORS = [
  * at staggered moments. Explicit keyframes keep every element on one cycle.
  */
 export function BondedVaultAnimation() {
+  // Holds the finished vault until the page has loaded and gone idle, and
+  // while off screen; then the build loop runs.
+  const motionRef = useDeferredMotion<HTMLDivElement>();
   return (
-    <div className="bv-stage">
+    <div ref={motionRef} className="bv-stage">
       {/*
         role="img" belongs on the svg, not the wrapper — on the wrapper it makes
         the whole subtree presentational and swallows the caption below.
