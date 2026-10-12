@@ -13,6 +13,10 @@
 # testing
 /coverage
 
+# Lighthouse runs (npm run perf:baseline). Summaries worth keeping go in
+# docs/performance.
+/perf-reports/
+
 # next.js
 /.next/
 /out/
