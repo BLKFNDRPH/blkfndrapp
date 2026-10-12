@@ -128,16 +128,17 @@ const units = (raw) => (Number(raw) / 1e7).toLocaleString("en-US", { maximumFrac
 /**
  * Which vaults the indexer is behind on, or null when the RPC could not say.
  *
- * Both reads decode XDR from other people's transactions (getLatestLedger
- * returns the whole latest ledger), so an SDK older than the network can fail
- * on a ledger it does not understand. That only costs the lag check: the
+ * The latest ledger comes from getHealth, not getLatestLedger: the latter
+ * decodes the whole latest ledger, other people's transactions included, and
+ * throws on any XDR the SDK predates. getEvents can still fail (the RPC, or an
+ * event value the SDK cannot decode). That only costs the lag check: the
  * comparison itself still runs, and a difference is then reported as a
  * mismatch rather than excused as "behind".
  */
 async function indexerLag(vaults, cursor) {
   try {
-    const { sequence } = await server.getLatestLedger();
-    return { latest: sequence, ahead: sequence > cursor ? await vaultsAhead(vaults, cursor) : new Set() };
+    const { latestLedger } = await server.getHealth();
+    return { latest: latestLedger, ahead: latestLedger > cursor ? await vaultsAhead(vaults, cursor) : new Set() };
   } catch (error) {
     return { latest: null, ahead: null, error: String(error?.message ?? error) };
   }
