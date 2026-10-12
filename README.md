@@ -38,6 +38,7 @@ Release authority is contribution-weighted rather than held by appointed signers
 | Per-milestone delivery proof, shown to stakeholders before they vote | ✅ Live |
 | Plain-language interface: project pages, stake sheet, votes and refunds, profile, opening a vault, identity check without a wallet first, wallet setup | ✅ Live. Web3 terms (Testnet, on-chain, transaction, wallet address) are used where they apply |
 | Vault Record tab, notifications and "Needs you" inbox | ✅ Live |
+| Event indexer, with vault state rebuilt from events alone | ✅ Live. The replay check matches all 22 testnet vaults to the chain ([deliverable evidence](docs/deliverables/web-app-indexer-demo.md)) |
 | Email notifications and vote-closing reminders | ⏳ Built; sends nothing until a Resend key is set |
 | Identity documents and details deleted once a check is decided; verification renews when the ID expires | ✅ Live. See [privacy.md](docs/privacy.md) |
 | Event indexer, stalled-vault keeper, storage keep-alive, governance keeper that sends carried payouts and closes lapsed stages (compose crons) | ✅ Live |
