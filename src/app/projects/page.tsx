@@ -1,4 +1,5 @@
 import { listCategories } from "@/lib/data/categories";
+import { getProjects } from "@/lib/data/projects";
 import { projectCategories } from "@/lib/categories";
 import { ProjectsPageClient } from "./ProjectsPageClient";
 
@@ -15,14 +16,21 @@ export default async function ProjectsPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { q } = await searchParams;
-  const categories = await listCategories()
-    .then((list) => (list.length > 0 ? list : projectCategories))
-    // Falls back to the compiled-in list rather than failing the page.
-    .catch(() => projectCategories);
+  const [categories, projects] = await Promise.all([
+    listCategories()
+      .then((list) => (list.length > 0 ? list : projectCategories))
+      // Falls back to the compiled-in list rather than failing the page.
+      .catch(() => projectCategories),
+    // The list itself, so the cards (and the first row's pictures) are in
+    // the HTML rather than requested after the scripts have run. The
+    // caller's own client: hidden listings stay as visible as they were.
+    getProjects().catch(() => []),
+  ]);
 
   return (
     <ProjectsPageClient
       initialCategories={categories}
+      initialProjects={projects}
       searchQuery={typeof q === "string" && q.trim() ? q : null}
     />
   );
