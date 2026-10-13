@@ -125,19 +125,22 @@ export async function getProjectById(
 }
 
 /**
- * Whether some listing the caller can see uses this IPFS CID as its picture.
- * The image resize route serves only these, so it cannot be used to fetch and
- * resize arbitrary IPFS content. A CID is base58 or base32, so it carries no
- * LIKE wildcard.
+ * Whether some listing the caller can see uses this IPFS CID, as its picture
+ * or in a stage's proof (a JSON note whose imageUrl names the CID). The image
+ * resize route serves only these, so it cannot be used to fetch and resize
+ * arbitrary IPFS content. A CID is base58 or base32, so it carries no LIKE
+ * wildcard.
  */
 export async function isListingImage(cid: string): Promise<boolean> {
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("projects")
-    .select("project_id")
-    .like("image_url", `%${cid}%`)
-    .limit(1);
-  return !error && (data?.length ?? 0) > 0;
+  const [listing, proof] = await Promise.all([
+    supabase.from("projects").select("project_id").like("image_url", `%${cid}%`).limit(1),
+    supabase.from("project_milestones").select("project_id").like("proof", `%${cid}%`).limit(1),
+  ]);
+  return (
+    (!listing.error && (listing.data?.length ?? 0) > 0) ||
+    (!proof.error && (proof.data?.length ?? 0) > 0)
+  );
 }
 
 export async function getProjectByVault(vaultAddress: string): Promise<Project | undefined> {

@@ -23,6 +23,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { CubeSpinner } from "@/components/ui/CubeSpinner";
+import { ImageWithFallback } from "@/components/ui/image-with-fallback";
 import { submitMilestoneProof } from "@/app/actions";
 import { getPinataClient, getIPFSGatewayUrl } from "@/lib/pinata-client";
 
@@ -105,11 +106,13 @@ export function MilestoneProofView({
               rel="noopener noreferrer"
               className="block w-fit rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
+              {/* Resized by /api/images like listing pictures: the original is
+                  a camera photo of up to a few MB, shown at most 256 px tall.
+                  The link still opens it full size. */}
+              <ImageWithFallback
                 src={proof.imageUrl}
                 alt={`Photo posted as proof for milestone ${milestoneId}`}
-                loading="lazy"
+                sizes="(min-width: 640px) 400px, 90vw"
                 className="max-h-64 rounded-md border object-contain"
               />
               <span className="sr-only"> (opens full size in a new tab)</span>

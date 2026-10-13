@@ -466,49 +466,7 @@ export function MilestoneVoting({
     onChange?.();
   };
 
-  if (loading) {
-    return (
-      <div role="status" className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
-        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-        Loading stages…
-      </div>
-    );
-  }
-
-  // The vault couldn't be read, so nothing about the vote is known. The
-  // listing's copy of each stage still carries the builder's proof, which
-  // whoever is deciding needs to see whether or not the network answers.
-  if (readFailed) {
-    return (
-      <div className="space-y-4">
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border p-3 text-sm">
-          <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" aria-hidden="true" />
-          <span>We couldn&apos;t read the vote right now.</span>
-          <Button variant="link" size="sm" className="h-auto p-0" onClick={() => load(true)}>
-            Try again
-          </Button>
-        </div>
-        {(details ?? []).map((d) => (
-          <div key={d.id} className="rounded-lg border p-4">
-            <MilestoneHeading
-              id={d.id}
-              title={d.title}
-              badge={
-                d.released ? (
-                  <Badge variant={PHASE_VARIANT.released}>{PHASE_LABEL.released}</Badge>
-                ) : undefined
-              }
-              amount={describeMoney(d.amount, currency).primary}
-            />
-            <Deliverable text={d.description} />
-            {renderProof?.({ id: d.id, released: d.released, failed: false, voteOpened: null })}
-          </div>
-        ))}
-      </div>
-    );
-  }
-
-  if (milestones.length === 0) {
+  if (!loading && !readFailed && milestones.length === 0) {
     return <p className="py-6 text-sm text-muted-foreground">This project has no stages yet.</p>;
   }
 
@@ -517,8 +475,13 @@ export function MilestoneVoting({
   // who would pay a network fee to move someone else's money.
   const canTrigger = !!user && (isStakeholder || isBuilder);
 
+  // While the vote is read (or when it could not be), the rule is said
+  // without the parts only the vault knows: which majority it runs and how
+  // long its window is.
   const rule =
-    walletFloor === true && moneyMajority === true
+    loading || readFailed
+      ? "Each payout goes to a vote of the stakeholders, and no one person counts for more than 20%. If a vote ends short, the stage fails and refunds open, with a share of the builder's deposit."
+      : walletFloor === true && moneyMajority === true
       ? `A payout needs more than half of all stakes behind it, from at least three stakeholders, or every stakeholder when there are fewer, and those saying yes must have put in more than half the money between them. No one person counts for more than 20%. Each vote stays open for ${windowDays} days. If it ends short, the stage fails and refunds open, with a share of the builder's deposit.`
       : walletFloor === true
       ? `A payout needs more than half of all stakes behind it, from at least three stakeholders, or every stakeholder when there are fewer. No one person counts for more than 20%. Each vote stays open for ${windowDays} days. If it ends short, the stage fails and refunds open, with a share of the builder's deposit.`
@@ -532,6 +495,32 @@ export function MilestoneVoting({
     </Button>
   );
 
+  // The listing's copy of each stage: what is shown while the vote is read,
+  // and when it could not be. It carries the builder's proof, which whoever
+  // is deciding needs whether or not the network answers. Showing it rather
+  // than a spinner also keeps the panel about as tall as it will be, so the
+  // footer is not in view on a phone only to be pushed away.
+  const listedStages = (details ?? []).map((d) => (
+    <div key={d.id} className="rounded-lg border p-4">
+      <MilestoneHeading
+        id={d.id}
+        title={d.title}
+        badge={
+          d.released ? (
+            <Badge variant={PHASE_VARIANT.released}>{PHASE_LABEL.released}</Badge>
+          ) : undefined
+        }
+        amount={describeMoney(d.amount, currency).primary}
+      />
+      <Deliverable text={d.description} />
+      {renderProof?.({ id: d.id, released: d.released, failed: false, voteOpened: null })}
+    </div>
+  ));
+
+  // One header in every state, so the rule paragraph (the largest text on a
+  // phone) is the same element from the server's HTML on. It used to appear
+  // only once the vote had been read in the browser, which put the Stages
+  // tab's LCP near 6 s on a throttled phone.
   return (
     <div className="space-y-4">
       <div className="rounded-lg border bg-muted/30 p-3 text-sm">
@@ -539,7 +528,20 @@ export function MilestoneVoting({
           <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
           <div className="space-y-1">
             <p className="text-muted-foreground">{rule}</p>
-            {isStakeholder ? (
+            {loading ? (
+              <p role="status" className="flex items-center gap-1.5 pt-1 text-muted-foreground">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                Reading the vote…
+              </p>
+            ) : readFailed ? (
+              <p className="flex flex-wrap items-center gap-x-2 gap-y-1 pt-1">
+                <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" aria-hidden="true" />
+                <span>We couldn&apos;t read the vote right now.</span>
+                <Button variant="link" size="sm" className="h-auto p-0" onClick={() => load(true)}>
+                  Try again
+                </Button>
+              </p>
+            ) : isStakeholder ? (
               <p className="pt-1 text-foreground">
                 Your say: <strong>{money(myWeight)}</strong>
                 {requiredWeight !== null && <> of the {money(requiredWeight)} needed</>}
@@ -559,7 +561,7 @@ export function MilestoneVoting({
         </div>
       </div>
 
-      {milestones.map((m) => {
+      {loading || readFailed ? listedStages : milestones.map((m) => {
         const opensAt = Number(m.vote_opens_at);
         const endsAt = opensAt === 0 ? 0 : opensAt + windowSecs;
         const approved = BigInt(m.approved_weight ?? 0);
