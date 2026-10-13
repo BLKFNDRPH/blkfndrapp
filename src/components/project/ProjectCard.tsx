@@ -55,10 +55,15 @@ interface ProjectCardProps {
   /** Hide the status pill altogether. */
   showStatus?: boolean;
   /**
-   * The card is in the first row a visitor sees: its picture loads at once and
-   * first, rather than lazily, since it is usually the page's largest paint.
+   * The first card a visitor sees: its picture loads at once and first, rather
+   * than lazily, since it is usually the page's largest paint.
    */
   priority?: boolean;
+  /**
+   * The card may be on screen (the rest of a wide screen's first row): its
+   * picture loads at once, at the browser's own priority.
+   */
+  eager?: boolean;
 }
 
 /** A Stellar account or contract id, which must never be shown as a name. */
@@ -136,7 +141,7 @@ function progressPercent(project: Project): number {
   return Math.max(0, Math.min((raised / goal) * 100, 100));
 }
 
-export function ProjectCard({ project, showStatus = true, priority = false }: ProjectCardProps) {
+export function ProjectCard({ project, showStatus = true, priority = false, eager = false }: ProjectCardProps) {
   const router = useRouter();
   const { rate, isLoading: rateLoading } = useXlmRate();
   const href = projectHref(project.id);
@@ -205,6 +210,7 @@ export function ProjectCard({ project, showStatus = true, priority = false }: Pr
                 className="h-full w-full object-cover"
                 sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
                 priority={priority}
+                eager={eager}
                 fill
               />
             </div>

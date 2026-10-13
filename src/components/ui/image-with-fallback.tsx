@@ -20,6 +20,13 @@ interface ImageWithFallbackProps {
    * lazily. Cards and thumbnails leave this off.
    */
   priority?: boolean;
+  /**
+   * Load at once rather than lazily, at the browser's own priority. For a
+   * picture that may be on screen but is not the one the page is about: a
+   * high-priority picture is also preloaded from the page's <head>, where it
+   * competes with the stylesheets the first paint waits on.
+   */
+  eager?: boolean;
   "data-ai-hint"?: string;
 }
 
@@ -52,6 +59,7 @@ export function ImageWithFallback({
   height,
   sizes = '100vw',
   priority = false,
+  eager = false,
   "data-ai-hint": dataAiHint,
 }: ImageWithFallbackProps) {
   const [stage, setStage] = useState<Stage>(src ? 'resized' : 'placeholder');
@@ -82,7 +90,7 @@ export function ImageWithFallback({
     sizes: srcSet ? sizes : undefined,
     width: fill ? undefined : width,
     height: fill ? undefined : height,
-    loading: priority ? 'eager' : 'lazy',
+    loading: priority || eager ? 'eager' : 'lazy',
     decoding: 'async',
     fetchPriority: priority ? 'high' : undefined,
     style: fill ? { position: 'absolute', height: '100%', width: '100%', inset: 0, objectFit: 'cover' } : {},
