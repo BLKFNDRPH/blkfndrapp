@@ -26,6 +26,7 @@ Notes:
 - It drives the Chrome installed on the machine (or `CHROME_PATH`). Run it on a quiet machine and connection; other load shows up as blocking time.
 - A run Lighthouse could not complete is left out of the medians and shown as not counted. Chrome on Windows occasionally crashes a run (exit code 3221226505); re-run that row.
 - Lab runs have no INP, which needs real interaction; Total Blocking Time is the lab stand-in.
+- For an A/B of blocking time, alternate single runs of the two builds (`--runs 1`, taking turns) rather than running all of one build and then all of the other. The machine drifts: on 13 October the same `main` build measured 620 ms of TBT on the home page in one pass and 975 ms half an hour later.
 - From Git Bash, set `MSYS_NO_PATHCONV=1` before passing `--pages`, or the shell rewrites `/` into a Windows path.
 
 ## History
@@ -100,6 +101,11 @@ No page calls the Soroban RPC from the browser, at any point after #155.
 
 - **The server's first byte on database-backed pages** is 0.4–0.6 s on live (it was about 0.1 s): `/projects` and the project page now read their data before they send anything, instead of sending a fallback first (#168, #170). The content arrives sooner overall, but a cache or a faster path to Supabase would take most of this off the first paint.
 - **The Stages tab on a phone**: LCP 5.8 s with real throttling, and it loads 478 KB of pictures (the builders' proof images) that the other tabs do not. CLS 0.064 there too.
-- **Total Blocking Time with real throttling** is 0.8–1.5 s on every page: React hydrating the page. The next step is a bundle analysis of the shared chunks.
+- **Total Blocking Time with real throttling** is 0.5–1.5 s on every page. Profiling (4× CPU, source-mapped) puts it in two places: evaluating the shared chunks (Next and React are about 430 KB of the 1.1 MB of script on every page) and React hydrating the provider tree, header and page. On the home page, the carousel's start-up (about 140 ms) and the wordmark's first layout of its variable font (about 240 ms) add to it. Tried on 13 October, each measured with an interleaved A/B (below):
+  - The theme switch in the menu loads when the menu opens (#176): 27 KB less compressed script on every page, TBT unchanged.
+  - The home page as a server component, with the featured carousel as its own client component: 34 KB less script, but TBT about 300 ms *worse*, because the carousel then mounts in the same task as the data arriving. Dropped.
+  - `<Suspense>` around the header, the page and the footer, so that each hydrates in its own task: TBT unchanged, and CLS 0.002 → 0.37. Dropped.
+
+  What is left is mostly the framework's own work. Moving it would take fewer client components in the shared layout (the providers and the header hydrate on every page), which is a larger change.
 - **A picture's first request** after a deploy pays for fetching the original from IPFS (1–5 s); every later one is served from the server's cache or the browser's.
 - **The admin console** still loads the Stellar SDK up front. It is admin-only, so it was left as it is.
