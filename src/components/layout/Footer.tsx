@@ -1,5 +1,3 @@
-"use client";
-
 import StaticBLKFNDR from "./StaticBLKFNDR";
 import { IS_PRACTICE_NETWORK } from "@/lib/network";
 
@@ -15,6 +13,9 @@ import { IS_PRACTICE_NETWORK } from "@/lib/network";
  *
  * The network line names the chain the vaults run on, and says Testnet while
  * the app is on a test network.
+ *
+ * A server component: nothing here changes in the browser, so it ships no
+ * script and is not hydrated.
  */
 export default function Footer() {
   return (

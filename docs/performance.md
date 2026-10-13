@@ -107,6 +107,19 @@ No page calls the Soroban RPC from the browser, at any point after #155.
   - The home page as a server component, with the featured carousel as its own client component: 34 KB less script, but TBT about 300 ms *worse*, because the carousel then mounts in the same task as the data arriving. Dropped.
   - `<Suspense>` around the header, the page and the footer, so that each hydrates in its own task: TBT unchanged, and CLS 0.002 → 0.37. Dropped.
 
-  What is left is mostly the framework's own work. Moving it would take fewer client components in the shared layout (the providers and the header hydrate on every page), which is a larger change.
+  - The shared layout, measured part by part (#178). A lab build left out one part at a time, chosen by a cookie, and an interleaved harness measured blocking time on `/projects` (4× CPU, Lighthouse's mobile network, 6 rounds):
+
+    | Left out | Blocking time |
+    |---|---|
+    | nothing | 496 ms |
+    | the header | 334 ms |
+    | the page's own content | 291 ms |
+    | footer, banner or toaster | 422–467 ms (within noise) |
+    | everything but the providers | 124 ms |
+
+    The header is 101 of the page's 1,924 React fibers, so its cost was not its size. It rendered an empty bar on the server and built itself after mounting, and it re-rendered whenever the project list, the wallet's stakes or the platform settings arrived. #178 renders it on the server (phone or desktop navigation is CSS at 950px) and moves the menu's project, stake and admin rows into the open menu. It also replaces the search box's framer-motion fade with CSS, asks CoinGecko for the XLM price only once someone searches, and makes the footer a server component. On the same harness, leaving out the header now saves about 60 ms instead of 160. In Lighthouse: 38 KB less compressed script on the home and project pages, and TBT 1,239 → 1,155 ms on `/` and 905 → 838 ms on `/projects/11`. `/projects`' TBT was unchanged (796 vs 785 ms).
+
+  What is left is each page's own content and the framework starting up. On `/projects` the page's client components (the list, its filters and the cards) are the larger share.
+- **First paint on `/projects` depends on a race under Lighthouse's throttling.** Its three card pictures are preloaded at high priority alongside the render-blocking CSS. In some runs the third picture (about 110 KB) takes the bandwidth first, and first paint moves from about 2.6 s to 3.1 s. Both `main` and #178 show both outcomes, but #178 showed the slow one in 7 of 10 runs against 2 of 10 for `main`. A throttled CDP probe did not reproduce the difference. On a phone only the first card is on screen, so preloading only that picture would remove the race.
 - **A picture's first request** after a deploy pays for fetching the original from IPFS (1–5 s); every later one is served from the server's cache or the browser's.
 - **The admin console** still loads the Stellar SDK up front. It is admin-only, so it was left as it is.
