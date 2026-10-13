@@ -8,60 +8,84 @@ How fast the app is, measured the same way every time, and what has been done ab
 npm run perf:baseline                                  # the live site, every default page
 npm run perf:baseline -- --url http://localhost:3000   # a local production build
 npm run perf:baseline -- --pages /,/projects --runs 3 --form mobile
+npm run perf:baseline -- --form mobile --throttling devtools   # a phone, slowed for real
 ```
 
 `scripts/perf-baseline.mjs` runs Lighthouse (pinned, through `npx`, so it is not an app dependency) against each page:
 
-- on **desktop** (Lighthouse's desktop preset) and on **throttled mobile** (Lighthouse's default: a mid-range phone on simulated slow 4G with a 4× CPU slowdown);
+- on **desktop** (Lighthouse's desktop preset) and on **throttled mobile** (a mid-range phone on slow 4G with a 4× CPU slowdown);
 - **5 runs** each by default, reporting the **median** of every metric;
 - performance score, FCP, LCP, Total Blocking Time, CLS, Speed Index, server response time, request count, **Soroban RPC requests** and bytes transferred.
 
-It writes `perf-reports/<timestamp>/summary.md`, `summary.json` and every raw report (git-ignored). Summaries worth keeping go in [`docs/performance/`](performance/).
+It writes `perf-reports/<timestamp>/summary.md`, `summary.json` and every raw report (git-ignored). Summaries worth keeping go in [`docs/performance/`](performance/). `--from <dir>` re-summarises raw reports without running again.
+
+**Simulated or real throttling.** By default Lighthouse *simulates* the slow phone: it loads the page at full speed and estimates the throttled timings from that run. `--throttling devtools` slows the browser's CPU and network for real while the page loads. It takes longer, but it sees work that only happens when the CPU really is slow, which simulation cannot. In #168 the home page's LCP fell from 3.4 to 2.4 s with real throttling while simulation reported no change. Use real throttling to judge a change to how the page loads or renders; use the default for comparing with earlier runs.
 
 Notes:
 
 - It drives the Chrome installed on the machine (or `CHROME_PATH`). Run it on a quiet machine and connection; other load shows up as blocking time.
-- A run Lighthouse could not complete is left out of the medians and shown as not counted.
+- A run Lighthouse could not complete is left out of the medians and shown as not counted. Chrome on Windows occasionally crashes a run (exit code 3221226505); re-run that row.
 - Lab runs have no INP, which needs real interaction; Total Blocking Time is the lab stand-in.
 - From Git Bash, set `MSYS_NO_PATHCONV=1` before passing `--pages`, or the shell rewrites `/` into a Windows path.
 
 ## History
 
-QA's audit of 4 October 2026 (QA-RPT-BLKFNDR-2026-10-04-PERF) found the browser calling the public Soroban RPC directly, with CORS preflights, and asked for a repeatable baseline (PERF-01 to PERF-04). Everything below was done on 12 October 2026.
+QA's audit of 4 October 2026 (QA-RPT-BLKFNDR-2026-10-04-PERF) found the browser calling the public Soroban RPC directly, with CORS preflights, and asked for a repeatable baseline (PERF-01 to PERF-04). Everything below was done on 12 October 2026. The effects are from local A/B runs against the `main` of the day.
 
 | Change | Effect |
 |---|---|
 | #154 — platform settings read on demand; no second simulation per contract read | RPC calls on load: home 14 → 0, project page 18 → 2 |
 | #155 — chain reads through same-origin, cached routes; server-only `SOROBAN_RPC_URL` | project page and its Stages tab 0 RPC calls from the browser; no preflights |
 | #156 — listing pictures resized by `/api/images/[cid]`; this baseline script | home page 14.9 MB → about 1.5 MB ([local A/B](performance/2026-10-12-resized-pictures-local.md)) |
-| #157 — no full-screen overlay while the session is checked; in-flow route loading screen; wallet panel (and the Stellar SDK) loaded on demand in the header; wordmark animation only while the pointer moves; fonts self-hosted with `next/font` | mobile home page score 36 → 56 (local A/B) |
-| #158 — the Stellar SDK loaded on the project page only when someone acts; stakeholder balance through `/api/projects/[id]/stake` | mobile project page score 38 → 54 (local A/B) |
+| #157 — no full-screen overlay while the session is checked; in-flow route loading screen; wallet panel (and the Stellar SDK) loaded on demand in the header; wordmark animation only while the pointer moves; fonts self-hosted with `next/font` | mobile home page score 36 → 56 |
+| #158 — the Stellar SDK loaded on the project page only when someone acts; stakeholder balance through `/api/projects/[id]/stake` | mobile project page score 38 → 54 |
+| #160 — `/projects` rendered on the server as it ends up (search and categories read by the server page); route loading screen a screen tall | desktop `/projects` CLS 0.430 → 0.012 |
+| #161 — the project page's skeleton a screen tall | mobile project page CLS 0.163 → 0.000 |
+| #162 — the project page rendered on the server with the indexed project; live vault figures still read in the browser | mobile project page score 61 → 65; its main picture is in the first HTML |
+| #163 (closed) — `experimental.inlineCss` | first paint 0.3–0.6 s sooner on mobile, LCP unchanged; not worth 32 KB more HTML per page |
+| #168 — no root `loading.tsx`, so each page's content is rendered in place rather than revealed late from a hidden streaming segment; hero animations held until the page has settled; `--throttling devtools` | home LCP 3.4 → 2.4 s with real throttling |
+| #170 — `/projects` reads the project list on the server; the first row's pictures load eagerly at high priority | `/projects` LCP 8.6 → 2.9 s with real throttling |
 
 ### Before and after, on the live site
 
-Both measured against https://testnetv2.blkfndr.com with `npm run perf:baseline` (Lighthouse 13.5.0, median of 5 runs per row): **before** after #154 and #155 had been deployed ([baseline-2026-10-12-live.md](performance/baseline-2026-10-12-live.md)), **after** with #156–#158 deployed ([2026-10-12-live-after-158.md](performance/2026-10-12-live-after-158.md)).
+All measured against https://testnetv2.blkfndr.com with `npm run perf:baseline` (Lighthouse 13.5.0, median of 5 runs per row):
 
-**Throttled mobile**
+- **12 Oct, before:** after #154 and #155 had been deployed ([baseline-2026-10-12-live.md](performance/baseline-2026-10-12-live.md)).
+- **12 Oct, after:** with #156–#158 deployed ([2026-10-12-live-after-158.md](performance/2026-10-12-live-after-158.md)).
+- **13 Oct:** with #160–#170 deployed ([2026-10-13-live.md](performance/2026-10-13-live.md)).
 
-| Page | Score | LCP | Total Blocking Time | First Contentful Paint | Bytes |
-|---|---|---|---|---|---|
-| `/` | 35 → **48** | 9,553 → **7,535 ms** | 1,547 → **735 ms** | 4,437 → **3,491 ms** | 14,852 → **1,058 KB** |
-| `/projects` | 42 → **57** | 9,486 → **7,952 ms** | 788 → **289 ms** | 4,675 → **4,267 ms** | 1,223* → 1,450 KB |
-| `/projects/11` | 30 → **50** | 10,366 → **7,642 ms** | 1,338 → **440 ms** | 4,085 → **3,573 ms** | 1,228* → **843 KB** |
-| `/projects/11?tab=stages` | 35 → **62** | 10,334 → **6,933 ms** | 1,399 → **442 ms** | 4,161 → **2,287 ms** | 1,227 → **774 KB** |
+**Throttled mobile (simulated)**
+
+| Page | Score | LCP | Total Blocking Time | First Contentful Paint |
+|---|---|---|---|---|
+| `/` | 35 → 48 → **59** | 9,553 → 7,535 → 7,565 ms | 1,547 → 735 → **341 ms** | 4,437 → 3,491 → 3,698 ms |
+| `/projects` | 42 → 57 → **82** | 9,486 → 7,952 → **4,154 ms** | 788 → 289 → **176 ms** | 4,675 → 4,267 → **1,304 ms** |
+| `/projects/11` | 30 → 50 → **76** | 10,366 → 7,642 → **6,011 ms** | 1,338 → 440 → **148 ms** | 4,085 → 3,573 → **1,361 ms** |
+| `/projects/11?tab=stages` | 35 → 62 → **68** | 10,334 → 6,933 → 7,006 ms | 1,399 → 442 → **329 ms** | 4,161 → 2,287 → **1,365 ms** |
+
+The home page's simulated LCP stays about 7.5 s. That is the simulation, not the page: with real throttling (below) it is 3.6 s, the same as its first paint.
 
 **Desktop**
 
 | Page | Score | LCP | Total Blocking Time | Bytes |
 |---|---|---|---|---|
-| `/` | 79 → **95** | 1,888 → **1,353 ms** | 235 → **9 ms** | 14,852 → **1,048 KB** |
-| `/projects` | 41 → **74** | 7,099 → **2,426 ms** | 263 → **50 ms** | 18,294 → **1,445 KB** |
-| `/projects/11` | 75 → **92** | 2,409 → **1,751 ms** | 248 → **4 ms** | 1,226* → **844 KB** |
-| `/projects/11?tab=stages` | 77 → **92** | 2,542 → **1,789 ms** | 221 → **7 ms** | 1,227 → **778 KB** |
+| `/` | 79 → 95 → **97** | 1,888 → 1,353 → **1,222 ms** | 235 → 9 → **0 ms** | 14,852 → 1,048 → **1,027 KB** |
+| `/projects` | 41 → 74 → **94** | 7,099 → 2,426 → **1,618 ms** | 263 → 50 → **3 ms** | 18,294 → 1,445 → 1,456 KB |
+| `/projects/11` | 75 → 92 → **96** | 2,409 → 1,751 → **1,322 ms** | 248 → 4 → 4 ms | 1,226* → 844 → **827 KB** |
+| `/projects/11?tab=stages` | 77 → 92 → **94** | 2,542 → 1,789 → **1,587 ms** | 221 → 7 → 25 ms | 1,227 → 778 → **755 KB** |
 
-\* In these "before" runs every listing picture failed: Pinata's public gateway answered 429, so the page showed placeholders and the byte count is low. The pictures load now (`/projects` on mobile carries 712 KB of them, resized), which is why its total went up.
+\* In these "before" runs every listing picture failed: Pinata's public gateway answered 429, so the page showed placeholders and the byte count is low.
 
-No page calls the Soroban RPC from the browser, before or after.
+No page calls the Soroban RPC from the browser, at any point after #155.
+
+**Throttled mobile, real throttling** ([2026-10-13-live-devtools.md](performance/2026-10-13-live-devtools.md)). The first live run in this mode, so there is no earlier live figure to compare; the local A/Bs in #168 and #170 are the before.
+
+| Page | Score | LCP | First Contentful Paint | Total Blocking Time |
+|---|---|---|---|---|
+| `/` | 56 | 3,603 ms | 3,603 ms | 1,492 ms |
+| `/projects` | 59 | 3,669 ms | 3,599 ms | 1,264 ms |
+| `/projects/11` | 56 | 4,157 ms | 3,090 ms | 1,139 ms |
+| `/projects/11?tab=stages` | 53 | 5,808 ms | 3,202 ms | 791 ms |
 
 ### What the work found along the way
 
@@ -69,10 +93,13 @@ No page calls the Soroban RPC from the browser, before or after.
 - **The public IPFS gateway rate-limits visitors.** In many runs `gateway.pinata.cloud` answered 429 and every picture failed. The resize route fetches through the dedicated gateway with its key, once per picture and width (#156). Lighthouse's own `total-byte-weight` also left large cross-origin pictures out of some runs, so the script sums the requests itself.
 - **The first paint waited on the scripts.** A loading overlay that the server rendered covered every page until hydration and the session check had finished (#157).
 - **The Stellar SDK was on every page**, through the header's wallet button and, on the project page, through the contract hook and the action panels (#157, #158). It now loads when someone opens a wallet or money action.
+- **A root `loading.tsx` delays every page on a slow phone.** With it, Next sends the fallback first and the page's content in a hidden streaming segment, which React 19.2 reveals on a later animation frame; with the main thread busy running scripts, that frame came about two seconds late. Simulated throttling cannot see this, because it estimates from a fast run where the frame comes at once (#168).
+- **Lazy pictures in the first row hold back LCP.** The first card's picture is usually the largest paint on a list page; loading it lazily, after a client-side fetch, put `/projects`' LCP near 8.6 s (#170).
 
 ## Still open
 
-- **Mobile LCP is still about 7–8 s** on throttled mobile, and First Contentful Paint 2.3–4.3 s. What is left on the home page is the app's own JavaScript and CSS before the first paint; the next step is a bundle analysis of the shared chunks.
-- **Layout shift on `/projects`**: CLS 0.42 on desktop (0.35 before). Something on the project list moves after it first paints.
+- **The server's first byte on database-backed pages** is 0.4–0.6 s on live (it was about 0.1 s): `/projects` and the project page now read their data before they send anything, instead of sending a fallback first (#168, #170). The content arrives sooner overall, but a cache or a faster path to Supabase would take most of this off the first paint.
+- **The Stages tab on a phone**: LCP 5.8 s with real throttling, and it loads 478 KB of pictures (the builders' proof images) that the other tabs do not. CLS 0.064 there too.
+- **Total Blocking Time with real throttling** is 0.8–1.5 s on every page: React hydrating the page. The next step is a bundle analysis of the shared chunks.
 - **A picture's first request** after a deploy pays for fetching the original from IPFS (1–5 s); every later one is served from the server's cache or the browser's.
 - **The admin console** still loads the Stellar SDK up front. It is admin-only, so it was left as it is.
