@@ -30,7 +30,7 @@ import { Avatar, AvatarImage, AvatarFallback } from "../ui/avatar";
 import { Separator } from "../ui/separator";
 import { projectHref } from "@/lib/project-href";
 import { resizedImageUrl } from "@/lib/project-image";
-import { AppearanceSettings } from "../settings/AppearanceSettings";
+import dynamic from "next/dynamic";
 import { NotificationBell } from "./NotificationBell";
 import { HeaderSearch } from "./HeaderSearch";
 import { useMediaQuery } from "@/hooks/use-media-query";
@@ -43,6 +43,15 @@ import { WalletButton } from "../auth/WalletButton";
 import StaticBLKFNDR from "./StaticBLKFNDR";
 import { useFreighterWallet } from "@/context/FreighterWalletContext";
 import type { Project } from "@/lib/types";
+
+// Only the open menu shows the theme switch, and it brings zod,
+// react-hook-form and the radio group with it (about 27 KB compressed) that
+// nothing else on most pages needs, so it loads when the menu first opens
+// rather than with every page. It rendered nothing until mounted anyway.
+const AppearanceSettings = dynamic(
+  () => import("../settings/AppearanceSettings").then((m) => m.AppearanceSettings),
+  { ssr: false },
+);
 
 /** The three places a visitor can go, in the order the brief puts them. */
 const NAV_LINK_CLASS =
