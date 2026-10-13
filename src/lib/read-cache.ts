@@ -16,12 +16,21 @@
 
 interface Entry {
   value: unknown;
+  /** Fresh until then. */
   expires: number;
+  /** Still servable, while a fresh read runs, until then. */
+  staleUntil: number;
 }
 
 export interface CachedReadOptions {
   /** Skip a kept answer and read again. A read already under way is still joined. */
   fresh?: boolean;
+  /**
+   * Past its time, keep serving the old answer for this much longer while a
+   * fresh read runs in the background, so a caller almost never waits on the
+   * source. 0 (the default) waits for the fresh read instead.
+   */
+  staleMs?: number;
 }
 
 /**
@@ -34,9 +43,15 @@ export function createReadCache(maxEntries: number) {
   const inFlight = new Map<string, Promise<unknown>>();
 
   /** Keep an answer for `ttlMs`, replacing anything older under the same key. */
-  function remember(key: string, value: unknown, ttlMs: number, now = Date.now()): void {
+  function remember(
+    key: string,
+    value: unknown,
+    ttlMs: number,
+    now = Date.now(),
+    staleMs = 0,
+  ): void {
     store.delete(key);
-    store.set(key, { value, expires: now + ttlMs });
+    store.set(key, { value, expires: now + ttlMs, staleUntil: now + ttlMs + staleMs });
     while (store.size > maxEntries) {
       const oldest = store.keys().next().value;
       if (oldest === undefined) break;
@@ -49,9 +64,16 @@ export function createReadCache(maxEntries: number) {
     const entry = store.get(key);
     if (!entry) return undefined;
     if (entry.expires <= now) {
-      store.delete(key);
+      if (entry.staleUntil <= now) store.delete(key);
       return undefined;
     }
+    return entry.value as T;
+  }
+
+  /** The kept answer past its time but still within its stale window, or undefined. */
+  function recallStale<T>(key: string, now = Date.now()): T | undefined {
+    const entry = store.get(key);
+    if (!entry || entry.staleUntil <= now) return undefined;
     return entry.value as T;
   }
 
@@ -65,23 +87,33 @@ export function createReadCache(maxEntries: number) {
     read: () => Promise<T>,
     options: CachedReadOptions = {},
   ): Promise<T> {
+    const staleMs = options.staleMs ?? 0;
     if (!options.fresh) {
       const kept = recall<T>(key);
       if (kept !== undefined) return kept;
     }
 
     const pending = inFlight.get(key);
-    if (pending) return pending as Promise<T>;
+    // Past its time but still within its stale window: answer with the old
+    // value now and let the fresh read finish in the background.
+    const stale = options.fresh || staleMs === 0 ? undefined : recallStale<T>(key);
+    if (pending) return stale !== undefined ? stale : (pending as Promise<T>);
 
     const started = read()
       .then((value) => {
-        if (value !== null && value !== undefined) remember(key, value, ttlMs);
+        if (value !== null && value !== undefined) remember(key, value, ttlMs, Date.now(), staleMs);
         return value;
       })
       .finally(() => {
         inFlight.delete(key);
       });
     inFlight.set(key, started);
+    if (stale !== undefined) {
+      // Nobody awaits this read, so a failure must not go unhandled; the old
+      // answer stays until its stale window ends.
+      started.catch(() => {});
+      return stale;
+    }
     return started;
   }
 

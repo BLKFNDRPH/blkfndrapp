@@ -7,6 +7,9 @@ import { getRestriction, getRestrictionMap } from "@/lib/data/project-restrictio
 import type { Project, ProjectRestriction } from "@/lib/types";
 import type { Enums, TablesInsert } from "@/lib/supabase/database.types";
 
+/** The caller's client by default; public-reads.ts passes a session-less one. */
+type Supabase = Awaited<ReturnType<typeof createClient>>;
+
 /**
  * Project data access. Replaces the Mongo `projectcaches` collection.
  *
@@ -87,8 +90,8 @@ function toProject(row: Row, restriction: ProjectRestriction | null = null): Pro
  * they are entitled to — marked `restriction.hidden`, so the public surfaces can
  * leave them out without the reader having to know why they were sent.
  */
-export async function getProjects(): Promise<Project[]> {
-  const supabase = await createClient();
+export async function getProjects(client?: Supabase): Promise<Project[]> {
+  const supabase = client ?? (await createClient());
   const [{ data, error }, restrictions] = await Promise.all([
     supabase
       .from("projects")
@@ -106,8 +109,11 @@ export async function getProjects(): Promise<Project[]> {
   );
 }
 
-export async function getProjectById(projectId: string): Promise<Project | undefined> {
-  const supabase = await createClient();
+export async function getProjectById(
+  projectId: string,
+  client?: Supabase,
+): Promise<Project | undefined> {
+  const supabase = client ?? (await createClient());
   const { data, error } = await supabase
     .from("projects")
     .select(PROJECT_COLUMNS)

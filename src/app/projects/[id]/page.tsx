@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { cache } from "react";
-import { getProjectById } from "@/lib/data/projects";
+import { readProjectForVisitor } from "@/lib/data/public-reads";
 import { ProjectPageClient } from "./ProjectPageClient";
 
 /**
@@ -15,11 +15,13 @@ type Props = { params: Promise<{ id: string }> };
 
 const FALLBACK_TITLE = "Project · BLKFNDR";
 
-// One read per request, shared by the title and the page. The caller's own
-// client, so a project hidden from them is not rendered for them either.
+// One read per request, shared by the title and the page. Shared between
+// signed-out visitors for a few seconds; anyone signed in reads through their
+// own session, so a project hidden from them is not rendered for them either
+// (see public-reads.ts).
 const readProject = cache(async (id: string) => {
   try {
-    return (await getProjectById(id)) ?? null;
+    return await readProjectForVisitor(id);
   } catch {
     return null;
   }
