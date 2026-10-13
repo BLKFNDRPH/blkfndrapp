@@ -115,6 +115,8 @@ Only the terms fixed when a vault opens are read from the vault: its goal, deadl
 
 Amounts are in each vault's asset (USDC, except #19 in XLM). Nothing has been paid out yet on any vault.
 
+**Rerun, 2026-10-13 08:23 UTC, on Stellar SDK 16.3.1 (#169): 22 of 22 match, 3 runs out of 3.** In between, the governance keeper closed the stage-1 votes of #10 and #11, which fell short ([`96bbeab3…`](https://stellar.expert/explorer/testnet/tx/96bbeab37446665ee55f3c5bd98599e4319d7f25a5c4e8b12f3253484cbef511), [`91202582…`](https://stellar.expert/explorer/testnet/tx/9120258275e79b01fce63feb8f06ef0bc0ff52da6d7e846bc59bfaae54cfc6c7)). The replay followed both vaults from funded to refunding, with stage 1 failed, from the 4 new events alone (145 stored).
+
 Every vault, old code and new, exposes every field compared, so no field was skipped. Each vault's state, raise, payouts, deposit (amount, posted, returned), unrefunded stakes, staker count, every staker's balance, and each stage's paid/failed flags, vote opening time and approval weight all matched.
 
 Testnet has so far exercised these paths: stakes, goals reached (#10, #11 and others), missed goals (#2, #3), votes and approvals, and failed votes with the deposit kept for stakers (#1, #5, #7, #8). No payout, stall, refund or deposit return has happened on testnet yet. Those paths are covered by the unit tests until one does.
@@ -157,7 +159,7 @@ The check needs `NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_SECRET_KEY` (read-only 
 - **The terms come from the vault.** The goal, deadline and stage ids are not in any event, so the replay reads them once from the vault. Everything that changes afterwards is rebuilt from events.
 - **The replay is only as complete as the stored events.** Before #152, the indexer missed new vaults' opening events. Those 40 rows were backfilled on 2026-10-10, and every vault now has its `VAULT/INIT` and `BOND/POSTED`. The RPC keeps events for about 7 days, so a gap older than that has to be restored from the transactions' meta, which testnet Horizon no longer serves (Stellar Expert's API does).
 - **Stored figures and the Record tab lag the chain by up to one pass** (60 seconds). The project page can also read the vault directly ("Read the vault again"), which shows a new total sooner.
-- **Testnet now runs protocol 29.** On 2026-10-12, one replay-check run stopped on an XDR type the installed Stellar SDK (15.x) does not know (`SorobanCredentialsType` 2). Two reruns minutes later passed, and the indexer kept running. Whether the SDK needs an upgrade for protocol 29 is being checked separately.
+- **Testnet runs protocol 29, ahead of every JS SDK.** On 2026-10-12, one replay-check run stopped on XDR that SDK 15.1 did not know (`SorobanCredentialsType` 2). It came from `getLatestLedger`, which decodes other users' transactions in the newest ledger. #169 upgraded to SDK 16.3.1 (protocol 28 XDR) and made the check read the latest ledger from `getHealth`. If that read or the lag check fails, the check says so and still compares every vault. The indexer was never affected: it reads only its own contracts' events.
 - **Vault code that lacks a read** the check compares would have that field skipped, not counted as a match. No vault on testnet today lacks any of them.
 
 ## Still to do
