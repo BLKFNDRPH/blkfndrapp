@@ -2,13 +2,13 @@ extern crate std;
 
 use soroban_sdk::{
     contract, contractimpl,
-    testutils::{Address as _, Ledger},
+    testutils::{Address as _, Ledger, MockAuth, MockAuthInvoke},
     token::{StellarAssetClient, TokenClient},
-    Address, Env, String, Vec,
+    Address, Env, IntoVal, String, Val, Vec,
 };
 
 use crate::{
-    BlkfndrVault, BlkfndrVaultClient, MilestoneInput, VaultInitConfig, VaultState,
+    BlkfndrVault, BlkfndrVaultClient, Error, MilestoneInput, VaultInitConfig, VaultState,
 };
 use blkfndr_attestation::{
     AttestationRegistry, AttestationRegistryClient, Outcome as RegistryOutcome,
@@ -345,6 +345,25 @@ fn rejects_contributions_after_the_deadline() {
     advance(&s.env, DEADLINE + 1);
     let result = s.vault.try_contribute(&s.alice, &(100 * UNIT));
     assert!(result.is_err());
+}
+
+#[test]
+fn rejects_a_deposit_that_overshoots_the_goal() {
+    let s = setup();
+    s.vault.contribute(&s.alice, &(100 * UNIT));
+    s.vault.contribute(&s.bob, &(100 * UNIT));
+
+    // 100 left to the goal: 105 would overshoot it, so none of it goes in.
+    let over = s.vault.try_contribute(&s.carol, &(105 * UNIT));
+    assert_eq!(over, Err(Ok(Error::GoalAlreadyReached.into())));
+    assert_eq!(s.vault.get_balance(&s.carol), 0);
+    assert_eq!(s.vault.get_info().raised_amount, 200 * UNIT);
+    assert_eq!(s.token.balance(&s.carol), 1_000 * UNIT);
+    assert_eq!(s.vault.get_state(), VaultState::Raising);
+
+    // Exactly what is left still fits, and closes the raise.
+    s.vault.contribute(&s.carol, &(100 * UNIT));
+    assert_eq!(s.vault.get_state(), VaultState::Funded);
 }
 
 // ── Voting weight and the 20% cap ──────────────────────────────────────────
@@ -1152,6 +1171,115 @@ fn refunds_are_unavailable_while_a_project_is_still_live() {
     fund_evenly(&s);
     let result = s.vault.try_claim_refund(&s.alice);
     assert!(result.is_err());
+}
+
+// ── Signatures ─────────────────────────────────────────────────────────────
+//
+// The other tests run under mock_all_auths, which approves any signature. These
+// replace it with exactly one signer, so each entrypoint is shown refusing a
+// call signed by the wrong address and accepting the same call signed by the
+// right one.
+
+/// Authorise only `signer`, for one call to the vault, plus any nested calls.
+fn sign_as(
+    s: &Setup,
+    signer: &Address,
+    fn_name: &'static str,
+    args: Vec<Val>,
+    sub_invokes: &[MockAuthInvoke],
+) {
+    s.env.mock_auths(&[MockAuth {
+        address: signer,
+        invoke: &MockAuthInvoke {
+            contract: &s.vault_address,
+            fn_name,
+            args,
+            sub_invokes,
+        },
+    }]);
+}
+
+#[test]
+fn a_deposit_needs_the_contributors_own_signature() {
+    let s = setup();
+    let amount = 100 * UNIT;
+    let args: Vec<Val> = (s.alice.clone(), amount).into_val(&s.env);
+    let transfer_args: Vec<Val> =
+        (s.alice.clone(), s.vault_address.clone(), amount).into_val(&s.env);
+    let token_address = s.token.address.clone();
+    let transfer = [MockAuthInvoke {
+        contract: &token_address,
+        fn_name: "transfer",
+        args: transfer_args,
+        sub_invokes: &[],
+    }];
+
+    // Bob signs a deposit in Alice's name.
+    sign_as(&s, &s.bob, "contribute", args.clone(), &transfer);
+    assert!(s.vault.try_contribute(&s.alice, &amount).is_err());
+    assert_eq!(s.vault.get_balance(&s.alice), 0);
+    assert_eq!(s.token.balance(&s.alice), 1_000 * UNIT);
+    assert_eq!(s.token.balance(&s.bob), 1_000 * UNIT);
+
+    sign_as(&s, &s.alice, "contribute", args, &transfer);
+    s.vault.contribute(&s.alice, &amount);
+    assert_eq!(s.vault.get_balance(&s.alice), amount);
+}
+
+#[test]
+fn only_the_builders_signature_opens_a_vote() {
+    let s = setup();
+    fund_evenly(&s);
+    let args: Vec<Val> = (1u32,).into_val(&s.env);
+
+    // A contributor, not the builder, tries to start the clock.
+    sign_as(&s, &s.alice, "open_milestone_vote", args.clone(), &[]);
+    assert!(s.vault.try_open_milestone_vote(&1u32).is_err());
+    assert_eq!(s.vault.get_info().milestones.get(0).unwrap().vote_opens_at, 0);
+
+    sign_as(&s, &s.builder, "open_milestone_vote", args, &[]);
+    s.vault.open_milestone_vote(&1u32);
+    assert_ne!(s.vault.get_info().milestones.get(0).unwrap().vote_opens_at, 0);
+}
+
+#[test]
+fn a_vote_needs_the_contributors_own_signature() {
+    let s = setup();
+    fund_evenly(&s);
+    s.vault.open_milestone_vote(&1u32);
+    let args: Vec<Val> = (s.alice.clone(), 1u32).into_val(&s.env);
+
+    // Bob signs an approval in Alice's name.
+    sign_as(&s, &s.bob, "approve_milestone", args.clone(), &[]);
+    assert!(s.vault.try_approve_milestone(&s.alice, &1u32).is_err());
+    assert!(!s.vault.has_voted(&1u32, &s.alice));
+    assert_eq!(s.vault.get_milestone_wallets(&1u32).0, 0);
+
+    sign_as(&s, &s.alice, "approve_milestone", args, &[]);
+    s.vault.approve_milestone(&s.alice, &1u32);
+    assert!(s.vault.has_voted(&1u32, &s.alice));
+}
+
+#[test]
+fn a_refund_needs_the_contributors_own_signature() {
+    let s = setup();
+    fund_evenly(&s);
+    s.vault.open_milestone_vote(&1u32);
+    advance(&s.env, VOTING_WINDOW + 1);
+    s.vault.settle_lapsed_milestone(&1u32);
+    let args: Vec<Val> = (s.alice.clone(),).into_val(&s.env);
+
+    // Bob tries to trigger Alice's claim. The refund would go to Alice, but
+    // claiming is still hers to do.
+    sign_as(&s, &s.bob, "claim_refund", args.clone(), &[]);
+    assert!(s.vault.try_claim_refund(&s.alice).is_err());
+    assert_eq!(s.vault.get_balance(&s.alice), 100 * UNIT);
+    assert_eq!(s.token.balance(&s.alice), 900 * UNIT);
+
+    sign_as(&s, &s.alice, "claim_refund", args, &[]);
+    s.vault.claim_refund(&s.alice);
+    assert_eq!(s.vault.get_balance(&s.alice), 0);
+    assert!(s.token.balance(&s.alice) > 900 * UNIT);
 }
 
 // ── Attestation ────────────────────────────────────────────────────────────
