@@ -1,6 +1,6 @@
 # Contribution, Threshold-Release & Attestation Flow
 
-Evidence for the deliverable, as of 2026-10-06. Everything below is on Stellar testnet except the last steps of Project B. Its 7-day voting window closes at **2026-10-13 14:14:52 UTC**, and those transactions are listed under [Still to run](#still-to-run).
+Evidence for the deliverable, as of 2026-10-13. Everything below is on Stellar testnet. Project A completed on 2026-10-06. Project B's 7-day voting window closed at 2026-10-13 14:14:52 UTC, and it was [settled and refunded](#project-b-the-finish-2026-10-13) at 14:17 UTC.
 
 ## The deliverable
 
@@ -112,11 +112,11 @@ Line numbers are for commit `5df0bb7`.
 | A majority of the money | [`stake_majority`](../../contracts/blkfndr-vault/src/lib.rs#L401) | `small_wallets_cannot_outvote_most_of_the_money`, `a_majority_holder_can_block_a_release_but_never_make_one_alone`, `a_unanimous_vote_always_carries` | Project A milestone 2: three 5 USDC wallets clear the weight but hold 15 of 30, not more than half. Refused `#20` until c1 joins |
 | No multisig, no appointed keys | [`release_milestone`](../../contracts/blkfndr-vault/src/lib.rs#L934) is callable by anyone. The vault has no admin entrypoint | `release_is_permissionless_once_contributors_have_voted` | Every release was sent by the unrelated caller |
 | Fixed 7-day window, set at creation | Factory constructor, copied into the vault by `create_vault`; [`open_milestone_vote`](../../contracts/blkfndr-vault/src/lib.rs#L821) | `votes_are_rejected_before_the_window_opens_and_after_it_closes`, `only_the_builder_opens_a_window_and_only_once` | The factory reads 604,800 s. Project B milestone 2 opened 2026-10-06 14:14:52 UTC |
-| Fails closed | [`settle_lapsed_milestone`](../../contracts/blkfndr-vault/src/lib.rs#L1022) | `a_window_that_closes_below_threshold_fails_the_milestone`, `silence_never_releases_funds`, `a_lapsed_window_cannot_be_settled_early` | Settling early refused, `#22`. Settling after the window: [still to run](#still-to-run) |
-| Pro-rata refund and bond forfeiture | [`claim_refund`](../../contracts/blkfndr-vault/src/lib.rs#L1167) | `forfeited_bond_is_distributed_pro_rata_with_the_remaining_balance`, `a_backer_claims_once` | [Still to run](#still-to-run) |
-| Attestation written once, at close | [`write_attestation`](../../contracts/blkfndr-vault/src/lib.rs#L517) and [`attest`](../../contracts/blkfndr-attestation/src/lib.rs#L238) | `completion_writes_a_permanent_builder_record`, `forfeiture_writes_a_record_against_the_builder`, `a_record_cannot_be_overwritten`, `a_projects_record_is_written_once_and_never_amended` | Project A's closing release [`99e01fee…`](https://stellar.expert/explorer/testnet/tx/99e01fee822412e1c7790ec3d80d7b1d8eedea7b2648efd90d90543125e7bf93) |
+| Fails closed | [`settle_lapsed_milestone`](../../contracts/blkfndr-vault/src/lib.rs#L1022) | `a_window_that_closes_below_threshold_fails_the_milestone`, `silence_never_releases_funds`, `a_lapsed_window_cannot_be_settled_early` | Settling early refused, `#22`. After the window, the unrelated caller settled milestone 2 with one approval behind it: [`968e1ad8…`](https://stellar.expert/explorer/testnet/tx/968e1ad8b7156173cc2c6635aa59072ee26f56a15b79ee8b5d7d9172592afbc1). Milestone failed, vault refunding, bond slashed, in one transaction |
+| Pro-rata refund and bond forfeiture | [`claim_refund`](../../contracts/blkfndr-vault/src/lib.rs#L1167) | `forfeited_bond_is_distributed_pro_rata_with_the_remaining_balance`, `a_backer_claims_once` | c1–c5 each received exactly 2.5 USDC (2 remaining + 0.5 forfeited bond), each with their own signature. The vault ended at 0 |
+| Attestation written once, at close | [`write_attestation`](../../contracts/blkfndr-vault/src/lib.rs#L517) and [`attest`](../../contracts/blkfndr-attestation/src/lib.rs#L238) | `completion_writes_a_permanent_builder_record`, `forfeiture_writes_a_record_against_the_builder`, `a_record_cannot_be_overwritten`, `a_projects_record_is_written_once_and_never_amended` | Project A's closing release [`99e01fee…`](https://stellar.expert/explorer/testnet/tx/99e01fee822412e1c7790ec3d80d7b1d8eedea7b2648efd90d90543125e7bf93) (`Completed`). Project B's settle [`968e1ad8…`](https://stellar.expert/explorer/testnet/tx/968e1ad8b7156173cc2c6635aa59072ee26f56a15b79ee8b5d7d9172592afbc1) (`FailedWithForfeiture`, 1 of 2 milestones approved) |
 | No update or delete entrypoint | The registry's whole on-chain interface: `__constructor`, `add_factory`, `disable_factory`, `transfer_admin`, `attest`, `get_record`, `has_record`, `get_builder_vaults`, `get_builder_history`, `get_builder_summary`, `get_factories`, `get_admin`, `is_factory_trusted` | `a_record_cannot_be_overwritten` | `stellar contract info interface --id CDKERKLK… --network testnet` |
-| Emitted as an event, filterable by builder | [`attest`](../../contracts/blkfndr-attestation/src/lib.rs#L315) | `a_record_is_emitted_as_an_event_filterable_by_builder` | `getEvents` filtered on topics `(ATTEST, RECORDED, builder)` returned the event from `99e01fee…` |
+| Emitted as an event, filterable by builder | [`attest`](../../contracts/blkfndr-attestation/src/lib.rs#L315) | `a_record_is_emitted_as_an_event_filterable_by_builder` | `getEvents` filtered on topics `(ATTEST, RECORDED, builder)` returned the event from `99e01fee…`, and Project B's from `968e1ad8…` |
 | Readable by any contract | [`get_builder_history`](../../contracts/blkfndr-attestation/src/lib.rs#L358), [`get_builder_summary`](../../contracts/blkfndr-attestation/src/lib.rs#L384) | `another_contract_can_gate_on_a_builders_record`: a separate grant-programme contract reads the record by cross-contract call and gates on it | — |
 
 Test suite at `5df0bb7`: 56 vault, 16 attestation, 15 factory, and 181 across the workspace, all passing, with `cargo clippy --workspace --all-targets -- -D warnings` clean.
@@ -201,21 +201,30 @@ The same builder. Goal 25 USDC in milestones of 15 and 10, with a 2.5 USDC bond.
 | Approve milestone 2 (c1 only) | [`2b7cb2d6…`](https://stellar.expert/explorer/testnet/tx/2b7cb2d60601b2f9e11b608f72402840c94c19ed7f422155a753a56fce57c2ff) |
 | Settle milestone 2 before its window closes | Refused in simulation, `Error(Contract, #22)` VotingWindowNotElapsed |
 
-### Still to run
+### Project B: the finish (2026-10-13)
 
-After 2026-10-13 14:14:52 UTC:
+Run at 14:17 UTC, two minutes after milestone 2's window closed, with `bash scripts/reference-scenario.sh project-b-finish`. Every check in the script passed.
 
-```bash
-bash scripts/reference-scenario.sh project-b-finish
-```
+| Step | Transaction |
+|---|---|
+| Settle milestone 2, sent by the unrelated caller. One approval of 5 weight, where more than 12.5 is needed, so it fails: vault refunding, 2.5 USDC bond slashed, `FailedWithForfeiture` recorded, in one transaction | [`968e1ad8…`](https://stellar.expert/explorer/testnet/tx/968e1ad8b7156173cc2c6635aa59072ee26f56a15b79ee8b5d7d9172592afbc1) |
+| Refund c1: 2.5 USDC (2 remaining + 0.5 forfeited bond) | [`ecae0241…`](https://stellar.expert/explorer/testnet/tx/ecae0241829b6215273cd458d6bf1f6c7bb7be29357165a2759937c473bbaec8) |
+| Refund c2: 2.5 USDC | [`36758094…`](https://stellar.expert/explorer/testnet/tx/36758094eb3d9d38354b4161472a8a8caf3f09af698d7c5f666eb2197d470b82) |
+| Refund c3: 2.5 USDC | [`52dbf45f…`](https://stellar.expert/explorer/testnet/tx/52dbf45f21d869f9171caddf6238751eb8106c9571a09f8ab9be64e347b070c8) |
+| Refund c4: 2.5 USDC | [`337e6fb6…`](https://stellar.expert/explorer/testnet/tx/337e6fb6ab053de37a90a71789916281f61bad9ea3eb3b880be26256640d137c) |
+| Refund c5: 2.5 USDC, the last claimant | [`238aaac7…`](https://stellar.expert/explorer/testnet/tx/238aaac78e74929e862106d3f782dee1746a398c12c6406a9e78ffcaf2fb5fb4) |
 
-It submits and checks:
-1. The unrelated caller settles milestone 2. Milestone 2 fails, the bond is slashed, and the registry records `FailedWithForfeiture`, all in one transaction.
-2. Each of c1–c5 claims a refund of 2.5 USDC: 5/25 of the 10 USDC left after milestone 1, plus 5/25 of the 2.5 USDC bond. The vault ends at 0.
-3. `getEvents` filtered by the builder topic returns the new attestation.
-4. The builder's summary reads `(1, 1, 0)`: one completed, one forfeited, none unfunded.
+Each refund is 5/25 of the 10 USDC left after milestone 1, plus 5/25 of the 2.5 USDC bond. The script read each backer's USDC balance before and after: every one went up by exactly 25,000,000 base units. The vault's USDC balance ended at 0.
 
-Its transactions will be added here.
+**The attestation.**
+- `getEvents` filtered on `(ATTEST, RECORDED, <builder>)` returned the new event from `968e1ad8…`, at ledger 5,175,489.
+- The registry's `get_builder_summary` reads **`[1, 1, 0]`**: one completed, one forfeited, none unfunded.
+- `get_builder_history` returns both records:
+
+| Project | Vault | Outcome | Raised | Bond | Milestones approved |
+|---|---|---|---|---|---|
+| A (1) | `CBAISZEG…` | 0, `Completed` | 30 USDC | 3 USDC | 2 of 2 |
+| B (2) | `CDMJTHJK…` | 1, `FailedWithForfeiture` | 25 USDC | 2.5 USDC | 1 of 2 |
 
 ## Rerun it
 

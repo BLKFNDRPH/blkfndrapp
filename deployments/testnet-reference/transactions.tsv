@@ -40,3 +40,9 @@ utc	step	transaction
 2026-10-06T14:14:53Z	B: open milestone 2 vote (builder; window 7 days)	335fe37eee015785d745489f55b562d696e3ce41e74a81334e3a79e001fe6726
 2026-10-06T14:15:05Z	B: approve milestone 2 (c1 only)	2b7cb2d60601b2f9e11b608f72402840c94c19ed7f422155a753a56fce57c2ff
 2026-10-06T14:15:06Z	B: settling milestone 2 early refused (VotingWindowNotElapsed)	refused in simulation: Error(Contract, #22)
+2026-10-13T14:17:13Z	B: settle lapsed milestone 2 (fails closed; bond forfeited; attestation)	968e1ad8b7156173cc2c6635aa59072ee26f56a15b79ee8b5d7d9172592afbc1
+2026-10-13T14:17:23Z	B: refund c1 (2 USDC remaining + 0.5 USDC forfeited bond)	ecae0241829b6215273cd458d6bf1f6c7bb7be29357165a2759937c473bbaec8
+2026-10-13T14:17:32Z	B: refund c2 (2 USDC remaining + 0.5 USDC forfeited bond)	36758094eb3d9d38354b4161472a8a8caf3f09af698d7c5f666eb2197d470b82
+2026-10-13T14:17:44Z	B: refund c3 (2 USDC remaining + 0.5 USDC forfeited bond)	52dbf45f21d869f9171caddf6238751eb8106c9571a09f8ab9be64e347b070c8
+2026-10-13T14:17:58Z	B: refund c4 (2 USDC remaining + 0.5 USDC forfeited bond)	337e6fb6ab053de37a90a71789916281f61bad9ea3eb3b880be26256640d137c
+2026-10-13T14:18:09Z	B: refund c5 (2 USDC remaining + 0.5 USDC forfeited bond)	238aaac78e74929e862106d3f782dee1746a398c12c6406a9e78ffcaf2fb5fb4

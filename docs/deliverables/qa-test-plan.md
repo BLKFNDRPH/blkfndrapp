@@ -126,11 +126,11 @@ Status key: **✅** passing in unit tests and/or shown on testnet; **⏳** sched
 
 | ID | Case | Expected | Unit test | Testnet |
 |---|---|---|---|---|
-| VLT-33 | Window closes below threshold; an unrelated account calls `settle_lapsed_milestone` | Milestone failed, state `Refunding`, `MILESTN/FAILED`, `BOND/SLASHED`, attestation `FailedWithForfeiture`, all in one tx | `a_window_that_closes_below_threshold_fails_the_milestone` | ⏳ Project B, after **2026-10-13 14:14:52 UTC** |
+| VLT-33 | Window closes below threshold; an unrelated account calls `settle_lapsed_milestone` | Milestone failed, state `Refunding`, `MILESTN/FAILED`, `BOND/SLASHED`, attestation `FailedWithForfeiture`, all in one tx | `a_window_that_closes_below_threshold_fails_the_milestone` | ✅ Project B, 2026-10-13: [`968e1ad8…`](https://stellar.expert/explorer/testnet/tx/968e1ad8b7156173cc2c6635aa59072ee26f56a15b79ee8b5d7d9172592afbc1) |
 | VLT-34 | Settle before the window closes | Refused, `#22` | `a_lapsed_window_cannot_be_settled_early` | ✅ Project B, simulated |
 | VLT-35 | Settle a window that carried | Refused, `#21` (it is a release waiting to happen) | `a_window_that_met_threshold_cannot_be_declared_failed` | — |
-| VLT-36 | Each contributor claims after forfeiture | `contribution × (raised − released) / raised + contribution × bond / raised` | `forfeited_bond_is_distributed_pro_rata_with_the_remaining_balance` | ⏳ Project B: 2.5 USDC each to c1–c5 |
-| VLT-37 | Truncation dust | Last claimant sweeps the remainder; vault ends at exactly 0 | same | ⏳ Project B: vault balance 0 |
+| VLT-36 | Each contributor claims after forfeiture | `contribution × (raised − released) / raised + contribution × bond / raised` | `forfeited_bond_is_distributed_pro_rata_with_the_remaining_balance` | ✅ Project B: exactly 2.5 USDC each to c1–c5, five transactions |
+| VLT-37 | Truncation dust | Last claimant sweeps the remainder; vault ends at exactly 0 | same | ✅ Project B: vault balance 0 after c5, the last claimant |
 | VLT-38 | Builder abandons a funded vault (no vote opened for 90 days) | Anyone calls `settle_stalled`: first open milestone failed, `VAULT/STALLED`, `BOND/SLASHED`, refunds open | `an_abandoned_funded_vault_can_be_reclaimed_for_contributors` | — (90 days; unit only) |
 | VLT-39 | Stall attempted while a vote is open, or while a carried vote awaits release | `#16` / `#21` | `an_open_vote_is_not_abandonment`, `a_carried_vote_cannot_be_stalled_out` | — |
 
@@ -192,24 +192,24 @@ Status key: **✅** passing in unit tests and/or shown on testnet; **⏳** sched
 
 | ID | Case | Expected | Unit test | Testnet |
 |---|---|---|---|---|
-| CTA-20 | Silence never pays the builder | No approvals → window closes → failed, never released | `silence_never_releases_funds` | ⏳ Project B M2 (one approval only) |
-| CTA-21 | Lapse settled by an unrelated account | Succeeds without builder, admin or platform | VLT-33 | ⏳ Project B finish |
-| CTA-22 | Each contributor claims with their own signature | Pro-rata principal remaining + pro-rata bond | VLT-36 | ⏳ Project B finish |
-| CTA-23 | Keeper closes lapsed stages without being asked | Within one keeper interval (900 s) after a window lapses on a production vault, `settle_lapsed_milestone` is sent by the keeper key; it never sends a call the vault refuses | keeper dry run | 🔲 dry-run `POST /api/governance-keeper` against live, then watch one real lapse |
+| CTA-20 | Silence never pays the builder | No approvals → window closes → failed, never released | `silence_never_releases_funds` | ✅ Project B M2: one approval, failed, never released ([`968e1ad8…`](https://stellar.expert/explorer/testnet/tx/968e1ad8b7156173cc2c6635aa59072ee26f56a15b79ee8b5d7d9172592afbc1)) |
+| CTA-21 | Lapse settled by an unrelated account | Succeeds without builder, admin or platform | VLT-33 | ✅ Project B, settled by `ref-anyone` |
+| CTA-22 | Each contributor claims with their own signature | Pro-rata principal remaining + pro-rata bond | VLT-36 | ✅ Project B, each refund signed by its own contributor |
+| CTA-23 | Keeper closes lapsed stages without being asked | Within one keeper interval (900 s) after a window lapses on a production vault, `settle_lapsed_milestone` is sent by the keeper key; it never sends a call the vault refuses | keeper dry run | ✅ observed: the keeper key `GDOCUSXG…` closed real lapses on #8 ([`c98187e3…`](https://stellar.expert/explorer/testnet/tx/c98187e374c3558a2411f390b4b207895dc068333903e64f5df485075afd3870), 2026-10-10), #11 ([`91202582…`](https://stellar.expert/explorer/testnet/tx/9120258275e79b01fce63feb8f06ef0bc0ff52da6d7e846bc59bfaae54cfc6c7)) and #10 ([`96bbeab3…`](https://stellar.expert/explorer/testnet/tx/96bbeab37446665ee55f3c5bd98599e4319d7f25a5c4e8b12f3253484cbef511), 2026-10-12). Every lapse since #131 was settled within one interval of its window closing: #5 after 285 s, #7 after 710 s, #8 after 760 s, #11 after 560 s and #10 after 765 s (window close from `VOTEOPEN`, settle time from `MILESTN/FAILED`). 🔲 the dry run against live |
 
 ### 5.4 Builder attestation
 
 | ID | Case | Expected | Unit test | Testnet |
 |---|---|---|---|---|
 | CTA-24 | Completed project | Record: builder, vault, project id, outcome 0 `Completed`, total raised, bond, milestones total/approved, `closed_at` | `completion_writes_a_permanent_builder_record` | ✅ Project A, `get_record` JSON in the evidence doc |
-| CTA-25 | Forfeited project | Outcome 1 `FailedWithForfeiture`, milestones approved = those released before failure | `forfeiture_writes_a_record_against_the_builder` | ⏳ Project B |
+| CTA-25 | Forfeited project | Outcome 1 `FailedWithForfeiture`, milestones approved = those released before failure | `forfeiture_writes_a_record_against_the_builder` | ✅ Project B: outcome 1, 1 of 2 milestones approved ([`968e1ad8…`](https://stellar.expert/explorer/testnet/tx/968e1ad8b7156173cc2c6635aa59072ee26f56a15b79ee8b5d7d9172592afbc1)) |
 | CTA-26 | Unfunded project | Outcome 2 `FailedToFund` | `failing_to_fund_is_recorded_without_blaming_the_builder` | 🔲 settle one missed-goal vault and read its record |
 | CTA-27 | Written once | Second `attest` for the same vault refused `#4`; vault's own `attested` flag makes later calls no-ops | `a_record_cannot_be_overwritten`, `a_projects_record_is_written_once_and_never_amended` | — |
 | CTA-28 | No update or delete | Registry interface lists no such entrypoint | `stellar contract info interface --id <registry>` | ✅ reference registry; 🔲 production registry |
 | CTA-29 | Only trusted factories' vaults can write | Unknown contract `#3`; untrusted factory `#7`; disabled factory cannot write but its records remain | `rejects_writes_from_contracts_the_factory_does_not_know`, `naming_an_untrusted_factory_is_refused`, `a_disabled_factory_can_no_longer_attest_but_its_records_remain` | — |
 | CTA-30 | Incoherent record | e.g. approved > total, refused `#6` | `rejects_incoherent_records` | — |
-| CTA-31 | Emitted as an event with the builder as a topic | `getEvents` filter `(ATTEST, RECORDED, <builder>)` returns it | `a_record_is_emitted_as_an_event_filterable_by_builder` | ✅ ledger 5,054,473; ⏳ Project B |
-| CTA-32 | History across projects and builders | `get_builder_history`, `get_builder_summary` = `(completed, forfeited, unfunded)` | `builds_a_portable_history_across_projects`, `a_second_builder_has_a_separate_history` | ⏳ summary reads `(1, 1, 0)` after Project B |
+| CTA-31 | Emitted as an event with the builder as a topic | `getEvents` filter `(ATTEST, RECORDED, <builder>)` returns it | `a_record_is_emitted_as_an_event_filterable_by_builder` | ✅ ledger 5,054,473 (A); ledger 5,175,489 (B) |
+| CTA-32 | History across projects and builders | `get_builder_history`, `get_builder_summary` = `(completed, forfeited, unfunded)` | `builds_a_portable_history_across_projects`, `a_second_builder_has_a_separate_history` | ✅ summary reads `[1, 1, 0]` after Project B |
 | CTA-33 | Cross-contract read | A third-party contract gates on a builder's record | `another_contract_can_gate_on_a_builders_record` | — |
 | CTA-34 | Colliding project ids from two factories | Both recorded (keyed by vault) | `a_second_factory_with_a_colliding_project_id_still_records` | — |
 
@@ -352,7 +352,7 @@ Things a reviewer will ask about. None blocks the plan; each needs an owner deci
 7. **VLT-19 / VLT-21: forged signer.** Every vault test ran under `env.mock_all_auths()`, which approves any signature, so nothing proved a call signed by the wrong address is refused. Added four tests that authorise exactly one signer: a deposit, a vote and a refund signed by another contributor in Alice's name, and a vote opened by a contributor instead of the builder. Each is refused with nothing changed, and the same call signed by the right address goes through. The contract already called `require_auth()` in each, so this closed a gap in proof, not a bug. Checked by mutation: with the `require_auth()` line removed from the contract, the matching test fails.
 8. VLT-30 was already covered. Checked while preparing this plan.
 
-**Testnet paths not yet exercised** (from the 2026-10-12 replay check): no refund, no bond return, no stall, and no payout on a production vault. Project B covers forfeiture and refunds on the reference deployment today. A missed-goal `settle` + `return_bond` + refund (VLT-27–VLT-29, CTA-26) still needs one scripted run.
+**Testnet paths not yet exercised** (from the 2026-10-12 replay check): no refund, no bond return, no stall, and no payout on a production vault. Project B covered forfeiture and refunds on the reference deployment on 2026-10-13. A missed-goal `settle` + `return_bond` + refund (VLT-27–VLT-29, CTA-26) still needs one scripted run.
 
 ---
 
@@ -362,7 +362,7 @@ Things a reviewer will ask about. None blocks the plan; each needs an owner deci
 |---|---|---|---|
 | Now | `cargo test --workspace`, clippy, `npm test` on `main` | VLT-46, VLT-47, IDX-01, IDX-10 | Pass counts in §11 |
 | Now | Hash check of deployed wasm vs build | VLT-48, VLT-49 | `sha256sum` output |
-| **2026-10-13 after 14:14:52 UTC** | `bash scripts/reference-scenario.sh project-b-finish` | VLT-33, VLT-36, VLT-37, CTA-20–CTA-22, CTA-25, CTA-31, CTA-32 | Tx hashes for settle, 5 refunds; `get_record`; `getEvents` by builder; summary `(1, 1, 0)` |
+| ✅ **Done 2026-10-13 14:17 UTC** | `bash scripts/reference-scenario.sh project-b-finish` | VLT-33, VLT-36, VLT-37, CTA-20–CTA-22, CTA-25, CTA-31, CTA-32 | Tx hashes for settle, 5 refunds; `get_record`; `getEvents` by builder; summary `(1, 1, 0)` |
 | This week | Missed-goal scenario on the reference factory (short deadline, one deposit, `settle`, `return_bond`, `claim_refund`) | VLT-27–VLT-29, VLT-32, CTA-26 | Tx hashes; record outcome 2 |
 | This week | Negative simulations on testnet: VLT-15, VLT-21, CTA-15–CTA-17 | listed | `Error(Contract, #n)` per case in `transactions.tsv` |
 | This week | Governance keeper dry run on live, then observe one real lapse | CTA-23, SEC-05 | Keeper response JSON, tx hash sent by the keeper key |
