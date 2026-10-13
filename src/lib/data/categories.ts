@@ -32,8 +32,10 @@ const NameSchema = z
   );
 
 /** Readable signed out — the create-listing form and explore filters both need it. */
-export async function listCategories(): Promise<string[]> {
-  const supabase = await createClient();
+export async function listCategories(
+  client?: Awaited<ReturnType<typeof createClient>>,
+): Promise<string[]> {
+  const supabase = client ?? (await createClient());
   const { data, error } = await supabase
     .from("project_categories")
     .select("name")

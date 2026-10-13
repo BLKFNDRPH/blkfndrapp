@@ -74,3 +74,58 @@ test("the cache stays bounded, dropping the oldest first", () => {
   assert.equal(recall("k1"), 1);
   assert.equal(recall("k500"), 500);
 });
+
+test("within its stale window an old answer is served at once, and refreshed behind it", async () => {
+  clearReadCache();
+  let version = 1;
+  let calls = 0;
+  const read = async () => {
+    calls++;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    return { version };
+  };
+  await cachedRead("list", 30, read, { staleMs: 10_000 });
+  await new Promise((resolve) => setTimeout(resolve, 40)); // past its time
+  version = 2;
+  const started = Date.now();
+  assert.deepEqual(await cachedRead("list", 30, read, { staleMs: 10_000 }), { version: 1 });
+  assert.ok(Date.now() - started < 15, "the stale answer did not wait for the read");
+  await new Promise((resolve) => setTimeout(resolve, 40)); // the background read lands
+  assert.deepEqual(await cachedRead("list", 30, read, { staleMs: 10_000 }), { version: 2 });
+  assert.equal(calls, 2);
+});
+
+test("past its stale window the caller waits for the fresh read", async () => {
+  clearReadCache();
+  let version = 1;
+  const read = async () => ({ version });
+  await cachedRead("list", 10, read, { staleMs: 10 });
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  version = 2;
+  assert.deepEqual(await cachedRead("list", 10, read, { staleMs: 10 }), { version: 2 });
+});
+
+test("a failed background refresh keeps the stale answer and does not throw", async () => {
+  clearReadCache();
+  let fail = false;
+  const read = async () => {
+    if (fail) throw new Error("database unreachable");
+    return "first";
+  };
+  await cachedRead("list", 10, read, { staleMs: 10_000 });
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  fail = true;
+  assert.equal(await cachedRead("list", 10, read, { staleMs: 10_000 }), "first");
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(await cachedRead("list", 10, read, { staleMs: 10_000 }), "first");
+});
+
+test("fresh skips a stale answer and waits for the read", async () => {
+  clearReadCache();
+  let version = 1;
+  const read = async () => ({ version });
+  await cachedRead("list", 10, read, { staleMs: 10_000 });
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  version = 2;
+  assert.deepEqual(await cachedRead("list", 10, read, { staleMs: 10_000, fresh: true }), { version: 2 });
+});

@@ -1,5 +1,4 @@
-import { listCategories } from "@/lib/data/categories";
-import { getProjects } from "@/lib/data/projects";
+import { readCategoriesForVisitor, readProjectsForVisitor } from "@/lib/data/public-reads";
 import { projectCategories } from "@/lib/categories";
 import { ProjectsPageClient } from "./ProjectsPageClient";
 
@@ -17,14 +16,15 @@ export default async function ProjectsPage({
 }) {
   const { q } = await searchParams;
   const [categories, projects] = await Promise.all([
-    listCategories()
+    readCategoriesForVisitor()
       .then((list) => (list.length > 0 ? list : projectCategories))
       // Falls back to the compiled-in list rather than failing the page.
       .catch(() => projectCategories),
     // The list itself, so the cards (and the first row's pictures) are in
-    // the HTML rather than requested after the scripts have run. The
-    // caller's own client: hidden listings stay as visible as they were.
-    getProjects().catch(() => []),
+    // the HTML rather than requested after the scripts have run. Shared
+    // between signed-out visitors; read through their own session for
+    // anyone signed in (see public-reads.ts).
+    readProjectsForVisitor().catch(() => []),
   ]);
 
   return (
