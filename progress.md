@@ -91,7 +91,7 @@ The A/B numbers for #160–#170 are from local production builds. #163 (inlining
 
 There is no contract source ahead of testnet. Every contract's deployed wasm matches `main`. Hashes reproduce only on the same build paths ([item 11](#11-known-defects-found-not-yet-fixed)).
 
-**Reference deployment (2026-10-06), not used by the app:** a standalone set built from source, holding the test transactions for the contribution, threshold-release and attestation deliverable ([evidence](docs/deliverables/contribution-threshold-attestation.md)). Its Project B finishes after 2026-10-13 14:14:52 UTC.
+**Reference deployment (2026-10-06), not used by the app:** a standalone set built from source, holding the test transactions for the contribution, threshold-release and attestation deliverable ([evidence](docs/deliverables/contribution-threshold-attestation.md)). Both projects are finished. Project A completed on 2026-10-06. Project B failed closed on 2026-10-13: its lapsed stage was settled by an unrelated account, its five backers were refunded 2.5 USDC each, and the builder's record reads one completed, one forfeited ([`968e1ad8…`](https://stellar.expert/explorer/testnet/tx/968e1ad8b7156173cc2c6635aa59072ee26f56a15b79ee8b5d7d9172592afbc1)).
 
 ---
 
@@ -204,7 +204,7 @@ The last part of the week's target. The [demo script](docs/deliverables/testnet-
 
 ## Next week
 1. **Record the testnet demo** and finish its deliverable evidence (item 15).
-2. **Today, after 2026-10-13 14:14:52 UTC:** finish the reference deployment's Project B (`bash scripts/reference-scenario.sh project-b-finish`) and add its transactions to the [contribution deliverable](docs/deliverables/contribution-threshold-attestation.md#still-to-run).
+2. ~~Finish the reference deployment's Project B.~~ Done 2026-10-13 14:17 UTC; every check passed ([evidence](docs/deliverables/contribution-threshold-attestation.md#project-b-the-finish-2026-10-13)).
 3. **Owner votes:** move or write off the old Operations Vault's 25 XLM, and `SetOpsFunding` on the treasury (item 1).
 4. **Host settings:** a Resend account, its DNS records and the key (item 3), and `PINATA_GATEWAY_KEY` (item 4). One stack update covers both.
 5. **Owner approvals:** the #139 grant revocation (item 5), and the Phase 2 decisions on Wallets Kit, fee sponsorship and stakeholder names (item 7).
