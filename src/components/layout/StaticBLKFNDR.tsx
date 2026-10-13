@@ -1,4 +1,5 @@
-'use client';
+// No 'use client': it has no state, so the footer renders it on the server;
+// the header and the sign-in dialog still render it in the browser.
 import React from 'react';
 import { cn } from '@/lib/utils';
 
