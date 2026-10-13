@@ -38,9 +38,14 @@ export function FilteredProjectList({
     <div className="mt-8 grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-3">
       {projects.map((project, index) => (
         <div key={project.id} className="h-full">
-          {/* The first row (three across on a wide screen, the first card on a
-              phone) is above the fold; its pictures load first. */}
-          <ProjectCard project={project} priority={index < 3} />
+          {/* The first card's picture is usually the largest paint, on a phone
+              and on a wide screen alike: it alone is fetched first. The rest
+              of a wide screen's first row loads at once but at the browser's
+              own priority. When all three were high priority, React preloaded
+              them from the <head>, and on a slow phone connection the two that
+              are off screen took bandwidth from the stylesheets, which moved
+              the first paint by up to half a second. */}
+          <ProjectCard project={project} priority={index === 0} eager={index < 3} />
         </div>
       ))}
     </div>
