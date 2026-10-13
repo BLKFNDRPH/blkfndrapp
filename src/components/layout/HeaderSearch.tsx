@@ -5,9 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Search, X } from "lucide-react";
-import { motion } from "framer-motion";
 import "./HeaderSearch.css";
-import { useMediaQuery } from "@/hooks/use-media-query";
 import { Project } from "@/lib/types";
 import { debounce } from "lodash";
 import { Card } from "../ui/card";
@@ -20,6 +18,11 @@ import { useXlmRate } from "@/lib/xlm-rate";
 import { useProjects } from "@/context/BlockchainContext";
 
 interface HeaderSearchProps {
+  /**
+   * The header renders both and lets CSS show one, so the server can send the
+   * header as it ends up rather than waiting for a media query in the browser.
+   */
+  variant: "desktop" | "mobile";
   isMobileOpen?: boolean;
   setMobileOpen?: (isOpen: boolean) => void;
 }
@@ -30,14 +33,22 @@ export function describeSearchRow(project: Project, xlmUsd: number | null): stri
   return `${goal.primary} goal · ${describeStatus(project).label}`;
 }
 
-export function HeaderSearch({ isMobileOpen, setMobileOpen }: HeaderSearchProps) {
+/**
+ * A result row's goal and status. It reads the XLM price itself, so the price
+ * is requested only once someone searches: the header is on every page, and
+ * asking from there sent a request to CoinGecko with every page load.
+ */
+function SearchRowSummary({ project }: { project: Project }) {
+  const { rate } = useXlmRate();
+  return <>{describeSearchRow(project, rate)}</>;
+}
+
+export function HeaderSearch({ variant, isMobileOpen, setMobileOpen }: HeaderSearchProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
-  const isDesktop = useMediaQuery("(min-width: 950px)");
-  const { rate } = useXlmRate();
 
   // The list the app shell already loaded, rather than a second copy of it.
   const { projects: allProjects } = useProjects();
@@ -156,7 +167,7 @@ export function HeaderSearch({ isMobileOpen, setMobileOpen }: HeaderSearchProps)
                     {project.tagline}
                   </p>
                   <p className="truncate text-xs leading-relaxed text-foreground/80 group-hover:text-accent-foreground/90">
-                    {describeSearchRow(project, rate)}
+                    <SearchRowSummary project={project} />
                   </p>
                 </div>
               </li>
@@ -172,20 +183,15 @@ export function HeaderSearch({ isMobileOpen, setMobileOpen }: HeaderSearchProps)
     </div>
   );
 
-  if (isDesktop) {
+  if (variant === "desktop") {
     return <div className="header-search-container w-[30%]">{searchComponent}</div>;
   }
 
-  // Mobile view
+  // Mobile view. The fade is CSS: framer-motion was here for this alone, and
+  // it put about 110 KB of script on every page.
   if (isMobileOpen) {
     return (
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        transition={{ duration: 0.2 }}
-        className="mobile-search-overlay"
-      >
+      <div className="mobile-search-overlay animate-in fade-in duration-200">
         <div className="flex w-full items-center gap-2">
           <div className="flex-grow">{searchComponent}</div>
           <Button
@@ -199,7 +205,7 @@ export function HeaderSearch({ isMobileOpen, setMobileOpen }: HeaderSearchProps)
             <span className="sr-only">Close search</span>
           </Button>
         </div>
-      </motion.div>
+      </div>
     );
   }
 

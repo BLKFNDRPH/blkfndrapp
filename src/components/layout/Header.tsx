@@ -33,7 +33,6 @@ import { resizedImageUrl } from "@/lib/project-image";
 import dynamic from "next/dynamic";
 import { NotificationBell } from "./NotificationBell";
 import { HeaderSearch } from "./HeaderSearch";
-import { useMediaQuery } from "@/hooks/use-media-query";
 import {
   useProjects,
   useUserFunds,
@@ -57,80 +56,82 @@ const AppearanceSettings = dynamic(
 const NAV_LINK_CLASS =
   "whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium transition-colors hover:text-foreground";
 
-export default function Header() {
-  const { user, login } = useAuth();
-  const { freighterWalletAddress } = useFreighterWallet();
-  const { hasAdminAccess } = useAdminStatus(
-    freighterWalletAddress ?? undefined,
-  );
-  const pathname = usePathname();
-  const [isSheetOpen, setIsSheetOpen] = React.useState(false);
-  const [isClient, setIsClient] = useState(false);
-  const [isScrolled, setIsScrolled] = useState(false);
-  const { projects } = useProjects();
-  const { userFunds } = useUserFunds(
-    freighterWalletAddress ?? undefined,
-  );
-  const isDesktop = useMediaQuery("(min-width: 950px)");
-  const [isSearchOpen, setIsSearchOpen] = useState(false);
+type RippleHandler = (
+  e: React.MouseEvent<HTMLAnchorElement | HTMLButtonElement | HTMLDivElement>,
+) => void;
 
-  const userProjects = projects
-    .filter((p) => p.creatorId === user?.uid)
+const handleRippleEffect: RippleHandler = (e) => {
+  const target = e.currentTarget as HTMLElement;
+  let ripple = target.querySelector(".ripple-span") as HTMLElement;
+  if (!ripple) {
+    ripple = document.createElement("span");
+    ripple.className = "ripple-span";
+    target.appendChild(ripple);
+  }
+
+  const rect = target.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+  ripple.style.left = `${x}px`;
+  ripple.style.top = `${y}px`;
+};
+
+/**
+ * The menu's Admin row. It reads the wallet and the platform settings, so it
+ * lives in the open menu: the header itself no longer re-renders when they
+ * load.
+ */
+function MenuAdminLink({ isActive, onClose }: { isActive: boolean; onClose: () => void }) {
+  const { freighterWalletAddress } = useFreighterWallet();
+  const { hasAdminAccess } = useAdminStatus(freighterWalletAddress ?? undefined);
+  if (!hasAdminAccess) return null;
+  return (
+    <Link
+      href="/admin"
+      onClick={onClose}
+      className={cn(
+        "flex items-center gap-4 p-3 rounded-md text-lg h-12 menu-item-ripple",
+        isActive ? "active" : "",
+      )}
+      onMouseMove={handleRippleEffect}
+    >
+      <Shield className="h-5 w-5" aria-hidden="true" />
+      <span>Admin</span>
+      {isActive && <span className="ripple-active-background"></span>}
+      <span className="ripple-span"></span>
+    </Link>
+  );
+}
+
+/**
+ * The menu's "Your stakes" and "Your projects" lists, for a signed-in person.
+ * They read the project list and the wallet's stakes, which load after the
+ * page does; kept in the open menu, those loads no longer re-render the
+ * header on every page.
+ */
+function MenuYourLists({ uid, onClose }: { uid: string; onClose: () => void }) {
+  const { freighterWalletAddress } = useFreighterWallet();
+  const { projects } = useProjects();
+  const { userFunds } = useUserFunds(freighterWalletAddress ?? undefined);
+
+  const latestProjects = projects
+    .filter((p) => p.creatorId === uid)
     .sort(
       (a, b) =>
         new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime(),
-    );
-
+    )
+    .slice(0, 3);
   const stakedProjectIds = userFunds.map((inv) => inv.project_id);
-  const stakedProjects = projects.filter((p) =>
-    stakedProjectIds.includes(p.id),
-  );
+  const latestStaked = projects
+    .filter((p) => stakedProjectIds.includes(p.id))
+    .slice(0, 3);
 
-  useEffect(() => {
-    setIsClient(true);
-
-    const handleScroll = () => {
-      setIsScrolled(window.scrollY > 50);
-    };
-
-    window.addEventListener("scroll", handleScroll);
-
-    return () => window.removeEventListener("scroll", handleScroll);
-  }, []);
-
-  const handleRippleEffect = (
-    e: React.MouseEvent<HTMLAnchorElement | HTMLButtonElement | HTMLDivElement>,
-  ) => {
-    const target = e.currentTarget as HTMLElement;
-    let ripple = target.querySelector(".ripple-span") as HTMLElement;
-    if (!ripple) {
-      ripple = document.createElement("span");
-      ripple.className = "ripple-span";
-      target.appendChild(ripple);
-    }
-
-    const rect = target.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    ripple.style.left = `${x}px`;
-    ripple.style.top = `${y}px`;
-  };
-
-  const projectsIsActive = pathname === "/projects";
-  const adminIsActive = pathname === "/admin";
-  const createIsActive = pathname === "/create-listing";
-  const settingsIsActive = pathname === "/settings";
-  const latestProjects = userProjects.slice(0, 3);
-  const latestStaked = stakedProjects.slice(0, 3);
-
-  const closeSheet = () => setIsSheetOpen(false);
-
-  /** A project row in the sheet's "Your stakes" / "Your projects" lists: a link to the project's page. */
+  /** A project row in the lists: a link to the project's page. */
   const renderProjectRow = (project: Project) => (
     <Link
       key={project.id}
       href={projectHref(project.id)}
-      onClick={closeSheet}
+      onClick={onClose}
       className="flex items-center gap-3 p-2 rounded-md text-md h-12 hover:bg-secondary menu-item-ripple"
       onMouseMove={handleRippleEffect}
     >
@@ -147,14 +148,92 @@ export default function Header() {
     </Link>
   );
 
-  if (!isClient) {
-    // Render a placeholder or nothing on the server to avoid hydration mismatch
-    return (
-      <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="container flex h-14 items-center" />
-      </header>
-    );
-  }
+  return (
+    <>
+      <Separator className="my-4" />
+      <div className="relative z-10">
+        <Link
+          href="/profile?tab=funded"
+          onClick={onClose}
+          className="mb-2 flex items-center gap-2 px-3 text-sm font-semibold text-muted-foreground hover:text-foreground"
+        >
+          <HandCoins className="h-4 w-4" aria-hidden="true" />
+          Your stakes
+        </Link>
+        <div className="flex flex-col gap-1">
+          {latestStaked.map(renderProjectRow)}
+          <Link
+            href="/profile?tab=funded"
+            onClick={onClose}
+            className="flex items-center gap-3 p-2 rounded-md text-sm h-12 text-muted-foreground hover:text-foreground hover:bg-secondary menu-item-ripple"
+            onMouseMove={handleRippleEffect}
+          >
+            <ChevronsRight className="h-5 w-5" aria-hidden="true" />
+            <span>{latestStaked.length > 0 ? "Show all" : "No stakes yet"}</span>
+            <span className="ripple-span"></span>
+          </Link>
+        </div>
+      </div>
+
+      <Separator className="my-4" />
+      <div className="relative z-10">
+        <Link
+          href="/profile?tab=projects"
+          onClick={onClose}
+          className="mb-2 flex items-center gap-2 px-3 text-sm font-semibold text-muted-foreground hover:text-foreground"
+        >
+          <FolderKanban className="h-4 w-4" aria-hidden="true" />
+          Your projects
+        </Link>
+        <div className="flex flex-col gap-1">
+          {latestProjects.map(renderProjectRow)}
+          <Link
+            href="/profile?tab=projects"
+            onClick={onClose}
+            className="flex items-center gap-3 p-2 rounded-md text-sm h-12 text-muted-foreground hover:text-foreground hover:bg-secondary menu-item-ripple"
+            onMouseMove={handleRippleEffect}
+          >
+            <ChevronsRight className="h-5 w-5" aria-hidden="true" />
+            <span>{latestProjects.length > 0 ? "Show all" : "No projects yet"}</span>
+            <span className="ripple-span"></span>
+          </Link>
+        </div>
+      </div>
+    </>
+  );
+}
+
+/**
+ * The site header. The server renders it as it ends up: which navigation a
+ * phone or a desktop sees is CSS (the 950px breakpoint), not a media query
+ * read after the page has loaded. It used to render an empty bar on the
+ * server, build itself in the browser and re-render whenever the project list
+ * or the wallet's stakes arrived: about 160 ms of main thread on a throttled
+ * phone, on every page. Rendered on the server, with those lists in the open
+ * menu, it is about 60 ms.
+ */
+export default function Header() {
+  const { user, login } = useAuth();
+  const pathname = usePathname();
+  const [isSheetOpen, setIsSheetOpen] = React.useState(false);
+  const [isScrolled, setIsScrolled] = useState(false);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setIsScrolled(window.scrollY > 50);
+    };
+    handleScroll();
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+
+  const projectsIsActive = pathname === "/projects";
+  const adminIsActive = pathname === "/admin";
+  const createIsActive = pathname === "/create-listing";
+  const settingsIsActive = pathname === "/settings";
+
+  const closeSheet = () => setIsSheetOpen(false);
 
   return (
     <header
@@ -183,11 +262,13 @@ export default function Header() {
           // position:absolute, so it took part in no layout and nothing stopped
           // a side group growing underneath it. Equal 1fr sides hold it dead
           // centre whatever those sides contain, and make overlap impossible.
-          !isDesktop && isSearchOpen ? "flex" : "grid grid-cols-[1fr_auto_1fr]",
+          // Search opens this way only from the phone's search button.
+          isSearchOpen ? "flex" : "grid grid-cols-[1fr_auto_1fr]",
         )}
       >
-        {!isDesktop && isSearchOpen ? (
+        {isSearchOpen ? (
           <HeaderSearch
+            variant="mobile"
             isMobileOpen={isSearchOpen}
             setMobileOpen={setIsSearchOpen}
           />
@@ -270,87 +351,10 @@ export default function Header() {
                       <span className="ripple-span"></span>
                     </div>
 
-                    {hasAdminAccess && (
-                      <Link
-                        href="/admin"
-                        onClick={closeSheet}
-                        className={cn(
-                          "flex items-center gap-4 p-3 rounded-md text-lg h-12 menu-item-ripple",
-                          adminIsActive ? "active" : "",
-                        )}
-                        onMouseMove={handleRippleEffect}
-                      >
-                        <Shield className="h-5 w-5" aria-hidden="true" />
-                        <span>Admin</span>
-                        {adminIsActive && (
-                          <span className="ripple-active-background"></span>
-                        )}
-                        <span className="ripple-span"></span>
-                      </Link>
-                    )}
+                    <MenuAdminLink isActive={adminIsActive} onClose={closeSheet} />
                   </nav>
 
-                  {user && (
-                    <>
-                      <Separator className="my-4" />
-                      <div className="relative z-10">
-                        <Link
-                          href="/profile?tab=funded"
-                          onClick={closeSheet}
-                          className="mb-2 flex items-center gap-2 px-3 text-sm font-semibold text-muted-foreground hover:text-foreground"
-                        >
-                          <HandCoins className="h-4 w-4" aria-hidden="true" />
-                          Your stakes
-                        </Link>
-                        <div className="flex flex-col gap-1">
-                          {latestStaked.map(renderProjectRow)}
-                          <Link
-                            href="/profile?tab=funded"
-                            onClick={closeSheet}
-                            className="flex items-center gap-3 p-2 rounded-md text-sm h-12 text-muted-foreground hover:text-foreground hover:bg-secondary menu-item-ripple"
-                            onMouseMove={handleRippleEffect}
-                          >
-                            <ChevronsRight className="h-5 w-5" aria-hidden="true" />
-                            <span>
-                              {latestStaked.length > 0
-                                ? "Show all"
-                                : "No stakes yet"}
-                            </span>
-                            <span className="ripple-span"></span>
-                          </Link>
-                        </div>
-                      </div>
-
-                      <Separator className="my-4" />
-                      <div className="relative z-10">
-                        <Link
-                          href="/profile?tab=projects"
-                          onClick={closeSheet}
-                          className="mb-2 flex items-center gap-2 px-3 text-sm font-semibold text-muted-foreground hover:text-foreground"
-                        >
-                          <FolderKanban className="h-4 w-4" aria-hidden="true" />
-                          Your projects
-                        </Link>
-                        <div className="flex flex-col gap-1">
-                          {latestProjects.map(renderProjectRow)}
-                          <Link
-                            href="/profile?tab=projects"
-                            onClick={closeSheet}
-                            className="flex items-center gap-3 p-2 rounded-md text-sm h-12 text-muted-foreground hover:text-foreground hover:bg-secondary menu-item-ripple"
-                            onMouseMove={handleRippleEffect}
-                          >
-                            <ChevronsRight className="h-5 w-5" aria-hidden="true" />
-                            <span>
-                              {latestProjects.length > 0
-                                ? "Show all"
-                                : "No projects yet"}
-                            </span>
-                            <span className="ripple-span"></span>
-                          </Link>
-                        </div>
-                      </div>
-                    </>
-                  )}
+                  {user && <MenuYourLists uid={user.uid} onClose={closeSheet} />}
 
                   <Separator className="my-4" />
                   <Link
@@ -398,36 +402,36 @@ export default function Header() {
                 </SheetContent>
               </Sheet>
 
-              {isDesktop ? (
-                <nav
-                  aria-label="Primary"
-                  className="flex min-w-0 items-center gap-1"
+              <nav
+                aria-label="Primary"
+                className="hidden min-w-0 items-center gap-1 min-[950px]:flex"
+              >
+                <Link
+                  href="/projects"
+                  className={cn(
+                    NAV_LINK_CLASS,
+                    projectsIsActive
+                      ? "bg-secondary text-foreground"
+                      : "text-foreground/70",
+                  )}
                 >
-                  <Link
-                    href="/projects"
-                    className={cn(
-                      NAV_LINK_CLASS,
-                      projectsIsActive
-                        ? "bg-secondary text-foreground"
-                        : "text-foreground/70",
-                    )}
-                  >
-                    Projects
-                  </Link>
-                  <Link
-                    href="/#how-it-works"
-                    className={cn(NAV_LINK_CLASS, "text-foreground/70")}
-                  >
-                    How it works
-                  </Link>
-                  <CreateListingButton variant="nav" />
-                </nav>
-              ) : (
+                  Projects
+                </Link>
+                <Link
+                  href="/#how-it-works"
+                  className={cn(NAV_LINK_CLASS, "text-foreground/70")}
+                >
+                  How it works
+                </Link>
+                <CreateListingButton variant="nav" />
+              </nav>
+              <div className="min-[950px]:hidden">
                 <HeaderSearch
+                  variant="mobile"
                   isMobileOpen={isSearchOpen}
                   setMobileOpen={setIsSearchOpen}
                 />
-              )}
+              </div>
             </div>
 
             {/* The wordmark used to be hidden below 490px and collapsed to zero
@@ -435,14 +439,9 @@ export default function Header() {
                 on a phone, and stopped showing it on desktop the moment you
                 scrolled — leaving a bare icon carrying the whole brand. It
                 stays put now and scales instead; the group is a flex row, so it
-                stays centred at any size. Opening search on mobile still hides
-                it, which is the one case where the space is genuinely needed. */}
-            <div
-              className={cn(
-                "flex items-center justify-center justify-self-center transition-opacity duration-300 ease-in-out",
-                !isDesktop && isSearchOpen && "opacity-0 pointer-events-none",
-              )}
-            >
+                stays centred at any size. Opening search on a phone replaces
+                the whole bar, the one case where the space is genuinely needed. */}
+            <div className="flex items-center justify-center justify-self-center">
               <Link href="/" className="flex items-center gap-2 sm:gap-3">
                 <CubeAvatar />
                 <div className="text-base sm:text-xl">
@@ -452,14 +451,15 @@ export default function Header() {
             </div>
 
             <div className="flex min-w-0 items-center justify-end gap-2 justify-self-end">
-              {isDesktop && (
-                // HeaderSearch sizes itself to 30% of its container on desktop;
-                // here the container is this flex item, so the field fills the
-                // room the other controls leave rather than a fixed slice of it.
-                <div className="min-w-0 max-w-xs flex-1 [&_.header-search-container]:w-full">
-                  <HeaderSearch />
-                </div>
-              )}
+              {/*
+                Desktop only, by CSS. HeaderSearch sizes itself to 30% of its
+                container on desktop; here the container is this flex item, so
+                the field fills the room the other controls leave rather than a
+                fixed slice of it.
+              */}
+              <div className="hidden min-w-0 max-w-xs flex-1 min-[950px]:block [&_.header-search-container]:w-full">
+                <HeaderSearch variant="desktop" />
+              </div>
               {user && <NotificationBell />}
               {user && <WalletButton />}
               <AuthButton />
