@@ -432,7 +432,7 @@ export function IdentityRegistryPanel() {
                   : "The queue could not be read, so whether anything is pending is unknown."}
               </p>
               {!staleTab && queueError && (
-                <p className="text-xs text-muted-foreground/80 max-w-md mt-2 break-words">{queueError}</p>
+                <p className="text-xs text-muted-foreground max-w-md mt-2 break-words">{queueError}</p>
               )}
               <Button
                 variant="outline"

@@ -5,7 +5,6 @@ import { useTheme } from "next-themes"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
-import { Button } from "@/components/ui/button"
 import {
   Form,
   FormControl,
@@ -15,7 +14,6 @@ import {
   FormDescription,
 } from "@/components/ui/form"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
-import { useToast } from "@/hooks/use-toast"
 import { Laptop, Moon, Sun } from "lucide-react"
 import { useEffect, useState } from "react"
 import { cn } from "@/lib/utils"
@@ -30,7 +28,6 @@ type AppearanceFormValues = z.infer<typeof appearanceFormSchema>
 
 export function AppearanceSettings({ isMenu = false }: { isMenu?: boolean }) {
   const { theme, setTheme } = useTheme()
-  const { toast } = useToast()
   const [isMounted, setIsMounted] = useState(false);
 
   const form = useForm<AppearanceFormValues>({
@@ -48,16 +45,6 @@ export function AppearanceSettings({ isMenu = false }: { isMenu?: boolean }) {
       })
     }
   }, [theme, form, isMounted])
-
-  function onSubmit(data: AppearanceFormValues) {
-    setTheme(data.theme)
-    if (!isMenu) {
-        toast({
-            title: "Theme Updated",
-            description: `Switched to ${data.theme.charAt(0).toUpperCase() + data.theme.slice(1)} theme.`,
-        })
-    }
-  }
 
   const handleRippleEffect = (e: React.MouseEvent<HTMLDivElement>) => {
     const target = e.currentTarget as HTMLElement;
@@ -81,7 +68,10 @@ export function AppearanceSettings({ isMenu = false }: { isMenu?: boolean }) {
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
+      {/* Picking a theme applies it; there is nothing to submit. The drawer
+          and this page used to differ, one instant and one behind an
+          "Update Theme" button that did nothing more (QA Cycle 7, BF-115). */}
+      <form onSubmit={(e) => e.preventDefault()} className="space-y-8">
         <FormField
           control={form.control}
           name="theme"
@@ -91,7 +81,7 @@ export function AppearanceSettings({ isMenu = false }: { isMenu?: boolean }) {
                 <>
                     <FormLabel>Theme</FormLabel>
                     <FormDescription>
-                        Select the theme for the dashboard.
+                        Applies straight away and is remembered on this device.
                     </FormDescription>
                 </>
               )}
@@ -102,7 +92,7 @@ export function AppearanceSettings({ isMenu = false }: { isMenu?: boolean }) {
                       field.onChange(value);
                       setTheme(value);
                     }}
-                    defaultValue={field.value}
+                    value={field.value}
                     className="flex justify-around items-center rounded-lg bg-muted p-1"
                   >
                     <FormItem className="w-20">
@@ -148,7 +138,7 @@ export function AppearanceSettings({ isMenu = false }: { isMenu?: boolean }) {
                     field.onChange(value);
                     setTheme(value);
                   }}
-                  defaultValue={field.value}
+                  value={field.value}
                   className="grid max-w-md grid-cols-1 pt-2 md:grid-cols-3 gap-8"
                 >
                   <FormItem>
@@ -157,18 +147,18 @@ export function AppearanceSettings({ isMenu = false }: { isMenu?: boolean }) {
                         <RadioGroupItem value="light" className="sr-only" />
                       </FormControl>
                       <div className="items-center rounded-md border-2 border-muted p-1 hover:border-accent">
-                        <div className="space-y-2 rounded-sm bg-[#ecedef] p-2">
+                        <div className="space-y-2 rounded-sm bg-[#f4f2ef] p-2">
                           <div className="space-y-2 rounded-md bg-white p-2 shadow-sm">
-                            <div className="h-2 w-[80px] rounded-lg bg-[#ecedef]" />
-                            <div className="h-2 w-[100px] rounded-lg bg-[#ecedef]" />
+                            <div className="h-2 w-[80px] rounded-lg bg-[#e3dfd8]" />
+                            <div className="h-2 w-[100px] rounded-lg bg-[#e3dfd8]" />
                           </div>
                           <div className="flex items-center space-x-2 rounded-md bg-white p-2 shadow-sm">
-                            <div className="h-4 w-4 rounded-full bg-[#ecedef]" />
-                            <div className="h-2 w-[100px] rounded-lg bg-[#ecedef]" />
+                            <div className="h-4 w-4 rounded-full bg-[#e3dfd8]" />
+                            <div className="h-2 w-[100px] rounded-lg bg-[#e3dfd8]" />
                           </div>
                           <div className="flex items-center space-x-2 rounded-md bg-white p-2 shadow-sm">
-                            <div className="h-4 w-4 rounded-full bg-[#ecedef]" />
-                            <div className="h-2 w-[100px] rounded-lg bg-[#ecedef]" />
+                            <div className="h-4 w-4 rounded-full bg-[#e3dfd8]" />
+                            <div className="h-2 w-[100px] rounded-lg bg-[#e3dfd8]" />
                           </div>
                         </div>
                       </div>
@@ -224,8 +214,6 @@ export function AppearanceSettings({ isMenu = false }: { isMenu?: boolean }) {
             </FormItem>
           )}
         />
-        
-        {!isMenu && <Button type="submit">Update Theme</Button>}
       </form>
     </Form>
   )

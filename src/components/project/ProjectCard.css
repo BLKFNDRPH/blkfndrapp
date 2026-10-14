@@ -34,6 +34,19 @@
   background: hsl(var(--muted-foreground) / 0.35);
 }
 
+/*
+ * On the light theme's cream page the deep gold at that strength reads as a
+ * tan smudge beside the card rather than a layer behind it (QA Cycle 7,
+ * BF-112). Fainter there; the dark theme keeps the stronger gold.
+ */
+:root:not(.dark) .project-card-wrapper::before {
+  background: hsl(var(--accent) / 0.2);
+}
+
+:root:not(.dark) .project-card-wrapper::after {
+  background: hsl(var(--muted-foreground) / 0.15);
+}
+
 .project-card-wrapper:hover > .project-card {
   animation-name: hoverPop;
   animation-duration: 0.4s;

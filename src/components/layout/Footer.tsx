@@ -31,7 +31,7 @@ export default function Footer() {
             Stakes are held in each project&apos;s on-chain vault, never in a
             BLKFNDR account.
           </p>
-          <p className="text-xs text-muted-foreground/80">
+          <p className="text-xs text-muted-foreground">
             Secured by Soroban smart contracts on Stellar
             {IS_PRACTICE_NETWORK ? " Testnet" : ""}
           </p>
