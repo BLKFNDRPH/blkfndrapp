@@ -20,7 +20,7 @@ const PROTECTIONS = [
   {
     icon: Trash2,
     title: "A builder's ID is deleted once it's checked.",
-    body: "When a reviewer decides, the document and the ID number, date of birth, address and email typed with it are permanently deleted. If they approve before you've set up a wallet, those details go when you attach one.",
+    body: "When a reviewer decides, the document and the ID number, date of birth, address and email typed with it are permanently deleted. If they approve before you've set up a wallet, those details go when you attach one, or after 30 days if you don't.",
   },
   {
     icon: Fingerprint,

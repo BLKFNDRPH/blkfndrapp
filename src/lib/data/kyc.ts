@@ -14,6 +14,7 @@ import { signAttestation, signRevocation } from "@/lib/managed-wallet";
 import { notify, notifyAdmins } from "@/lib/data/notifications";
 import { computeDetailsHash } from "@/lib/kyc/details-hash";
 import { renewalState, formatDay, RENEWAL_WINDOW_DAYS } from "@/lib/kyc/renewal";
+import { WALLETLESS_APPROVAL_DAYS, WALLETLESS_EXPIRED_REASON } from "@/lib/kyc/walletless";
 import { ADDRESS_MAX, composeAddress, kycDetailProblems, kycServerToday, type KycRulesField } from "@/lib/kyc/rules";
 import { identityClient, simulate } from "@/lib/stellar-clients";
 
@@ -347,7 +348,7 @@ export async function attachOwnKycWallet(): Promise<{
   const { data: row, error } = await admin
     .from("kyc_requests")
     .select(
-      "stellar_address, status, full_name, date_of_birth, document_type, id_number, document_expires_on, residential_address",
+      "stellar_address, status, rejection_reason, verified_until, full_name, date_of_birth, document_type, id_number, document_expires_on, residential_address",
     )
     .eq("user_id", caller.userId)
     .maybeSingle();
@@ -357,7 +358,20 @@ export async function attachOwnKycWallet(): Promise<{
   // A rejection deleted the details the hash is computed from. Resubmitting
   // brings them back and attaches the wallet in the same step.
   if (row.status === "rejected") {
-    throw new Error("Your identity check wasn't accepted. Submit it again, and your wallet is attached with it.");
+    throw new Error(
+      row.rejection_reason === WALLETLESS_EXPIRED_REASON
+        ? `${WALLETLESS_EXPIRED_REASON}. Submit again, and your wallet is attached with it.`
+        : "Your identity check wasn't accepted. Submit it again, and your wallet is attached with it.",
+    );
+  }
+
+  // An approval whose ID has expired can't be recorded on-chain any more
+  // (attestSubmission refuses it), so attaching would only tell the reviewers
+  // about something they can't act on. The applicant verifies again instead.
+  if (row.status === "approved" && renewalState(row.verified_until) === "lapsed") {
+    throw new Error(
+      `Your ID expired on ${formatDay(row.verified_until!)}, so this approval can't be completed. Verify again with a current one, and your wallet is attached with it.`,
+    );
   }
 
   if (row.stellar_address) {
@@ -555,7 +569,7 @@ export async function decideSubmission(
           (stillUntil ? ` Your current verification holds until ${formatDay(stillUntil)}.` : "")
         : recorded
           ? "You can open a vault for your project."
-          : "A reviewer approved your documents. Set up a wallet and attach it on the verification page to finish."),
+          : `A reviewer approved your documents. Set up a wallet and attach it on the verification page within ${WALLETLESS_APPROVAL_DAYS} days to finish.`),
     url: "/profile/kyc-attestation",
     // The applicant was told "we'll notify you by email".
     email: "account",

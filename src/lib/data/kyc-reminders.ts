@@ -4,6 +4,12 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { KYC_REVIEWER_ROLES } from "@/lib/supabase/auth";
 import { emailColumns } from "@/lib/data/notifications";
 import { formatDay, renewalState, renewalWindowEnd } from "@/lib/kyc/renewal";
+import {
+  walletDeadline,
+  walletlessStage,
+  WALLETLESS_EXPIRED_REASON,
+  WALLETLESS_REMINDER_DAYS,
+} from "@/lib/kyc/walletless";
 
 /**
  * Identity verifications coming up for renewal, and ones that have lapsed.
@@ -127,4 +133,112 @@ export async function queueKycExpiryReminders(
     return { due: due.length, created: 0 };
   }
   return { due: due.length, created: notifications.length };
+}
+
+export interface WalletlessApprovalsResult {
+  /** Reminders due this run, before the once-only check. */
+  reminders: number;
+  /** Reminders created this run. */
+  reminded: number;
+  /** Approvals past the limit this run. */
+  expiring: number;
+  /** Approvals ended this run: details deleted, applicant told. */
+  expired: number;
+}
+
+/**
+ * Approvals given before the applicant had a wallet (src/lib/kyc/walletless.ts).
+ * The applicant is reminded on day 7 and day 25. On day 30 the approval ends:
+ * the check is turned down with WALLETLESS_EXPIRED_REASON, which makes the
+ * kyc_requests_drop_identity_after_decision trigger delete the ID number, date
+ * of birth, address and email, and verified_until is cleared, as a revoke
+ * clears it, so nothing counts the approval any more. Nothing is on-chain to
+ * revoke: without a wallet it was never recorded.
+ *
+ * Run every minute with the other identity reminders. Reminders are claimed in
+ * notification_once like theirs. An approval is ended by an update that only
+ * matches while it is still approved, walletless and unchanged since the scan,
+ * so a wallet attached in between wins and two runs can't both end it.
+ */
+export async function queueWalletlessApprovals(
+  options: { dryRun?: boolean; now?: Date } = {},
+): Promise<WalletlessApprovalsResult> {
+  const now = options.now ?? new Date();
+  const admin = createAdminClient();
+
+  const { data: rows, error } = await admin
+    .from("kyc_requests")
+    .select("id, user_id, updated_at")
+    .eq("status", "approved")
+    .is("stellar_address", null);
+  if (error) throw new Error(`Could not list approvals waiting for a wallet: ${error.message}`);
+
+  const reminders: { key: string; userId: string; title: string; caption: string }[] = [];
+  const expiring: { id: string; userId: string; approvedAt: string }[] = [];
+  for (const row of rows ?? []) {
+    const approvedAt = row.updated_at as string;
+    const stage = walletlessStage(approvedAt, now);
+    if (stage.stage === "remind") {
+      const by = formatDay(walletDeadline(approvedAt).toISOString().slice(0, 10));
+      reminders.push({
+        key: `kyc-attach-wallet:${row.id}:${approvedAt}:${stage.day}`,
+        userId: row.user_id,
+        title: stage.day === WALLETLESS_REMINDER_DAYS[0] ? "Attach a wallet to finish your verification" : `${stage.daysLeft} days left to attach a wallet`,
+        caption: `Your documents are approved. Attach the wallet you'll open vaults from by ${by}. After that the approval ends, your details are deleted and you'd need to submit again.`,
+      });
+    } else if (stage.stage === "expired") {
+      expiring.push({ id: row.id, userId: row.user_id, approvedAt });
+    }
+  }
+  if (options.dryRun) return { reminders: reminders.length, reminded: 0, expiring: expiring.length, expired: 0 };
+
+  let reminded = 0;
+  if (reminders.length > 0) {
+    const { data: claimed, error: claimError } = await admin
+      .from("notification_once")
+      .upsert(
+        reminders.map((r) => ({ key: r.key })),
+        { onConflict: "key", ignoreDuplicates: true },
+      )
+      .select("key");
+    if (claimError) throw new Error(`Could not claim wallet reminders: ${claimError.message}`);
+    const fresh = new Set((claimed ?? []).map((c) => String(c.key)));
+    const toSend = reminders.filter((r) => fresh.has(r.key));
+    if (toSend.length > 0) {
+      const { error: insertError } = await admin.from("notifications").insert(
+        toSend.map((r) => ({ user_id: r.userId, title: r.title, caption: r.caption, url: IDENTITY_PAGE, ...emailColumns("account") })),
+      );
+      if (insertError) console.error("[kyc-reminders] Could not create wallet reminders:", insertError.message);
+      else reminded = toSend.length;
+    }
+  }
+
+  let expired = 0;
+  for (const e of expiring) {
+    const { data: ended, error: endError } = await admin
+      .from("kyc_requests")
+      .update({ status: "rejected", rejection_reason: WALLETLESS_EXPIRED_REASON, verified_until: null })
+      .eq("id", e.id)
+      .eq("status", "approved")
+      .is("stellar_address", null)
+      .eq("updated_at", e.approvedAt)
+      .select("id")
+      .maybeSingle();
+    if (endError) {
+      console.error("[kyc-reminders] Could not end a walletless approval:", endError.message);
+      continue;
+    }
+    if (!ended) continue; // A wallet was attached, or another run got there first.
+    expired++;
+    const { error: noticeError } = await admin.from("notifications").insert({
+      user_id: e.userId,
+      title: "Your identity approval has ended",
+      caption: `${WALLETLESS_EXPIRED_REASON}. Set up a wallet, then submit your documents again.`,
+      url: IDENTITY_PAGE,
+      ...emailColumns("account"),
+    });
+    if (noticeError) console.error("[kyc-reminders] Could not tell the applicant their approval ended:", noticeError.message);
+  }
+
+  return { reminders: reminders.length, reminded, expiring: expiring.length, expired };
 }

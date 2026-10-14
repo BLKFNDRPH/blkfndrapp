@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { queueVoteReminders } from "@/lib/data/vote-reminders";
-import { queueKycExpiryReminders } from "@/lib/data/kyc-reminders";
+import { queueKycExpiryReminders, queueWalletlessApprovals } from "@/lib/data/kyc-reminders";
 import { sendNotificationEmails } from "@/lib/email/notification-emails";
 import crypto from "crypto";
 
 export const dynamic = "force-dynamic";
 
 /**
- * Called every minute by the notification-emails cron. Three jobs:
+ * Called every minute by the notification-emails cron. Four jobs (2b ending
+ * approvals that waited 30 days for a wallet, src/lib/kyc/walletless.ts):
  *
  * 1. Queue "one day left to vote" reminders for stakeholders who haven't voted
  *    on a stage closing within the day. These go to the bell whether or not
@@ -15,6 +16,8 @@ export const dynamic = "force-dynamic";
  * 2. Queue identity renewal reminders: to builders whose ID expires within
  *    the renewal window or has expired, and to the KYC reviewers once one has
  *    lapsed. Bell either way, like the vote reminders.
+ * 2b. Remind applicants approved without a wallet to attach one, and end the
+ *    approval after 30 days, which deletes the ID details it was holding.
  * 3. Email the notifications queued for email, through Resend. Without a
  *    Resend key this sends nothing.
  *
@@ -60,8 +63,12 @@ export async function POST(req: NextRequest) {
       console.error("[notification-emails] Identity reminders failed:", error);
       return { error: String(error) };
     });
+    const walletlessApprovals = await queueWalletlessApprovals({ dryRun }).catch((error: unknown) => {
+      console.error("[notification-emails] Walletless approvals failed:", error);
+      return { error: String(error) };
+    });
     const emails = await sendNotificationEmails({ dryRun });
-    return NextResponse.json({ success: true, reminders, identityReminders, emails });
+    return NextResponse.json({ success: true, reminders, identityReminders, walletlessApprovals, emails });
   } catch (error) {
     console.error("Error in notification-emails route:", error);
     return NextResponse.json({ success: false, error: String(error) }, { status: 500 });
