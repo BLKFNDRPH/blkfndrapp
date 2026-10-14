@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { AuthForm } from "@/components/auth/AuthForm";
 import { signOut } from "@/app/auth/actions";
+import { clearAllDrafts } from "@/lib/listing-draft";
 
 /**
  * What a visitor sees at /admin when they are not an admin.
@@ -53,7 +54,7 @@ export function AdminSignIn({
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            <form action={signOut}>
+            <form action={signOut} onSubmit={() => clearAllDrafts()}>
               <Button type="submit" variant="outline" className="w-full">
                 Sign in with a different account
               </Button>
