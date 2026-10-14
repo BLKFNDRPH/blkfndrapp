@@ -37,6 +37,7 @@ import {
   DialogFooter,
 } from "../ui/dialog";
 import { cn } from "@/lib/utils";
+import { namesDiffer } from "@/lib/kyc/rules";
 import { NETWORK_PASSPHRASE, SOROBAN_RPC_URL } from "@/lib/network";
 import { formatDay, renewalState } from "@/lib/kyc/renewal";
 import { RecordCheckDialog, type RecordTarget } from "./RecordCheckDialog";
@@ -70,6 +71,8 @@ interface QueueRow {
  *  so on a decided case these are null. */
 interface CaseDetail {
   full_name: string;
+  /** The applicant's display name on the site, to compare with the document's. */
+  account_name: string | null;
   email: string | null;
   id_number: string | null;
   date_of_birth: string | null;
@@ -506,6 +509,19 @@ export function IdentityRegistryPanel() {
                         <p className="text-lg font-bold text-foreground leading-snug">
                           {detail?.full_name || (isOpen ? "—" : "Open the case to view")}
                         </p>
+                        {detail?.account_name && (
+                          namesDiffer(detail.full_name, detail.account_name) ? (
+                            <p className="flex items-start gap-1.5 text-xs font-medium text-amber-700 dark:text-amber-400">
+                              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                              <span>
+                                Differs from the name on the account: <span className="font-semibold">{detail.account_name}</span>.
+                                Check the document is theirs.
+                              </span>
+                            </p>
+                          ) : (
+                            <p className="text-xs text-muted-foreground">Account name: {detail.account_name}</p>
+                          )
+                        )}
                       </div>
                       <div className="space-y-1">
                         <span className="text-[11px] uppercase font-semibold text-muted-foreground tracking-wider block">

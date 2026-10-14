@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { cn } from "@/lib/utils";
+import { kycDetailProblems, kycLocalToday, type KycRulesField } from "@/lib/kyc/rules";
 
 /**
  * The identity check, on one page in three parts: the document, the details
@@ -41,13 +42,19 @@ type Field =
   | "address"
   | "consent";
 
-/** Whole years between a YYYY-MM-DD date and today. */
-function ageOn(dob: string, today = new Date()): number {
-  const d = new Date(`${dob}T00:00:00`);
-  let age = today.getFullYear() - d.getFullYear();
-  const m = today.getMonth() - d.getMonth();
-  if (m < 0 || (m === 0 && today.getDate() < d.getDate())) age--;
-  return age;
+/** Where each rule in src/lib/kyc/rules.ts shows its problem on this form. */
+const RULE_FIELD: Record<KycRulesField, Field> = {
+  fullName: "fullName",
+  idNumber: "idNumber",
+  dateOfBirth: "dob",
+  documentExpiresOn: "expiry",
+  residentialAddress: "address",
+};
+
+function onForm(found: Partial<Record<KycRulesField, string>>): Partial<Record<Field, string>> {
+  const out: Partial<Record<Field, string>> = {};
+  for (const [rule, message] of Object.entries(found) as [KycRulesField, string][]) out[RULE_FIELD[rule]] = message;
+  return out;
 }
 
 export function IdentityForm({
@@ -129,19 +136,27 @@ export function IdentityForm({
   };
 
   const check = (): Partial<Record<Field, string>> => {
-    const out: Partial<Record<Field, string>> = {};
-    if (!fullName.trim()) out.fullName = "Enter your full legal name, as on the document.";
+    // The server runs the same rules again; these are for instant feedback.
+    const out = onForm(
+      kycDetailProblems(
+        { fullName, idNumber, dateOfBirth: dob, documentExpiresOn: expiry, residentialAddress: address },
+        kycLocalToday(),
+      ),
+    );
     if (!/^\S+@\S+\.\S+$/.test(email.trim())) out.email = "Enter an email address we can reach you on.";
     if (!file) out.document = "Add a photo or scan of your document.";
-    if (!idNumber.trim()) out.idNumber = "Enter the number printed on your document.";
-    if (!dob) out.dob = "Enter your date of birth.";
-    else if (ageOn(dob) < 18) out.dob = "You must be 18 or over.";
-    if (!expiry) out.expiry = "Enter the date your document expires.";
-    else if (new Date(`${expiry}T23:59:59`) < new Date()) out.expiry = "This document has expired. Use one that's still valid.";
-    if (!address.trim()) out.address = "Enter your home address.";
     if (!consent) out.consent = "Tick this so a reviewer can check your document.";
     return out;
   };
+
+  // After React has committed the highlights, so there is something to find.
+  // A timer rather than an animation frame, which a background tab never runs.
+  const showFirstProblem = () =>
+    setTimeout(() => {
+      const first = document.querySelector<HTMLElement>('[aria-invalid="true"], [data-problem="true"]');
+      first?.focus();
+      first?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -149,14 +164,7 @@ export function IdentityForm({
     const found = check();
     setProblems(found);
     if (Object.keys(found).length > 0) {
-      // After React has committed the highlights, so there is something to
-      // find. A timer rather than an animation frame, which a background tab
-      // never runs.
-      setTimeout(() => {
-        const first = document.querySelector<HTMLElement>('[aria-invalid="true"], [data-problem="true"]');
-        first?.focus();
-        first?.scrollIntoView({ behavior: "smooth", block: "center" });
-      });
+      showFirstProblem();
       return;
     }
 
@@ -187,6 +195,13 @@ export function IdentityForm({
         detailsHash,
         consentGiven: consent,
       });
+      if (!res.success && res.fields) {
+        // Refused by the server's run of the rules: mark the fields, as the
+        // form's own run would have.
+        setProblems(onForm(res.fields));
+        showFirstProblem();
+        return;
+      }
       if (!res.success) throw new Error(res.error);
       onSubmitted();
     } catch (error) {
@@ -389,7 +404,7 @@ export function IdentityForm({
               className={fieldClass("expiry")}
             />
             <p id="expiry-hint" className="text-sm text-muted-foreground">
-              Must be in the future.
+              Must still be valid after today.
             </p>
             {problem("expiry")}
           </div>
@@ -469,7 +484,7 @@ export function IdentityForm({
       <div className="space-y-3 border-t border-border pt-6">
         {problemCount > 0 && (
           <p role="alert" className="text-sm font-medium text-destructive">
-            Fill in the highlighted {problemCount === 1 ? "field" : "fields"} to continue.
+            Check the highlighted {problemCount === 1 ? "field" : "fields"} to continue.
           </p>
         )}
         {submitError && (
