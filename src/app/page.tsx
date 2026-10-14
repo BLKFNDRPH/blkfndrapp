@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight, ShieldCheck, Lock, Users } from "lucide-react";
 
@@ -107,6 +108,23 @@ export default function Home() {
                     Live on Testnet
                   </>
                 ) : null}
+              </div>
+
+              {/*
+                The logo's emblem over the wordmark below, as in the full logo;
+                the wordmark keeps the site's own font. Decorative, like the
+                wordmark: the brand name is in the title and the header.
+              */}
+              <div className="mt-8 flex justify-center">
+                <Image
+                  src="/brand/blkfndr-emblem.png"
+                  alt=""
+                  width={342}
+                  height={350}
+                  priority
+                  sizes="(min-width: 768px) 144px, 112px"
+                  className="h-auto w-28 md:w-36"
+                />
               </div>
 
               {/*

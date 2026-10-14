@@ -301,7 +301,7 @@ export default function Header() {
                   >
                     <BrandMark />
                     <div className="text-xl">
-                      <StaticBLKFNDR />
+                      <StaticBLKFNDR className="-mt-2" />
                     </div>
                   </Link>
                   <nav className="flex flex-col gap-1 relative z-10" aria-label="Main">
@@ -445,7 +445,7 @@ export default function Header() {
               <Link href="/" className="flex items-center gap-2 sm:gap-3">
                 <BrandMark />
                 <div className="text-base sm:text-xl">
-                  <StaticBLKFNDR />
+                  <StaticBLKFNDR className="-mt-2" />
                 </div>
               </Link>
             </div>
