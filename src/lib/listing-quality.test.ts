@@ -62,6 +62,28 @@ test("a title pasted in twice is caught, as one on the live registry was (BF-078
   );
 });
 
+test("a title pasted twice and then cut off by the length limit is caught", () => {
+  // As it was on the live registry before 14 Oct 2026.
+  assert.match(
+    textProblem("title", "MediPulse AI: Decentralized Telemetry & Patient Data Vault MediPulse AI Decentra")!,
+    /repeats itself/,
+  );
+  assert.match(textProblem("title", "Ready Rangers Ready Ran")!, /repeats itself/);
+  assert.match(textProblem("title", "Ready Rangers Ready Rangers")!, /repeats itself/);
+  assert.match(textProblem("tagline", "Clean water for island schools. Clean water for isl")!, /repeats itself/);
+  // Two words at least, and the copy must follow the whole stretch it repeats.
+  for (const ok of [
+    "Farm to Farm",
+    "Go Go Gadget",
+    "Kids Teach Kids",
+    "Water for Water Stations",
+    "Solar for Schools, Solar for All",
+    "New York New Ventures",
+  ]) {
+    assert.equal(textProblem("title", ok), null, ok);
+  }
+});
+
 test("Filipino and other non-English words pass", () => {
   for (const t of [
     "Bayanihan Solar sa Barangay Malinis",

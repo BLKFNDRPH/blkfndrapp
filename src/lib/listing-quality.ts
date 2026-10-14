@@ -93,6 +93,25 @@ function repeatsItself(text: string, n: number): boolean {
   return false;
 }
 
+/**
+ * Text whose last words are its first words again, the final one perhaps cut
+ * short: a title pasted in twice and then clipped by the length limit, as
+ * "MediPulse AI: Decentralized Telemetry & Patient Data Vault MediPulse AI
+ * Decentra" was on the live registry. A clipped copy is often too short for
+ * repeatsItself to see. Two words at least, and the copy must come after the
+ * whole stretch it repeats, so "Go Go Gadget" and "Farm to Farm" pass.
+ */
+function endsWithItsOpening(text: string): boolean {
+  const w = words(text.toLowerCase());
+  const n = w.length;
+  for (let start = Math.ceil(n / 2); start <= n - 2; start++) {
+    const copy = w.slice(start);
+    const whole = copy.slice(0, -1).every((word, i) => word === w[i]);
+    if (whole && w[copy.length - 1].startsWith(copy[copy.length - 1])) return true;
+  }
+  return false;
+}
+
 /** The problem with one piece of listing text, in words the builder can act on, or null. */
 export function textProblem(field: ListingTextField, text: string): string | null {
   const trimmed = text.trim();
@@ -112,7 +131,7 @@ export function textProblem(field: ListingTextField, text: string): string | nul
   if (mash.length > 0 && mash.length * 2 >= judged.length)
     return `The ${label} doesn't read as words ("${mash[0]}"). Write it the way you'd describe the project to a stakeholder.`;
 
-  if (repeatsItself(trimmed, field === "description" ? 12 : 3))
+  if (repeatsItself(trimmed, field === "description" ? 12 : 3) || (field !== "description" && endsWithItsOpening(trimmed)))
     return `The ${label} repeats itself. Check it was only pasted in once.`;
 
   return null;
