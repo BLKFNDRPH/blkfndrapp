@@ -78,6 +78,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { Card, CardContent } from "../ui/card";
 import { runImproveListingQuality } from "@/app/actions";
+import { textProblem, listingTextProblems, type ListingTextField } from "@/lib/listing-quality";
 import type { ImproveListingQualityOutput } from "@/ai/flows/improve-listing-quality";
 import { AiAnalysisDialog } from "./AiAnalysisDialog";
 import { Wand2, Calendar, Plus, Trash2, MapPin } from "lucide-react";
@@ -249,6 +250,23 @@ function ToastDetail({ message, detail, txUrl }: { message: string; detail?: str
 function FieldCharacterCount({ value, max }: { value: string; max: number }) {
   const { formDescriptionId } = useFormField();
   return <CharacterCount id={formDescriptionId} value={value} max={max} />;
+}
+
+/**
+ * A warning under the title, tagline or description when it doesn't read as
+ * written by a person (src/lib/listing-quality.ts). Once the builder has left
+ * the field, so half-typed words aren't judged, and not while the field shows
+ * an error, which says the same thing in red when they try to open the vault.
+ */
+function QualityHint({ field, value }: { field: ListingTextField; value: string }) {
+  const { isTouched, error } = useFormField();
+  const message = isTouched && !error ? textProblem(field, value ?? "") : null;
+  if (!message) return null;
+  return (
+    <p role="status" className="text-sm text-amber-700 dark:text-amber-400">
+      {message} You can keep drafting; the vault can&apos;t open until it&apos;s fixed.
+    </p>
+  );
 }
 
 /**
@@ -1644,15 +1662,28 @@ export function ListingForm() {
    * amounts, has no control of its own and renders no message, so a goal
    * below the minimum rejected the submit with nothing on screen at all.
    */
+  /**
+   * Title, tagline or description that doesn't read as written by a person:
+   * keyboard mash, placeholder text, or pasted in twice (QA Cycle 7, BF-117,
+   * BF-078). A warning under the field while drafting; here, a block, because
+   * the vault writes them for good. Fields the schema has already refused are
+   * left to their own message.
+   */
+  const qualityProblems = (values: Pick<FormSchema, "title" | "tagline" | "description">, skip: object = {}) =>
+    listingTextProblems(values).filter((p) => !(p.field in skip));
+
   const onInvalid = (errors: FieldErrors<FormSchema>) => {
     const milestoneProblems = collectMilestoneProblems();
 
     const fieldMessages = Object.values(errors)
       .map((e) => (e as { message?: unknown } | undefined)?.message)
       .filter((m): m is string => typeof m === "string");
+    const textProblems = qualityProblems(form.getValues(), errors);
+    for (const p of textProblems) form.setError(p.field, { type: "quality", message: p.message });
 
     setLaunchProblems([
       ...fieldMessages,
+      ...textProblems.map((p) => p.message),
       ...milestoneProblems,
       ...depositProblems(),
       ...(user ? prerequisiteProblems() : []),
@@ -1668,7 +1699,10 @@ export function ListingForm() {
     // The stage rows are not form fields, so zod passing says nothing about
     // them. Checked here, where a failure can still be shown.
     const milestoneProblems = collectMilestoneProblems();
-    const formProblems = [...milestoneProblems, ...depositProblems()];
+    const textProblems = qualityProblems(values);
+    // Marked on the field too, so it is highlighted and scrolled to.
+    for (const p of textProblems) form.setError(p.field, { type: "quality", message: p.message });
+    const formProblems = [...textProblems.map((p) => p.message), ...milestoneProblems, ...depositProblems()];
 
     if (!user && formProblems.length === 0) {
       toast({
@@ -1683,7 +1717,7 @@ export function ListingForm() {
     if (problems.length > 0) {
       setLaunchProblems(problems);
       document
-        .querySelector('[data-milestone-error="true"], #builder-deposit[aria-invalid="true"]')
+        .querySelector('[aria-invalid="true"], [data-milestone-error="true"], #builder-deposit[aria-invalid="true"]')
         ?.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
@@ -1800,6 +1834,7 @@ export function ListingForm() {
                           </FormControl>
                           <FieldCharacterCount value={field.value} max={LISTING_LIMITS.title} />
                           <FormMessage />
+                          <QualityHint field="title" value={field.value} />
                         </FormItem>
                       )}
                     />
@@ -1815,6 +1850,7 @@ export function ListingForm() {
                           </FormControl>
                           <FieldCharacterCount value={field.value} max={LISTING_LIMITS.tagline} />
                           <FormMessage />
+                          <QualityHint field="tagline" value={field.value} />
                         </FormItem>
                       )}
                     />
@@ -1834,6 +1870,7 @@ export function ListingForm() {
                           </FormControl>
                           <FieldCharacterCount value={field.value} max={LISTING_LIMITS.description} />
                           <FormMessage />
+                          <QualityHint field="description" value={field.value} />
                         </FormItem>
                       )}
                     />
