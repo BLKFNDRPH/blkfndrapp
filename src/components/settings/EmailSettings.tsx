@@ -27,7 +27,17 @@ export function EmailSettings() {
   const [prefs, setPrefs] = useState<EmailPreferences | null>(null);
   const [saving, setSaving] = useState<EmailSwitch | null>(null);
   const [failed, setFailed] = useState<EmailSwitch | null>(null);
+  // The switch that just saved, so it can say so: a switch alone gave no sign
+  // the change had reached the account (QA Cycle 7, BF-116).
+  const [saved, setSaved] = useState<EmailSwitch | null>(null);
   const [attempt, setAttempt] = useState(0);
+
+  // The "Saved" note fades after a few seconds; it has said what it needed to.
+  useEffect(() => {
+    if (!saved) return;
+    const timer = setTimeout(() => setSaved(null), 3000);
+    return () => clearTimeout(timer);
+  }, [saved]);
 
   // Keyed on the account, not the user object, which is replaced on every
   // refresh and would otherwise reset the switches mid-change.
@@ -88,12 +98,14 @@ export function EmailSettings() {
   const flip = async (sw: EmailSwitch, on: boolean) => {
     const before = prefs;
     setFailed(null);
+    setSaved(null);
     setSaving(sw);
     setPrefs({ ...prefs, [sw]: on });
     const res = await setMyEmailPreference(sw, on).catch(() => null);
     setSaving(null);
     if (res?.success) {
       setPrefs(res.preferences);
+      setSaved(sw);
     } else {
       setPrefs(before);
       setFailed(sw);
@@ -132,6 +144,9 @@ export function EmailSettings() {
                     We couldn&apos;t save that. Try again.
                   </p>
                 )}
+                <p role="status" className="text-xs font-medium empty:!mt-0 text-emerald-700 dark:text-emerald-400">
+                  {saved === sw && (prefs[sw] ? "Saved. We'll email you about this." : "Saved. We won't email you about this.")}
+                </p>
               </div>
               <Switch
                 id={id}

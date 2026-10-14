@@ -12,6 +12,7 @@ import { formatDay, renewalState, RENEWAL_WINDOW_DAYS } from "@/lib/kyc/renewal"
 import { Button } from "@/components/ui/button";
 import { IdentityForm } from "@/components/identity/IdentityForm";
 import { VerificationRecord } from "@/components/identity/VerificationRecord";
+import { PrivacyStatement } from "@/components/identity/PrivacyStatement";
 import { cn } from "@/lib/utils";
 
 /**
@@ -448,7 +449,10 @@ export default function VerifyIdentityPage() {
               <dd className="font-medium">{DOCUMENT_NAMES[submission.document_type] ?? "Identity document"}</dd>
             </div>
             <div>
-              <dt className="text-muted-foreground">Expires</dt>
+              {/* "Expires" read as the verification expiring, which on a
+                  check filed the same day looked like it was born expired
+                  (QA Cycle 7, BF-109). It is the document's date. */}
+              <dt className="text-muted-foreground">Document valid until</dt>
               <dd className="font-medium">{day(submission.document_expires_on) || "Not given"}</dd>
             </div>
             <div>
@@ -481,15 +485,18 @@ export default function VerifyIdentityPage() {
           )}
           {/* Deleted on the decision, or for an approval without a wallet
               once one is attached (kyc_requests_drop_identity_after_decision). */}
-          <p className="mt-4 text-xs text-muted-foreground">
-            {submission.status === "pending"
-              ? filed
-                ? "Your name, ID number, date of birth and address are never shown on this page. Only a reviewer can see them. Once they've decided, we delete your document, ID number, date of birth and address."
-                : "Your name, ID number, date of birth and address are never shown on this page. Only a reviewer can see them. Once they've decided, we delete your document. Your ID number, date of birth and address are deleted then too, or, if they approve before you've attached a wallet, once you attach one."
-              : submission.status === "approved" && !filed
-                ? "Your document has been deleted. Your ID number, date of birth and address are kept only until you attach your wallet, then deleted too."
-                : "Your document, ID number, date of birth and address have been deleted. We keep your name and a one-way SHA-256 hash of your details."}
-          </p>
+          <PrivacyStatement
+            stage={
+              submission.status === "pending"
+                ? "before-decision"
+                : submission.status === "approved" && !filed
+                  ? "approved-awaiting-wallet"
+                  : "decided"
+            }
+            hasWallet={Boolean(filed)}
+            where="status"
+            className="mt-4 text-xs"
+          />
         </section>
       )}
 
