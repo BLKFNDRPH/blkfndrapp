@@ -13,7 +13,48 @@
  * `npm test` runs it without the app's module aliases.
  */
 
-export type KycRulesField = "fullName" | "idNumber" | "dateOfBirth" | "documentExpiresOn" | "residentialAddress";
+/**
+ * A home address in parts (QA Cycle 7, BF-111). Line 1, city and country are
+ * required; the rest is optional, because not every country has barangays,
+ * provinces or postcodes.
+ */
+export interface AddressParts {
+  /** House or unit number, building and street. */
+  line1: string;
+  /** Barangay in the Philippines; district or area elsewhere. */
+  district: string;
+  city: string;
+  /** Province, state or region. */
+  province: string;
+  postcode: string;
+  country: string;
+}
+
+export type AddressField =
+  | "addressLine1"
+  | "addressDistrict"
+  | "addressCity"
+  | "addressProvince"
+  | "addressPostcode"
+  | "addressCountry";
+
+export type KycRulesField =
+  | "fullName"
+  | "idNumber"
+  | "dateOfBirth"
+  | "documentExpiresOn"
+  | "residentialAddress"
+  | AddressField;
+
+/** The most each address part may hold. Together they stay under the column's 500. */
+export const ADDRESS_MAX: Record<keyof AddressParts, number> = {
+  line1: 160,
+  district: 80,
+  city: 80,
+  province: 80,
+  postcode: 12,
+  country: 60,
+};
 
 export interface KycRulesInput {
   fullName: string;
@@ -22,7 +63,8 @@ export interface KycRulesInput {
   dateOfBirth: string;
   /** YYYY-MM-DD. */
   documentExpiresOn: string;
-  residentialAddress: string;
+  /** In parts from the current form; one line from a form loaded before the parts existed. */
+  residentialAddress: string | AddressParts;
 }
 
 /**
@@ -106,13 +148,83 @@ export function kycDetailProblems(input: KycRulesInput, today: KycToday): Partia
         ? "This document expires today. Use one that's still valid after today."
         : "This document has expired. Use one that's still valid.";
 
-  const address = input.residentialAddress.trim();
-  const parts = address.split(/[\s,]+/).filter(Boolean);
-  if (!address) out.residentialAddress = "Enter your home address.";
-  else if (address.length < 10 || parts.length < 2 || (address.match(/\p{L}/gu)?.length ?? 0) < 3)
-    out.residentialAddress = "Enter your full home address: street, city and country.";
+  if (typeof input.residentialAddress === "string") {
+    const address = input.residentialAddress.trim();
+    const parts = address.split(/[\s,]+/).filter(Boolean);
+    if (!address) out.residentialAddress = "Enter your home address.";
+    else if (address.length < 10 || parts.length < 2 || letters(address) < 3)
+      out.residentialAddress = "Enter your full home address: street, city and country.";
+  } else {
+    Object.assign(out, addressProblems(input.residentialAddress));
+  }
 
   return out;
+}
+
+const letters = (s: string) => s.match(/\p{L}/gu)?.length ?? 0;
+
+/** One part as it goes into the address: single-spaced, without stray commas at either end. */
+function tidyPart(part: string): string {
+  return part.replace(/\s+/g, " ").replace(/^[\s,]+|[\s,]+$/g, "");
+}
+
+const PLACE = /^[\p{L}\p{M}0-9 .,'’()-]+$/u;
+const POSTCODE = /^[A-Za-z0-9][A-Za-z0-9 -]*$/;
+
+/** Every problem with an address in parts, by field. */
+export function addressProblems(parts: AddressParts): Partial<Record<AddressField, string>> {
+  const out: Partial<Record<AddressField, string>> = {};
+  const p = {
+    line1: tidyPart(parts.line1),
+    district: tidyPart(parts.district),
+    city: tidyPart(parts.city),
+    province: tidyPart(parts.province),
+    postcode: tidyPart(parts.postcode),
+    country: tidyPart(parts.country),
+  };
+  const tooLong = (key: keyof AddressParts) => p[key].length > ADDRESS_MAX[key];
+  const place = (s: string) => PLACE.test(s) && letters(s) >= 2;
+
+  if (!p.line1) out.addressLine1 = "Enter your house or unit number and street.";
+  else if (tooLong("line1")) out.addressLine1 = `Keep this under ${ADDRESS_MAX.line1} characters.`;
+  else if (p.line1.split(/[\s,]+/).length < 2 || letters(p.line1) < 2)
+    out.addressLine1 = "Include the house or unit number and the street name.";
+
+  if (p.district && (tooLong("district") || !place(p.district)))
+    out.addressDistrict = "Use the name as it's written, in letters.";
+
+  if (!p.city) out.addressCity = "Enter your city or town.";
+  else if (tooLong("city") || !place(p.city)) out.addressCity = "Use the name as it's written, in letters.";
+
+  if (p.province && (tooLong("province") || !place(p.province)))
+    out.addressProvince = "Use the name as it's written, in letters.";
+
+  if (p.postcode && (tooLong("postcode") || !POSTCODE.test(p.postcode) || !/\d/.test(p.postcode)))
+    out.addressPostcode = "Use only the letters and digits of your postal code.";
+
+  if (!p.country) out.addressCountry = "Enter your country.";
+  else if (tooLong("country") || !/^[\p{L}\p{M} .'’()-]+$/u.test(p.country) || letters(p.country) < 2)
+    out.addressCountry = "Enter your country's name.";
+
+  return out;
+}
+
+/**
+ * The address in one line, as it is saved and as the details hash takes it:
+ * "line 1, district, city, province postcode, country", leaving out what is
+ * empty. The browser and the reviewer's record check both build it here, so
+ * the same parts always give the same line and the same hash.
+ */
+export function composeAddress(parts: AddressParts): string {
+  const provincePostcode = [tidyPart(parts.province), tidyPart(parts.postcode)].filter(Boolean).join(" ");
+  return [tidyPart(parts.line1), tidyPart(parts.district), tidyPart(parts.city), provincePostcode, tidyPart(parts.country)]
+    .filter(Boolean)
+    .join(", ");
+}
+
+/** Whether the address is Philippine, where the district is a barangay and the city may be a municipality. */
+export function isPhilippineAddress(country: string): boolean {
+  return /^(philippines|the philippines|ph|pilipinas)$/i.test(country.trim());
 }
 
 /** Today as YYYY-MM-DD on the device's own clock, for the form. */

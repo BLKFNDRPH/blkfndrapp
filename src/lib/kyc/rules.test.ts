@@ -1,6 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { kycDetailProblems, kycServerToday, namesDiffer, type KycRulesInput, type KycToday } from "./rules.ts";
+import {
+  addressProblems,
+  composeAddress,
+  isPhilippineAddress,
+  kycDetailProblems,
+  kycServerToday,
+  namesDiffer,
+  type AddressParts,
+  type KycRulesInput,
+  type KycToday,
+} from "./rules.ts";
 
 const today: KycToday = { forExpiry: "2026-10-09", forAge: "2026-10-09" };
 
@@ -104,4 +114,74 @@ test("a name that differs from the account's is flagged, a shortened one is not 
   assert.equal(namesDiffer("Kira Lhyn Calizo", "Kira Calizo"), false);
   assert.equal(namesDiffer("José Núñez", "jose nunez"), false);
   assert.equal(namesDiffer("Kira Lhyn Calizo", ""), false);
+});
+
+const makati: AddressParts = {
+  line1: "Unit 5B, 12 Rizal St",
+  district: "Brgy. San Antonio",
+  city: "Makati City",
+  province: "Metro Manila",
+  postcode: "1203",
+  country: "Philippines",
+};
+
+test("an address in parts passes and joins in a fixed order (BF-111)", () => {
+  assert.deepEqual(addressProblems(makati), {});
+  assert.deepEqual(kycDetailProblems({ ...valid, residentialAddress: makati }, today), {});
+  assert.equal(
+    composeAddress(makati),
+    "Unit 5B, 12 Rizal St, Brgy. San Antonio, Makati City, Metro Manila 1203, Philippines",
+  );
+});
+
+test("the optional parts can be left out, and the line closes up", () => {
+  const minimal = { line1: "221B Baker Street", district: "", city: "London", province: "", postcode: "", country: "United Kingdom" };
+  assert.deepEqual(addressProblems(minimal), {});
+  assert.equal(composeAddress(minimal), "221B Baker Street, London, United Kingdom");
+});
+
+test("the same parts always give the same line, however they were typed", () => {
+  const messy = {
+    line1: "  Unit 5B,  12 Rizal St, ",
+    district: "Brgy. San Antonio,",
+    city: " Makati   City",
+    province: "Metro Manila",
+    postcode: " 1203 ",
+    country: "Philippines ",
+  };
+  assert.equal(composeAddress(messy), composeAddress(makati));
+});
+
+test("the QA Cycle 7 address is refused part by part", () => {
+  const problems = addressProblems({
+    line1: "2435645645tfsvbfhgswdfb",
+    district: "",
+    city: "",
+    province: "",
+    postcode: "",
+    country: "",
+  });
+  assert.deepEqual(Object.keys(problems).sort(), ["addressCity", "addressCountry", "addressLine1"]);
+});
+
+test("each address part is checked for what it is", () => {
+  const with_ = (over: Partial<AddressParts>) => addressProblems({ ...makati, ...over });
+  assert.ok(with_({ city: "12345" }).addressCity);
+  assert.ok(with_({ district: "<b>x</b>" }).addressDistrict);
+  assert.ok(with_({ postcode: "ABCD" }).addressPostcode);
+  assert.ok(with_({ postcode: "12#4" }).addressPostcode);
+  assert.ok(with_({ country: "PH1" }).addressCountry);
+  assert.ok(with_({ line1: "x".repeat(161) + " st" }).addressLine1);
+  assert.deepEqual(with_({ postcode: "SW1A 1AA", country: "UK" }), {});
+  assert.deepEqual(with_({ city: "Côte-Saint-Luc", country: "Canada" }), {});
+});
+
+test("one-line addresses from a form loaded before the parts still work", () => {
+  assert.deepEqual(kycDetailProblems({ ...valid, residentialAddress: "5 Main St, Manila" }, today), {});
+  assert.ok(kycDetailProblems({ ...valid, residentialAddress: "2435645645tfsvbfhgswdfb" }, today).residentialAddress);
+});
+
+test("Philippine addresses are recognised by name", () => {
+  for (const ph of ["Philippines", "the philippines", "PH", "Pilipinas"]) assert.equal(isPhilippineAddress(ph), true, ph);
+  assert.equal(isPhilippineAddress("Japan"), false);
 });

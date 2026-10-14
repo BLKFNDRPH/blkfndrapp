@@ -14,7 +14,7 @@ import { signAttestation, signRevocation } from "@/lib/managed-wallet";
 import { notify, notifyAdmins } from "@/lib/data/notifications";
 import { computeDetailsHash } from "@/lib/kyc/details-hash";
 import { renewalState, formatDay, RENEWAL_WINDOW_DAYS } from "@/lib/kyc/renewal";
-import { kycDetailProblems, kycServerToday, type KycRulesField } from "@/lib/kyc/rules";
+import { ADDRESS_MAX, composeAddress, kycDetailProblems, kycServerToday, type KycRulesField } from "@/lib/kyc/rules";
 import { identityClient, simulate } from "@/lib/stellar-clients";
 
 /**
@@ -59,7 +59,19 @@ const SubmissionInput = z.object({
   idNumber: z.string().trim().min(1).max(100),
   dateOfBirth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD"),
   documentExpiresOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD"),
-  residentialAddress: z.string().trim().min(1).max(500),
+  // In parts from the current form. One line from a form loaded before the
+  // parts existed, so a page open across the deploy can still submit.
+  residentialAddress: z.union([
+    z.string().trim().min(1).max(500),
+    z.object({
+      line1: z.string().max(ADDRESS_MAX.line1 * 2),
+      district: z.string().max(ADDRESS_MAX.district * 2),
+      city: z.string().max(ADDRESS_MAX.city * 2),
+      province: z.string().max(ADDRESS_MAX.province * 2),
+      postcode: z.string().max(ADDRESS_MAX.postcode * 2),
+      country: z.string().max(ADDRESS_MAX.country * 2),
+    }),
+  ]),
   detailsHash: z.string().trim().length(64),
   consentGiven: z.literal(true, {
     errorMap: () => ({ message: "Consent is required to submit identity documents" }),
@@ -179,6 +191,12 @@ export async function submitOwnKyc(input: unknown) {
   const problems = kycDetailProblems(parsed, kycServerToday());
   if (Object.keys(problems).length > 0) throw new KycDetailsError(problems);
 
+  // Saved as one line, joined exactly as the browser joined it for the hash.
+  const residentialAddress =
+    typeof parsed.residentialAddress === "string"
+      ? parsed.residentialAddress
+      : composeAddress(parsed.residentialAddress);
+
   // The upload route files a document under the uploader's own id. Whatever a
   // check points at is deleted once it is decided, so a check must never point
   // at a file under someone else's.
@@ -199,7 +217,7 @@ export async function submitOwnKyc(input: unknown) {
     id_number: parsed.idNumber,
     date_of_birth: parsed.dateOfBirth,
     document_expires_on: parsed.documentExpiresOn,
-    residential_address: parsed.residentialAddress,
+    residential_address: residentialAddress,
     details_hash: parsed.detailsHash,
     consent_given: parsed.consentGiven,
     status: "pending" as const,
