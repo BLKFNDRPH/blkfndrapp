@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { WALLETLESS_APPROVAL_DAYS } from "@/lib/kyc/walletless";
 
 /**
  * What happens to an applicant's identity details, at each point of a check.
@@ -41,10 +42,10 @@ export function PrivacyStatement({
         : "Your name, ID number, date of birth and address are never shown on this page. Only a reviewer can see them.";
     const deleted = hasWallet
       ? "Once they've decided, we delete your document, ID number, date of birth and address."
-      : "Once they've decided, we delete your document. Your ID number, date of birth and address are deleted then too, or, if they approve before you've attached a wallet, once you attach one.";
+      : `Once they've decided, we delete your document. Your ID number, date of birth and address are deleted then too, or, if they approve before you've attached a wallet, once you attach one, and at the latest ${WALLETLESS_APPROVAL_DAYS} days after the approval.`;
     text = `${shown} ${deleted} ${kept}`;
   } else if (stage === "approved-awaiting-wallet") {
-    text = `Your document has been deleted. Your ID number, date of birth and address are kept only until you attach your wallet, then deleted too. ${kept}`;
+    text = `Your document has been deleted. Your ID number, date of birth and address are kept only until you attach your wallet, then deleted too. If no wallet is attached within ${WALLETLESS_APPROVAL_DAYS} days of the approval, they're deleted anyway and you'd submit again. ${kept}`;
   } else {
     text = `Your document, ID number, date of birth and address have been deleted. ${kept}`;
   }

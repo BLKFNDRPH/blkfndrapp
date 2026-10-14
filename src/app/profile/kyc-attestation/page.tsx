@@ -9,6 +9,7 @@ import { attachMyKycWallet, getMyKycStatus } from "@/app/actions";
 import type { ApplicantSubmission } from "@/lib/data/kyc";
 import { identityClient, simulate } from "@/lib/stellar-clients";
 import { formatDay, renewalState, RENEWAL_WINDOW_DAYS } from "@/lib/kyc/renewal";
+import { walletDeadline, WALLETLESS_EXPIRED_REASON } from "@/lib/kyc/walletless";
 import { Button } from "@/components/ui/button";
 import { IdentityForm } from "@/components/identity/IdentityForm";
 import { VerificationRecord } from "@/components/identity/VerificationRecord";
@@ -323,6 +324,20 @@ export default function VerifyIdentityPage() {
           </div>
         );
       case "rejected":
+        if (submission?.rejection_reason === WALLETLESS_EXPIRED_REASON) {
+          return (
+            <div className="space-y-3 rounded-xl border border-destructive/30 bg-destructive/10 p-5">
+              <p className="font-semibold">Your approval has ended</p>
+              <p className="text-sm">
+                {WALLETLESS_EXPIRED_REASON}. Set up the wallet you&apos;ll open vaults from, then submit your
+                documents again.
+              </p>
+              <Button type="button" onClick={() => setEditing(true)}>
+                Submit again
+              </Button>
+            </div>
+          );
+        }
         return (
           <div className="space-y-3 rounded-xl border border-destructive/30 bg-destructive/10 p-5">
             <p className="font-semibold">We couldn&apos;t verify this document</p>
@@ -360,6 +375,12 @@ export default function VerifyIdentityPage() {
               A reviewer approved your documents. Your verification counts once it&apos;s attached to the
               wallet you&apos;ll open vaults from, and a reviewer has attested it on-chain.
             </p>
+            {submission && (
+              <p className="text-sm font-medium">
+                Attach it by {formatDay(walletDeadline(submission.updated_at).toISOString().slice(0, 10))}. After
+                that the approval ends, your details are deleted and you&apos;d need to submit again.
+              </p>
+            )}
             {linked ? (
               <Button type="button" onClick={attach} disabled={attaching}>
                 {attaching && <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />}
