@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { AuthButton } from "@/components/auth/AuthButton";
-import { CubeAvatar } from "./CubeAvatar";
+import { BrandMark } from "./BrandMark";
 import { CreateListingButton } from "./CreateListingButton";
 import { useAuth } from "@/context/AuthContext";
 import { usePathname } from "next/navigation";
@@ -299,9 +299,9 @@ export default function Header() {
                     className="mr-6 flex items-center space-x-2 mb-6"
                     onClick={closeSheet}
                   >
-                    <CubeAvatar />
+                    <BrandMark />
                     <div className="text-xl">
-                      <StaticBLKFNDR className="-mt-2" />
+                      <StaticBLKFNDR />
                     </div>
                   </Link>
                   <nav className="flex flex-col gap-1 relative z-10" aria-label="Main">
@@ -443,9 +443,9 @@ export default function Header() {
                 the whole bar, the one case where the space is genuinely needed. */}
             <div className="flex items-center justify-center justify-self-center">
               <Link href="/" className="flex items-center gap-2 sm:gap-3">
-                <CubeAvatar />
+                <BrandMark />
                 <div className="text-base sm:text-xl">
-                  <StaticBLKFNDR className="-mt-2" />
+                  <StaticBLKFNDR />
                 </div>
               </Link>
             </div>
