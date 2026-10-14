@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { cn } from "@/lib/utils";
+import { PrivacyStatement } from "./PrivacyStatement";
 import {
   composeAddress,
   isPhilippineAddress,
@@ -566,14 +567,7 @@ export function IdentityForm({
             {submitting ? "Sending…" : "Submit for review"}
           </Button>
         </div>
-        <p className="text-sm text-muted-foreground">
-          Your name, ID number, date of birth and address are never shown on this page after you
-          submit. Only a reviewer can see them.{" "}
-          {wallet
-            ? "Once they've decided, we delete your document, ID number, date of birth and address."
-            : "Once they've decided, we delete your document. Your ID number, date of birth and address are deleted then too, or, if they approve before you've set up a wallet, once you attach one."}{" "}
-          We keep your name and a one-way SHA-256 hash of your details.
-        </p>
+        <PrivacyStatement stage="before-decision" hasWallet={Boolean(wallet)} where="form" className="text-sm" />
       </div>
     </form>
   );
