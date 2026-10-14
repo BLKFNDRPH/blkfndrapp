@@ -14,6 +14,7 @@ import { signAttestation, signRevocation } from "@/lib/managed-wallet";
 import { notify, notifyAdmins } from "@/lib/data/notifications";
 import { computeDetailsHash } from "@/lib/kyc/details-hash";
 import { renewalState, formatDay, RENEWAL_WINDOW_DAYS } from "@/lib/kyc/renewal";
+import { kycDetailProblems, kycServerToday, type KycRulesField } from "@/lib/kyc/rules";
 import { identityClient, simulate } from "@/lib/stellar-clients";
 
 /**
@@ -64,6 +65,14 @@ const SubmissionInput = z.object({
     errorMap: () => ({ message: "Consent is required to submit identity documents" }),
   }),
 });
+
+/** Details that can't be on a real document, by field, refused before anything is saved. */
+export class KycDetailsError extends Error {
+  constructor(readonly fields: Partial<Record<KycRulesField, string>>) {
+    super("Some details need fixing. Nothing was sent for review.");
+    this.name = "KycDetailsError";
+  }
+}
 
 /**
  * Refuse an identity check for any wallet but the caller's linked one.
@@ -163,6 +172,12 @@ async function tellReviewers(title: string) {
 export async function submitOwnKyc(input: unknown) {
   const caller = await requireCaller();
   const parsed = SubmissionInput.parse(input);
+
+  // The form runs the same rules, but only this run counts: the action is a
+  // public endpoint, and QA posted an under-age, expired, keyboard-mash check
+  // straight past the form's (Cycle 7, BF-108).
+  const problems = kycDetailProblems(parsed, kycServerToday());
+  if (Object.keys(problems).length > 0) throw new KycDetailsError(problems);
 
   // The upload route files a document under the uploader's own id. Whatever a
   // check points at is deleted once it is decided, so a check must never point
@@ -433,8 +448,19 @@ export async function getSubmissionForReview(submissionId: string) {
 
   if (error) throw new Error(`Could not read KYC submission: ${error.message}`);
   if (!data) return null;
+
+  // The name the applicant goes by on the site, beside the one on the
+  // document, so the reviewer sees a mismatch (QA Cycle 7, BF-110). Not
+  // essential to a review, so a failed read leaves it out.
+  const { data: profile } = await admin
+    .from("profiles")
+    .select("display_name")
+    .eq("id", data.user_id)
+    .maybeSingle();
+  const withAccount = { ...data, account_name: profile?.display_name ?? null };
+
   // A decided check's document has been deleted.
-  if (!data.document_path) return { ...data, documentUrl: null };
+  if (!data.document_path) return { ...withAccount, documentUrl: null };
 
   const { data: signed, error: signError } = await admin.storage
     .from(DOCUMENTS_BUCKET)
@@ -445,7 +471,7 @@ export async function getSubmissionForReview(submissionId: string) {
     console.error("[kyc] Could not sign document URL:", signError.message);
   }
 
-  return { ...data, documentUrl: signed?.signedUrl ?? null };
+  return { ...withAccount, documentUrl: signed?.signedUrl ?? null };
 }
 
 export async function decideSubmission(

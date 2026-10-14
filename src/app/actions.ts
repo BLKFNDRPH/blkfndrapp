@@ -19,7 +19,9 @@ import {
   attestSubmission,
   revokeSubmissionAttestation,
   myManagedAttestor,
+  KycDetailsError,
 } from "@/lib/data/kyc";
+import type { KycRulesField } from "@/lib/kyc/rules";
 import { readVaultState } from "@/lib/vault-state";
 
 // Every export here is a public HTTP endpoint. Each one guards itself, and the
@@ -51,11 +53,17 @@ type ActionResult<T = unknown> =
 
 export async function submitKycRequest(
   input: unknown,
-): Promise<{ success: true } | { success: false; error: string }> {
+): Promise<
+  | { success: true }
+  | { success: false; error: string; fields?: Partial<Record<KycRulesField, string>> }
+> {
   try {
     await submitOwnKyc(input);
     return { success: true as const };
   } catch (error) {
+    if (error instanceof KycDetailsError) {
+      return { success: false, error: error.message, fields: error.fields };
+    }
     return (
       authFailure(error) ?? {
         success: false,
