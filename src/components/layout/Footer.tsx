@@ -23,7 +23,7 @@ export default function Footer() {
       <div className="container flex flex-col items-center justify-between gap-4 md:h-24 md:flex-row">
         <div className="text-balance text-center text-sm leading-loose text-muted-foreground md:text-left">
           © {new Date().getFullYear()}{" "}
-          <StaticBLKFNDR className="-mt-2 inline-block align-middle text-lg font-bold" />
+          <StaticBLKFNDR className="text-lg text-foreground" />
         </div>
 
         <div className="flex flex-col items-center gap-1 text-center text-sm text-muted-foreground md:items-end md:text-right">
