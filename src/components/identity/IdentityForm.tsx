@@ -8,10 +8,18 @@ import { uploadKycDocument, computeDetailsHash } from "@/lib/kyc/prepare-submiss
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { cn } from "@/lib/utils";
-import { kycDetailProblems, kycLocalToday, type KycRulesField } from "@/lib/kyc/rules";
+import {
+  composeAddress,
+  isPhilippineAddress,
+  kycDetailProblems,
+  kycLocalToday,
+  ADDRESS_MAX,
+  type AddressField,
+  type AddressParts,
+  type KycRulesField,
+} from "@/lib/kyc/rules";
 
 /**
  * The identity check, on one page in three parts: the document, the details
@@ -39,7 +47,7 @@ type Field =
   | "idNumber"
   | "dob"
   | "expiry"
-  | "address"
+  | AddressField
   | "consent";
 
 /** Where each rule in src/lib/kyc/rules.ts shows its problem on this form. */
@@ -48,8 +56,51 @@ const RULE_FIELD: Record<KycRulesField, Field> = {
   idNumber: "idNumber",
   dateOfBirth: "dob",
   documentExpiresOn: "expiry",
-  residentialAddress: "address",
+  // Only for a one-line address, which this form no longer sends.
+  residentialAddress: "addressLine1",
+  addressLine1: "addressLine1",
+  addressDistrict: "addressDistrict",
+  addressCity: "addressCity",
+  addressProvince: "addressProvince",
+  addressPostcode: "addressPostcode",
+  addressCountry: "addressCountry",
 };
+
+/** The address inputs, in order, with the part each one holds. */
+const ADDRESS_INPUTS: {
+  field: AddressField;
+  part: keyof AddressParts;
+  autoComplete: string;
+  optional?: boolean;
+  wide?: boolean;
+}[] = [
+  { field: "addressLine1", part: "line1", autoComplete: "address-line1", wide: true },
+  { field: "addressDistrict", part: "district", autoComplete: "address-level3", optional: true },
+  { field: "addressCity", part: "city", autoComplete: "address-level2" },
+  { field: "addressProvince", part: "province", autoComplete: "address-level1", optional: true },
+  { field: "addressPostcode", part: "postcode", autoComplete: "postal-code", optional: true },
+  { field: "addressCountry", part: "country", autoComplete: "country-name", wide: true },
+];
+
+/** What each address input is called; the Philippine names where the country is the Philippines. */
+function addressLabel(part: keyof AddressParts, philippine: boolean): string {
+  switch (part) {
+    case "line1":
+      return "House or unit number, building and street";
+    case "district":
+      return philippine ? "Barangay" : "District or area";
+    case "city":
+      return philippine ? "City or municipality" : "City or town";
+    case "province":
+      return philippine ? "Province" : "State, province or region";
+    case "postcode":
+      return "Postal code";
+    case "country":
+      return "Country";
+  }
+}
+
+const NO_ADDRESS: AddressParts = { line1: "", district: "", city: "", province: "", postcode: "", country: "Philippines" };
 
 function onForm(found: Partial<Record<KycRulesField, string>>): Partial<Record<Field, string>> {
   const out: Partial<Record<Field, string>> = {};
@@ -83,7 +134,7 @@ export function IdentityForm({
   const [idNumber, setIdNumber] = useState("");
   const [dob, setDob] = useState("");
   const [expiry, setExpiry] = useState("");
-  const [address, setAddress] = useState("");
+  const [address, setAddress] = useState<AddressParts>(NO_ADDRESS);
   const [consent, setConsent] = useState(false);
 
   const [problems, setProblems] = useState<Partial<Record<Field, string>>>({});
@@ -179,7 +230,8 @@ export function IdentityForm({
         documentType,
         idNumber,
         documentExpiresOn: expiry,
-        residentialAddress: address,
+        // The line the server saves, joined the same way.
+        residentialAddress: composeAddress(address),
         stellarAddress: wallet ?? "",
       });
       const res = await submitKycRequest({
@@ -410,23 +462,34 @@ export function IdentityForm({
           </div>
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="address">Home address</Label>
-          <Textarea
-            id="address"
-            autoComplete="street-address"
-            rows={3}
-            value={address}
-            onChange={(e) => {
-              setAddress(e.target.value);
-              clear("address");
-            }}
-            aria-invalid={Boolean(problems.address)}
-            aria-describedby={describedBy("address")}
-            className={fieldClass("address")}
-          />
-          {problem("address")}
-        </div>
+        <fieldset className="space-y-3">
+          <legend className="text-sm font-medium">Home address</legend>
+          <div className="grid gap-4 sm:grid-cols-2">
+            {ADDRESS_INPUTS.map(({ field, part, autoComplete, optional, wide }) => (
+              <div key={field} className={cn("space-y-2", wide && "sm:col-span-2")}>
+                <Label htmlFor={field}>
+                  {addressLabel(part, isPhilippineAddress(address.country))}
+                  {optional && <span className="font-normal text-muted-foreground"> (optional)</span>}
+                </Label>
+                <Input
+                  id={field}
+                  autoComplete={autoComplete}
+                  maxLength={ADDRESS_MAX[part]}
+                  value={address[part]}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setAddress((a) => ({ ...a, [part]: value }));
+                    clear(field);
+                  }}
+                  aria-invalid={Boolean(problems[field])}
+                  aria-describedby={describedBy(field)}
+                  className={fieldClass(field)}
+                />
+                {problem(field)}
+              </div>
+            ))}
+          </div>
+        </fieldset>
 
         <div className="space-y-1">
           <label className="flex cursor-pointer items-start gap-3 text-sm">

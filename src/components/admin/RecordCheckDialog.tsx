@@ -5,6 +5,7 @@ import { CheckCircle2, CircleHelp, Loader2, ShieldOff, XCircle } from "lucide-re
 import { getKycSubmission } from "@/app/actions";
 import { computeDetailsHash } from "@/lib/kyc/details-hash";
 import { formatDay, renewalState } from "@/lib/kyc/renewal";
+import { composeAddress, isPhilippineAddress, type AddressParts } from "@/lib/kyc/rules";
 import { identityClient, simulate } from "@/lib/stellar-clients";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -70,6 +71,8 @@ const EMPTY = {
 };
 type Fields = typeof EMPTY;
 
+const NO_ADDRESS: AddressParts = { line1: "", district: "", city: "", province: "", postcode: "", country: "Philippines" };
+
 type Result = "match" | "mismatch" | "not-on-record" | "unreadable";
 
 const hex = (bytes: Uint8Array) => Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
@@ -87,6 +90,11 @@ export function RecordCheckDialog({
   // What the reviewer types from the ID shown. Only the details the record no
   // longer holds are asked for; the rest come from the record, locked.
   const [fields, setFields] = useState<Fields>(EMPTY);
+  // The address as the form asks for it, in parts, joined as the form joined
+  // it. A check filed before the form had parts holds the address as the
+  // applicant typed it in one box, so that can be typed as one line instead.
+  const [addressParts, setAddressParts] = useState<AddressParts>(NO_ADDRESS);
+  const [addressOneLine, setAddressOneLine] = useState(false);
   // The check is a separate step, opened on purpose. Without it the dialog is
   // the record and nothing else.
   const [checkOpen, setCheckOpen] = useState(false);
@@ -131,8 +139,16 @@ export function RecordCheckDialog({
       setResult(null);
     };
 
+  const setPart = (part: keyof AddressParts) => (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setAddressParts((a) => ({ ...a, [part]: value }));
+    setResult(null);
+  };
+
   const close = () => {
     setFields(EMPTY);
+    setAddressParts(NO_ADDRESS);
+    setAddressOneLine(false);
     setResult(null);
     setRecord(null);
     setLoadError(null);
@@ -151,8 +167,15 @@ export function RecordCheckDialog({
     if (record.document_expires_on) locked.documentExpiresOn = record.document_expires_on;
   }
   const asks = (key: keyof Fields) => !(key in locked);
-  const details: Fields = { ...fields, ...locked };
-  const complete = Object.values(details).every((v) => v.trim() !== "");
+  const details: Fields = {
+    ...fields,
+    residentialAddress: addressOneLine ? fields.residentialAddress : composeAddress(addressParts),
+    ...locked,
+  };
+  const complete =
+    Object.values(details).every((v) => v.trim() !== "") &&
+    (addressOneLine || [addressParts.line1, addressParts.city, addressParts.country].every((v) => v.trim() !== ""));
+  const philippine = isPhilippineAddress(addressParts.country);
 
   const check = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -330,10 +353,52 @@ export function RecordCheckDialog({
                 </div>
               )}
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="rc-address">Home address, as they wrote it when they applied</Label>
-              <Textarea id="rc-address" rows={2} value={fields.residentialAddress} onChange={set("residentialAddress")} />
-            </div>
+            <fieldset className="space-y-2">
+              <legend className="text-sm font-medium">Home address, as they gave it when they applied</legend>
+              {addressOneLine ? (
+                <div className="space-y-1.5">
+                  <Label htmlFor="rc-address" className="sr-only">
+                    Home address in one line
+                  </Label>
+                  <Textarea id="rc-address" rows={2} value={fields.residentialAddress} onChange={set("residentialAddress")} />
+                </div>
+              ) : (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {(
+                    [
+                      ["line1", "House or unit number, building and street", true],
+                      ["district", philippine ? "Barangay" : "District or area", false],
+                      ["city", philippine ? "City or municipality" : "City or town", false],
+                      ["province", philippine ? "Province" : "State, province or region", false],
+                      ["postcode", "Postal code", false],
+                      ["country", "Country", false],
+                    ] as const
+                  ).map(([part, label, wide]) => (
+                    <div key={part} className={wide ? "space-y-1.5 sm:col-span-2" : "space-y-1.5"}>
+                      <Label htmlFor={`rc-address-${part}`}>{label}</Label>
+                      <Input
+                        id={`rc-address-${part}`}
+                        value={addressParts[part]}
+                        onChange={setPart(part)}
+                        autoComplete="off"
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setAddressOneLine((v) => !v);
+                  setResult(null);
+                }}
+                className="text-xs font-medium text-muted-foreground underline underline-offset-2 hover:text-foreground"
+              >
+                {addressOneLine
+                  ? "Type it in parts, as the form asks for it now"
+                  : "Filed before the form asked for the address in parts? Type it as one line"}
+              </button>
+            </fieldset>
 
             <div role="status" aria-live="polite">
               {result === "match" && (
@@ -352,7 +417,8 @@ export function RecordCheckDialog({
                     <p className="font-semibold">No match.</p>
                     <p>
                       Something differs from what was verified. Check each field against the ID. The address has to
-                      be the one they gave when they applied; capitals and spacing don&apos;t matter.
+                      be the one they gave when they applied; capitals and spacing don&apos;t matter. If they applied before
+                      the form asked for it in parts, type it as one line, exactly as they did.
                     </p>
                     <p>
                       An ID issued since they were verified has a different number and expiry, so it won&apos;t
