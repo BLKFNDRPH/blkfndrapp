@@ -13,10 +13,17 @@ import { useToast } from "@/hooks/use-toast";
 import { LoginDialog } from "@/components/auth/LoginDialog";
 
 import { isStellarPublicKey } from "@/lib/freighter-connect";
+import { clearAllDrafts } from "@/lib/listing-draft";
 
 interface AuthContextType {
   user: AppUser | null;
   loading: boolean;
+  /**
+   * Whether `user` is the final answer for this page load. `loading` turns
+   * false a render before `user` is set from the session, so a signed-in
+   * person reads as signed out for that one render.
+   */
+  ready: boolean;
   login: (role?: "user" | "admin") => void;
   logout: () => void;
   refreshUser: () => Promise<void>;
@@ -156,6 +163,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       // also unlinked the wallet, so every return meant setting it up again.
       // "Disconnect for now" in the wallet panel is the explicit action.
       setUser(null);
+      // The next person on this browser starts with an empty listing form.
+      clearAllDrafts();
       await fetch("/api/auth/logout", { method: "POST" });
       window.location.href = "/";
     } catch (error) {
@@ -174,6 +183,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         login,
         logout: handleLogout,
         loading,
+        ready: !loading && (status !== "authenticated" || !session?.user || user !== null),
         refreshUser,
       }}
     >

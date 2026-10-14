@@ -300,7 +300,9 @@ const CURRENCY_CHOICES: Record<Currency, { title: string; body: string }> = {
 export function ListingForm() {
   const { toast } = useToast();
   const router = useRouter();
-  const { user, login, refreshUser } = useAuth();
+  const { user, login, refreshUser, ready: authReady } = useAuth();
+  /** Whose draft this browser keeps; null while signed out. */
+  const draftOwner = user?.uid ?? null;
   const { freighterWalletAddress, login: connectFreighter } = useFreighterWallet();
   const refreshAfterTx = useRefreshAfterTx();
 
@@ -610,10 +612,15 @@ export function ListingForm() {
   /** The draft has become a vault: forget it, and stop saving it. */
   const closeDraft = () => {
     draftClosedRef.current = true;
-    clearDraft();
+    clearDraft(draftOwner);
   };
+  // Once it's known who is signed in: each account has its own draft, and the
+  // wrong one must never be offered (QA Cycle 7, BF-113).
+  const draftLoadedRef = useRef(false);
   useEffect(() => {
-    const draft = loadDraft();
+    if (!authReady || draftLoadedRef.current) return;
+    draftLoadedRef.current = true;
+    const draft = loadDraft(draftOwner);
     if (!draft || !draftHasContent(draft)) {
       draftReady.current = true;
       return;
@@ -648,9 +655,9 @@ export function ListingForm() {
       });
     }
     draftReady.current = true;
-    // Once, on arrival.
+    // Once, on arrival, as soon as the account is known.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [authReady]);
 
   const watched = form.watch();
   /** Write the draft as it stands, if anything has been typed. */
@@ -677,7 +684,7 @@ export function ListingForm() {
           ? { name: file.name, type: file.type, lastModified: file.lastModified, dataUri: imageDataUri }
           : undefined,
     };
-    if (draftHasContent(draft)) saveDraft(draft);
+    if (draftHasContent(draft)) saveDraft(draft, draftOwner);
   };
   // Saved half a second after the last change.
   useEffect(() => {
@@ -691,7 +698,7 @@ export function ListingForm() {
 
   /** Back to an empty form, and the saved draft gone. */
   const startOver = () => {
-    clearDraft();
+    clearDraft(draftOwner);
     form.reset({
       title: "",
       tagline: "",
