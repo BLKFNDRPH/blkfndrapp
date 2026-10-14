@@ -38,7 +38,7 @@ export async function generateMetadata(
   const description = project.tagline?.trim() || undefined;
   // Without these a shared project link would carry the site's title from the
   // root layout. They extend the layout's rather than replace them: a page's
-  // own openGraph drops the inherited logo image, site name and large card.
+  // own openGraph drops the inherited share image, site name and large card.
   const { openGraph, twitter } = await parent;
   return {
     title,

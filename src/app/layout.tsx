@@ -49,7 +49,8 @@ function siteOrigin(): URL | undefined {
 }
 
 // The share image itself is opengraph-image.jpg / twitter-image.jpg in this
-// folder: the full logo, used for every page that doesn't set its own.
+// folder: a 1200x630 card (logo, headline, a vault releasing stages), used for
+// every page that doesn't set its own.
 export const metadata: Metadata = {
   metadataBase: siteOrigin(),
   title: SITE_TITLE,
