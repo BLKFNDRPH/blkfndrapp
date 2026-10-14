@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight, ShieldCheck, Lock, Users } from "lucide-react";
 
@@ -8,6 +9,7 @@ import { ProjectList } from "@/components/project/ProjectList";
 import type { Project } from "@/lib/types";
 import { CityScape } from "@/components/layout/CityScape";
 import { StellarLogo } from "@/components/layout/StellarLogo";
+import { PointerTilt } from "@/components/layout/PointerTilt";
 import TextPressure from "@/components/layout/TextPressure";
 import { useProjects } from "@/context/BlockchainContext";
 import { Button } from "@/components/ui/button";
@@ -108,6 +110,24 @@ export default function Home() {
                   </>
                 ) : null}
               </div>
+
+              {/*
+                The logo's emblem over the wordmark below, as in the full logo;
+                the wordmark keeps the site's own font. It tilts towards
+                the pointer like the header's. Decorative, like the wordmark:
+                the brand name is in the title and the header.
+              */}
+              <PointerTilt className="mt-8 flex justify-center">
+                <Image
+                  src="/brand/blkfndr-emblem.png"
+                  alt=""
+                  width={342}
+                  height={350}
+                  priority
+                  sizes="(min-width: 768px) 144px, 112px"
+                  className="h-auto w-28 md:w-36"
+                />
+              </PointerTilt>
 
               {/*
                 Decorative: TextPressure renders its own <h1> of one span per
