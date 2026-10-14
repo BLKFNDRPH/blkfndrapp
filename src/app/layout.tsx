@@ -31,10 +31,40 @@ const sourceCodePro = Source_Code_Pro({
   variable: "--font-code",
 });
 
+const SITE_TITLE = "BLKFNDR — A vault for real-world projects";
+const SITE_DESCRIPTION =
+  "Every project keeps its money in its own locked vault. Nothing leaves it until the stakeholders vote, and the whole history is public. BLKFNDR can't open it, and you can check that yourself.";
+
+/**
+ * Share images need absolute URLs; without a base Next builds them against
+ * localhost. NEXT_PUBLIC_APP_URL is baked in at build time (a Docker build
+ * arg), so the deployed pages carry the public origin.
+ */
+function siteOrigin(): URL | undefined {
+  try {
+    return new URL(process.env.NEXT_PUBLIC_APP_URL ?? "");
+  } catch {
+    return undefined;
+  }
+}
+
+// The share image itself is opengraph-image.jpg / twitter-image.jpg in this
+// folder: the full logo, used for every page that doesn't set its own.
 export const metadata: Metadata = {
-  title: "BLKFNDR — A vault for real-world projects",
-  description:
-    "Every project keeps its money in its own locked vault. Nothing leaves it until the stakeholders vote, and the whole history is public. BLKFNDR can't open it, and you can check that yourself.",
+  metadataBase: siteOrigin(),
+  title: SITE_TITLE,
+  description: SITE_DESCRIPTION,
+  openGraph: {
+    type: "website",
+    siteName: "BLKFNDR",
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
+  },
 };
 
 export default async function RootLayout({

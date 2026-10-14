@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, ResolvingMetadata } from "next";
 import { cache } from "react";
 import { readProjectForVisitor } from "@/lib/data/public-reads";
 import { ProjectPageClient } from "./ProjectPageClient";
@@ -27,13 +27,35 @@ const readProject = cache(async (id: string) => {
   }
 });
 
-export async function generateMetadata({ params }: Props): Promise<Metadata> {
+export async function generateMetadata(
+  { params }: Props,
+  parent: ResolvingMetadata,
+): Promise<Metadata> {
   const { id } = await params;
   const project = await readProject(decodeURIComponent(id));
   if (!project) return { title: FALLBACK_TITLE };
+  const title = `${project.title} · BLKFNDR`;
+  const description = project.tagline?.trim() || undefined;
+  // Without these a shared project link would carry the site's title from the
+  // root layout. They extend the layout's rather than replace them: a page's
+  // own openGraph drops the inherited logo image, site name and large card.
+  const { openGraph, twitter } = await parent;
   return {
-    title: `${project.title} · BLKFNDR`,
-    description: project.tagline?.trim() || undefined,
+    title,
+    description,
+    openGraph: {
+      type: "website",
+      siteName: openGraph?.siteName ?? undefined,
+      images: openGraph?.images,
+      title,
+      description,
+    },
+    twitter: {
+      card: "summary_large_image",
+      images: twitter?.images,
+      title,
+      description,
+    },
   };
 }
 
