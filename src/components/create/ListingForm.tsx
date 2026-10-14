@@ -600,6 +600,18 @@ export function ListingForm() {
   const draftReady = useRef(false);
   /** Set once the vault opens; the page then shows what happened instead of the form. */
   const [opened, setOpened] = useState<OpenedVault | null>(null);
+  /**
+   * Set the moment the draft is cleared for an opened vault, before `opened`
+   * is: finding the new project's number takes a while, and an autosave in
+   * between used to write the launched listing straight back, so the next
+   * "add project" came up filled with it.
+   */
+  const draftClosedRef = useRef(false);
+  /** The draft has become a vault: forget it, and stop saving it. */
+  const closeDraft = () => {
+    draftClosedRef.current = true;
+    clearDraft();
+  };
   useEffect(() => {
     const draft = loadDraft();
     if (!draft || !draftHasContent(draft)) {
@@ -643,6 +655,7 @@ export function ListingForm() {
   const watched = form.watch();
   /** Write the draft as it stands, if anything has been typed. */
   const saveDraftNow = () => {
+    if (draftClosedRef.current) return;
     const file = (watched.image as FileList | undefined)?.[0];
     const draft = {
       v: 1 as const,
@@ -699,6 +712,7 @@ export function ListingForm() {
     if (imageInputRef.current) imageInputRef.current.value = "";
     uploadCacheRef.current = {};
     setDraftRestoredAt(null);
+    draftClosedRef.current = false;
   };
 
   /**
@@ -795,7 +809,7 @@ export function ListingForm() {
     metadataCid: string | null,
   ) => {
     forgetLaunch();
-    clearDraft();
+    closeDraft();
     toast({
       title: "Your vault is open",
       description: `“${title}” appears in Projects within a minute or two.`,
@@ -1220,7 +1234,7 @@ export function ListingForm() {
       const existing = await findDeployedVault(activeAddress, metadataCid);
       if (existing) {
         forgetLaunch();
-        clearDraft();
+        closeDraft();
         toast({
           title: "This draft already opened a vault",
           description: "Nothing new was signed or paid.",
