@@ -33,6 +33,7 @@ import { resizedImageUrl } from "@/lib/project-image";
 import dynamic from "next/dynamic";
 import { NotificationBell } from "./NotificationBell";
 import { HeaderSearch } from "./HeaderSearch";
+import { ThemeButton } from "./ThemeMenu";
 import {
   useProjects,
   useUserFunds,
@@ -275,12 +276,15 @@ export default function Header() {
         ) : (
           <>
             <div className="flex min-w-0 items-center gap-1 sm:gap-2">
+              {/* The phone's menu. From 950px the header shows the same links
+                  and the account menu holds the rest, so the drawer only
+                  repeated them there (QA Cycle 7, BF-118). */}
               <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
                 <SheetTrigger asChild>
                   <Button
                     variant="default"
                     size="icon"
-                    className="rounded-full nav-button shrink-0"
+                    className="rounded-full nav-button shrink-0 min-[950px]:hidden"
                     onClick={() => setIsSheetOpen(true)}
                   >
                     <Menu className="h-6 w-6" aria-hidden="true" />
@@ -462,6 +466,7 @@ export default function Header() {
               </div>
               {user && <NotificationBell />}
               {user && <WalletButton />}
+              {!user && <ThemeButton className="hidden min-[950px]:inline-flex" />}
               <AuthButton />
             </div>
           </>

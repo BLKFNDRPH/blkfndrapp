@@ -21,19 +21,46 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { LogOut, User as UserIcon, Settings, Cog } from "lucide-react";
+import { LogOut, User as UserIcon, Settings, Cog, HandCoins, FolderKanban, Shield } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { CubeSpinner } from "../ui/CubeSpinner";
+import { ThemeMenuItems } from "../layout/ThemeMenu";
+import { useFreighterWallet } from "@/context/FreighterWalletContext";
+import { useAdminStatus } from "@/context/BlockchainContext";
+
+/**
+ * The account menu's Admin row, for those with access. Rendered only while the
+ * menu is open: it reads the wallet and the platform settings, and the header
+ * shouldn't re-render for them on every page.
+ */
+function AdminMenuItem() {
+  const { freighterWalletAddress } = useFreighterWallet();
+  const { hasAdminAccess } = useAdminStatus(freighterWalletAddress ?? undefined);
+  if (!hasAdminAccess) return null;
+  return (
+    <DropdownMenuItem asChild>
+      <Link href="/admin" className="cursor-pointer">
+        <Shield className="mr-2 h-4 w-4" aria-hidden="true" />
+        <span>Admin</span>
+      </Link>
+    </DropdownMenuItem>
+  );
+}
 
 /**
  * Signed out: an outline button that says "Sign in" and opens the sign-in
  * dialog. It used to be an unlabelled person icon, which the people this page
- * is for did not read as a login. Signed in: the avatar menu, unchanged.
+ * is for did not read as a login.
+ *
+ * Signed in: the account menu. On a desktop it is where your stakes, your
+ * projects, Settings, Admin and the theme live; the drawer is the phone's menu
+ * and is hidden from 950px (QA Cycle 7, BF-118).
  */
 export function AuthButton({ className }: { className?: string }) {
   const { user, login, logout, loading } = useAuth();
   const [showLogoutDialog, setShowLogoutDialog] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const handleRippleEffect = (e: React.MouseEvent<HTMLDivElement>) => {
     const target = e.currentTarget as HTMLElement;
@@ -69,7 +96,7 @@ export function AuthButton({ className }: { className?: string }) {
     return (
       <>
         <div className={cn("relative", className)}>
-          <DropdownMenu>
+          <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
             <DropdownMenuTrigger asChild>
               <Button
                 variant="default"
@@ -117,6 +144,18 @@ export function AuthButton({ className }: { className?: string }) {
                 </div>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
+                <Link href="/profile?tab=funded" className="cursor-pointer">
+                  <HandCoins className="mr-2 h-4 w-4" aria-hidden="true" />
+                  <span>Your stakes</span>
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href="/profile?tab=projects" className="cursor-pointer">
+                  <FolderKanban className="mr-2 h-4 w-4" aria-hidden="true" />
+                  <span>Your projects</span>
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
                 <div
                   className="menu-item-ripple w-full"
                   onMouseMove={handleRippleEffect}
@@ -131,6 +170,9 @@ export function AuthButton({ className }: { className?: string }) {
                   <span className="ripple-span"></span>
                 </div>
               </DropdownMenuItem>
+              {menuOpen && <AdminMenuItem />}
+              <DropdownMenuSeparator />
+              <ThemeMenuItems />
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 onClick={() => setShowLogoutDialog(true)}
