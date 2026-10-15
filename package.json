@@ -11,7 +11,8 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON \"src/**/*.test.ts\"",
-    "perf:baseline": "node scripts/perf-baseline.mjs"
+    "perf:baseline": "node scripts/perf-baseline.mjs",
+    "audit:gate": "node scripts/audit-gate.mjs"
   },
   "dependencies": {
     "@genkit-ai/googleai": "^1.28.0",
@@ -60,7 +61,6 @@
     "sharp": "^0.35.5",
     "swr": "^2.4.2",
     "tailwind-merge": "^3.0.1",
-    "tailwindcss-animate": "^1.0.7",
     "zod": "^3.25.76"
   },
   "devDependencies": {
@@ -73,11 +73,13 @@
     "genkit-cli": "^1.14.1",
     "postcss": "^8",
     "tailwindcss": "^3.4.1",
+    "tailwindcss-animate": "^1.0.7",
     "typescript": "^5"
   },
   "overrides": {
     "react": "19.2.1",
-    "react-dom": "19.2.1"
+    "react-dom": "19.2.1",
+    "axios": "^1.20.0"
   },
   "engines": {
     "node": ">=22"
