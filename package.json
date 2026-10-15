@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "test": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON \"src/**/*.test.ts\"",
     "perf:baseline": "node scripts/perf-baseline.mjs",
-    "audit:gate": "node scripts/audit-gate.mjs"
+    "audit:gate": "node scripts/audit-gate.mjs",
+    "test:authz": "node scripts/authz-check.mjs"
   },
   "dependencies": {
     "@genkit-ai/googleai": "^1.28.0",
@@ -68,6 +69,7 @@
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",
+    "esbuild": "^0.28.2",
     "eslint": "^9.39.4",
     "eslint-config-next": "^16.4.1",
     "genkit-cli": "^1.14.1",

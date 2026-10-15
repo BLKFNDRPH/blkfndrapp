@@ -1,6 +1,9 @@
-'use server';
-
 /**
+ * Not a "use server" module: that would make improveListingQuality a server
+ * action anyone can call, a billable model call with no sign-in check. The one
+ * entry point is runImproveListingQuality in src/app/actions.ts, which requires
+ * a signed-in caller first.
+ *
  * @fileOverview This file defines a Genkit flow for improving the quality of project listings using AI.
  *
  * The flow analyzes listing details to suggest improvements and flag potential issues.

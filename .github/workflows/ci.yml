@@ -32,6 +32,13 @@ jobs:
       - name: Test
         run: npm test
 
+      - name: Authorization check
+        # Calls every route handler and server action as each identity that must
+        # not reach it (signed out, signed in, the wrong admin role, no cron
+        # token) and fails if any gets through or causes a side effect, or if an
+        # endpoint is missing from scripts/authz-manifest.mjs.
+        run: npm run test:authz
+
       - name: Audit production dependencies
         # Prints the full report, then fails on any high or critical advisory
         # that scripts/audit-gate.mjs does not list as accepted (each accepted
