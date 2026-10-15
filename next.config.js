@@ -38,6 +38,10 @@
 const nextConfig = {
   // Enable standalone output for Docker deployments
   output: "standalone",
+  // No "X-Powered-By: Next.js" on every response: it tells a scanner which
+  // framework and so which advisories to try. ZAP's baseline flagged it
+  // (10037) on 2026-10-15.
+  poweredByHeader: false,
   serverExternalPackages: ["genkit", "@genkit-ai/ai", "@genkit-ai/googleai", "@genkit-ai/core"],
 
   // Baseline security headers on every response. A conservative, non-breaking
