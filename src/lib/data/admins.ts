@@ -146,6 +146,15 @@ export async function grantAdmin(
   note = "",
 ): Promise<PlatformAdmin[]> {
   const caller = await requireAdmin();
+
+  // Owner-only, before any side effect, as in revokeAdmin. The roster insert
+  // below is gated on is_owner() by platform_admins_write, so a non-owner was
+  // refused there, but only after listUsers had read every account with the
+  // service role. scripts/authz-check.mjs caught it.
+  if (caller.role !== "owner") {
+    throw new AuthError("Only an owner can add an administrator.", 403);
+  }
+
   const parsed = EmailSchema.parse(email);
   const wallet = walletAddress.trim() ? WalletSchema.parse(walletAddress) : null;
   const displayName = name.trim().slice(0, 120);
