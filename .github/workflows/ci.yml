@@ -33,13 +33,12 @@ jobs:
         run: npm test
 
       - name: Audit production dependencies
-        # Fails on a critical advisory. Highs are still only reported: the ones
-        # left need major upgrades (@stellar/stellar-sdk 17 for axios, genkit's
-        # opentelemetry subtree, tailwindcss 4 for braces/micromatch). Raise this
-        # to --audit-level=high once those land.
+        # Prints the full report, then fails on any high or critical advisory
+        # that scripts/audit-gate.mjs does not list as accepted (each accepted
+        # one says why it cannot be reached here).
         run: |
           npm audit --omit=dev || true
-          npm audit --omit=dev --audit-level=critical
+          npm run audit:gate
 
       - name: Software bill of materials
         run: npm sbom --sbom-format cyclonedx > sbom.cdx.json
