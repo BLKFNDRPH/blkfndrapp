@@ -158,9 +158,14 @@ export async function grantAdmin(
   // otherwise leave user_id null forever — they would still be an admin via the
   // email branch of is_admin(), but every check would fall back to the string
   // comparison rather than the indexed id.
+  //
+  // Only an account that has confirmed the address. One that has not may
+  // belong to someone who typed in an email they don't own, so it is left
+  // unbound; claim_admin_invite_on_confirm binds it when the owner of the
+  // mailbox confirms (20261015143157).
   const { data: existing } = await admin.auth.admin.listUsers();
   const match = existing?.users?.find(
-    (u) => (u.email ?? "").toLowerCase() === parsed,
+    (u) => (u.email ?? "").toLowerCase() === parsed && Boolean(u.email_confirmed_at),
   );
 
   // The service-role client is used above only for listUsers, which genuinely
