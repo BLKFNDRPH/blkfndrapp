@@ -33,9 +33,23 @@ jobs:
         run: npm test
 
       - name: Audit production dependencies
-        # Advisory: reports without failing the build, so a new advisory in a
-        # transitive dependency does not block an unrelated change.
-        run: npm audit --omit=dev || true
+        # Fails on a critical advisory. Highs are still only reported: the ones
+        # left need major upgrades (@stellar/stellar-sdk 17 for axios, genkit's
+        # opentelemetry subtree, tailwindcss 4 for braces/micromatch). Raise this
+        # to --audit-level=high once those land.
+        run: |
+          npm audit --omit=dev || true
+          npm audit --omit=dev --audit-level=critical
+
+      - name: Software bill of materials
+        run: npm sbom --sbom-format cyclonedx > sbom.cdx.json
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-cyclonedx
+          path: sbom.cdx.json
+          if-no-files-found: error
 
   contracts:
     name: Soroban contracts
