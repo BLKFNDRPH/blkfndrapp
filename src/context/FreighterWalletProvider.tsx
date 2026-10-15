@@ -140,8 +140,11 @@ export const FreighterWalletProvider = ({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ publicKey }),
       });
-      const { nonce, error: nonceError } = await nonceRes.json();
-      if (nonceError || !nonce) {
+      // `message` is what the wallet shows and signs: it names this site and
+      // the account the wallet is being linked to. `nonce` goes back with the
+      // signature so the server can find the challenge it issued.
+      const { nonce, message, error: nonceError } = await nonceRes.json();
+      if (nonceError || !nonce || !message) {
         console.error("[Wallet] nonce:", nonceError);
         throw new Error(OUR_SIDE_MESSAGE);
       }
@@ -151,7 +154,7 @@ export const FreighterWalletProvider = ({
         // The passphrase tells Freighter which network the request is for. It
         // isn't part of what gets signed (SEP-53 hashes the message alone), so
         // the server's check of the signature is the same on every network.
-        const signResult = await signMessage(nonce, {
+        const signResult = await signMessage(message, {
           networkPassphrase: NETWORK_PASSPHRASE,
           address: publicKey,
         });
