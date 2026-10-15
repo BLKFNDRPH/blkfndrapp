@@ -55,27 +55,6 @@ export type Database = {
         }
         Relationships: []
       }
-      auth_challenges: {
-        Row: {
-          created_at: string
-          expires_at: string
-          nonce: string
-          public_key: string
-        }
-        Insert: {
-          created_at?: string
-          expires_at?: string
-          nonce: string
-          public_key: string
-        }
-        Update: {
-          created_at?: string
-          expires_at?: string
-          nonce?: string
-          public_key?: string
-        }
-        Relationships: []
-      }
       claim_requests: {
         Row: {
           created_at: string
@@ -914,7 +893,6 @@ export type Database = {
       }
       project_is_hidden: { Args: { vault: string }; Returns: boolean }
       project_is_locked: { Args: { vault: string }; Returns: boolean }
-      purge_expired_auth_challenges: { Args: never; Returns: undefined }
       set_managed_key: {
         Args: { key_ref: string; secret_value: string }
         Returns: undefined
