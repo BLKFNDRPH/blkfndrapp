@@ -75,10 +75,14 @@ const nextConfig = {
   // bundles, and the build compiles clean. Keeping it forced every Turbopack
   // invocation to error out on the webpack/Turbopack config mismatch.
 
-  // No images block: nothing renders next/image (listing images are plain
-  // <img> through ImageWithFallback), so a remotePatterns allowlist would only
-  // let anyone use this server's /_next/image optimizer to fetch and resize
-  // images from those hosts.
+  // No remote images go through next/image (listing images are plain <img>
+  // through ImageWithFallback), so there is no remotePatterns allowlist: one
+  // would only let anyone use this server's /_next/image optimizer to fetch
+  // and resize images from those hosts. The two next/image uses are local brand
+  // PNGs already sized for a 2x screen, so unoptimized turns the optimizer off
+  // altogether and its attack surface (the AVIF decoder RCE fixed in 16.3.8,
+  // and the DoS advisories before it) is not reachable at all.
+  images: { unoptimized: true },
 };
 
 module.exports = nextConfig;
