@@ -2,7 +2,7 @@ import "server-only";
 
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { requireCaller } from "@/lib/supabase/auth";
+import { requireCaller, AuthError } from "@/lib/supabase/auth";
 import { MAX_ATTEMPTS } from "@/lib/indexer-scan";
 
 /**
@@ -69,7 +69,11 @@ export async function listUsers(): Promise<PlatformUser[]> {
 export async function banUser(userId: string, reason: string) {
   const caller = await requirePlatformAdmin();
 
-  // The ban row goes through the caller's session so RLS enforces the role.
+  // The ban row goes through the caller's session so RLS enforces the role, and
+  // guard_platform_ban (20261015140313) enforces whom: only an owner bans
+  // someone on the administrator roster, and nobody bans themselves. Its
+  // refusal comes before the auth-level ban below, so a refused ban locks no
+  // one out.
   const supabase = await createClient();
   const { error } = await supabase.from("platform_bans").insert({
     user_id: userId,
@@ -78,7 +82,11 @@ export async function banUser(userId: string, reason: string) {
   });
   if (error) {
     if (error.code === "23505") throw new Error("That user is already banned.");
-    if (error.code === "42501") throw new Error("Only a platform administrator can ban a user.");
+    if (error.code === "42501") {
+      // The trigger's refusals carry their own reason; the policy's does not.
+      if (/owner can ban|ban yourself/i.test(error.message)) throw new AuthError(error.message, 403);
+      throw new Error("Only a platform administrator can ban a user.");
+    }
     throw new Error(`Could not ban the user: ${error.message}`);
   }
 
