@@ -8,6 +8,7 @@ import {
   requireKycReviewer,
   AuthError,
   KYC_REVIEWER_ROLES,
+  type AuthedCaller,
 } from "@/lib/supabase/auth";
 import { isStellarAccount } from "@/lib/stellar-address";
 import { signAttestation, signRevocation } from "@/lib/managed-wallet";
@@ -15,6 +16,7 @@ import { notify, notifyAdmins } from "@/lib/data/notifications";
 import { computeDetailsHash } from "@/lib/kyc/details-hash";
 import { renewalState, formatDay, RENEWAL_WINDOW_DAYS } from "@/lib/kyc/renewal";
 import { WALLETLESS_APPROVAL_DAYS, WALLETLESS_EXPIRED_REASON } from "@/lib/kyc/walletless";
+import { SELF_REVIEW_AUDIT_ACTION, SELF_REVIEW_MESSAGE, isSelfReview } from "@/lib/kyc/self-review";
 import { ADDRESS_MAX, composeAddress, kycDetailProblems, kycServerToday, type KycRulesField } from "@/lib/kyc/rules";
 import { identityClient, simulate } from "@/lib/stellar-clients";
 
@@ -506,6 +508,22 @@ export async function getSubmissionForReview(submissionId: string) {
   return { ...withAccount, documentUrl: signed?.signedUrl ?? null };
 }
 
+/**
+ * Refuse a reviewer acting on their own identity check, and put the attempt on
+ * the audit log. Called before anything is written, on-chain or off.
+ */
+async function refuseSelfReview(caller: AuthedCaller, submissionId: string, attempted: string): Promise<never> {
+  const { error } = await createAdminClient().from("admin_audit_log").insert({
+    action: SELF_REVIEW_AUDIT_ACTION,
+    actor_id: caller.userId,
+    target_email: (caller.email ?? "").toLowerCase(),
+    detail: `${attempted} on their own submission ${submissionId}`,
+  });
+  // Logged rather than thrown: the refusal stands either way.
+  if (error) console.error("[kyc] Could not write the self-review audit entry:", error.message);
+  throw new AuthError(SELF_REVIEW_MESSAGE, 403);
+}
+
 export async function decideSubmission(
   submissionId: string,
   decision: "approved" | "rejected",
@@ -517,7 +535,7 @@ export async function decideSubmission(
     notice?: { title: string; caption: string };
   } = {},
 ) {
-  await requireKycReviewer();
+  const caller = await requireKycReviewer();
   z.string().uuid().parse(submissionId);
   z.enum(["approved", "rejected"]).parse(decision);
   const recorded = options.recorded ?? true;
@@ -527,15 +545,25 @@ export async function decideSubmission(
 
   // Returning the row serves two purposes: it confirms the update actually hit
   // a submission, and it yields the applicant to notify without a second read.
+  // The reviewer's own check is excluded in the same statement, so there is no
+  // window between checking whose it is and deciding it.
   const { data, error } = await admin
     .from("kyc_requests")
     .update({ status: decision, rejection_reason: reason })
     .eq("id", submissionId)
+    .neq("user_id", caller.userId)
     .select("user_id, verified_until")
     .maybeSingle();
 
   if (error) throw new Error(`Could not record KYC decision: ${error.message}`);
-  if (!data) throw new Error("Could not record KYC decision: no such submission.");
+  if (!data) {
+    // Nothing matched: either there is no such check, or it is the reviewer's own.
+    const { data: own } = await admin.from("kyc_requests").select("user_id").eq("id", submissionId).maybeSingle();
+    if (own && isSelfReview(caller.userId, own.user_id)) {
+      await refuseSelfReview(caller, submissionId, decision === "approved" ? "Approve" : "Turn down");
+    }
+    throw new Error("Could not record KYC decision: no such submission.");
+  }
 
   // The decision cleared the identity details and the document's path
   // (kyc_requests_drop_identity_after_decision). This deletes the file.
@@ -613,11 +641,14 @@ export async function attestSubmission(submissionId: string) {
 
   const { data: sub, error } = await admin
     .from("kyc_requests")
-    .select("stellar_address, details_hash, status, verified_until, document_expires_on")
+    .select("user_id, stellar_address, details_hash, status, verified_until, document_expires_on")
     .eq("id", submissionId)
     .maybeSingle();
   if (error) throw new Error(`Could not read KYC submission: ${error.message}`);
   if (!sub) throw new Error("That submission does not exist.");
+  // Before the chain write: decideSubmission would refuse too, but only after
+  // the attestation had already gone on the record.
+  if (isSelfReview(caller.userId, sub.user_id)) await refuseSelfReview(caller, submissionId, "Attest");
   // A turned-down check's hash commits to the document that was refused. It
   // can be recorded only after the applicant resubmits and it is approved.
   if (sub.status === "rejected") {
@@ -729,6 +760,7 @@ export async function revokeSubmissionAttestation(submissionId: string) {
     .maybeSingle();
   if (error) throw new Error(`Could not read KYC submission: ${error.message}`);
   if (!sub) throw new Error("That submission does not exist.");
+  if (isSelfReview(caller.userId, sub.user_id)) await refuseSelfReview(caller, submissionId, "Revoke");
 
   // Nothing on-chain for a check that never had a wallet.
   if (sub.stellar_address) {
