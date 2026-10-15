@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import { Inter, Source_Code_Pro } from "next/font/google";
 import "./globals.css";
 import { cn } from "@/lib/utils";
@@ -73,6 +74,11 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // The per-request CSP nonce set by src/proxy.ts. next-themes renders an
+  // inline script that picks the theme before first paint, and the policy
+  // blocks it without the nonce.
+  const nonce = (await headers()).get("x-nonce") ?? undefined;
+
   return (
     <html
       lang="en"
@@ -94,6 +100,7 @@ export default async function RootLayout({
           defaultTheme="dark"
           enableSystem
           disableTransitionOnChange
+          nonce={nonce}
         >
           <FreighterWalletProvider>
             <AuthProvider>

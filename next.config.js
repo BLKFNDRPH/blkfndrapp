@@ -46,11 +46,11 @@ const nextConfig = {
 
   // Baseline security headers on every response. A conservative, non-breaking
   // set: clickjacking (frame-ancestors + X-Frame-Options), MIME sniffing,
-  // referrer and permissions hardening, and HSTS for the HTTPS origin. A full
-  // content Content-Security-Policy (script/style/connect sources) is a
-  // deliberate follow-up — it must be tested against Next.js, Supabase, Pinata
-  // and the wallet flows — so only frame-ancestors is set here, which does not
-  // affect resource loading.
+  // referrer and permissions hardening, and HSTS for the HTTPS origin. The full
+  // Content-Security-Policy needs a per-request nonce, so src/proxy.ts sets it
+  // on every page (src/lib/csp.ts); this frame-ancestors-only policy still
+  // covers the static files the proxy skips. Both apply where both are sent,
+  // and this one restricts nothing the full one allows.
   async headers() {
     return [
       {
