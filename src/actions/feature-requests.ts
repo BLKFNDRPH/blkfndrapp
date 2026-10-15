@@ -6,7 +6,6 @@ import {
   toggleUpvote,
   decideFeatureRequest,
   respondToFeatureRequest,
-  type FeatureStatus,
 } from "@/lib/data/feature-requests";
 import { authFailure } from "@/lib/auth/guards";
 
@@ -65,7 +64,7 @@ export async function decideFeatureRequestAction(requestId: string, approve: boo
 export async function respondToFeatureRequestAction(
   requestId: string,
   response: string,
-  status?: FeatureStatus,
+  status?: "shipped",
 ) {
   try {
     await respondToFeatureRequest(requestId, response, status);

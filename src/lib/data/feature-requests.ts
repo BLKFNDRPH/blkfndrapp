@@ -2,7 +2,7 @@ import "server-only";
 
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
-import { requireAdmin, requireCaller } from "@/lib/supabase/auth";
+import { requireCaller, AuthError } from "@/lib/supabase/auth";
 
 /**
  * The community roadmap.
@@ -27,6 +27,21 @@ const TitleSchema = z.string().trim().min(3, "Give it a short title.").max(160);
 const BodySchema = z.string().trim().max(5000);
 
 export type FeatureStatus = "open" | "planned" | "declined" | "shipped";
+
+/**
+ * The roadmap is the owners' call, not every administrator's. The database
+ * agrees: feature_requests_owner_edit and the decisions policy are is_owner(),
+ * and guard_feature_request_status (20261015142340) lets a browser session
+ * change a status only from planned to shipped. Checked here too so a refusal
+ * reads as a reason, not as an update that silently changed nothing.
+ */
+async function requireOwner() {
+  const caller = await requireCaller();
+  if (caller.role !== "owner") {
+    throw new AuthError("Only an owner can decide or answer a feature request.", 403);
+  }
+  return caller;
+}
 
 export interface FeatureRequest {
   id: string;
@@ -70,14 +85,12 @@ export async function listFeatureRequests(): Promise<FeatureRequest[]> {
   let callerId: string | null = null;
   let isOwner = false;
   try {
-    callerId = (await requireCaller()).userId;
-    try {
-      await requireAdmin();
-      isOwner = true;
-    } catch {
-      // Signed in but not an owner. The tally stays hidden, which is the point:
-      // the board shows what was decided, not how each owner voted.
-    }
+    const caller = await requireCaller();
+    callerId = caller.userId;
+    // Signed in but not an owner: the tally stays hidden, which is the point.
+    // The board shows what was decided, not how each owner voted. This used to
+    // be any administrator, which showed the tally to a KYC reviewer too.
+    isOwner = caller.role === "owner";
   } catch {
     // Signed out. Upvote counts are public; whether *you* voted is not a
     // question that has an answer.
@@ -165,7 +178,7 @@ export async function toggleUpvote(requestId: string, upvote: boolean) {
  * database decides when it stops being open, not this function.
  */
 export async function decideFeatureRequest(requestId: string, approve: boolean) {
-  const caller = await requireAdmin();
+  const caller = await requireOwner();
   const supabase = await createClient();
 
   const { error } = await supabase
@@ -178,13 +191,17 @@ export async function decideFeatureRequest(requestId: string, approve: boolean) 
   if (error) throw new Error(`Could not record your decision: ${error.message}`);
 }
 
-/** Mark a planned request as shipped, or leave a note explaining a decline. */
+/**
+ * Mark a planned request as shipped, or leave a note explaining a decline.
+ * Shipped is the only status set by hand: planned and declined come from the
+ * owners' vote alone.
+ */
 export async function respondToFeatureRequest(
   requestId: string,
   response: string,
-  status?: FeatureStatus,
+  status?: Extract<FeatureStatus, "shipped">,
 ) {
-  await requireAdmin();
+  await requireOwner();
   const supabase = await createClient();
 
   const { error } = await supabase
@@ -195,5 +212,9 @@ export async function respondToFeatureRequest(
     })
     .eq("id", requestId);
 
-  if (error) throw new Error(`Could not update the request: ${error.message}`);
+  if (error) {
+    // guard_feature_request_status: only a planned request can become shipped.
+    if (error.code === "42501") throw new AuthError(error.message, 403);
+    throw new Error(`Could not update the request: ${error.message}`);
+  }
 }
