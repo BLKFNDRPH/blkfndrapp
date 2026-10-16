@@ -156,7 +156,7 @@ Soroban charges rent. Every contract instance, persistent entry and uploaded was
 
 ## blkfndr-vault
 
-One vault per project. It holds every stake and the builder's performance bond in the same contract, runs the milestone votes that release money, and returns money when a project misses its goal, fails a milestone or is abandoned. **56 tests.**
+One vault per project. It holds every stake and the builder's performance bond in the same contract, runs the milestone votes that release money, and returns money when a project misses its goal, fails a milestone or is abandoned. **65 tests.**
 
 ### Lifecycle
 
@@ -362,7 +362,7 @@ Reads: `get_record(vault)`, `has_record(vault)`, `get_builder_vaults(builder)`, 
 
 ## blkfndr-identity
 
-The KYC gate. Named attestors write approvals, and the vault checks the builder's at `initialize`. Contributors are not identity-gated on-chain, so the 20% cap and the three-wallet floor bind addresses, not people. **15 tests.**
+The KYC gate. Named attestors write approvals, and the vault checks the builder's at `initialize`. Contributors are not identity-gated on-chain, so the 20% cap and the three-wallet floor bind addresses, not people. **19 tests.**
 
 KYC attestors sign from **managed, gas-only wallets**: the platform generates the key, keeps it in Supabase Vault and signs `attest` server-side when a human reviewer approves KYC in the console (see [Architecture](architecture.md)). An attestor key can only `attest` and `revoke`, and it never holds project funds. Appointing an attestor stays with the registry admin's own wallet, because that key also carries `transfer_admin`.
 
@@ -407,7 +407,7 @@ Console access does not come from this contract. Since #88 the app asks the `pla
 
 ## blkfndr-treasury
 
-Where the flat listing fees pool, and the governance seat for the platform. Owners vote **two-thirds by headcount** (`APPROVAL 2/3`: two of three, three of four) to distribute the balance to shareholders and to set platform policy. Nobody, including the deployer, can move money on their own signature. **45 tests.**
+Where the flat listing fees pool, and the governance seat for the platform. Owners vote **two-thirds by headcount** (`APPROVAL 2/3`: two of three, three of four) to distribute the balance to shareholders and to set platform policy. Nobody, including the deployer, can move money on their own signature. **46 tests.**
 
 On testnet the register is three owners at 3,334 / 3,333 / 3,333 bps, and the treasury governs factory `CBRUIRJX…`.
 
@@ -460,7 +460,7 @@ Reads: `get_shareholders`, `get_cycle(id)`, `get_open_cycle`, `get_reserved(toke
 
 ## blkfndr-operations
 
-The Operations Vault: a governed pot of XLM that pays the gas for moderation (KYC attestation, project approval). It holds **no project funds**, only the platform's own gas budget. Owners are plain voters with no shares. They vote **two-thirds by headcount**, and execution is **permissionless**: the carried vote is the authority, and no owner key signs the transfer. **25 tests.**
+The Operations Vault: a governed pot of XLM that pays the gas for moderation (KYC attestation, project approval). It holds **no project funds**, only the platform's own gas budget. Owners are plain voters with no shares. They vote **two-thirds by headcount**, and execution is **permissionless**: the carried vote is the authority, and no owner key signs the transfer. **27 tests.**
 
 | Function | Who | Effect |
 |---|---|---|
