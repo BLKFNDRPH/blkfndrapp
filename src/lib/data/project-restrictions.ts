@@ -15,7 +15,7 @@ import type { ProjectRestriction } from "@/lib/types";
  * by hand. What these change is what this platform lists and which
  * transactions its interface will build.
  *
- * The rules live in Postgres (20261001120000_project_restrictions.sql): who may
+ * The rules live in Postgres (20261001064107_project_restrictions.sql): who may
  * restrict, the required reason, the audit entry, who can still see a hidden
  * listing, and the refusal of milestone proof under a lock. This module adds
  * readable errors and the builder's notification — nothing a caller could skip

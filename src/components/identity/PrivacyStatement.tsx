@@ -9,7 +9,7 @@ import { WALLETLESS_APPROVAL_DAYS } from "@/lib/kyc/walletless";
  * hash), the status page didn't (QA Cycle 7, BF-120). Every state now ends
  * with that sentence, because it is true in every state. What is deleted, and
  * when, follows kyc_requests_drop_identity_after_decision
- * (20261007130000): on the decision, or for an approval made before a wallet
+ * (20261007134943): on the decision, or for an approval made before a wallet
  * is attached, once one is.
  */
 export type PrivacyStage =

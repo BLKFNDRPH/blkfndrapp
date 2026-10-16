@@ -15,7 +15,7 @@ import {
  * Identity verifications coming up for renewal, and ones that have lapsed.
  *
  * A verification holds until the expiry of the document it was approved on
- * (kyc_requests.verified_until, 20261007150000). Like the vote reminders, these
+ * (kyc_requests.verified_until, 20261007134605). Like the vote reminders, these
  * are found by a scan run every minute by the notification emails cron. Each
  * is claimed in notification_once before it is created, so it is produced once
  * per verification and date, even if the person dismisses it:
