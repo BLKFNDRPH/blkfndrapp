@@ -3,7 +3,7 @@
  *
  * Such an approval keeps the ID number, date of birth, address and email,
  * because attaching the wallet recomputes the details hash from them together
- * with the wallet's address (20261007130000). Attaching clears them. Without a
+ * with the wallet's address (20261007134943). Attaching clears them. Without a
  * limit, an applicant who never set up a wallet left them on file until their
  * ID expired, years later. So the applicant is reminded twice, and after
  * WALLETLESS_APPROVAL_DAYS the approval ends: the check is turned down with

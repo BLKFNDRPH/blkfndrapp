@@ -38,13 +38,13 @@ The document goes to `POST /api/kyc-document` ([route](../src/app/api/kyc-docume
 ### Review
 
 - Identity columns on `kyc_requests` are granted to no browser role. Reviewers read them through the service-role client, one case at a time, after `requireKycReviewer()`.
-- A reviewer's own browser session has no access to anyone else's check. The KYC-manager policies were removed in [20261007170000](../supabase/migrations/20261007170000_kyc_review_server_only.sql), so every list, read and decision runs on the server.
+- A reviewer's own browser session has no access to anyone else's check. The KYC-manager policies were removed in [20261007134955](../supabase/migrations/20261007134955_kyc_review_server_only.sql), so every list, read and decision runs on the server.
 - The document is reached through a signed URL that lasts five minutes. Supabase Storage serves signed URLs without a `Cache-Control` header, so the review panel fetches the file with `cache: "no-store"` and shows it from an in-memory object URL that is revoked when the case closes ([CaseDocument](../src/components/admin/CaseDocument.tsx)). It never uses `next/image`, whose optimizer would cache the file on the server.
 - The applicant never sees their ID details again, not even on their own verification page.
 
 ### Decision and deletion
 
-When a reviewer approves, the server writes the attestation on chain first, then records the decision. The `kyc_requests_drop_identity_after_decision` trigger ([20261007130000](../supabase/migrations/20261007130000_kyc_identity_deleted_after_decision.sql)) then clears:
+When a reviewer approves, the server writes the attestation on chain first, then records the decision. The `kyc_requests_drop_identity_after_decision` trigger ([20261007134943](../supabase/migrations/20261007134943_kyc_identity_deleted_after_decision.sql)) then clears:
 
 - **`document_path`, on any decision.** The fingerprint never covered the image.
 - **`email`, `id_number`, `date_of_birth`, `residential_address`, once the fingerprint is final.** That is on a rejection, or on an approval with a wallet. An approval given before the applicant has a wallet keeps them until one is attached, because the fingerprint is recomputed with the wallet. The update that attaches it then clears them.
@@ -55,7 +55,7 @@ The rule is a trigger, so every write path follows it, including edits made in t
 
 ### Renewal
 
-A verification holds until the ID it was approved on expires (`verified_until`, [20261007150000](../supabase/migrations/20261007150000_kyc_renewal_before_id_expires.sql)). From 30 days before that date the builder can verify again with a current ID, and they are reminded. Approving the renewal replaces the fingerprint on chain, and the new document is deleted like the first. Past the date, the verification no longer counts in the app, and reviewers are told to revoke it. Details: [authentication.md](authentication.md#renewal-when-the-id-expires).
+A verification holds until the ID it was approved on expires (`verified_until`, [20261007134605](../supabase/migrations/20261007134605_kyc_renewal_before_id_expires.sql)). From 30 days before that date the builder can verify again with a current ID, and they are reminded. Approving the renewal replaces the fingerprint on chain, and the new document is deleted like the first. Past the date, the verification no longer counts in the app, and reviewers are told to revoke it. Details: [authentication.md](authentication.md#renewal-when-the-id-expires).
 
 ### Checking someone against the record
 

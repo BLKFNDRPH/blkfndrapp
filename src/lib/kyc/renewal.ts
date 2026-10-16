@@ -8,7 +8,7 @@
  *
  * Shared by the browser and the server. Dates are compared as YYYY-MM-DD
  * strings in UTC, the database's current_date, so the app and the
- * kyc_requests update policy (20261007150000) agree on the day.
+ * kyc_requests update policy (20261007134605) agree on the day.
  */
 
 /** Mirrors `current_date + 30` in the kyc_requests update policy. */

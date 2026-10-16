@@ -129,7 +129,7 @@ const DOCUMENTS_BUCKET = "kyc-documents";
  * Delete the identity documents no submission needs any more.
  *
  * A decision clears a check's document_path, and a resubmission replaces it
- * (20261007130000_kyc_identity_deleted_after_decision), but the file is a
+ * (20261007134943_kyc_identity_deleted_after_decision), but the file is a
  * Storage object, which SQL cannot delete. kyc_documents_to_delete lists every
  * object no row points at: all of this applicant's straight away, and anyone
  * else's an hour after upload, which sweeps up what an abandoned upload, a

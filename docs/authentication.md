@@ -211,7 +211,7 @@ The database functions are all `SECURITY DEFINER`, take no caller-supplied ident
 | `is_admin()` | Whether the caller is on the roster at all |
 | `is_owner()` | Whether the caller is an owner |
 | `has_admin_role(wanted)` | Whether the caller holds `wanted` or is an owner |
-| `my_role()` | The caller's role, or `null` when they are not on the roster ([migration](../supabase/migrations/20260809140000_my_role.sql)) |
+| `my_role()` | The caller's role, or `null` when they are not on the roster ([migration](../supabase/migrations/20260809000017_my_role.sql)) |
 | `can_restrict_projects()` | `has_admin_role('project_approver') or has_admin_role('platform_admin')` |
 
 Nobody can remove themselves from the roster, and the last entry cannot be removed (`guard_admin_removal`).
@@ -336,7 +336,7 @@ The same rule is in the database. [20261006155050_kyc_wallet_optional_at_submit.
 ### Review
 
 - Identity columns on `kyc_requests` are granted to no browser role. Reviewers read them through the service-role client, one record at a time, in `getSubmissionForReview`, behind `requireKycReviewer()`.
-- Review runs on the server only. `kyc_requests` has no reviewer policy, so a reviewer's own session sees and changes only their own check, like any applicant. Every list, read and decision goes through the service-role client after `requireKycReviewer()`. [20261007170000](../supabase/migrations/20261007170000_kyc_review_server_only.sql) dropped the `kyc_manager` select and update policies. The update policy had let any KYC manager or owner rewrite any check straight through PostgREST: approve it without the on-chain attestation, swap its details hash, or repoint its document.
+- Review runs on the server only. `kyc_requests` has no reviewer policy, so a reviewer's own session sees and changes only their own check, like any applicant. Every list, read and decision goes through the service-role client after `requireKycReviewer()`. [20261007134955](../supabase/migrations/20261007134955_kyc_review_server_only.sql) dropped the `kyc_manager` select and update policies. The update policy had let any KYC manager or owner rewrite any check straight through PostgREST: approve it without the on-chain attestation, swap its details hash, or repoint its document.
 - The document is served as a signed URL that expires after 5 minutes. The bucket has no read policy for any browser role. Supabase Storage sends signed URLs with no `Cache-Control` header, so the review panel fetches the file with `cache: "no-store"` and shows it from an in-memory object URL that is revoked when the case closes ([CaseDocument](../src/components/admin/CaseDocument.tsx)). Never through `next/image`, whose optimizer would cache it on the server. A case reopened after the URL has expired is read again.
 - **Approve** (`attestKycAction`): the server signs the attestation on the identity registry with the reviewer's managed key, then records the decision. The chain write comes first, so a failed attestation never leaves a check marked approved.
 - **Reject** (`updateKycRequestStatus`): records the decision with the reviewer's reason (up to 500 characters).
@@ -346,7 +346,7 @@ The same rule is in the database. [20261006155050_kyc_wallet_optional_at_submit.
 
 A decided check keeps only what the record needs: `full_name`, `document_type`, `document_expires_on`, `details_hash`, `status` and the wallet. Recording or revoking an attestation reads only the hash and the wallet.
 
-- **The details.** The `kyc_requests_drop_identity_after_decision` trigger ([migration](../supabase/migrations/20261007130000_kyc_identity_deleted_after_decision.sql)) clears `email`, `id_number`, `date_of_birth` and `residential_address` once the hash is final. That happens on a rejection, or on an approval with a wallet. An approval given before the applicant had a wallet keeps them until a wallet is attached, because `attachOwnKycWallet` recomputes the hash from them together with the address. The update that attaches the wallet then clears them. The rule is a trigger, so every write path follows it, the dashboard included.
+- **The details.** The `kyc_requests_drop_identity_after_decision` trigger ([migration](../supabase/migrations/20261007134943_kyc_identity_deleted_after_decision.sql)) clears `email`, `id_number`, `date_of_birth` and `residential_address` once the hash is final. That happens on a rejection, or on an approval with a wallet. An approval given before the applicant had a wallet keeps them until a wallet is attached, because `attachOwnKycWallet` recomputes the hash from them together with the address. The update that attaches the wallet then clears them. The rule is a trigger, so every write path follows it, the dashboard included.
 - **The document.** The decision clears `document_path`. SQL cannot delete Storage objects (`storage.objects` has `protect_objects_delete`), so `deleteUnusedKycDocuments` in [src/lib/data/kyc.ts](../src/lib/data/kyc.ts) deletes the file through the Storage API. It runs after every decision and every submission. It deletes whatever `kyc_documents_to_delete(for_user)` lists: objects no row points at, all of that applicant's at once, and anyone's an hour after upload. The second half catches abandoned uploads, deleted accounts and failed deletes.
 - **Resubmitting.** A rejected applicant re-enters every field, so nothing they need is lost. A submission must name a document under the applicant's own prefix, because whatever a check points at is deleted when it is decided.
 
@@ -354,7 +354,7 @@ Database backups still hold the old values until they age out.
 
 ### Renewal when the ID expires
 
-A verification holds until the ID it was approved on expires. `kyc_requests.verified_until` holds that date ([migration](../supabase/migrations/20261007150000_kyc_renewal_before_id_expires.sql)):
+A verification holds until the ID it was approved on expires. `kyc_requests.verified_until` holds that date ([migration](../supabase/migrations/20261007134605_kyc_renewal_before_id_expires.sql)):
 
 - **Set** on approval, by the `kyc_requests_track_verified_until` trigger, to the document's expiry.
 - **Kept** while a renewal is under review or after one is turned down. The record still holds the earlier approval until that date.
@@ -381,7 +381,7 @@ A KYC Attestor reviews documents. They are not expected to run a Stellar wallet.
 - generate a keypair, store the secret in Supabase Vault (`set_managed_key`, callable by the service role only), and record the public key in `platform_admins.managed_wallet`;
 - fund it with friendbot on testnet. On mainnet it stays empty until the Operations Vault funds it with gas.
 
-The key can `attest` and `revoke` on the identity registry, and nothing else. It is not the registry admin. Appointing it as an attestor is a separate step that an owner signs from their own wallet. It holds no project funds. When the attestor is removed, the remaining gas is swept back to the Operations Vault and the key is deleted. See [src/lib/managed-wallet.ts](../src/lib/managed-wallet.ts) and [the migration](../supabase/migrations/20260809150000_managed_attestor_keys.sql).
+The key can `attest` and `revoke` on the identity registry, and nothing else. It is not the registry admin. Appointing it as an attestor is a separate step that an owner signs from their own wallet. It holds no project funds. When the attestor is removed, the remaining gas is swept back to the Operations Vault and the key is deleted. See [src/lib/managed-wallet.ts](../src/lib/managed-wallet.ts) and [the migration](../supabase/migrations/20260809032145_managed_attestor_keys.sql).
 
 These are the only keys the platform holds. Stakeholder, builder and owner keys stay in their own wallets.
 

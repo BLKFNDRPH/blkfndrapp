@@ -13,7 +13,8 @@
     "test": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON \"src/**/*.test.ts\"",
     "perf:baseline": "node scripts/perf-baseline.mjs",
     "audit:gate": "node scripts/audit-gate.mjs",
-    "test:authz": "node scripts/authz-check.mjs"
+    "test:authz": "node scripts/authz-check.mjs",
+    "test:db": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON \"supabase/tests/*.test.ts\""
   },
   "dependencies": {
     "@genkit-ai/googleai": "^1.28.0",
@@ -65,6 +66,7 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.5.8",
     "@types/lodash": "^4.17.0",
     "@types/node": "^20",
     "@types/react": "^18",

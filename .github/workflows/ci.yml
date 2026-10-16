@@ -39,6 +39,14 @@ jobs:
         # endpoint is missing from scripts/authz-manifest.mjs.
         run: npm run test:authz
 
+      - name: Database policy check
+        # Replays every migration, in version order, into an in-memory Postgres
+        # (PGlite) and tries the browser-session abuse cases the migrations were
+        # written to refuse: self-linking a wallet, anon writes, banning an owner,
+        # an unconfirmed admin invite, setting feature-request status, reading
+        # KYC checks. Fails too if the migrations no longer replay cleanly.
+        run: npm run test:db
+
       - name: Audit production dependencies
         # Prints the full report, then fails on any high or critical advisory
         # that scripts/audit-gate.mjs does not list as accepted (each accepted

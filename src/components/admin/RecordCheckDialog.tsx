@@ -17,7 +17,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
  * A verified wallet's record, and a check of a person against it.
  *
  * A check's documents and personal details are deleted once it is decided
- * (20261007130000). What is kept is shown at the top: the name, the
+ * (20261007134943). What is kept is shown at the top: the name, the
  * document's type and expiry, and the hash its attestation put on the record,
  * which is SHA-256 of the details and the wallet (src/lib/kyc/details-hash.ts).
  *
