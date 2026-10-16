@@ -26,10 +26,10 @@ Release authority is contribution-weighted rather than held by appointed signers
 
 | Area | State |
 |---|---|
-| Bonded vault with contributor-weighted release | ✅ Deployed to testnet, 56 tests passing. The capped-total release rule (#99) and the money majority are live for projects created since 2026-10-06. Earlier projects keep the rule they were created with. Test transactions are in the [deliverable evidence](docs/deliverables/contribution-threshold-attestation.md) |
+| Bonded vault with contributor-weighted release | ✅ Deployed to testnet, 65 tests passing. The capped-total release rule (#99) and the money majority are live for projects created since 2026-10-06. Earlier projects keep the rule they were created with. Test transactions are in the [deliverable evidence](docs/deliverables/contribution-threshold-attestation.md) |
 | Builder attestation registry | ✅ Deployed to testnet, 16 tests passing |
-| Platform treasury + owner-voted governance (fee, bond, ops funding) | ✅ Deployed to testnet, 45 tests passing |
-| Operations Vault (governed gas budget) + managed KYC-attestor keys | ✅ Deployed to testnet, 25 tests passing |
+| Platform treasury + owner-voted governance (fee, bond, ops funding) | ✅ Deployed to testnet, 46 tests passing |
+| Operations Vault (governed gas budget) + managed KYC-attestor keys | ✅ Deployed to testnet, 27 tests passing |
 | Four admin groups, user bans, platform health, KYC review | ✅ Live |
 | Supabase schema, RLS, and auth | ✅ Applied, verified, and the app runs on it |
 | MongoDB | ✅ Fully removed |
@@ -142,7 +142,7 @@ Platform parameters as deployed, read from the factory on 2026-10-07:
 
 The factory's admin is still the deployer key, not the treasury, so these change by one signature until the admin is handed over ([progress.md](progress.md#2-hand-the-factory-admin-to-the-treasury)).
 
-The contract suite has 183 tests: vault 56, treasury 45, operations 25, factory 17, attestation 16, identity 15 and admin 9.
+The contract suite has 199 tests: vault 65, treasury 46, operations 27, factory 17, attestation 16, identity 19 and admin 9.
 
 #### Previous generation
 
