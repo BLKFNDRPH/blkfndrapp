@@ -1,14 +1,14 @@
 extern crate std;
 
 use soroban_sdk::{
-    contract, contractimpl,
+    contract, contractimpl, contracttype,
     testutils::{Address as _, Ledger, MockAuth, MockAuthInvoke},
     token::{StellarAssetClient, TokenClient},
     Address, Env, IntoVal, String, Val, Vec,
 };
 
 use crate::{
-    BlkfndrVault, BlkfndrVaultClient, Error, MilestoneInput, VaultInitConfig, VaultState,
+    BlkfndrVault, BlkfndrVaultClient, Error, MilestoneInput, Outcome, VaultInitConfig, VaultState,
 };
 use blkfndr_attestation::{
     AttestationRegistry, AttestationRegistryClient, Outcome as RegistryOutcome,
@@ -1415,6 +1415,73 @@ fn cannot_be_initialized_twice() {
     let _ = s.minter; // fixture completeness
 }
 
+/// A config the builder can sign for with nothing to transfer (no bond, no
+/// fee), so the only signatures initialize asks for are the factory's and the
+/// builder's.
+fn unsigned_init(env: &Env) -> (BlkfndrVaultClient<'static>, VaultInitConfig, Address, Address) {
+    env.ledger().set_timestamp(1_000_000);
+    let builder = Address::generate(env);
+    let factory = Address::generate(env);
+    let identity_id = env.register(MockIdentity, ());
+    MockIdentityClient::new(env, &identity_id).set_approved(&builder, &true);
+    let issuer = Address::generate(env);
+    let asset = env.register_stellar_asset_contract_v2(issuer);
+
+    let mut milestones = Vec::new(env);
+    milestones.push_back(MilestoneInput { id: 1, amount: GOAL });
+    let config = VaultInitConfig {
+        project_id: 7,
+        creator: builder.clone(),
+        token: asset.address(),
+        goal: GOAL,
+        deadline: env.ledger().timestamp() + DEADLINE,
+        bond_amount: 0,
+        identity_registry: identity_id,
+        attestation_registry: Address::generate(env),
+        factory: factory.clone(),
+        fee_wallet_address: Address::generate(env),
+        platform_fee: 0,
+        voting_window_secs: VOTING_WINDOW,
+        min_contribution: MIN_CONTRIBUTION,
+        milestones,
+        metadata_cid: String::from_str(env, "cid"),
+    };
+    let vault = BlkfndrVaultClient::new(env, &env.register(BlkfndrVault, ()));
+    (vault, config, factory, builder)
+}
+
+fn signed_by(env: &Env, vault: &Address, config: &VaultInitConfig, signers: &[&Address]) {
+    let args: Vec<Val> = (config.clone(),).into_val(env);
+    let invoke = MockAuthInvoke { contract: vault, fn_name: "initialize", args, sub_invokes: &[] };
+    let auths: std::vec::Vec<MockAuth> = signers
+        .iter()
+        .map(|signer| MockAuth { address: signer, invoke: &invoke })
+        .collect();
+    env.mock_auths(&auths);
+}
+
+/// BF-H-03: the vault is deployed and initialized inside the factory's
+/// create_vault, and initialize demands the factory's signature, so nobody can
+/// configure a deployed vault in the gap. Signed by the builder alone, it is
+/// refused.
+#[test]
+#[should_panic(expected = "Error(Auth, InvalidAction)")]
+fn initialize_requires_the_factorys_signature() {
+    let env = Env::default();
+    let (vault, config, _factory, builder) = unsigned_init(&env);
+    signed_by(&env, &vault.address, &config, &[&builder]);
+    vault.initialize(&config);
+}
+
+#[test]
+fn initialize_signed_by_the_factory_and_the_builder_succeeds() {
+    let env = Env::default();
+    let (vault, config, factory, builder) = unsigned_init(&env);
+    signed_by(&env, &vault.address, &config, &[&factory, &builder]);
+    vault.initialize(&config);
+    assert_eq!(vault.get_state(), VaultState::Raising);
+}
+
 // ── Paged reads ────────────────────────────────────────────────────────────
 
 #[test]
@@ -1591,4 +1658,245 @@ fn rejects_more_milestones_than_the_cap() {
     });
 
     assert!(result.is_err(), "a milestone list past the cap is rejected");
+}
+
+// ── Re-entrancy (BF-M-07) ───────────────────────────────────────────────────
+
+/// A token that pays like any other, then calls back into whoever paid it: the
+/// malicious custom asset of the re-entrancy findings (BF-M-05/06/07). Armed
+/// with a target and a function, its first transfer re-invokes that function
+/// once and records how the inner call ended. It catches a failure rather than
+/// propagating it, so the outer payment stands either way and a test sees both
+/// payouts if a second one ever got through.
+///
+/// Today the Soroban host refuses the re-entry itself, with
+/// Error(Context, InvalidAction), before the contract runs. The contract's own
+/// checks-effects-interactions ordering is the second line, behind it.
+#[contract]
+pub struct ReentrantToken;
+
+#[contracttype]
+enum TrapKey {
+    Balance(Address),
+    Target,
+    Function,
+    Attempts,
+    Outcome,
+}
+
+/// How the re-entrant call ended.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Reentry {
+    Succeeded,
+    Failed(soroban_sdk::Error),
+    Aborted,
+}
+
+#[contractimpl]
+impl ReentrantToken {
+    pub fn mint(env: Env, to: Address, amount: i128) {
+        let key = TrapKey::Balance(to);
+        let held: i128 = env.storage().instance().get(&key).unwrap_or(0);
+        env.storage().instance().set(&key, &(held + amount));
+    }
+
+    pub fn balance(env: Env, id: Address) -> i128 {
+        env.storage().instance().get(&TrapKey::Balance(id)).unwrap_or(0)
+    }
+
+    pub fn transfer(env: Env, from: Address, to: Address, amount: i128) {
+        let from_key = TrapKey::Balance(from);
+        let held: i128 = env.storage().instance().get(&from_key).unwrap_or(0);
+        assert!(held >= amount, "insufficient balance");
+        env.storage().instance().set(&from_key, &(held - amount));
+        Self::mint(env.clone(), to, amount);
+
+        let attempts: u32 = env.storage().instance().get(&TrapKey::Attempts).unwrap_or(0);
+        let target: Option<Address> = env.storage().instance().get(&TrapKey::Target);
+        if let (Some(target), 0) = (target, attempts) {
+            env.storage().instance().set(&TrapKey::Attempts, &1u32);
+            let func: soroban_sdk::Symbol =
+                env.storage().instance().get(&TrapKey::Function).unwrap();
+            let outcome = match env.try_invoke_contract::<soroban_sdk::Val, soroban_sdk::Error>(
+                &target,
+                &func,
+                Vec::new(&env),
+            ) {
+                Ok(Ok(_)) => Reentry::Succeeded,
+                Err(Ok(e)) => Reentry::Failed(e),
+                _ => Reentry::Aborted,
+            };
+            env.storage().instance().set(&TrapKey::Outcome, &outcome);
+        }
+    }
+
+    pub fn arm(env: Env, target: Address, func: soroban_sdk::Symbol) {
+        env.storage().instance().set(&TrapKey::Target, &target);
+        env.storage().instance().set(&TrapKey::Function, &func);
+    }
+
+    pub fn reentry(env: Env) -> Option<Reentry> {
+        env.storage().instance().get(&TrapKey::Outcome)
+    }
+}
+
+/// The re-entrant call was refused, by the host or by the contract's own guard
+/// (`guard`, the error the contract raises when the state it already changed
+/// says there is nothing left to pay).
+fn assert_reentry_refused(outcome: Option<Reentry>, guard: soroban_sdk::Error) {
+    let host_refusal = soroban_sdk::Error::from_type_and_code(
+        soroban_sdk::xdr::ScErrorType::Context,
+        soroban_sdk::xdr::ScErrorCode::InvalidAction,
+    );
+    match outcome {
+        Some(Reentry::Failed(e)) if e == host_refusal || e == guard => {}
+        other => panic!("the re-entrant call should have been refused, got {:?}", other),
+    }
+}
+
+/// An attestation registry that, asked to record a failed raise, calls back
+/// into the vault's return_bond: the other external call return_bond makes
+/// before it pays. Records how the inner call ended, like ReentrantToken.
+#[contract]
+pub struct ReentrantRegistry;
+
+#[contractimpl]
+impl ReentrantRegistry {
+    #[allow(clippy::too_many_arguments)]
+    pub fn attest(
+        env: Env,
+        vault: Address,
+        _factory: Address,
+        _builder: Address,
+        _project_id: u64,
+        _outcome: Outcome,
+        _total_raised: i128,
+        _bond_posted: i128,
+        _milestones_total: u32,
+        _milestones_approved: u32,
+    ) {
+        if env.storage().instance().has(&TrapKey::Attempts) {
+            return;
+        }
+        env.storage().instance().set(&TrapKey::Attempts, &1u32);
+        let outcome = match env.try_invoke_contract::<Val, soroban_sdk::Error>(
+            &vault,
+            &soroban_sdk::Symbol::new(&env, "return_bond"),
+            Vec::new(&env),
+        ) {
+            Ok(Ok(_)) => Reentry::Succeeded,
+            Err(Ok(e)) => Reentry::Failed(e),
+            _ => Reentry::Aborted,
+        };
+        env.storage().instance().set(&TrapKey::Outcome, &outcome);
+    }
+
+    pub fn outcome(env: Env) -> Option<Reentry> {
+        env.storage().instance().get(&TrapKey::Outcome)
+    }
+}
+
+/// A vault whose raise failed, so its bond is due back to the builder, built on
+/// whatever token and attestation registry the test supplies. `fund` gives the
+/// builder the bond that initialize takes.
+fn failed_vault_with(
+    env: &Env,
+    token: &Address,
+    registry: Option<&Address>,
+    fund: impl Fn(&Address, i128),
+) -> (BlkfndrVaultClient<'static>, Address) {
+    let admin = Address::generate(env);
+    let builder = Address::generate(env);
+    fund(&builder, BOND);
+
+    let identity_id = env.register(MockIdentity, ());
+    MockIdentityClient::new(env, &identity_id).set_approved(&builder, &true);
+
+    let vault_address = env.register(BlkfndrVault, ());
+    let factory_id = env.register(MockFactory, ());
+    let mut vaults = Vec::new(env);
+    vaults.push_back(vault_address.clone());
+    MockFactoryClient::new(env, &factory_id).set_vaults(&vaults);
+
+    let registry_id = match registry {
+        Some(r) => r.clone(),
+        None => {
+            let id = env.register(AttestationRegistry, (admin,));
+            AttestationRegistryClient::new(env, &id).add_factory(&factory_id);
+            id
+        }
+    };
+
+    let mut milestones = Vec::new(env);
+    milestones.push_back(MilestoneInput { id: 1, amount: GOAL });
+
+    let vault = BlkfndrVaultClient::new(env, &vault_address);
+    vault.initialize(&VaultInitConfig {
+        project_id: 42,
+        creator: builder.clone(),
+        token: token.clone(),
+        goal: GOAL,
+        deadline: env.ledger().timestamp() + DEADLINE,
+        bond_amount: BOND,
+        identity_registry: identity_id,
+        attestation_registry: registry_id,
+        factory: factory_id,
+        fee_wallet_address: Address::generate(env),
+        platform_fee: 0,
+        voting_window_secs: VOTING_WINDOW,
+        min_contribution: MIN_CONTRIBUTION,
+        milestones,
+        metadata_cid: String::from_str(env, "bafytestcid"),
+    });
+
+    advance(env, DEADLINE + 1);
+    assert_eq!(vault.get_state(), VaultState::Failed);
+    (vault, builder)
+}
+
+fn reentry_env() -> Env {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().set_timestamp(1_000_000);
+    env
+}
+
+#[test]
+fn a_reentrant_token_cannot_return_the_bond_twice() {
+    let env = reentry_env();
+    let evil_id = env.register(ReentrantToken, ());
+    let evil = ReentrantTokenClient::new(&env, &evil_id);
+    let (vault, builder) = failed_vault_with(&env, &evil_id, None, |to, amount| evil.mint(to, &amount));
+    // A second bond's worth, so only the guards stand between the attacker and
+    // a second payout.
+    evil.mint(&vault.address, &BOND);
+
+    evil.arm(&vault.address, &soroban_sdk::Symbol::new(&env, "return_bond"));
+    vault.return_bond();
+
+    assert_reentry_refused(evil.reentry(), Error::NoFundsToRefund.into());
+    assert_eq!(evil.balance(&builder), BOND, "bond returned once");
+    assert_eq!(evil.balance(&vault.address), BOND);
+}
+
+#[test]
+fn a_reentrant_attestation_registry_cannot_return_the_bond_twice() {
+    let env = reentry_env();
+    let issuer = Address::generate(&env);
+    let asset = env.register_stellar_asset_contract_v2(issuer);
+    let token = TokenClient::new(&env, &asset.address());
+    let minter = StellarAssetClient::new(&env, &asset.address());
+    let evil_registry_id = env.register(ReentrantRegistry, ());
+    let evil_registry = ReentrantRegistryClient::new(&env, &evil_registry_id);
+
+    let (vault, builder) =
+        failed_vault_with(&env, &asset.address(), Some(&evil_registry_id), |to, amount| minter.mint(to, &amount));
+    minter.mint(&vault.address, &BOND);
+
+    vault.return_bond();
+
+    assert_reentry_refused(evil_registry.outcome(), Error::NoFundsToRefund.into());
+    assert_eq!(token.balance(&builder), BOND, "bond returned once");
+    assert_eq!(token.balance(&vault.address), BOND);
 }

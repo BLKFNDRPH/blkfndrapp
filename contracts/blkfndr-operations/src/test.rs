@@ -4,7 +4,7 @@ use super::*;
 use soroban_sdk::{
     testutils::{Address as _, Ledger},
     token::{StellarAssetClient, TokenClient},
-    vec, Env,
+    contract, contractimpl, contracttype, vec, Env,
 };
 
 const DAY: u64 = 24 * 60 * 60;
@@ -81,6 +81,19 @@ fn owners_are_recorded() {
     assert_eq!(f.ops.get_owners().len(), 3);
     assert!(f.ops.is_owner(&f.owners[0]));
     assert!(!f.ops.is_owner(&Address::generate(&f.env)));
+}
+
+/// BF-H-03: the owners are set inside the deploy transaction, and only with
+/// the deployer's signature, so nobody can deploy-and-configure a vault naming
+/// themselves its owners in someone else's name.
+#[test]
+#[should_panic(expected = "Error(Auth, InvalidAction)")]
+fn construction_requires_the_deployers_signature() {
+    let env = Env::default(); // deliberately no mock_all_auths
+    env.register(
+        Operations,
+        (Address::generate(&env), vec![&env, Address::generate(&env)]),
+    );
 }
 
 // A constructor cannot be invoked twice — the vault is configured inside the
@@ -450,4 +463,125 @@ fn a_batch_beyond_the_balance_pays_no_one() {
     assert_eq!(f.token_client.balance(&a), 0);
     assert_eq!(f.token_client.balance(&b), 0);
     assert_eq!(f.ops.balance_of(&f.token), 400);
+}
+
+// ── Re-entrancy (BF-M-05) ───────────────────────────────────────────────────
+
+/// A token that pays like any other, then calls back into whoever paid it: the
+/// malicious custom asset of the re-entrancy findings (BF-M-05/06/07). Armed
+/// with a target and a function, its first transfer re-invokes that function
+/// once and records how the inner call ended. It catches a failure rather than
+/// propagating it, so the outer payment stands either way and a test sees both
+/// payouts if a second one ever got through.
+///
+/// Today the Soroban host refuses the re-entry itself, with
+/// Error(Context, InvalidAction), before the contract runs. The contract's own
+/// checks-effects-interactions ordering is the second line, behind it.
+#[contract]
+pub struct ReentrantToken;
+
+#[contracttype]
+enum TrapKey {
+    Balance(Address),
+    Target,
+    Function,
+    Attempts,
+    Outcome,
+}
+
+/// How the re-entrant call ended.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Reentry {
+    Succeeded,
+    Failed(soroban_sdk::Error),
+    Aborted,
+}
+
+#[contractimpl]
+impl ReentrantToken {
+    pub fn mint(env: Env, to: Address, amount: i128) {
+        let key = TrapKey::Balance(to);
+        let held: i128 = env.storage().instance().get(&key).unwrap_or(0);
+        env.storage().instance().set(&key, &(held + amount));
+    }
+
+    pub fn balance(env: Env, id: Address) -> i128 {
+        env.storage().instance().get(&TrapKey::Balance(id)).unwrap_or(0)
+    }
+
+    pub fn transfer(env: Env, from: Address, to: Address, amount: i128) {
+        let from_key = TrapKey::Balance(from);
+        let held: i128 = env.storage().instance().get(&from_key).unwrap_or(0);
+        assert!(held >= amount, "insufficient balance");
+        env.storage().instance().set(&from_key, &(held - amount));
+        Self::mint(env.clone(), to, amount);
+
+        let attempts: u32 = env.storage().instance().get(&TrapKey::Attempts).unwrap_or(0);
+        let target: Option<Address> = env.storage().instance().get(&TrapKey::Target);
+        if let (Some(target), 0) = (target, attempts) {
+            env.storage().instance().set(&TrapKey::Attempts, &1u32);
+            let func: soroban_sdk::Symbol =
+                env.storage().instance().get(&TrapKey::Function).unwrap();
+            let outcome = match env.try_invoke_contract::<soroban_sdk::Val, soroban_sdk::Error>(
+                &target,
+                &func,
+                Vec::new(&env),
+            ) {
+                Ok(Ok(_)) => Reentry::Succeeded,
+                Err(Ok(e)) => Reentry::Failed(e),
+                _ => Reentry::Aborted,
+            };
+            env.storage().instance().set(&TrapKey::Outcome, &outcome);
+        }
+    }
+
+    pub fn arm(env: Env, target: Address, func: soroban_sdk::Symbol) {
+        env.storage().instance().set(&TrapKey::Target, &target);
+        env.storage().instance().set(&TrapKey::Function, &func);
+    }
+
+    pub fn reentry(env: Env) -> Option<Reentry> {
+        env.storage().instance().get(&TrapKey::Outcome)
+    }
+}
+
+/// The re-entrant call was refused, by the host or by the contract's own guard
+/// (`guard`, the error the contract raises when the state it already changed
+/// says there is nothing left to pay).
+fn assert_reentry_refused(outcome: Option<Reentry>, guard: soroban_sdk::Error) {
+    let host_refusal = soroban_sdk::Error::from_type_and_code(
+        soroban_sdk::xdr::ScErrorType::Context,
+        soroban_sdk::xdr::ScErrorCode::InvalidAction,
+    );
+    match outcome {
+        Some(Reentry::Failed(e)) if e == host_refusal || e == guard => {}
+        other => panic!("the re-entrant call should have been refused, got {:?}", other),
+    }
+}
+
+#[test]
+fn a_reentrant_token_cannot_make_one_vote_pay_twice() {
+    let f = setup();
+    let evil_id = f.env.register(ReentrantToken, ());
+    let evil = ReentrantTokenClient::new(&f.env, &evil_id);
+    // Enough for two payouts, so only the guards stand between the attacker and
+    // the second one.
+    evil.mint(&f.ops.address, &800);
+    let dest = Address::generate(&f.env);
+
+    f.ops.propose(
+        &f.owners[0],
+        &GovernedAction::Release(ReleaseTerms { token: evil_id.clone(), amount: 400, to: dest.clone() }),
+    );
+    f.ops.approve(&f.owners[0]);
+    f.ops.approve(&f.owners[1]);
+
+    evil.arm(&f.ops.address, &soroban_sdk::Symbol::new(&f.env, "execute"));
+    f.ops.execute();
+
+    assert_reentry_refused(evil.reentry(), Error::NoProposalOpen.into());
+    assert_eq!(evil.balance(&dest), 400, "paid once");
+    assert_eq!(evil.balance(&f.ops.address), 400);
+    assert!(f.ops.get_proposal().is_none());
 }

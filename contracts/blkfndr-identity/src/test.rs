@@ -1,9 +1,9 @@
 #[cfg(test)]
 mod tests {
     use soroban_sdk::{
-        testutils::Address as _, Address, BytesN, Env,
+        testutils::{storage::Persistent as _, Address as _, Ledger}, Address, BytesN, Env,
     };
-    use crate::{IdentityRegistry, IdentityRegistryClient};
+    use crate::{DataKey, IdentityRegistry, IdentityRegistryClient};
 
     // SETUP
     struct Setup {
@@ -298,5 +298,73 @@ mod tests {
             "not an attestor"
         );
     }
+    // TTL growth. Each test lets an entry age, then checks that the bump, or
+    // the use that re-extends it, restores the full thirty days. A bump that
+    // stopped extending would leave the aged TTL in place.
 
+    const LIFETIME: u32 = 518_400; // LEDGERS_TO_LIVE
+    const AGE: u32 = 100_000;
+
+    fn ttl(s: &Setup, key: &DataKey) -> u32 {
+        s.env.as_contract(&s.client.address, || s.env.storage().persistent().get_ttl(key))
+    }
+
+    fn age(s: &Setup) {
+        s.env.ledger().with_mut(|l| l.sequence_number += AGE);
+    }
+
+    #[test]
+    fn bump_kyc_restores_a_full_ttl() {
+        let s = setup();
+        let user = Address::generate(&s.env);
+        s.client.attest(&s.admin, &user, &mock_kyc_hash(&s.env));
+        let key = DataKey::Attestation(user.clone());
+        assert_eq!(ttl(&s, &key), LIFETIME);
+
+        age(&s);
+        assert_eq!(ttl(&s, &key), LIFETIME - AGE);
+        s.client.bump_kyc(&user);
+        assert_eq!(ttl(&s, &key), LIFETIME);
+    }
+
+    #[test]
+    fn bump_attestor_restores_a_full_ttl() {
+        let s = setup();
+        let reviewer = Address::generate(&s.env);
+        s.client.add_attestor(&reviewer);
+        let key = DataKey::Attestor(reviewer.clone());
+
+        age(&s);
+        assert_eq!(ttl(&s, &key), LIFETIME - AGE);
+        s.client.bump_attestor(&reviewer);
+        assert_eq!(ttl(&s, &key), LIFETIME);
+    }
+
+    #[test]
+    fn checking_an_approval_re_extends_it() {
+        let s = setup();
+        let user = Address::generate(&s.env);
+        s.client.attest(&s.admin, &user, &mock_kyc_hash(&s.env));
+        let key = DataKey::Attestation(user.clone());
+
+        age(&s);
+        assert!(s.client.is_kyc_approved(&user));
+        assert_eq!(ttl(&s, &key), LIFETIME);
+
+        age(&s);
+        s.client.get_attestation(&user);
+        assert_eq!(ttl(&s, &key), LIFETIME);
+    }
+
+    #[test]
+    fn attesting_re_extends_the_attestors_own_entry() {
+        let s = setup();
+        let reviewer = Address::generate(&s.env);
+        s.client.add_attestor(&reviewer);
+        let key = DataKey::Attestor(reviewer.clone());
+
+        age(&s);
+        s.client.attest(&reviewer, &Address::generate(&s.env), &mock_kyc_hash(&s.env));
+        assert_eq!(ttl(&s, &key), LIFETIME);
+    }
 }
