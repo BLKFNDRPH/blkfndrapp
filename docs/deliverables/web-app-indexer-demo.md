@@ -1,6 +1,6 @@
 # Web Interface, Lightweight Indexer & Testnet Demo
 
-Evidence for the deliverable, as of 2026-10-12. Everything below runs on Stellar Testnet against the live app at [testnetv2.blkfndr.com](https://testnetv2.blkfndr.com). The recorded video and its stake transaction are still to come; they are marked **⏳ pending** and listed under [Still to do](#still-to-do).
+Evidence for the deliverable, as of 2026-10-12, with the recorded demo stake added on 2026-10-17. Everything below runs on Stellar Testnet against the live app at [testnetv2.blkfndr.com](https://testnetv2.blkfndr.com). Only the video's public link is still to come; it is listed under [Still to do](#still-to-do).
 
 ## The deliverable
 
@@ -10,7 +10,7 @@ A React web app with Freighter wallet integration, where a contributor backs a p
 |---|---|---|
 | React web app with Freighter, backing a project in a few taps | ✅ Live | [Six taps](#backing-a-project-in-six-taps) from the project list to a confirmed transaction; every on-chain action is signed in the person's own Freighter wallet |
 | Lightweight indexer that reconstructs vault state from on-chain events | ✅ Live | One route plus one cron container. The [replay check](#reconstructing-vault-state-from-events) rebuilds all 22 testnet vaults from their stored events alone, and all 22 match the chain |
-| Recorded end-to-end testnet demo | ⏳ Script ready, recording pending | [Demo script](testnet-demo-script.md) dry-run on the live site; video link below once recorded |
+| Recorded end-to-end testnet demo | ✅ Recorded 2026-10-17 | A real $5 stake on #22, [`3c8a6b61…`](https://stellar.expert/explorer/testnet/tx/3c8a6b61dbc7b8ea8b159ff3b84db6d719e36f74938bfbac60641cee8d00f2e2); see [The recording](#3-the-testnet-demo). Public video link still to add |
 
 ---
 
@@ -138,9 +138,12 @@ Testnet has so far exercised these paths: stakes, goals reached (#10, #11 and ot
 
 | Item | Value |
 |---|---|
-| Video | ⏳ pending |
-| Stake transaction | ⏳ pending |
-| Replay check after the stake | ⏳ pending (expect #22 at 225 raised, 3 stakers, and 22 of 22 matching) |
+| Video | Recorded 2026-10-17 in Chrome (`BLKFNDR-Demo-Stake-Proof.mp4`, landscape and portrait, 1:49). ⏳ Public link to be added once uploaded |
+| Stake transaction | [`3c8a6b61…`](https://stellar.expert/explorer/testnet/tx/3c8a6b61dbc7b8ea8b159ff3b84db6d719e36f74938bfbac60641cee8d00f2e2): successful, ledger 5235071, 2026-10-17 01:02:22 UTC. `contribute(GCU5…KDZM, 50000000)` on #22's vault, 5 USDC, network fee 0.38 XLM. Signed in Freighter by the owner's wallet (QA activity) |
+| After the stake | The project page shows $205 of $5,500 and "Your stake $5"; the Record tab reads "You staked $5." |
+| Replay check after the stake | 2026-10-17: #22 at 205 raised with 3 stakers, and **25 of 25 vaults match** (#23–#25 opened since the dry run) |
+
+The recording covers taps 1–3 (the card, **Stake from $5**, the $5 preset) and everything after the confirmation. Taps 4–6 (**Review and sign**, **Open Freighter**, **Confirm**) were the owner's own, in their wallet, and are shown in the video as a captioned step rather than screen-recorded.
 
 ---
 
@@ -164,6 +167,7 @@ The check needs `NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_SECRET_KEY` (read-only 
 
 ## Still to do
 
-- [ ] Record the video with the [demo script](testnet-demo-script.md), and add its link above.
-- [ ] Add the stake's transaction hash and the replay-check output taken after the stake.
+- [x] Record the video with the [demo script](testnet-demo-script.md) (2026-10-17).
+- [ ] Add the video's public link above once it is uploaded.
+- [x] Add the stake's transaction hash and the replay-check output taken after the stake.
 - [ ] Update `progress.md` for this week.
