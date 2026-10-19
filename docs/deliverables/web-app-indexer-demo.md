@@ -119,7 +119,7 @@ Amounts are in each vault's asset (USDC, except #19 in XLM). Nothing has been pa
 
 Every vault, old code and new, exposes every field compared, so no field was skipped. Each vault's state, raise, payouts, deposit (amount, posted, returned), unrefunded stakes, staker count, every staker's balance, and each stage's paid/failed flags, vote opening time and approval weight all matched.
 
-Testnet has so far exercised these paths: stakes, goals reached (#10, #11 and others), missed goals (#2, #3), votes and approvals, and failed votes with the deposit kept for stakers (#1, #5, #7, #8). No payout, stall, refund or deposit return has happened on testnet yet. Those paths are covered by the unit tests until one does.
+Testnet has so far exercised these paths: stakes, goals reached (#10, #11 and others), missed goals (#2, #3), votes and approvals, failed votes with the deposit kept for stakers (#1, #5, #7, #8, #10, #11), and refunds collected from those failed vaults (#5 and #7 on 2026-10-15, #10 on 2026-10-19). The replay check rebuilt all three afterwards (25 of 25 vaults match on 2026-10-19). No payout, stall or deposit return has happened on testnet yet. Those paths are covered by the unit tests until one does.
 
 **The check can fail.** With one stored stake of #16 left out of the replay, the script reported #16 as a mismatch: the amount raised, the unrefunded stakes and one staker's balance, plus three broken running totals. It exited 1. [vault-replay.test.ts](../../src/lib/vault-replay.test.ts) covers stakes, a deadline passing, payouts through to completion, a stall and the final refund sweep, a failed vote, event order, and the detection of a missing event or a wrong field (`npm test`, 36 of 36 passing).
 

@@ -116,7 +116,7 @@ Status key: **✅** passing in unit tests and/or shown on testnet; **⏳** sched
 | ID | Case | Expected | Unit test | Testnet |
 |---|---|---|---|---|
 | VLT-27 | Deadline passes below goal; anyone calls `settle` | State `Failed`, `VAULT/FAILED`, attestation `FailedToFund` | `failing_to_fund_is_recorded_without_blaming_the_builder` | ✅ production #2, #3 read `failed` (replay check) — 🔲 a `settle` tx hash for the evidence doc |
-| VLT-28 | Each contributor claims after a failed raise | Exactly their principal, `DEPOSIT/REFUND` | `an_unfunded_project_returns_principal_and_the_builders_bond` | 🔲 no refund on testnet yet |
+| VLT-28 | Each contributor claims after a failed raise | Exactly their principal, `DEPOSIT/REFUND` | `an_unfunded_project_returns_principal_and_the_builders_bond` | 🔲 no refund after a missed goal on testnet yet: #2 and #3 had no backers. Refunds after a forfeiture are VLT-36 |
 | VLT-29 | Builder's bond returned after a failed raise, called by anyone | Bond to builder, `BOND/RETURNED`; second call `#9` | same | 🔲 no bond return on testnet yet |
 | VLT-30 | Last claimant in a `Failed` vault | Does **not** sweep the builder's unreturned bond | `an_unfunded_project_returns_principal_and_the_builders_bond`: both backers claim before `return_bond`, and the builder still receives the whole bond | — |
 | VLT-31 | Refund while still raising / funded / active | Refused, `#2` | `refunds_are_unavailable_while_a_project_is_still_live` | — |
@@ -129,7 +129,7 @@ Status key: **✅** passing in unit tests and/or shown on testnet; **⏳** sched
 | VLT-33 | Window closes below threshold; an unrelated account calls `settle_lapsed_milestone` | Milestone failed, state `Refunding`, `MILESTN/FAILED`, `BOND/SLASHED`, attestation `FailedWithForfeiture`, all in one tx | `a_window_that_closes_below_threshold_fails_the_milestone` | ✅ Project B, 2026-10-13: [`968e1ad8…`](https://stellar.expert/explorer/testnet/tx/968e1ad8b7156173cc2c6635aa59072ee26f56a15b79ee8b5d7d9172592afbc1) |
 | VLT-34 | Settle before the window closes | Refused, `#22` | `a_lapsed_window_cannot_be_settled_early` | ✅ Project B, simulated |
 | VLT-35 | Settle a window that carried | Refused, `#21` (it is a release waiting to happen) | `a_window_that_met_threshold_cannot_be_declared_failed` | — |
-| VLT-36 | Each contributor claims after forfeiture | `contribution × (raised − released) / raised + contribution × bond / raised` | `forfeited_bond_is_distributed_pro_rata_with_the_remaining_balance` | ✅ Project B: exactly 2.5 USDC each to c1–c5, five transactions |
+| VLT-36 | Each contributor claims after forfeiture | `contribution × (raised − released) / raised + contribution × bond / raised` | `forfeited_bond_is_distributed_pro_rata_with_the_remaining_balance` | ✅ Project B: exactly 2.5 USDC each to c1–c5, five transactions. Production: one claim each on #5 and #7 (2026-10-15) and #10 (2026-10-19), and the replay check matched 25 of 25 vaults after them |
 | VLT-37 | Truncation dust | Last claimant sweeps the remainder; vault ends at exactly 0 | same | ✅ Project B: vault balance 0 after c5, the last claimant |
 | VLT-38 | Builder abandons a funded vault (no vote opened for 90 days) | Anyone calls `settle_stalled`: first open milestone failed, `VAULT/STALLED`, `BOND/SLASHED`, refunds open | `an_abandoned_funded_vault_can_be_reclaimed_for_contributors` | — (90 days; unit only) |
 | VLT-39 | Stall attempted while a vote is open, or while a carried vote awaits release | `#16` / `#21` | `an_open_vote_is_not_abandonment`, `a_carried_vote_cannot_be_stalled_out` | — |
@@ -352,7 +352,7 @@ Things a reviewer will ask about. None blocks the plan; each needs an owner deci
 7. **VLT-19 / VLT-21: forged signer.** Every vault test ran under `env.mock_all_auths()`, which approves any signature, so nothing proved a call signed by the wrong address is refused. Added four tests that authorise exactly one signer: a deposit, a vote and a refund signed by another contributor in Alice's name, and a vote opened by a contributor instead of the builder. Each is refused with nothing changed, and the same call signed by the right address goes through. The contract already called `require_auth()` in each, so this closed a gap in proof, not a bug. Checked by mutation: with the `require_auth()` line removed from the contract, the matching test fails.
 8. VLT-30 was already covered. Checked while preparing this plan.
 
-**Testnet paths not yet exercised** (from the 2026-10-12 replay check): no refund, no bond return, no stall, and no payout on a production vault. Project B covered forfeiture and refunds on the reference deployment on 2026-10-13. A missed-goal `settle` + `return_bond` + refund (VLT-27–VLT-29, CTA-26) still needs one scripted run.
+**Testnet paths not yet exercised** (from the 2026-10-12 replay check, updated 2026-10-19): no refund after a missed goal, no bond return, no stall, and no payout on a production vault. Refunds after a forfeiture have been collected on production #5, #7 (2026-10-15) and #10 (2026-10-19), and Project B covered forfeiture and refunds on the reference deployment on 2026-10-13. A missed-goal `settle` + `return_bond` + refund (VLT-27–VLT-29, CTA-26) still needs one scripted run.
 
 ---
 
