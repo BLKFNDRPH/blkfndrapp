@@ -170,4 +170,4 @@ The check needs `NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_SECRET_KEY` (read-only 
 - [x] Record the video with the [demo script](testnet-demo-script.md) (2026-10-17).
 - [ ] Add the video's public link above once it is uploaded.
 - [x] Add the stake's transaction hash and the replay-check output taken after the stake.
-- [ ] Update `progress.md` for this week.
+- [x] Update `progress.md` for this week (2026-10-19, #171–#207).
