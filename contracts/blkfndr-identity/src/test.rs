@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use soroban_sdk::{
-        testutils::{storage::Persistent as _, Address as _, Ledger}, Address, BytesN, Env,
+        testutils::{storage::Persistent as _, Address as _, Ledger, MockAuth, MockAuthInvoke}, Address, BytesN, Env, IntoVal,
     };
     use crate::{DataKey, IdentityRegistry, IdentityRegistryClient};
 
@@ -366,5 +366,46 @@ mod tests {
         age(&s);
         s.client.attest(&reviewer, &Address::generate(&s.env), &mock_kyc_hash(&s.env));
         assert_eq!(ttl(&s, &key), LIFETIME);
+    }
+
+    // ── Admin hand-over ──────────────────────────────────────────────────────
+
+    /// get_admin names who may appoint attestors and hand the registry on. It
+    /// follows transfer_admin, and the power moves with it: the old admin's
+    /// signature stops counting the moment the successor's starts.
+    #[test]
+    fn get_admin_follows_a_transfer_and_so_does_the_power() {
+        let s = setup();
+        assert_eq!(s.client.get_admin(), s.admin);
+
+        let successor = Address::generate(&s.env);
+        s.client.transfer_admin(&successor);
+        assert_eq!(s.client.get_admin(), successor);
+
+        // The mocks come off: with mock_all_auths on, either signature would
+        // pass and this would prove nothing.
+        let reviewer = Address::generate(&s.env);
+        let signed_by = |who: &Address| {
+            s.env.mock_auths(&[MockAuth {
+                address: who,
+                invoke: &MockAuthInvoke {
+                    contract: &s.client.address,
+                    fn_name: "add_attestor",
+                    args: (reviewer.clone(),).into_val(&s.env),
+                    sub_invokes: &[],
+                },
+            }]);
+        };
+
+        signed_by(&s.admin);
+        assert!(
+            s.client.try_add_attestor(&reviewer).is_err(),
+            "the old admin's signature no longer administers"
+        );
+        assert!(!s.client.is_attestor(&reviewer));
+
+        signed_by(&successor);
+        s.client.add_attestor(&reviewer);
+        assert!(s.client.is_attestor(&reviewer));
     }
 }
