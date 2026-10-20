@@ -460,7 +460,7 @@ Reads: `get_shareholders`, `get_cycle(id)`, `get_open_cycle`, `get_reserved(toke
 
 ## blkfndr-operations
 
-The Operations Vault: a governed pot of XLM that pays the gas for moderation (KYC attestation, project approval). It holds **no project funds**, only the platform's own gas budget. Owners are plain voters with no shares. They vote **two-thirds by headcount**, and execution is **permissionless**: the carried vote is the authority, and no owner key signs the transfer. **27 tests.**
+The Operations Vault: a governed pot of XLM that pays the gas for moderation (KYC attestation, project approval). It holds **no project funds**, only the platform's own gas budget. Owners are plain voters with no shares. They vote **two-thirds by headcount**, and execution is **permissionless**: the carried vote is the authority, and no owner key signs the transfer. **33 tests.**
 
 | Function | Who | Effect |
 |---|---|---|
@@ -515,6 +515,6 @@ cargo test --workspace            # the full test suite
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 
-Run `build-contracts.sh` before `cargo test`. The factory's eight deployment tests need the vault compiled to wasm and skip themselves when it is absent. On 2026-10-20 the suite passed in full, 211 tests: vault 69, treasury 50, operations 27, factory 20, identity 20, attestation 16, admin 9; without the wasm build the deployment tests give way to one marker test and the total is 204.
+Run `build-contracts.sh` before `cargo test`. The factory's eight deployment tests need the vault compiled to wasm and skip themselves when it is absent. On 2026-10-20 the suite passed in full, 217 tests: vault 69, treasury 50, operations 33, factory 20, identity 20, attestation 16, admin 9; without the wasm build the deployment tests give way to one marker test and the total is 210.
 
 To check a vault, build on the same paths as the build you compare against (see [The vault wasm hash](#the-vault-wasm-hash)), or fetch the deployed code with `stellar contract fetch --wasm-hash <hash>` and compare that directly.

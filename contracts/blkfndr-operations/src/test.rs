@@ -585,3 +585,163 @@ fn a_reentrant_token_cannot_make_one_vote_pay_twice() {
     assert_eq!(evil.balance(&f.ops.address), 400);
     assert!(f.ops.get_proposal().is_none());
 }
+
+// ── propose and approve refusals through try_ ────────────────────────────────
+//
+// The should_panic tests above pin each error code. These pin what a refused
+// call leaves behind, which a panic cannot show: no proposal where there was
+// none, an untouched one where there was, and a vote count that did not move.
+
+#[test]
+fn a_refused_proposal_leaves_nothing_open() {
+    let f = setup();
+    fund(&f, 1_000);
+    let stranger = Address::generate(&f.env);
+    let dest = Address::generate(&f.env);
+
+    assert_eq!(
+        f.ops.try_propose(&stranger, &release(&f, &dest, 100)),
+        Err(Ok(Error::NotAnOwner.into()))
+    );
+    assert_eq!(
+        f.ops.try_propose(&f.owners[0], &release(&f, &dest, 0)),
+        Err(Ok(Error::InvalidAmount.into()))
+    );
+    assert_eq!(
+        f.ops.try_propose(&f.owners[0], &GovernedAction::ReleaseMany(vec![&f.env])),
+        Err(Ok(Error::InvalidBatch.into()))
+    );
+    assert_eq!(
+        f.ops.try_propose(&f.owners[0], &GovernedAction::SetOwners(vec![&f.env])),
+        Err(Ok(Error::NoOwners.into()))
+    );
+    assert!(f.ops.get_proposal().is_none(), "none of those opened anything");
+
+    // Nor did any of them consume a proposal id.
+    f.ops.propose(&f.owners[0], &release(&f, &dest, 100));
+    assert_eq!(f.ops.get_proposal().unwrap().id, 1);
+}
+
+#[test]
+fn a_refused_second_proposal_leaves_the_live_one_untouched() {
+    let f = setup();
+    fund(&f, 1_000);
+    let dest = Address::generate(&f.env);
+    let other = Address::generate(&f.env);
+
+    f.ops.propose(&f.owners[0], &release(&f, &dest, 400));
+    f.ops.approve(&f.owners[0]);
+    let live = f.ops.get_proposal().unwrap();
+
+    assert_eq!(
+        f.ops.try_propose(&f.owners[1], &release(&f, &other, 999)),
+        Err(Ok(Error::ProposalAlreadyOpen.into()))
+    );
+    let still = f.ops.get_proposal().unwrap();
+    assert_eq!(still.id, live.id);
+    assert_eq!(still.approvals, 1);
+    assert_eq!(still.closes_at, live.closes_at);
+
+    // It still carries, and pays the destination it named.
+    f.ops.approve(&f.owners[1]);
+    f.ops.execute();
+    assert_eq!(f.token_client.balance(&dest), 400);
+    assert_eq!(f.token_client.balance(&other), 0);
+}
+
+#[test]
+fn a_refused_approval_does_not_count() {
+    let f = setup();
+    fund(&f, 1_000);
+    let dest = Address::generate(&f.env);
+    let stranger = Address::generate(&f.env);
+
+    assert_eq!(
+        f.ops.try_approve(&f.owners[0]),
+        Err(Ok(Error::NoProposalOpen.into()))
+    );
+
+    f.ops.propose(&f.owners[0], &release(&f, &dest, 400));
+    assert_eq!(f.ops.try_approve(&stranger), Err(Ok(Error::NotAnOwner.into())));
+    assert_eq!(f.ops.get_proposal().unwrap().approvals, 0);
+
+    f.ops.approve(&f.owners[0]);
+    assert_eq!(
+        f.ops.try_approve(&f.owners[0]),
+        Err(Ok(Error::AlreadyVoted.into()))
+    );
+    assert_eq!(f.ops.get_proposal().unwrap().approvals, 1, "one of three, still short");
+    assert_eq!(f.ops.try_execute(), Err(Ok(Error::ThresholdNotMet.into())));
+
+    // Past the window the second vote is too late, and the proposal still
+    // cannot execute.
+    f.env.ledger().with_mut(|l| l.timestamp += 8 * DAY);
+    assert_eq!(
+        f.ops.try_approve(&f.owners[1]),
+        Err(Ok(Error::VotingClosed.into()))
+    );
+    assert_eq!(f.ops.get_proposal().unwrap().approvals, 1);
+    assert_eq!(f.ops.try_execute(), Err(Ok(Error::ThresholdNotMet.into())));
+    assert_eq!(f.ops.balance_of(&f.token), 1_000, "nothing moved");
+}
+
+#[test]
+fn a_carried_proposal_takes_no_further_votes_and_pays_once() {
+    let f = setup();
+    fund(&f, 1_000);
+    let dest = Address::generate(&f.env);
+
+    f.ops.propose(&f.owners[0], &release(&f, &dest, 400));
+    f.ops.approve(&f.owners[0]);
+    f.ops.approve(&f.owners[1]);
+    assert_eq!(
+        f.ops.try_approve(&f.owners[2]),
+        Err(Ok(Error::ThresholdAlreadyMet.into()))
+    );
+    assert_eq!(f.ops.get_proposal().unwrap().approvals, 2);
+
+    f.ops.execute();
+    assert_eq!(f.token_client.balance(&dest), 400);
+    assert_eq!(f.ops.try_execute(), Err(Ok(Error::NoProposalOpen.into())));
+    assert_eq!(f.token_client.balance(&dest), 400, "paid once");
+}
+
+// ── The owner cap ───────────────────────────────────────────────────────────
+
+#[test]
+#[should_panic(expected = "Error(Contract, #21)")] // TooManyOwners
+fn an_owner_set_above_the_cap_is_rejected_at_construction() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let mut crowd = Vec::new(&env);
+    for _ in 0..(MAX_OWNERS + 1) {
+        crowd.push_back(Address::generate(&env));
+    }
+    env.register(Operations, (Address::generate(&env), crowd));
+}
+
+/// By vote the cap is checked at proposal, before a week is spent voting on a
+/// set that could never be applied; exactly the cap is allowed.
+#[test]
+fn an_owner_set_above_the_cap_is_refused_by_vote() {
+    let f = setup();
+    let mut crowd = Vec::new(&f.env);
+    for _ in 0..(MAX_OWNERS + 1) {
+        crowd.push_back(Address::generate(&f.env));
+    }
+
+    assert_eq!(
+        f.ops.try_propose(&f.owners[0], &GovernedAction::SetOwners(crowd.clone())),
+        Err(Ok(Error::TooManyOwners.into()))
+    );
+    assert!(f.ops.get_proposal().is_none());
+    assert_eq!(f.ops.get_owners().len(), 3, "the sitting owners stay");
+
+    crowd.pop_back();
+    f.ops.propose(&f.owners[0], &GovernedAction::SetOwners(crowd));
+    f.ops.approve(&f.owners[0]);
+    f.ops.approve(&f.owners[1]);
+    f.ops.execute();
+    assert_eq!(f.ops.get_owners().len(), MAX_OWNERS);
+    assert!(!f.ops.is_owner(&f.owners[0]));
+}
