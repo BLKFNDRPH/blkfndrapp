@@ -30,6 +30,14 @@
 #                    backer reclaims their whole principal, the last claimant
 #                    leaves the bond alone, anyone returns the bond to the
 #                    builder, and the attestation reads FailedToFund.
+#   project-d        A funded project whose refusals are the point: a bond
+#                    below 5% of the goal, a builder without KYC approval, a
+#                    builder without USDC, a deposit after the raise closed, a
+#                    vote before its window opens, a window opened twice, a
+#                    double vote, a vote by a non-contributor, a vote on a
+#                    settled milestone, and the production registry's
+#                    interface (no update, no delete). Leaves milestone 1's
+#                    vote open with one approval; it lapses on its own.
 #
 # Usage:
 #   scripts/reference-scenario.sh <step> [--network testnet] [--funder <identity>]
@@ -38,7 +46,8 @@
 # Requires the Stellar CLI, the contracts in deployments/testnet-reference/
 # contracts.env (written by scripts/deploy-contracts.sh --out), and a funder
 # identity holding testnet USDC. Accounts are Stellar CLI identities named
-# ref-builder, ref-c1 … ref-c5 and ref-anyone, created on first use.
+# ref-builder, ref-c1 … ref-c5, ref-anyone, ref-nokyc and ref-nousdc, created
+# on first use.
 
 set -euo pipefail
 
@@ -83,9 +92,16 @@ IDENTITY="${NEXT_PUBLIC_BLKFNDR_IDENTITY_CONTRACT_ID}"
 ERR_INVALID_STATUS=2
 ERR_GOAL_ALREADY_REACHED=5
 ERR_NO_FUNDS_TO_REFUND=9
+ERR_KYC_INVALID=12
+ERR_VOTING_NOT_OPEN=15
+ERR_VOTING_ALREADY_OPEN=16
+ERR_ALREADY_VOTED=18
+ERR_NOT_A_CONTRIBUTOR=19
 ERR_THRESHOLD_NOT_MET=20
 ERR_VOTING_WINDOW_NOT_ELAPSED=22
 ERR_BELOW_MINIMUM_CONTRIBUTION=24
+# The factory has its own error enum; its #12 is not the vault's #12.
+FACTORY_ERR_BOND_BELOW_MINIMUM=12
 
 # VaultState and Outcome are integer enums, so the CLI prints their values.
 STATE_RAISING=0
@@ -128,6 +144,9 @@ call() {
 }
 
 # Simulate a call the contract must refuse, and check which error refused it.
+# The CLI's output (the error and the diagnostic trace) is kept in
+# LAST_REFUSAL for raised_by.
+LAST_REFUSAL=""
 refused() {
   local label="$1" code="$2" source="$3" id="$4"; shift 4
   local out
@@ -136,12 +155,37 @@ refused() {
     echo "FAIL: ${label} was not refused" >&2
     return 1
   fi
+  LAST_REFUSAL="${out}"
   if ! grep -q "Error(Contract, #${code})" <<<"${out}"; then
     echo "FAIL: ${label} was refused, but not with Error(Contract, #${code}):" >&2
     echo "${out}" >&2
     return 1
   fi
   log_tx "${label}" "refused in simulation: Error(Contract, #${code})"
+}
+
+# Simulate a call that must fail, whoever refuses it. For failures that are not
+# one of our contracts' error codes, such as the token contract refusing a
+# transfer. Logs the error line the CLI prints and the contract that raised it.
+refused_any() {
+  local label="$1" source="$2" id="$3"; shift 3
+  local out line
+  if out=$(stellar contract invoke --id "${id}" --source "${source}" \
+      --network "${NETWORK}" --send=no -- "$@" 2>&1); then
+    echo "FAIL: ${label} was not refused" >&2
+    return 1
+  fi
+  LAST_REFUSAL="${out}"
+  line=$(grep -m1 -oE 'error: .*' <<<"${out}" || true)
+  log_tx "${label}" "refused in simulation: ${line#error: }; raised by $(raised_by)"
+}
+
+# The contract that raised the last refusal. Each calling frame re-raises the
+# error on its way out and the trace lists the newest event first, so the
+# raiser is on the oldest error event.
+raised_by() {
+  grep -oE 'contract:[A-Z0-9]{56}, topics:\[error' <<<"${LAST_REFUSAL}" | tail -1 \
+    | cut -d: -f2 | cut -d, -f1
 }
 
 # A read: simulated, never submitted.
@@ -232,11 +276,13 @@ setup() {
     "$(read_ "${IDENTITY}" is_kyc_approved --address "$(addr ref-builder)")" "true"
 }
 
-create_vault() {
-  local label="$1" goal="$2" bond="$3" m1="$4" m2="$5" cid="$6"
+# The JSON a builder hands create_vault. Amounts in hundredths of a USDC; the
+# deadline defaults to 14 days out.
+vault_config() {
+  local creator="$1" goal="$2" bond="$3" m1="$4" m2="$5" cid="$6"
   local deadline="${7:-$(( $(date +%s) + 14 * 24 * 60 * 60 ))}"
-  call "${label}" ref-builder "${FACTORY}" create_vault --config "{
-    \"creator\": \"$(addr ref-builder)\",
+  echo "{
+    \"creator\": \"${creator}\",
     \"token\": \"${USDC}\",
     \"goal\": \"$(usdc "${goal}")\",
     \"deadline\": ${deadline},
@@ -247,6 +293,13 @@ create_vault() {
     ],
     \"metadata_cid\": \"${cid}\"
   }"
+}
+
+# create_vault <label> <goal> <bond> <m1> <m2> <cid> [deadline], by ref-builder.
+create_vault() {
+  local label="$1"; shift
+  call "${label}" ref-builder "${FACTORY}" create_vault \
+    --config "$(vault_config "$(addr ref-builder)" "$@")"
 }
 
 contribute() {
@@ -527,6 +580,150 @@ project_c_finish() {
     --offset 0 --limit 10
 }
 
+# A Stellar CLI identity for one of the refusals: generated and Friendbot-funded
+# on first use, with a USDC trustline so the token contract can see its balance.
+ensure_account() {
+  local who="$1"
+  if ! stellar keys address "${who}" >/dev/null 2>&1; then
+    stellar keys generate "${who}" --network "${NETWORK}" --fund >/dev/null 2>&1
+  fi
+  if ! stellar contract invoke --id "${USDC}" --source ref-anyone --network "${NETWORK}" \
+      --send=no -- balance --id "$(addr "${who}")" >/dev/null 2>&1; then
+    stellar tx new change-trust --source "${who}" --line "${USDC_ASSET}" \
+      --network "${NETWORK}" >/dev/null 2>&1
+  fi
+  printf '  %-12s %s\n' "${who}" "$(addr "${who}")" >&2
+}
+
+# Every real step is guarded on saved or on-chain state, so a rerun after a
+# failed check picks up where it stopped without resending anything.
+project_d() {
+  load_state
+  [[ -n "${VAULT_C:-}" ]] || { echo "Run project-c-start first." >&2; exit 1; }
+
+  echo "Project D: goal 15 USDC, milestones 10 + 5, bond 0.75 USDC, and the refusals around it" >&2
+
+  echo "Accounts" >&2
+  ensure_account ref-nokyc  # never KYC-approved
+  ensure_account ref-nousdc # KYC-approved below, never sent any USDC
+  if [[ "$(read_ "${IDENTITY}" is_kyc_approved --address "$(addr ref-nousdc)")" != "true" ]]; then
+    call "D: KYC-approve ref-nousdc, a builder who holds no USDC" "${DEPLOYER}" "${IDENTITY}" \
+      attest --attestor "$(addr "${DEPLOYER}")" --address "$(addr ref-nousdc)" \
+      --kyc_hash "$(printf 'reference-scenario ref-nousdc KYC' | sha256sum | cut -d' ' -f1)" >/dev/null
+  fi
+  expect "D: ref-nokyc is not KYC-approved" \
+    "$(read_ "${IDENTITY}" is_kyc_approved --address "$(addr ref-nokyc)")" "false"
+  expect "D: ref-nousdc is KYC-approved" \
+    "$(read_ "${IDENTITY}" is_kyc_approved --address "$(addr ref-nousdc)")" "true"
+  expect "D: ref-nousdc holds no USDC" "$(balance "$(addr ref-nousdc)")" "0"
+
+  # c3 kept 2.5 USDC from Project B's refund; c1 and c2 hold 5 after Project C.
+  local who
+  for who in c1 c2 c3; do
+    top_up_to "D: top up ${who} to 5 USDC from ${FUNDER}" "${who}" 500
+  done
+
+  local vault raiser
+  if [[ -z "${VAULT_D:-}" ]]; then
+    # Three ways a vault is not created. Each is simulated against the factory
+    # and refused before anything is deployed or any USDC moves.
+    refused "D: create_vault with a 0.70 USDC bond on a 15 USDC goal refused (factory BondBelowMinimum: 5% is 0.75)" \
+      "${FACTORY_ERR_BOND_BELOW_MINIMUM}" ref-builder "${FACTORY}" create_vault \
+      --config "$(vault_config "$(addr ref-builder)" 1500 70 1000 500 "blkfndr-reference/project-d")"
+    expect "D: the bond refusal was raised by the factory itself" "$(raised_by)" "${FACTORY}"
+
+    refused "D: create_vault by a builder without KYC approval refused (vault KYCInvalid)" \
+      "${ERR_KYC_INVALID}" ref-nokyc "${FACTORY}" create_vault \
+      --config "$(vault_config "$(addr ref-nokyc)" 1500 75 1000 500 "blkfndr-reference/project-d")"
+    raiser=$(raised_by)
+    if [[ -z "${raiser}" || "${raiser}" == "${FACTORY}" ]]; then
+      echo "FAIL: D: KYCInvalid was expected from the new vault, got it from '${raiser}':" >&2
+      echo "${LAST_REFUSAL}" >&2
+      return 1
+    fi
+    expect "D: KYCInvalid was raised inside the new vault's initialize" \
+      "$(grep -c "fn_call, ${raiser}, initialize" <<<"${LAST_REFUSAL}")" "1"
+    log_tx "D: the KYC refusal came from the vault the factory was deploying" \
+      "contract ${raiser}, in initialize"
+
+    refused_any "D: create_vault by a KYC-approved builder who holds no USDC fails in the bond transfer" \
+      ref-nousdc "${FACTORY}" create_vault \
+      --config "$(vault_config "$(addr ref-nousdc)" 1500 75 1000 500 "blkfndr-reference/project-d")"
+    expect "D: that failure was raised by the USDC token contract" "$(raised_by)" "${USDC}"
+
+    vault=$(create_vault "D: create vault, lock 0.75 USDC bond, pay 1 USDC flat fee" \
+      1500 75 1000 500 "blkfndr-reference/project-d")
+    save VAULT_D "${vault}"
+    printf '  vault %s\n' "${vault}" >&2
+    expect "D: vault holds the bond" "$(balance "${vault}")" "$(usdc 75)"
+  else
+    vault="${VAULT_D}"
+    printf '  vault %s (already created)\n' "${vault}" >&2
+  fi
+
+  if [[ "$(read_ "${vault}" get_state)" == "${STATE_RAISING}" ]]; then
+    for who in c1 c2 c3; do
+      if [[ "$(read_ "${vault}" get_balance --contributor "$(addr "ref-${who}")")" == "0" ]]; then
+        contribute "D: deposit 5 USDC (${who})" "${vault}" "${who}" 500
+      fi
+    done
+  fi
+  expect "D: goal met on the third deposit, raise closed" "$(read_ "${vault}" get_state)" "${STATE_FUNDED}"
+  expect "D: vault holds 15 USDC raised + 0.75 USDC bond" "$(balance "${vault}")" "$(usdc 1575)"
+  refused "D: deposit 5 USDC after the raise closed refused (InvalidStatus)" \
+    "${ERR_INVALID_STATUS}" ref-c1 "${vault}" contribute \
+    --contributor "$(addr ref-c1)" --amount "$(usdc 500)"
+
+  # Milestone 1's vote: refused before it opens, opened once, then the refusals
+  # around one real approval.
+  if [[ -z "${D_M1_OPENED_AT:-}" ]]; then
+    refused "D: c1 approves milestone 1 before its vote is open refused (VotingNotOpen)" \
+      "${ERR_VOTING_NOT_OPEN}" ref-c1 "${vault}" approve_milestone \
+      --contributor "$(addr ref-c1)" --milestone_id 1
+    call "D: open milestone 1 vote (builder; window 7 days)" ref-builder "${vault}" \
+      open_milestone_vote --milestone_id 1 >/dev/null
+    save D_M1_OPENED_AT "$(date -u +%s)"
+  else
+    printf '  %-58s %s\n' "D: milestone 1 vote already open" "not reopened" >&2
+  fi
+  refused "D: builder opens milestone 1's vote a second time refused (VotingAlreadyOpen)" \
+    "${ERR_VOTING_ALREADY_OPEN}" ref-builder "${vault}" open_milestone_vote --milestone_id 1
+
+  if [[ "$(read_ "${vault}" has_voted --milestone_id 1 --contributor "$(addr ref-c1)")" != "true" ]]; then
+    approve "D: approve milestone 1 (c1)" "${vault}" c1 1
+  fi
+  refused "D: c1 approves milestone 1 a second time refused (AlreadyVoted)" \
+    "${ERR_ALREADY_VOTED}" ref-c1 "${vault}" approve_milestone \
+    --contributor "$(addr ref-c1)" --milestone_id 1
+  refused "D: an account that never deposited approves milestone 1 refused (NotAContributor)" \
+    "${ERR_NOT_A_CONTRIBUTOR}" ref-anyone "${vault}" approve_milestone \
+    --contributor "$(addr ref-anyone)" --milestone_id 1
+
+  # A vote on a milestone whose window has closed. Project B's milestone 2
+  # lapsed and was settled on 2026-10-13, so that vault reads Refunding and the
+  # lifecycle check refuses the vote before the window check (#17) is reached.
+  refused "D: c2 approves Project B's settled milestone 2 refused (InvalidStatus: that vault is Refunding)" \
+    "${ERR_INVALID_STATUS}" ref-c2 "${VAULT_B}" approve_milestone \
+    --contributor "$(addr ref-c2)" --milestone_id 2
+
+  echo "Production attestation registry: its whole interface" >&2
+  local production_registry fns
+  production_registry=$(grep '^NEXT_PUBLIC_BLKFNDR_ATTESTATION_CONTRACT_ID=' \
+    deployments/testnet-production/contracts.env | cut -d= -f2 | tr -d '\r')
+  fns=$(stellar contract info interface --id "${production_registry}" --network "${NETWORK}" 2>/dev/null \
+    | grep -oE '^\s*fn [a-z_]+' | awk '{print $2}' | tr '\n' ' ')
+  [[ -n "${fns}" ]] || { echo "FAIL: D: could not read the production registry's interface" >&2; return 1; }
+  printf '  %s\n' "${fns}" >&2
+  expect "D: production registry has no update, delete or amend entrypoint" \
+    "$(grep -cE 'update|delete|remove|amend|set_record' <<<"${fns}")" "0"
+  log_tx "D: production registry ${production_registry} interface (no update, no delete)" "${fns% }"
+
+  local closes
+  closes=$(( $(grep '^D_M1_OPENED_AT=' "${STATE}" | cut -d= -f2 | tr -d '\r') + 7 * 24 * 60 * 60 ))
+  echo "Milestone 1's vote stays open until $(date -u -d "@${closes}" +%FT%TZ 2>/dev/null || echo "${closes}")." >&2
+  echo "With one approval behind it, it lapses on its own; nothing here settles it." >&2
+}
+
 case "${STEP}" in
   setup)            setup ;;
   project-a)        project_a ;;
@@ -534,5 +731,6 @@ case "${STEP}" in
   project-b-finish) project_b_finish ;;
   project-c-start)  project_c_start ;;
   project-c-finish) project_c_finish ;;
-  *) sed -n '2,42p' "$0"; exit 1 ;;
+  project-d)        project_d ;;
+  *) sed -n '2,51p' "$0"; exit 1 ;;
 esac

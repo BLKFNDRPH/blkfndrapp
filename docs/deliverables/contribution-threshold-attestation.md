@@ -1,6 +1,6 @@
 # Contribution, Threshold-Release & Attestation Flow
 
-Evidence for the deliverable, as of 2026-10-20. Everything below is on Stellar testnet. Project A completed on 2026-10-06. Project B's 7-day voting window closed at 2026-10-13 14:14:52 UTC, and it was [settled and refunded](#project-b-the-finish-2026-10-13) at 14:17 UTC. Project C [missed its goal](#project-c-misses-its-goal-2026-10-20) on 2026-10-20: an unrelated account settled it, both backers got their whole principal back, and the bond went back to the builder.
+Evidence for the deliverable, as of 2026-10-20. Everything below is on Stellar testnet. Project A completed on 2026-10-06. Project B's 7-day voting window closed at 2026-10-13 14:14:52 UTC, and it was [settled and refunded](#project-b-the-finish-2026-10-13) at 14:17 UTC. Project C [missed its goal](#project-c-misses-its-goal-2026-10-20) on 2026-10-20: an unrelated account settled it, both backers got their whole principal back, and the bond went back to the builder. [Project D](#project-d-refusals-2026-10-20), funded the same day, exists for the refusals: three ways a vault is not created, and every wrong move around a milestone vote, each refused by the contract.
 
 ## The deliverable
 
@@ -56,6 +56,7 @@ A standalone set, deployed on 2026-10-06 by `GCNNVIOAMIV4AUPFLF7YNX5IVHVUYXJDOI7
 | Project A vault | [`CBAISZEGETRWTXFW7OXBI37UYX3DMK6WVXDCRBKKJX3TRGLRDCB4UUIW`](https://stellar.expert/explorer/testnet/contract/CBAISZEGETRWTXFW7OXBI37UYX3DMK6WVXDCRBKKJX3TRGLRDCB4UUIW) |
 | Project B vault | [`CDMJTHJKT4UNBPU4UMMAPFWKRF2IM7EDCIGJP76GODMX6FIGYBC6WOHL`](https://stellar.expert/explorer/testnet/contract/CDMJTHJKT4UNBPU4UMMAPFWKRF2IM7EDCIGJP76GODMX6FIGYBC6WOHL) |
 | Project C vault | [`CCKLRTWFBHC5C5HOUI33VDHDXQGFHMTAXA3NEJTMJDCXF74HEN4HV2MY`](https://stellar.expert/explorer/testnet/contract/CCKLRTWFBHC5C5HOUI33VDHDXQGFHMTAXA3NEJTMJDCXF74HEN4HV2MY) |
+| Project D vault | [`CC6QVIVRRUMJ7SIRJCUGIHYM46OIYFMOYIOW3GO5NJJRXGBQQ4ZAIJAS`](https://stellar.expert/explorer/testnet/contract/CC6QVIVRRUMJ7SIRJCUGIHYM46OIYFMOYIOW3GO5NJJRXGBQQ4ZAIJAS) |
 
 Each wasm was fetched back from testnet (`stellar contract fetch`) and hashed. Every one matches the local build:
 
@@ -282,6 +283,43 @@ The script read each balance before and after:
 | B (2) | `CDMJTHJK…` | 1, `FailedWithForfeiture` | 25 USDC | 2.5 USDC | 1 of 2 |
 | C (3) | `CCKLRTWF…` | 2, `FailedToFund` | 10 USDC | 1 USDC | 0 of 2 |
 
+### Project D: refusals (2026-10-20)
+
+The same builder. Goal 15 USDC in milestones of 10 and 5, a 0.75 USDC bond (exactly the 5% minimum), and the default 14-day deadline. Three backers put in 5 USDC each, so the third deposit closed the raise. The project exists for the refusals around it: `bash scripts/reference-scenario.sh project-d` ran at 11:48 UTC and every check passed. Two fresh identities were made for it: `ref-nokyc` (`GA65BOQH…`), Friendbot-funded with a USDC trustline and never KYC-approved, and `ref-nousdc` (`GDPU23T6…`), the same but KYC-approved by the deployer and never sent any USDC.
+
+**Three ways a vault is not created.** Each was simulated against the factory. A vault's `#12` is KYCInvalid and the factory's `#12` is BondBelowMinimum, so for these the script also reads which contract raised the error from the CLI's diagnostic trace.
+
+| Step | Transaction |
+|---|---|
+| KYC-approve `ref-nousdc`, so that only USDC is missing | [`7f189e3b…`](https://stellar.expert/explorer/testnet/tx/7f189e3b8b144b119fb1480691c1697fc918fc0a70a4c3c097a56489b47a4167) |
+| Send 2.5 USDC to c3, so it holds the 5 USDC minimum (c1 and c2 already did) | [`a82a981d…`](https://stellar.expert/explorer/testnet/tx/a82a981d6736eb382ee902ebf5a05ef50b2b770140eacc2ce25767c1f1000fe1) |
+| `create_vault` with a 0.70 USDC bond on a 15 USDC goal | Refused in simulation, `Error(Contract, #12)` BondBelowMinimum, raised by the factory `CBYDZWQQ…` itself. No vault was deployed |
+| `create_vault` by `ref-nokyc`, with the bond and fee in hand but no KYC approval | Refused in simulation, `Error(Contract, #12)` KYCInvalid. The trace shows `create_vault` deploying the vault, the vault's `initialize` calling `is_kyc_approved` on the identity registry, and the vault raising the error: `contract:CC6QVIVR…, topics:[error, Error(Contract, #12)], data:["failing with contract error", 12]`, then `["contract call failed", initialize, …]` from the factory. `CC6QVIVR…` is the address the next vault was going to get, and Project D then got it |
+| `create_vault` by `ref-nousdc`, KYC-approved, holding 0 USDC | Failed in simulation inside the bond transfer, not with a vault or factory code. The CLI printed `HostError: Error(Contract, #10)`, and the trace ends at the USDC token contract: `contract:CBIELTK6…, topics:[error, Error(Contract, #10)], data:["resulting balance is not within the allowed range", 0, -7500000, 9223372036854775807]`, after `["contract call failed", transfer, [GDPU23T6…, <vault>, 7500000]]`. `#10` here is the Stellar Asset Contract's BalanceError |
+| Create vault, lock 0.75 USDC bond, pay 1 USDC flat fee (project 4) | [`ac971553…`](https://stellar.expert/explorer/testnet/tx/ac971553c39bb457728e9449b39cc89347e6242737df2119cc469b5cd3a32645) |
+| Deposit 5 USDC (c1) | [`6b4324de…`](https://stellar.expert/explorer/testnet/tx/6b4324de700816b4a632b9ceb226ea2fc91086ce5f3e0a0013ec6eadee0b7db3) |
+| Deposit 5 USDC (c2) | [`e48c534f…`](https://stellar.expert/explorer/testnet/tx/e48c534f1ff069e95e545c12d9258bdc8a8e4bcd1b70fcf0d6ae2f471b08535b) |
+| Deposit 5 USDC (c3); goal met, raise closed, state `Funded` | [`3e41384b…`](https://stellar.expert/explorer/testnet/tx/3e41384b1534fbd5ec97def5b27d1f2a1343cd038e2efb7e6a60f90087809e67) |
+| Deposit 5 USDC after the raise closed | Refused in simulation, `Error(Contract, #2)` InvalidStatus |
+
+**Around milestone 1's vote.**
+
+| Step | Transaction |
+|---|---|
+| c1 approves milestone 1 before the builder has opened its vote | Refused in simulation, `Error(Contract, #15)` VotingNotOpen |
+| Open milestone 1's vote (builder; window 7 days), opens 11:50:12 UTC | [`b66f0c9c…`](https://stellar.expert/explorer/testnet/tx/b66f0c9c64b9972f715cff2c1a17aa92f8f0ace89db10ff9408341dec20d21d3) |
+| The builder opens it a second time | Refused in simulation, `Error(Contract, #16)` VotingAlreadyOpen |
+| Approve milestone 1 (c1, weight 3: 5 USDC capped at 20% of 15) | [`3d876161…`](https://stellar.expert/explorer/testnet/tx/3d8761610552bb92cbb3a2ce9ce0e14a8d924b6ca62c47d39ab85bf3cd5d25c8) |
+| c1 approves a second time | Refused in simulation, `Error(Contract, #18)` AlreadyVoted |
+| The unrelated caller, which never deposited, approves | Refused in simulation, `Error(Contract, #19)` NotAContributor |
+| c2 approves Project B's milestone 2, whose window closed on 2026-10-13 | Refused in simulation, `Error(Contract, #2)` InvalidStatus: that vault reads `Refunding`, and the lifecycle check runs before the window check, so `#17` VotingClosed is never reached there |
+
+Two refusals are not on this list because simulation cannot show them. A vote opened by someone other than the builder, or a deposit, vote or refund signed by someone other than the contributor, is refused at `require_auth`. Simulation runs with recording auth, which supplies whatever signature a call asks for, so those are proved by the unit tests that authorise exactly one signer (`only_the_builders_signature_opens_a_vote`, `a_deposit_needs_the_contributors_own_signature`, `a_vote_needs_the_contributors_own_signature`, `a_refund_needs_the_contributors_own_signature`). `#17` itself needs a window that has closed on a vault still `Funded`.
+
+**Where Project D stands.** `get_milestone_vote 1` reads `(30000000, 45000001, true)`: 3 of the needed more-than-4.5 capped weight, window open. `get_milestone_wallets 1` reads `(1, 3)` and `get_milestone_stake 1` reads `(50000000, 75000001)`. The vote was left open on purpose. The window closes at **2026-10-27 11:50:12 UTC**; with one approval behind it the milestone lapses on its own, and nothing settles it until someone calls `settle_lapsed_milestone`. An approval simulated between the window closing and that call shows `#17`, and a later step could then settle the lapse, forfeit the bond and refund c1–c3, as Project B did.
+
+**The production registry.** The same step read the live app's attestation registry, `CDEN2LU4M4SDSOWGU7JM5A46M3M2YSEKRLJ75PCNTFMPY72KIXSPSQFX`, with `stellar contract info interface`. Its whole interface is `__constructor`, `add_factory`, `disable_factory`, `transfer_admin`, `attest`, `get_record`, `has_record`, `get_builder_vaults`, `get_builder_history`, `get_builder_summary`, `get_factories`, `get_admin` and `is_factory_trusted`: the same thirteen entrypoints as the reference registry, and none that updates or deletes a record.
+
 ## Rerun it
 
 ```bash
@@ -297,6 +335,7 @@ bash scripts/reference-scenario.sh project-b-finish
 bash scripts/reference-scenario.sh project-c-start   # the raise stays open 300 s (--raise-secs)
 # five minutes later
 bash scripts/reference-scenario.sh project-c-finish
+bash scripts/reference-scenario.sh project-d           # the refusals; leaves a vote open
 ```
 
 A rerun deploys new contracts and writes over the files in `deployments/testnet-reference/`, so run it in a fresh clone. The wasm hash depends on the build machine's cargo-registry path, so compare a deployed contract against a build made on the same paths, or against the hash the chain reports.
