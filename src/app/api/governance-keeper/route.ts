@@ -5,11 +5,12 @@ import crypto from "crypto";
 export const dynamic = "force-dynamic";
 
 /**
- * Sends approved payouts, closes stages whose vote ended short, and records
- * missed goals, called on a schedule. Every call it makes is permissionless and
- * gated by the vault, and a run with nothing due sends nothing, so it can poll
- * often. Same bearer-secret gate as the indexer, ops-funding, settle-stalled
- * and keep-alive, since it is the same kind of caller -- a cron, not a person.
+ * Sends approved payouts, closes stages whose vote ended short, records missed
+ * goals and returns the builder's bond after one, called on a schedule. Every
+ * call it makes is permissionless and gated by the vault, and a run with
+ * nothing due sends nothing, so it can poll often. Same bearer-secret gate as
+ * the indexer, ops-funding, settle-stalled and keep-alive, since it is the same
+ * kind of caller -- a cron, not a person.
  *
  * `{"dryRun": true}` reports what is due and sends nothing.
  */

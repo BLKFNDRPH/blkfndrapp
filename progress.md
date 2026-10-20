@@ -190,10 +190,11 @@ Projects created before 2026-10-06 keep the original bar: more than half of the 
 |---|---|
 | `flagProjectAction` | Nothing can put a listing into owner-consensus review |
 | `requestPasswordReset` | No "forgot password" UI. Email users can't recover a password |
-| `returnBond` | A builder whose raise fails has no button to reclaim the bond. Settling a missed goal is wired (#118, and the keeper since #131); returning the bond is not |
 | `respondToFeatureRequestAction` | Roadmap responses render, but nothing writes them. #198 limited the action to owners and to marking a request shipped |
 | `getAdminAuditLogAction` | The audit log is written, but has no viewer |
 | `attestationClient()` | A builder's track record is never shown |
+
+`returnBond` left this list on 2026-10-20. The governance keeper now sends `return_bond` itself after a missed goal, in the run after the one that records it or in the same run, so a builder has nothing to press; the hook's unused `returnBond` callback was deleted rather than wired to a button, since a button would only race the keeper. Backers still claim their own refunds.
 
 ### 11. Known defects (found, not yet fixed)
 

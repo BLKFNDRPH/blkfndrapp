@@ -186,7 +186,7 @@ Soroban has no cron, and nothing in the app triggers itself. [docker-compose.yml
 | `ops-funding-cron` | `POST /api/ops-funding` | 1 day (`OPS_FUNDING_INTERVAL_SECONDS`) | Resolves the treasury from the factory's fee wallet. Skips unless ops funding is set, 30 days have passed and there is something above the reserved balance; otherwise calls `fund_operations` |
 | `settle-stalled-cron` | `POST /api/settle-stalled` | 1 day (`SETTLE_STALLED_INTERVAL_SECONDS`) | For each project indexed as `funded` or `active`, builds `settle_stalled` (which simulates it) and submits only the ones that would succeed |
 | `keep-alive-cron` | `POST /api/keep-alive` | 1 day (`KEEP_ALIVE_INTERVAL_SECONDS`) | Restores and extends shared contract storage. See below |
-| `governance-keeper-cron` | `POST /api/governance-keeper` | 15 min (`GOVERNANCE_KEEPER_INTERVAL_SECONDS`) | For each project not yet closed out, reads the vault and sends `release_milestone` for a carried stage, `settle_lapsed_milestone` for one whose window ended short, and `settle` for a missed goal not yet on the record, each only if its simulation succeeds |
+| `governance-keeper-cron` | `POST /api/governance-keeper` | 15 min (`GOVERNANCE_KEEPER_INTERVAL_SECONDS`) | For each project not yet completed or refunding, reads the vault and sends `release_milestone` for a carried stage, `settle_lapsed_milestone` for one whose window ended short, `settle` for a missed goal not yet on the record, and `return_bond` for a missed goal whose bond is still held, each only if its simulation succeeds |
 | `notification-emails-cron` | `POST /api/notification-emails` | 60 s (`NOTIFICATION_EMAILS_INTERVAL_SECONDS`) | Adds "one day left to vote" reminders to the bell, then emails the notifications queued for email through Resend. Transacts nothing. See [Notifications](#notifications) |
 
 The four that transact are signed by `OPS_FUNDING_SUBMITTER_SECRET`, a funded account that pays fees and holds no authority: every call is permissionless, and the gate lives in the contract or the TTL. Without that secret, each returns a skip. Extra calls are harmless.
@@ -412,7 +412,8 @@ blkfndrapp/
 │   │   ├── ttl-keeper.ts       # Shared storage keep-alive
 │   │   ├── ops-funding.ts      # Monthly treasury → Operations Vault trigger
 │   │   ├── settle-stalled.ts   # Abandoned-vault keeper
-│   │   ├── governance-keeper.ts # Sends carried payouts, closes lapsed stages
+│   │   ├── governance-keeper.ts # Sends carried payouts, closes lapsed stages, returns a failed raise's bond
+│   │   ├── governance-keeper-pass.ts # What one keeper pass reads and tries; tested against stand-in vaults
 │   │   ├── email/               # Notification emails: categories, rendering, the Resend sender
 │   │   ├── managed-wallet.ts   # Managed attestor keys (server-only)
 │   │   ├── bond-readiness.ts   # Launch bond pre-flight

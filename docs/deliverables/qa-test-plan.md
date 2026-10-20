@@ -19,7 +19,7 @@ The plan says what is tested, how, by which existing test or transaction, and wh
 - **Contracts:** [blkfndr-vault](../../contracts/blkfndr-vault/src/lib.rs), [blkfndr-attestation](../../contracts/blkfndr-attestation/src/lib.rs), [blkfndr-factory](../../contracts/blkfndr-factory/src/lib.rs). The factory is in scope because it creates the vault, locks the bond and fixes the voting window and minimum contribution.
 - **Web app:** the project page, stake sheet, vote panel, refund sheet, Record tab, Freighter wallet linking and signing, wallet readiness gates.
 - **Indexer:** [event-indexer.ts](../../src/lib/event-indexer.ts), [indexer-scan.ts](../../src/lib/indexer-scan.ts), `POST /api/indexer`, the `indexer-cron` container, the [vault replay](../../src/lib/vault-replay.ts) and [replay check](../../scripts/replay-check.mjs).
-- **Governance keeper:** [governance-keeper.ts](../../src/lib/governance-keeper.ts). It sends permissionless calls (`release_milestone`, `settle_lapsed_milestone`, `settle`) the vault has already decided. It is what makes "automatic" refund and forfeiture happen without a stakeholder pressing a button.
+- **Governance keeper:** [governance-keeper.ts](../../src/lib/governance-keeper.ts). It sends permissionless calls (`release_milestone`, `settle_lapsed_milestone`, `settle`, `return_bond`) the vault has already decided. It is what makes "automatic" refund, forfeiture and bond return happen without a stakeholder or builder pressing a button.
 - **The recorded demo.**
 
 ### Out of scope
