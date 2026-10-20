@@ -54,6 +54,7 @@ import { useXlmRate } from "@/lib/xlm-rate";
 import {
   describeStatus,
   describeDeadline,
+  formatDeadlineDate,
   TONE_CLASSES,
   type StatusView,
 } from "@/lib/project-status";
@@ -72,10 +73,6 @@ const STROOPS = 10_000_000;
 
 /** A Stellar account or contract address, which must never stand in for a name. */
 const looksLikeAddress = (s: string) => /^[GC][A-Z2-7]{55}$/.test(s);
-
-/** "14 Mar", the way the deadline is spoken everywhere on the page. */
-const shortDate = (ms: number) =>
-  new Date(ms).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 
 /** The four promises under the money block. Exact copy from the brief. */
 const WHAT_HAPPENS_TO_MY_MONEY = [
@@ -539,7 +536,7 @@ export function ProjectView({
   const deadline = describeDeadline(project.fundingDeadline);
   const deadlineDate =
     project.fundingDeadline && Number.isFinite(project.fundingDeadline)
-      ? shortDate(project.fundingDeadline)
+      ? formatDeadlineDate(project.fundingDeadline)
       : null;
 
   const raisedView = describeMoney(project.currentFunding, projectCurrency, xlmUsd);

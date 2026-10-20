@@ -1,6 +1,6 @@
 # BLKFNDR — Progress
 
-_Last updated: 2026-10-20 · `main` at #211 (`cda3050`). This week: #171–#211, merged 13–20 Oct 2026._
+_Last updated: 2026-10-20 · `main` at `1cf058d` (#213, the last of #208–#216 to merge). This week: #171–#216, merged 13–20 Oct 2026._
 
 Where the platform stands: what is live on testnet, what is merged but not yet active, and what is still open. This week's work comes first. Earlier work (#67–#170) is summarized under [Before this week](#before-this-week).
 
@@ -11,16 +11,17 @@ Where the platform stands: what is live on testnet, what is merged but not yet a
 
 ## Snapshot — verified on testnet, 2026-10-20
 
-Read-only checks, not inferred from merges, all made between 11:38 and 11:42 UTC: the deployed site's response headers, the live Supabase project (`eqnheftmstapthlblpbx`), the Soroban RPC, contract reads through it (`stellar contract invoke --send=no`), Horizon, the governance keeper's dry run and `scripts/replay-check.mjs`.
+Read-only checks, not inferred from merges, made at 11:38–11:42 UTC and again at 13:41–13:45 UTC after #213–#216 had merged and the host redeployed: the deployed site's response headers and project page, the live Supabase project (`eqnheftmstapthlblpbx`), the Soroban RPC, contract reads through it (`stellar contract invoke --send=no`), Horizon, the governance keeper's dry run and `scripts/replay-check.mjs`.
 
 | Area | State |
 |---|---|
-| **App** | ✅ The site answers 200 and sends #204's nonce-based Content-Security-Policy with no `X-Powered-By` header (#203), so the host runs `main` through #204, on Next 16.4.1 (#194). #205–#211 change no app code |
+| **App** | ✅ The site answers 200 and sends #204's nonce-based Content-Security-Policy with no `X-Powered-By` header (#203). At 13:42 UTC the project page showed a deadline's year (#216) and the live keeper's dry run listed bond returns (#214), so the host runs `main` through #216, on Next 16.4.1 (#194). #205–#213 and #215 change no app code |
 | **Stellar SDK** | ✅ 16.3.1. Testnet runs protocol 29 (stellar-rpc 29.0.1 on 2026-10-20), which no JS SDK supports yet ([item 14](#14-protocol-29-and-the-stellar-sdk)) |
-| **Indexer** | ✅ Current: the cursor moved at 11:39 UTC (ledger 5,294,553, within a minute of the chain's tip), nothing is unprocessed and no event has been skipped. 172 events stored, nine more than on 19 Oct: three vaults opened that evening (#26–#28), nothing since |
-| **Vault state rebuilt from events (#164)** | ✅ **28 of 28 vaults match the chain**, field by field, at 11:41 UTC |
-| **Projects** | 20 raising, 6 refunding (#1, #5, #7, #8, #10, #11), 2 failed to fund (#2, #3). The factory's `get_project_count` reads 28: #26–#28 opened on 19 Oct between 15:41 and 17:10 UTC and have no stakes yet. No stage has been paid out and no vault has stalled, on any vault. The only refunds collected are still #5 and #7 on 15 Oct and #10 on 19 Oct |
-| **Governance keeper (#131)** | ✅ Running: its dry run at 11:40 UTC answered "Nothing was due (checked 20 vaults)". No vote has been opened or closed since the closures of 12 Oct |
+| **Indexer** | ✅ Current: the cursor moved at 13:41 UTC (ledger 5,296,020, within a minute of the chain's tip), nothing is unprocessed and no event has been skipped. 172 events stored, nine more than on 19 Oct: three vaults opened that evening (#26–#28), nothing since |
+| **Vault state rebuilt from events (#164)** | ✅ **28 of 28 vaults match the chain**, field by field, at 11:41 UTC and again at 13:45 UTC |
+| **Projects** | 20 raising, 6 refunding (#1, #5, #7, #8, #10, #11), 2 failed to fund (#2, #3). The factory's `get_project_count` reads 28: #26–#28 opened on 19 Oct between 15:41 and 17:10 UTC and have no stakes yet. No stage has been paid out, no vault has stalled and no bond has come back, on any vault. The only refunds collected are still #5 and #7 on 15 Oct and #10 on 19 Oct. #2 and #3 still hold their builder's 50 USDC bonds (`bond_returned` false at 13:42 UTC); the keeper's next run is due to return them (#214) |
+| **Governance keeper (#131, #214)** | ✅ Running, now with the bond return. Its dry run at 11:40 UTC, before #214 deployed, answered "Nothing was due (checked 20 vaults)"; at 13:41 UTC it answered "Would act on 2 item(s) across 22 vault(s) checked": `return-bond` for #2 and #3, would-send. No vote has been opened or closed since the closures of 12 Oct |
+| **Refusals on the reference factory (#213)** | ✅ Project D's vault `CC6QVIVR…` reads `Funded` with milestone 1's vote open and one approval of weight 3, its 0.75 USDC bond held and no record yet (`get_info`, 13:42 UTC). The window closes 2026-10-27 11:50:12 UTC, left to lapse on purpose |
 | **Missed-goal path (#210)** | ✅ Ran on the reference deployment on 2026-10-20 as Project C: settle [`56785fa8…`](https://stellar.expert/explorer/testnet/tx/56785fa811fd00f968d3b16fdd733f3d2bc2e072dc56ee362780a2a8cd8eb206) at ledger 5,292,993, two full refunds and the bond returned, all four confirmed on Horizon. The reference registry's `get_builder_summary` reads `[1, 1, 1]`. The production registry `CDEN2LU4…` still holds no record |
 | **First live payout (#211)** | ⏳ Prepared, not run. `pay-s1`, `pay-s2` and `pay-s3` each hold 5 USDC on Horizon ([item 17](#17-run-the-first-live-payout)) |
 | **Operations Vault cutover** | ⚠️ Unchanged since 2026-10-02. The treasury's `get_ops_funding` still returns `null` ([item 1](#1-finish-the-operations-vault-cutover)) |
@@ -33,15 +34,17 @@ Read-only checks, not inferred from merges, all made between 11:38 and 11:42 UTC
 
 ---
 
-## This week (#171–#211)
+## This week (#171–#216)
 
-### #208–#211 (19–20 Oct)
+### #208–#216 (19–20 Oct)
 
 **In short:**
-- **The vault's last untried path ran on testnet.** A raise that misses its goal was settled, refunded in full and its bond returned, on the reference deployment on 2026-10-20 (#210). Every vault path now has a testnet transaction except a stall and a stage payout.
+- **The vault's last untried path ran on testnet, and the gap it showed is closed.** A raise that misses its goal was settled, refunded in full and its bond returned, on the reference deployment on 2026-10-20 (#210). The bond had to be returned by hand, so the governance keeper now sends `return_bond` itself (#214, live, not yet fired). Every vault path has a testnet transaction except a stall, a stage payout and a vote window closing on a funded vault.
+- **The refusals have testnet evidence too (#213).** Project D on the reference factory captured nine refusal cases in simulation, from a bond below 5% to a non-contributor's vote, and read the production registry's interface: nothing updates or deletes a record.
 - **The first live payout is prepared, not run (#211).** A script drives three stakeholder wallets on the app's own factory, and a checklist walks the owner through launching a one-stage 15 USDC project and asking for its payout. The governance keeper's release path has never fired live.
+- **Coverage is measured, with no target set (#215),** and two cosmetic defects are fixed: the deadline's year and the fee's token (#216).
 - **The evidence caught up with testnet (#208, #209):** last week's progress update, and the first three refunds recorded in the deliverable docs.
-- **On-chain, 19–20 Oct:** 3 vaults opened on the app's factory (#26–#28, no stakes yet) and 15 transactions on the reference deployment for Project C. No vote, no payout, no stall.
+- **On-chain, 19–20 Oct:** 3 vaults opened on the app's factory (#26–#28, no stakes yet). On the reference deployment, 17 transactions sent and 15 refusals captured in simulation for Projects C and D. No vote, no payout and no stall on the app's vaults; the keeper's first bond returns (#2, #3) are due on its next run.
 
 | PR | What changed | Live? |
 |----|--------------|-------|
@@ -49,6 +52,10 @@ Read-only checks, not inferred from merges, all made between 11:38 and 11:42 UTC
 | #209 | **The first testnet refunds recorded** in the [demo evidence](docs/deliverables/web-app-indexer-demo.md) and the [QA plan](docs/deliverables/qa-test-plan.md): #5 and #7 on 15 Oct, #10 on 19 Oct, the only three `DEPOSIT/REFUND` events indexed. VLT-36 gains them. VLT-28 stayed open: no missed goal had been refunded yet | — |
 | #210 | **The missed-goal scenario: Project C on the reference deployment, 2026-10-20.** A 20 USDC goal with a five-minute raise; two backers put in 5 USDC each and the deadline passed at 10 of 20. An unrelated account settled it, with `FailedToFund` recorded in the same transaction ([`56785fa8…`](https://stellar.expert/explorer/testnet/tx/56785fa811fd00f968d3b16fdd733f3d2bc2e072dc56ee362780a2a8cd8eb206), ledger 5,292,993). Each backer took the whole 5 USDC back with their own signature ([`46c3287b…`](https://stellar.expert/explorer/testnet/tx/46c3287b585b44a471c686a188389ef48dd6666e650239873fd4f5d7fd016802), [`09460e24…`](https://stellar.expert/explorer/testnet/tx/09460e248141b9512fd63ba991445691d6273a1ef8af22a7a8f2431bcab40b6b)), and an unrelated account returned the 1 USDC bond to the builder ([`97f5c650…`](https://stellar.expert/explorer/testnet/tx/97f5c650b2e0ec76f1a2c6ac24b6d4aec389a1a1ecb4fc05bdc8d55d02017970)), who ended down exactly the flat fee. The builder's summary reads `[1, 1, 1]`: one completed, one forfeited, one unfunded. Six refusals were captured in simulation, and one expectation was wrong: a deposit after the deadline is refused `#2` InvalidStatus, not `#7`, because the state check runs first ([QA plan](docs/deliverables/qa-test-plan.md) finding 9; contract and unit test were right). VLT-14, 15, 27–32 and CTA-26 are closed. `reference-scenario.sh` gains the Project C steps, and the [evidence](docs/deliverables/contribution-threshold-attestation.md) a Project C section | ✅ Reference deployment |
 | #211 | **The first live payout, prepared.** [payout-run.sh](scripts/payout-run.sh) sets up, stakes, approves and watches from three Stellar CLI wallets on the production factory, and asks the live keeper for a dry run; `--dry-run` simulates every write and sends nothing. The [checklist](docs/deliverables/payout-run-checklist.md) is the session plan. Done so far: `pay-s1`, `pay-s2` and `pay-s3` funded with 5 USDC each, a dry-run stake on #22 accepted in simulation, and the preconditions read on 2026-10-20 (the builder wallet is KYC-approved, the factory charges 1 USDC with a 5 USDC minimum stake, the attestation registry trusts the factory, the keeper answered "Nothing was due"). **The run itself has not happened** ([item 17](#17-run-the-first-live-payout)) | ⏳ Not run |
+| #213 | **The refusal cases: Project D on the reference factory, 2026-10-20 11:48–11:50 UTC.** A 15 USDC goal in stages of 10 and 5 with the minimum 0.75 USDC bond; three backers closed the raise after [`ac971553…`](https://stellar.expert/explorer/testnet/tx/ac971553c39bb457728e9449b39cc89347e6242737df2119cc469b5cd3a32645) opened it. Simulated and refused: a bond below 5% (factory `#12`), a builder without KYC approval (vault `#12`, told apart by which contract raised it), a KYC-approved builder holding no USDC (the token's `#10`), a deposit after the raise closed (`#2`), an approval before the vote opened (`#15`), the vote opened twice (`#16`), an approval twice (`#18`), a non-contributor's approval (`#19`) and an approval on Project B's settled stage (`#2`). The production registry `CDEN2LU4…` was read: 13 entrypoints, none updates or deletes a record. A wrong signer can't be shown in simulation, so VLT-19 and half of VLT-21 stay unit-only. Milestone 1's vote was left open with one approval ([`3d876161…`](https://stellar.expert/explorer/testnet/tx/3d8761610552bb92cbb3a2ce9ce0e14a8d924b6ca62c47d39ab85bf3cd5d25c8)); it lapses on 2026-10-27 11:50 UTC, when `#17` VotingClosed can be shown | ✅ Reference deployment |
+| #214 | **The keeper returns a missed goal's bond.** For a vault in `Failed` it still sends `settle` when no record exists, and now sends `return_bond` while the bond is held, record first when both are due, simulated first and counted against the run's budget of 20. Failed projects stay on its list until the vault reports the bond returned; they were skipped before, so #2 and #3 had never been read. The decisions moved to `governance-keeper-pass.ts`, which imports nothing, with 11 unit tests. The hook's unused `returnBond` callback is deleted ([item 10](#10-unwired-features--wire-up-or-delete)). A dry run of this code against live listed `return-bond` for #2 and #3, 50 USDC each; the live keeper said the same at 13:41 UTC | ✅ Live, not yet fired |
+| #215 | **Test coverage measured** ([QA plan §11](docs/deliverables/qa-test-plan.md#11-entry-exit-and-sign-off)). No target is written anywhere, so the figures are read against the Gate 4 playbook's 80% default: the 13 modules `npm test` loads sit at 95.84% of lines, all of `src/lib` at 13.98%, because 75 of its 88 modules are loaded by no test. Contract line coverage is not measured (`cargo llvm-cov` is not installed); the fallback entrypoint map shows every one of the vault's 20 entrypoints called by a test, and eight on the other contracts not, `update_wasm_hash` first among them. `npm run test:coverage` and `scripts/contract-test-map.sh` repeat it. No test changed, nothing in CI | — Scripts and docs |
+| #216 | The project page, stake sheet and refund sheet show a deadline's year when it falls outside the current year ("Ends 31 Dec 2027 (437 days)" on #22), through one shared `formatDeadlineDate`. The governance view's fee reads "1 USDC or XLM, flat" instead of "XLM flat", since the vault charges it in the project's own token. Three unit tests. Both were item 11 rows | ✅ Seen live on #22 |
 
 ### #171–#207 (13–18 Oct)
 
@@ -110,7 +117,7 @@ Findings are named as the Gate 4 report names them: M for medium, L for low, F f
 | #205 | M-09, abuse cases | `npm run test:db` replays every migration into an in-memory Postgres and runs 30 abuse cases as `anon` and `authenticated`. It also made the repo replayable: it adds the missing `add_platform_admin_role` file and renames nine files to the versions live recorded. No change to the live database | ✅ CI check |
 | #206 | Abuse cases | Contract tests for re-entrancy, signatures and TTL expiry, 199 passing. The Soroban host refuses re-entry itself, so these pin the property (one payout), not the code order. Contract code is unchanged, so no wasm hash moved | — Tests only |
 
-Test counts on `main`: `npm test` 94, `test:authz` 206 probes, `test:db` 30 cases, `cargo test --workspace` 199.
+Test counts on `main`: `npm test` 94 at #207, 108 at #216 (11 keeper tests from #214, 3 deadline tests from #216), `test:authz` 206 probes, `test:db` 30 cases, `cargo test --workspace` 199.
 
 #### Performance
 
@@ -129,13 +136,14 @@ Still open from [performance.md](docs/performance.md): blocking time of 0.8–1.
 ## Live vs shelf-ready
 
 **Live on testnet:**
-- **App:** everything on `main` through #204 (#205–#211 change no app code), on Stellar SDK 16.3.1 and Next 16.4.1, with the nonce-based Content-Security-Policy (#204).
+- **App:** everything on `main` through #216 (#214's keeper bond return and #216's deadline year were both seen live at 13:42 UTC on 2026-10-20; #205–#213 and #215 change no app code), on Stellar SDK 16.3.1 and Next 16.4.1, with the nonce-based Content-Security-Policy (#204).
 - **Vault** wasm `e9009410…`, deployed by the factory since 2026-10-06. Vaults are immutable, so older projects keep `70e5f3a8…` or `9c20bca3…` and the rule they were created with.
 - **Factory** [`CBRUIRJX…`](https://stellar.expert/explorer/testnet/contract/CBRUIRJXRU6NGHOSF5KMPUOFIXIANCPI43QC6JX2PKNOKD3QSAHPLINO), **attestation** `CDEN2LU4…`, **identity** `CAILTHEY…`, **admin roster** `CAKANFZH…` and **treasury** [`CAGMEGMS…`](https://stellar.expert/explorer/testnet/contract/CAGMEGMS6MS6ENADUWDRW3GQ4XRBDYFFKHMRFVDEBHFCZW7NRO3TQPZW). They were redeployed 2026-10-06 and have been live in the app since 2026-10-07. Projects #1–#11 keep the previous factory `CDIXGE5M…` (closed to new launches) and attestation registry `CDLL2A4R…`. Details are in [smart-contracts.md](docs/smart-contracts.md#the-registry-redeploy).
 - **Operations Vault** [`CCVXM3YP…`](https://stellar.expert/explorer/testnet/contract/CCVXM3YPPEMWG4INHFTZ4NBJ3PQW3ZUNYIZMBJBNYQOMSNOENQG7FDSN), unfunded until [item 1](#1-finish-the-operations-vault-cutover) is done.
-- **Crons:** indexer, ops funding, stalled-vault keeper, storage keep-alive and governance keeper, all in `docker-compose.yml`. The notification-emails cron also sends the identity reminders and ends walletless approvals after 30 days (#193). Its emails all fail until [item 3](#3-switch-on-email) is fixed; the bell is unaffected.
+- **Crons:** indexer, ops funding, stalled-vault keeper, storage keep-alive and governance keeper, all in `docker-compose.yml`. Since #214 the governance keeper also returns a missed goal's bond; its first two, #2 and #3, are due on its next run. The notification-emails cron also sends the identity reminders and ends walletless approvals after 30 days (#193). Its emails all fail until [item 3](#3-switch-on-email) is fixed; the bell is unaffected.
 - **Replay check** ([scripts/replay-check.mjs](scripts/replay-check.mjs), #164): run by hand, read-only. It is not scheduled. 28 of 28 on 2026-10-20.
 - **Payout run script** ([scripts/payout-run.sh](scripts/payout-run.sh), #211): run by hand from the owner's PC, where its four Stellar CLI identities live. Only its `setup` step has sent anything (three wallets funded with 5 USDC each). Nothing has been staked, approved or released with it ([item 17](#17-run-the-first-live-payout)).
+- **Coverage** (`npm run test:coverage` and `scripts/contract-test-map.sh`, #215): run by hand, no threshold, not in CI.
 - **CI checks added this week:** `test:authz` (#201), `test:db` (#205), the dependency gate and SBOM (#194, #195) and the contract abuse tests (#206). They run on every PR and change nothing live.
 - **Database:** every repo migration except `20261001160000` (kept as a no-op, superseded by `20261006155050`) and `correct_bootstrap_admin` ([item 6](#6-migration-history-drift-m-09)). Applied this week: `20261015140313` (#197), `20261015141432` (the grant revocation drafted in #139, applied by the owner), `20261015142340` (#198), `20261015143157` (#199), `20261015144208` (#200) and `20261015150429` (#202). Every one with a PR of its own was applied before that PR merged.
 
@@ -144,7 +152,7 @@ Still open from [performance.md](docs/performance.md): blocking time of 0.8–1.
 
 There is no contract source ahead of testnet. Every contract's deployed wasm matches `main`. Hashes reproduce only on the same build paths ([item 11](#11-known-defects-found-not-yet-fixed)).
 
-**Reference deployment (2026-10-06), not used by the app:** a standalone set built from source, holding the test transactions for the contribution, threshold-release and attestation deliverable ([evidence](docs/deliverables/contribution-threshold-attestation.md)). All three projects are finished. Project A completed on 2026-10-06. Project B failed closed on 2026-10-13: its lapsed stage was settled by an unrelated account, its five backers were refunded 2.5 USDC each, and the builder's record reads one completed, one forfeited ([`968e1ad8…`](https://stellar.expert/explorer/testnet/tx/968e1ad8b7156173cc2c6635aa59072ee26f56a15b79ee8b5d7d9172592afbc1)). Project C missed its goal on 2026-10-20 (#210): an unrelated account settled it ([`56785fa8…`](https://stellar.expert/explorer/testnet/tx/56785fa811fd00f968d3b16fdd733f3d2bc2e072dc56ee362780a2a8cd8eb206)), both backers took their whole 5 USDC back, and the 1 USDC bond went back to the builder. The builder's record reads one completed, one forfeited, one unfunded. These are the only missed-goal refunds and the only bond return on testnet so far. On the app's factory, no stage has been paid out and no vault has stalled.
+**Reference deployment (2026-10-06), not used by the app:** a standalone set built from source, holding the test transactions for the contribution, threshold-release and attestation deliverable ([evidence](docs/deliverables/contribution-threshold-attestation.md)). Projects A, B and C are finished and Project D is waiting. Project A completed on 2026-10-06. Project B failed closed on 2026-10-13: its lapsed stage was settled by an unrelated account, its five backers were refunded 2.5 USDC each, and the builder's record reads one completed, one forfeited ([`968e1ad8…`](https://stellar.expert/explorer/testnet/tx/968e1ad8b7156173cc2c6635aa59072ee26f56a15b79ee8b5d7d9172592afbc1)). Project C missed its goal on 2026-10-20 (#210): an unrelated account settled it ([`56785fa8…`](https://stellar.expert/explorer/testnet/tx/56785fa811fd00f968d3b16fdd733f3d2bc2e072dc56ee362780a2a8cd8eb206)), both backers took their whole 5 USDC back, and the 1 USDC bond went back to the builder. The builder's record reads one completed, one forfeited, one unfunded. These are the only missed-goal refunds and the only bond return on testnet so far. Project D (#213) is funded, with milestone 1's vote open on one approval; it closes on 2026-10-27 11:50 UTC and is left to lapse on purpose, so that `#17` VotingClosed can be shown and the lapse settled afterwards. On the app's factory, no stage has been paid out and no vault has stalled.
 
 ---
 
@@ -210,10 +218,11 @@ Projects created before 2026-10-06 keep the original bar: more than half of the 
 |---|---|
 | `flagProjectAction` | Nothing can put a listing into owner-consensus review |
 | `requestPasswordReset` | No "forgot password" UI. Email users can't recover a password |
-| `returnBond` | A builder whose raise fails has no button to reclaim the bond. Settling a missed goal is wired (#118, and the keeper since #131); returning the bond is not. Project C showed the gap on testnet (2026-10-20, #210): after the settle and both refunds, the 1 USDC bond sat in the vault until `return_bond` was sent from the CLI by an unrelated account. The call is permissionless, so the governance keeper could send it right after it settles a missed goal, the way it already settles. Owner decision pending: the keeper, a button for the builder, or both |
 | `respondToFeatureRequestAction` | Roadmap responses render, but nothing writes them. #198 limited the action to owners and to marking a request shipped |
 | `getAdminAuditLogAction` | The audit log is written, but has no viewer |
 | `attestationClient()` | A builder's track record is never shown |
+
+`returnBond` left this list on 2026-10-20. Project C had shown the gap that morning (#210): after the settle and both refunds, the 1 USDC bond sat in the vault until `return_bond` was sent from the CLI by an unrelated account. The call is permissionless, so #214 made the governance keeper send it itself after a missed goal, in the run after the one that records it or in the same run; a builder has nothing to press. The hook's unused `returnBond` callback was deleted rather than wired to a button, since a button would only race the keeper. Backers still claim their own refunds. The new path is live but has not fired yet: at 13:42 UTC its dry run listed the bonds of #2 and #3 (50 USDC each) as its next two sends.
 
 ### 11. Known defects (found, not yet fixed)
 
@@ -221,12 +230,10 @@ Projects created before 2026-10-06 keep the original bar: more than half of the 
 |---|---|
 | [Header.tsx](src/components/layout/Header.tsx) | The side-menu Admin link follows on-chain admin status (`useAdminStatus`), not the roster, so console-only admins don't see it |
 | [profiles.ts](src/lib/data/profiles.ts) | `syncAdminClaim` still writes `app_metadata.role`, which nothing reads |
-| [PlatformGovernanceView.tsx](src/components/admin/PlatformGovernanceView.tsx) | Labels the platform fee "XLM flat", but it is charged in the project's own token |
 | Operations Vault | `SetVotingWindow` has no bounds. A carried vote setting it to 0, or to an overflowing value, would stop the vault from ever passing another vote |
 | Contract build | The wasm embeds absolute cargo paths, so hashes are machine-dependent. A pinned Docker build would fix it |
 | Admin dashboard | Wider than a phone screen, so dialogs open off to the side |
 | Location | Nothing writes `location_lat` / `location_lng`, so the map pin can't appear |
-| Project page | The deadline is shown without its year ("Ends 31 Dec (445 days)" for a 2027 deadline). Found in the demo dry run |
 | Project #9 | Its deadline is in the year 9999 (read 2026-10-19). Its title was stored twice in a row ("OpenNode: … OpenNode: …"); it now reads once. #189's check found the descriptions of #9, AquaPure and MediPulse pasted in 4–6 times on 14 Oct. Worth checking whether it came through the launch form, since the factory accepts launches from anyone. #189 and #192 now stop a pasted-twice title or description at the form |
 | Possible duplicate launch | #15 and #16 are the same listing ("AquaSense") from the same builder, opened 8 minutes apart on 2026-10-07 with separately uploaded metadata. The duplicate-launch guard (#86) matches creator and metadata CID, so it only catches an unchanged draft launched again. Ask the builder whether the first launch looked failed to them |
 
@@ -237,6 +244,7 @@ Projects created before 2026-10-06 keep the original bar: more than half of the 
 - The listing draft coming up pre-filled with the last launched project (#180, #187).
 - A slow first byte on `/projects` and the project page (#174), and the Stages tab's late first paint (#175).
 - The QA plan expected a deposit after the deadline to be refused `#7`; the vault refuses it `#2`, because the state check runs first. Project C showed it on testnet, and the plan's expected code is fixed (#210, finding 9). Contract and unit test were right.
+- The deadline shown without its year, and the fee labelled "XLM flat" (#216). The builder's bond after a missed goal, which nothing returned (#214, item 10).
 
 ### 12. Manual passes still owed
 Since 2026-10-13 the owner has done two of the passes that were owed: a Freighter stake (the demo, 17 Oct, #22) and a Freighter wallet link with #200's new signed message (15 Oct). Refunds were collected on #5, #7 and #10. Still not seen with a real wallet or account:
@@ -262,7 +270,8 @@ Testnet runs protocol 29 (stellar-rpc 29.0.1 on 2026-10-19). No JS SDK supports 
 
 ### 16. Gate 4 — what is left
 Gate 4 (security and test QA, 2026-10-15) is worked through for everything fixable in code. These need the owner or a separate approval:
-- **Scans not run:** an authenticated DAST scan (it needs a signed-in session) and ZAP's active scan, which sends attack payloads to the live site. #203 ran the passive baseline only. Test coverage against the Gate 4 target is still to be measured.
+- **Scans not run:** an authenticated DAST scan (it needs a signed-in session) and ZAP's active scan, which sends attack payloads to the live site. #203 ran the passive baseline only.
+- **Coverage measured, target unset.** Measured 2026-10-20 ([qa-test-plan.md §11](docs/deliverables/qa-test-plan.md#11-entry-exit-and-sign-off); `npm run test:coverage` repeats it). No coverage target is written down anywhere, so the figures are read against the Gate 4 playbook's 80% default. The 13 modules `npm test` loads sit at 95.84% of lines, 87.86% of branches and 91.82% of functions, but they are 13 of the 88 modules under `src/lib`, which comes to 13.98% of lines over every module and 3.91% over all of `src`. Against 80% the suite meets the target only for the modules that have tests, not for the code base. The contracts have no line figure: `cargo llvm-cov` is not installed on the build machine. The fallback is 199 passing tests after the wasm build (193 without it) and a direct test call on every one of the vault's 20 entrypoints; eight admin and read entrypoints on the other contracts have no test, the factory's `update_wasm_hash` among them. The owner sets the number and whether it applies to `src/lib` or to the tested modules.
 - **`style-src 'unsafe-inline'`** remains in the Content-Security-Policy (#204): Radix, framer-motion and next-themes insert `<style>` elements at runtime without a nonce. Injected CSS cannot run script, and the script policy is what stops XSS, so #204 proposes accepting it. The owner's call.
 - **Two accepted dependency advisories** (#195), both in genkit's OpenTelemetry tree and not reachable: no Prometheus exporter is started, and `OTEL_PROPAGATORS` is unset. They stay until genkit ships OpenTelemetry 2.x, or the owner drops the AI listing check. `npm run audit:gate` warns when one stops being reported.
 - **Role decisions** (#201, #197): `POST /api/admin/platform-settings` (the fee contact email) and project-moderation flag, vote and clear accept any admin role. Should accountants and KYC reviewers be able to? Separately, an owner can still ban another owner alone. Should that need a vote?
@@ -280,15 +289,17 @@ No stage has been paid out on an app vault, and the governance keeper's release 
 ---
 
 ## Next week
-1. **Run the first live payout** per the [checklist](docs/deliverables/payout-run-checklist.md): the owner launches a one-stage 15 USDC project and asks for its payout in the app; the script stakes, approves and watches the keeper release (item 17).
-2. **Publish the demo video** and add its public link to the deliverable evidence (item 15).
-3. **Fix the email sender** so Resend accepts it, and set `PINATA_GATEWAY_KEY` (items 3 and 4). One stack update covers both. The first identity reminder for the walletless approval is due 21 Oct (#193).
-4. **Owner votes:** move or write off the old Operations Vault's 25 XLM, and `SetOpsFunding` on the treasury (item 1).
-5. **Owner decisions:** whether the governance keeper should return the bond after it settles a missed goal (item 10), the Phase 2 items on Wallets Kit, fee sponsorship and stakeholder names (item 7), and Gate 4's leftovers (item 16).
-6. Close M-09: delete or record the two repo-only migration files, and compare a real `supabase db reset` with live (item 6).
-7. Ask the builder of #15 and #16 why the listing was opened twice, and of #9 about its deadline (item 11).
-8. Check MongoDB Atlas for the legacy identity data (item 13).
-9. If the home page's link preview still shows the old card, re-scrape it in the Facebook Sharing Debugger (#188, #191).
+1. **Confirm the keeper's first bond returns** (#214): two `BOND/RETURNED` events for #2 and #3, 50 USDC each back to their builder `GBPBRHGX…`, the builder's bell told, and the replay check still matching afterwards.
+2. **Run the first live payout** per the [checklist](docs/deliverables/payout-run-checklist.md): the owner launches a one-stage 15 USDC project and asks for its payout in the app; the script stakes, approves and watches the keeper release (item 17).
+3. **Publish the demo video** and add its public link to the deliverable evidence (item 15).
+4. **Fix the email sender** so Resend accepts it, and set `PINATA_GATEWAY_KEY` (items 3 and 4). One stack update covers both. The first identity reminder for the walletless approval is due 21 Oct (#193).
+5. **Owner votes:** move or write off the old Operations Vault's 25 XLM, and `SetOpsFunding` on the treasury (item 1).
+6. **Owner decisions:** a coverage target, and whether it applies to the tested modules or to the code base (#215, item 16); the Phase 2 items on Wallets Kit, fee sponsorship and stakeholder names (item 7); and Gate 4's other leftovers (item 16).
+7. **On or after 27 Oct:** simulate an approval of Project D's milestone 1 after its window has closed, to show `#17`, then settle the lapse ([QA plan §10](docs/deliverables/qa-test-plan.md#10-execution-schedule-and-evidence-to-collect), #213).
+8. Close M-09: delete or record the two repo-only migration files, and compare a real `supabase db reset` with live (item 6).
+9. Ask the builder of #15 and #16 why the listing was opened twice, and of #9 about its deadline (item 11).
+10. Check MongoDB Atlas for the legacy identity data (item 13).
+11. If the home page's link preview still shows the old card, re-scrape it in the Facebook Sharing Debugger (#188, #191).
 
 ---
 
@@ -456,7 +467,7 @@ The three identity migrations were applied on 2026-10-07, after the app had depl
 - **QA-RPT-2026-09-30 (BUG-001…005):** fixed by #79–#82.
 - **QA Trial #3:** fixed by #84 and #86. Defects 002, 003 and 007 are Freighter's own behaviour; an upstream issue was drafted.
 - **QA-RPT-BLKFNDR-2026-10-04-BT and -CON:** fixed by #107 and #109–#114. A retest is owed ([item 12](#12-manual-passes-still-owed)).
-- **QA Cycle 7 (report v7.0, BF-108…120):** fixed by #181–#190 and the follow-ups #192 and #193 (see [This week](#this-week-171211)).
-- **Gate 4 security and test QA (2026-10-15):** remediated by #194–#206. What is left is [item 16](#16-gate-4--what-is-left).
+- **QA Cycle 7 (report v7.0, BF-108…120):** fixed by #181–#190 and the follow-ups #192 and #193 (see [This week](#this-week-171216)).
+- **Gate 4 security and test QA (2026-10-15):** remediated by #194–#206, coverage measured by #215. What is left is [item 16](#16-gate-4--what-is-left).
 
 _Per-finding audit detail is in the security-audit PDF. Per-PR detail is in the PR descriptions._

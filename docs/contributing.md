@@ -45,6 +45,10 @@ cargo test --workspace
 | `npm run start` | Serve the production build |
 | `npm run lint` | `eslint .` |
 | `npm run typecheck` | `tsc --noEmit` |
+| `npm test` | Unit tests: `node --test` over `src/**/*.test.ts` |
+| `npm run test:coverage` | The same suite under Node's coverage, plus the share of `src/lib` and `src` the tests reach (see [Coverage](#coverage)) |
+| `npm run test:authz` | Calls every route handler and server action as each identity that must not reach it |
+| `npm run test:db` | Replays the migrations into an in-memory Postgres and runs the policy abuse cases |
 | `npm run genkit:dev` | Genkit Developer UI for the AI flows (see [AI Features](ai-features.md#local-development)) |
 | `npm run genkit:watch` | The same, restarting on file changes |
 | `bash scripts/build-contracts.sh` | Build every contract to wasm and print its size and sha256 |
@@ -85,10 +89,10 @@ Report bugs in [GitHub Issues](https://github.com/BLKFNDRPH/blkfndrapp/issues).
 
 | Job | Steps |
 |---|---|
-| **Web app** | Node 24, `npm ci`, `npm run typecheck`, `npm run lint`, then `npm audit --omit=dev`, which reports without failing |
+| **Web app** | Node 24, `npm ci`, `npm run typecheck`, `npm run lint`, `npm test`, `npm run test:authz`, `npm run test:db`, then `npm audit --omit=dev` (reports only) and `npm run audit:gate`, which fails on a high or critical advisory that is not accepted, and an SBOM |
 | **Soroban contracts** | Rust 1.81.0 with `wasm32-unknown-unknown`, `bash scripts/build-contracts.sh`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`. It writes each wasm's size and sha256 to the job summary and uploads the wasm files |
 
-CI does not run `npm run build`, does not check formatting, and there is no JavaScript test suite.
+CI does not run `npm run build`, does not check formatting, and runs the tests without coverage.
 
 ## Testing a change
 
@@ -97,6 +101,13 @@ CI does not run `npm run build`, does not check formatting, and there is no Java
 - **Contracts.** Run `bash scripts/build-contracts.sh` before `cargo test --workspace`. The factory's deployment tests need `blkfndr_vault.wasm` and skip themselves when it is missing. Then run clippy as above.
 - **Run it.** Reading the code is not verification. Run the app and use the change. For logic, a small `tsx` or esbuild script that stubs the `@/` modules it doesn't need is enough. When a check needs a signed-in user, stub the session, for example `/api/auth/session`. Never sign in with someone's credentials.
 - **Say what you ran** in the pull request.
+
+### Coverage
+
+Coverage is measured, not gated: no script and no CI step fails on a number. The measured figures, and the Gate 4 target they are read against, are in [qa-test-plan.md §11](deliverables/qa-test-plan.md#11-entry-exit-and-sign-off).
+
+- **TypeScript.** `npm run test:coverage` runs the unit suite under Node's built-in coverage (`--experimental-test-coverage`, nothing to install), prints Node's per-file table for the modules the tests load, writes `coverage/lcov.info` (ignored by git), then prints what Node leaves out: the share of every module under `src/lib`, and under `src`, counting a module no test loads as 0%. Read the per-file table for how well a tested module is covered, and the every-module line for how much of the code has a test at all. Lines are counted the way Node and c8 count them, every line of the file; tests, type-only modules and the generated bindings under `src/packages` are left out. `npm run test:db` exercises the migrations in PGlite, not `src`, so it is outside the measurement.
+- **Contracts.** `cargo llvm-cov --workspace --summary-only` from `contracts/`, after `rustup component add llvm-tools-preview` and `cargo install cargo-llvm-cov`. Where that cannot be installed, `bash scripts/contract-test-map.sh` is the fallback: for each crate it prints the number of `#[test]` functions and, for every public entrypoint in `lib.rs`, how many test calls reach it directly and through `try_`, and flags the entrypoints no test calls. It counts call sites, not executed lines.
 
 ## Code conventions
 

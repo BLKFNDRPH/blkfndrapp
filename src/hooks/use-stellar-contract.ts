@@ -320,16 +320,9 @@ export function useStellarContract() {
     [requireWallet],
   );
 
-  /** Permissionless. Returns the bond after a raise that never filled. */
-  const returnBond = useCallback(
-    async (vaultAddress: string) => {
-      const address = requireWallet();
-      const vault = (await loadClients()).vaultClient(vaultAddress, await signerFor(address));
-      const tx = await vault.return_bond();
-      return signAndSend(tx);
-    },
-    [requireWallet],
-  );
+  // There is no returnBond here. After a missed goal the governance keeper
+  // sends return_bond itself (src/lib/governance-keeper.ts), so the builder
+  // has nothing to press.
 
   // ── Attestor roster ──────────────────────────────────────────────────────
   //
@@ -425,7 +418,6 @@ export function useStellarContract() {
     releaseMilestone,
     settleLapsedMilestone,
     settleVault,
-    returnBond,
     // attestor roster
     getIdentityAdmin,
     isAttestor,
