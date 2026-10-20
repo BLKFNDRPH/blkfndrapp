@@ -1,6 +1,6 @@
 # QA and Test Plan: Bonded Vault, Threshold Release & Attestation, Web App + Indexer + Demo
 
-Version 1.0, 2026-10-13. Covers the three grant deliverables below, as built on `main` at `1f4ccca`.
+Version 1.1, 2026-10-20 (§11 gains the measured coverage); first issued 2026-10-13. Covers the three grant deliverables below, as built on `main` at `1f4ccca`.
 
 | # | Deliverable | Evidence document |
 |---|---|---|
@@ -398,6 +398,20 @@ Things a reviewer will ask about. None blocks the plan; each needs an owner deci
 | `npm test` | 36 of 36 pass |
 | `cargo test --workspace`, after `scripts/build-contracts.sh` | 188 of 188 pass: vault 61 (56 before this plan), attestation 16, factory 17 including the vault deployment tests, and the other workspace contracts. Without the wasm build the factory's deployment tests skip themselves and the total is 182 |
 | `cargo clippy --workspace --all-targets -- -D warnings` | Clean |
+
+**Coverage, measured 2026-10-20** (`main` at `cda3050`; `npm run test:coverage` and `bash scripts/contract-test-map.sh` repeat it, see [contributing.md](../contributing.md#coverage)).
+
+No coverage target is written down for this project: not in this plan, the deliverable documents, progress.md or the Gate 4 remediation record. The Gate 4 playbook takes the target as an input, "Coverage target (e.g. 80%) and which paths are considered critical", and its evidence scanner defaults to 80%. The figures below are therefore read against **80% line coverage as an assumption**, until the owner sets a number and says whether it applies to the modules that have tests or to the code base.
+
+| Measurement | Lines | Branches | Functions | Against 80% |
+|---|---|---|---|---|
+| TypeScript, the 13 modules `npm test` loads (94 tests; Node `--experimental-test-coverage`) | 95.84% (1,868 of 1,949) | 87.86% | 91.82% | Meets |
+| TypeScript, every module under `src/lib` (88 modules; the 75 no test loads count as 0%; type-only modules left out) | 13.98% (1,868 of 13,358) | not meaningful | not meaningful | Does not meet |
+| TypeScript, everything under `src` except the generated bindings (300 modules; pages, components, hooks and context are React code the unit suite never loads) | 3.91% (1,868 of 47,810) | not meaningful | not meaningful | Does not meet |
+| Contracts, line coverage | Not measured: `cargo llvm-cov` is not installed on the build machine. The `llvm-tools` component exists for the pinned 1.81.0 toolchain, so `rustup component add llvm-tools-preview` and `cargo install cargo-llvm-cov` would make `cargo llvm-cov --workspace --summary-only` possible | | | Not measured |
+| Contracts, fallback: `cargo test --workspace` and the entrypoint map | 199 of 199 pass after the wasm build (vault 65, treasury 46, operations 27, identity 19, factory 17, attestation 16, admin 9); without the build the factory's seven deployment tests give way to one marker test and the total is 193. Every one of the vault's 20 public entrypoints is called directly by at least one test. On the other contracts eight entrypoints have no test calling them: factory `update_wasm_hash` and `update_fee_wallet`; identity `get_admin`; treasury `next_release_at`, `get_available`, `has_claimed`, `get_ops_funding` and `next_ops_funding_at` | | | Call sites, not lines |
+
+Least covered among the modules that hold logic (generated bindings, React components and type files left out): the largest modules no test loads are `src/lib/data/kyc.ts` (807 lines), `explain-error.ts` (626), `event-indexer.ts` (583), `ttl-keeper.ts` (438), `data/admins.ts` (384), `data/projects.ts` (325), `managed-wallet.ts` (324), `email/notification-emails.ts` (310), `bond-readiness.ts` (270) and `stellar.ts` (264). Of the modules with tests, `listing-draft.ts` (74.6% of lines) and `live-project.ts` (74.6%) are the least covered.
 
 | Deliverable | QA lead | Date | Result |
 |---|---|---|---|
