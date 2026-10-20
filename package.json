@@ -15,6 +15,7 @@
     "perf:baseline": "node scripts/perf-baseline.mjs",
     "audit:gate": "node scripts/audit-gate.mjs",
     "test:authz": "node scripts/authz-check.mjs",
+    "keeper:dry-run": "node scripts/keeper-dry-run.mjs",
     "test:db": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON \"supabase/tests/*.test.ts\""
   },
   "dependencies": {

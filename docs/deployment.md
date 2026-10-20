@@ -140,6 +140,14 @@ docker exec <governance-keeper-cron container> sh -c \
      -d "{\"dryRun\": true}"'
 ```
 
+That asks the deployed app, so it shows what the deployed code would do. To see
+what the code in a checkout would send before it is merged,
+`node scripts/keeper-dry-run.mjs --env-file <path to .env.local>` (or
+`npm run keeper:dry-run -- --env-file …`) bundles that checkout's keeper and
+runs the same dry run against the live RPC and Supabase, with
+`OPS_FUNDING_SUBMITTER_SECRET` removed from its environment so it can never
+sign; each action line names the project behind the vault.
+
 ### notification-emails-cron
 
 Three jobs, every minute:

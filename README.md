@@ -308,6 +308,7 @@ blkfndrapp/
 | `node --env-file=.env.local scripts/migrate-kyc.mjs --registry <C…> --source <key>` | Copy every approved KYC into a new identity registry. A dry run unless `--send` is given |
 | `bash scripts/reference-scenario.sh <step>` | Drive the reference deployment through every vault path on testnet, logging each transaction ([evidence](docs/deliverables/contribution-threshold-attestation.md)) |
 | `bash scripts/payout-run.sh <step> <project-id>` | Three scripted stakeholders back and approve a live project so the keeper pays its stage; `--dry-run` simulates ([checklist](docs/deliverables/payout-run-checklist.md)) |
+| `node scripts/keeper-dry-run.mjs --env-file <path to .env.local>` | Run this checkout's governance keeper in dry-run mode against the live RPC and Supabase: what its code would send, with the submitter secret removed so nothing can be signed. `payout-run.sh keeper-dry-run` asks the deployed app instead (`npm run keeper:dry-run -- --env-file …` is the same) |
 | `cargo test --workspace` | Contract test suite |
 | `cargo clippy --workspace --all-targets -- -D warnings` | Contract lints |
 
