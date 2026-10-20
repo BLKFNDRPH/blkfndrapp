@@ -103,23 +103,34 @@ estimate the cost.
 
 ### governance-keeper-cron
 
-Carries out what vault votes have already decided, so a payout or a refund
-never waits for someone to press a button. For every project not yet
-`completed`, `failed` or `refunding` in Postgres it reads the vault's own state
+Carries out what a vault's rules have already decided, so a payout, a refund or
+a builder's bond never waits for someone to press a button. For every project
+not yet `completed` or `refunding` in Postgres it reads the vault's own state
 and stages from the ledger, then:
 
 - sends `release_milestone` for a stage whose vote has carried;
 - sends `settle_lapsed_milestone` for a stage whose voting window ended short,
   which opens refunds;
 - sends `settle` for a vault that missed its goal and isn't on the builder's
-  record yet (`attested` is false).
+  record yet (`attested` is false);
+- sends `return_bond` for a vault that missed its goal while its bond is still
+  held (`bond_returned` is false and `bond_amount` above zero), after the
+  `settle` when both are due. A `failed` project stays on the list until the
+  vault reports the bond returned. Backers are not paid out this way: each
+  claims their own refund.
 
 Each call is simulated first and sent only if the vault accepts it, so a run
-with nothing due sends nothing. All three are permissionless and gated by the
+with nothing due sends nothing. All four are permissionless and gated by the
 vault: the key decides timing only, never an outcome. At most 20 are sent per
-run. See [src/lib/governance-keeper.ts](../src/lib/governance-keeper.ts).
+run, the bond return counted with the rest. See
+[src/lib/governance-keeper.ts](../src/lib/governance-keeper.ts); what a pass
+reads and tries is in
+[src/lib/governance-keeper-pass.ts](../src/lib/governance-keeper-pass.ts),
+which `npm test` runs against stand-in vaults.
 
-A dry run lists what is due and sends nothing:
+A dry run lists what is due and sends nothing. A freshly failed raise shows two
+`would-send` actions, `record-missed-goal` then `return-bond`; one already on
+the record shows `return-bond` alone:
 
 ```bash
 docker exec <governance-keeper-cron container> sh -c \
