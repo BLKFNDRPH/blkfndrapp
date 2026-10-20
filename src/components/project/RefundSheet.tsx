@@ -14,6 +14,7 @@ import { currencyForToken } from "@/lib/currencies";
 import { describeMoney, formatToken, rawToUnits } from "@/lib/money";
 import { useXlmRate } from "@/lib/xlm-rate";
 import { IS_PRACTICE_NETWORK } from "@/lib/network";
+import { formatDeadlineDate } from "@/lib/project-status";
 import { WalletPanel } from "@/components/settings/WalletSettings";
 import { MoneyActionPanel } from "@/components/money-action/MoneyActionPanel";
 import {
@@ -51,9 +52,6 @@ type Read =
   | { kind: "loading" }
   | { kind: "error" }
   | { kind: "ready"; vault: VaultFigures; mine: bigint; linked: bigint | null };
-
-const shortDate = (ms: number) =>
-  new Date(ms).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 
 export function RefundSheet({ project, onClose }: { project: Project; onClose: () => void }) {
   const { user } = useAuth();
@@ -221,7 +219,7 @@ export function RefundSheet({ project, onClose }: { project: Project; onClose: (
   const paidOut = breakdown.paidOut;
 
   const reason = fullRefund
-    ? `The project didn't reach its ${show(vault.goal)} goal by ${shortDate(vault.deadlineMs)}, so every stake comes back in full.`
+    ? `The project didn't reach its ${show(vault.goal)} goal by ${formatDeadlineDate(vault.deadlineMs)}, so every stake comes back in full.`
     : vault.failedStage !== null
       ? `Stage ${vault.failedStage} wasn't approved, so what's left in the vault plus the builder's deposit is shared out among stakeholders in proportion to their stakes.`
       : "The builder went quiet for 90 days, so the vault's 90-day rule closed the project. Anyone could trigger that step, and nobody could decide it. What's left plus the builder's deposit is shared out.";

@@ -201,12 +201,10 @@ Projects created before 2026-10-06 keep the original bar: more than half of the 
 |---|---|
 | [Header.tsx](src/components/layout/Header.tsx) | The side-menu Admin link follows on-chain admin status (`useAdminStatus`), not the roster, so console-only admins don't see it |
 | [profiles.ts](src/lib/data/profiles.ts) | `syncAdminClaim` still writes `app_metadata.role`, which nothing reads |
-| [PlatformGovernanceView.tsx](src/components/admin/PlatformGovernanceView.tsx) | Labels the platform fee "XLM flat", but it is charged in the project's own token |
 | Operations Vault | `SetVotingWindow` has no bounds. A carried vote setting it to 0, or to an overflowing value, would stop the vault from ever passing another vote |
 | Contract build | The wasm embeds absolute cargo paths, so hashes are machine-dependent. A pinned Docker build would fix it |
 | Admin dashboard | Wider than a phone screen, so dialogs open off to the side |
 | Location | Nothing writes `location_lat` / `location_lng`, so the map pin can't appear |
-| Project page | The deadline is shown without its year ("Ends 31 Dec (445 days)" for a 2027 deadline). Found in the demo dry run |
 | Project #9 | Its deadline is in the year 9999 (read 2026-10-19). Its title was stored twice in a row ("OpenNode: … OpenNode: …"); it now reads once. #189's check found the descriptions of #9, AquaPure and MediPulse pasted in 4–6 times on 14 Oct. Worth checking whether it came through the launch form, since the factory accepts launches from anyone. #189 and #192 now stop a pasted-twice title or description at the form |
 | Possible duplicate launch | #15 and #16 are the same listing ("AquaSense") from the same builder, opened 8 minutes apart on 2026-10-07 with separately uploaded metadata. The duplicate-launch guard (#86) matches creator and metadata CID, so it only catches an unchanged draft launched again. Ask the builder whether the first launch looked failed to them |
 
