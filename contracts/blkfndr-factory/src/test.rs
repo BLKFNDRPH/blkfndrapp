@@ -1,6 +1,6 @@
 use soroban_sdk::{
-    testutils::{Address as _, BytesN as _, Ledger},
-    Address, BytesN, Env,
+    testutils::{Address as _, BytesN as _, Ledger, MockAuth, MockAuthInvoke},
+    Address, BytesN, Env, IntoVal, Val,
 };
 
 use crate::{BlkfndrFactory, BlkfndrFactoryClient};
@@ -189,6 +189,72 @@ fn unknown_project_ids_are_reported_not_guessed() {
     assert!(s.factory.try_get_vault(&99u64).is_err());
 }
 
+/// Sign the next call as `signer` and nobody else. The fixture's
+/// mock_all_auths makes every require_auth succeed, so an admin check could
+/// not fail under it and a refusal test would prove nothing.
+fn sign_as(s: &Setup, signer: &Address, fn_name: &'static str, args: soroban_sdk::Vec<Val>) {
+    s.env.mock_auths(&[MockAuth {
+        address: signer,
+        invoke: &MockAuthInvoke {
+            contract: &s.factory.address,
+            fn_name,
+            args,
+            sub_invokes: &[],
+        },
+    }]);
+}
+
+/// How the host reports a refusal of its own through `try_`: a failed
+/// require_auth, or a deploy with no code under the hash. Both surface as
+/// Error(Context, InvalidAction), never as a factory error code.
+fn host_refusal() -> soroban_sdk::Error {
+    soroban_sdk::Error::from_type_and_code(
+        soroban_sdk::xdr::ScErrorType::Context,
+        soroban_sdk::xdr::ScErrorCode::InvalidAction,
+    )
+}
+
+/// The fee wallet is where every vault sends the flat listing fee at
+/// creation, so repointing it must read back exactly and be admin-only.
+#[test]
+fn admin_can_repoint_the_fee_wallet() {
+    let s = setup();
+    let successor = Address::generate(&s.env);
+    s.factory.update_fee_wallet(&successor);
+    assert_eq!(s.factory.get_fee_wallet(), successor);
+}
+
+/// Neither admin setter accepts another signature. The refusal is
+/// require_auth's, at the host, so it reaches the caller as the host's error
+/// rather than a factory code: NotAuthorized is reserved, never raised.
+#[test]
+fn only_the_admin_can_change_the_vault_code_or_the_fee_wallet() {
+    let s = setup();
+    let intruder = Address::generate(&s.env);
+    let wallet = Address::generate(&s.env);
+    let hash = BytesN::<32>::random(&s.env);
+
+    sign_as(&s, &intruder, "update_fee_wallet", (wallet.clone(),).into_val(&s.env));
+    assert_eq!(
+        s.factory.try_update_fee_wallet(&wallet),
+        Err(Ok(host_refusal()))
+    );
+    assert_eq!(s.factory.get_fee_wallet(), s.fee_wallet, "unchanged");
+
+    sign_as(&s, &intruder, "update_wasm_hash", (hash.clone(),).into_val(&s.env));
+    assert_eq!(
+        s.factory.try_update_wasm_hash(&hash),
+        Err(Ok(host_refusal()))
+    );
+
+    // The admin's own signature still works for both.
+    sign_as(&s, &s.admin, "update_fee_wallet", (wallet.clone(),).into_val(&s.env));
+    s.factory.update_fee_wallet(&wallet);
+    assert_eq!(s.factory.get_fee_wallet(), wallet);
+    sign_as(&s, &s.admin, "update_wasm_hash", (hash.clone(),).into_val(&s.env));
+    s.factory.update_wasm_hash(&hash);
+}
+
 // ── Deployment ─────────────────────────────────────────────────────────────
 //
 // These need the vault compiled to wasm. Run scripts/build-contracts.sh first;
@@ -235,6 +301,8 @@ mod deployment {
         token: TokenClient<'static>,
         builder: Address,
         asset: Address,
+        /// The hash the vault wasm was uploaded under.
+        wasm_hash: BytesN<32>,
     }
 
     fn deploy_setup() -> DeploySetup {
@@ -285,7 +353,7 @@ mod deployment {
         let factory = BlkfndrFactoryClient::new(&env, &factory_id);
         registry.add_factory(&factory_id);
 
-        DeploySetup { env, factory, registry, token, builder, asset: asset.address() }
+        DeploySetup { env, factory, registry, token, builder, asset: asset.address(), wasm_hash }
     }
 
     fn milestones(env: &Env) -> Vec<MilestoneInput> {
@@ -406,6 +474,34 @@ mod deployment {
         assert_eq!(record.builder, s.builder);
         assert_eq!(record.vault, vault_address);
         assert_eq!(s.registry.get_builder_summary(&s.builder), (0, 0, 1));
+    }
+
+    /// How the production factory was moved to new vault code on 2026-10-06.
+    /// There is no getter for the hash, so the proof is what the next deploy
+    /// instantiates: under a hash nothing was uploaded for, create_vault has
+    /// no code to deploy; pointed back at the uploaded vault, it works again.
+    #[test]
+    fn update_wasm_hash_decides_what_the_next_vault_runs() {
+        let s = deploy_setup();
+
+        s.factory.update_wasm_hash(&BytesN::<32>::random(&s.env));
+        assert_eq!(
+            s.factory.try_create_vault(&config(&s)),
+            Err(Ok(host_refusal())),
+            "no code under that hash: the host refuses, not the contract"
+        );
+        assert_eq!(s.factory.get_project_count(), 0, "the failed deploy issued no id");
+        assert_eq!(s.token.balance(&s.builder), 1_000 * UNIT, "and took no bond");
+
+        // Back to the hash the fixture uploaded. A second upload would spend
+        // the test budget re-validating the wasm; the production switch was a
+        // storage write like this one.
+        s.factory.update_wasm_hash(&s.wasm_hash);
+        let vault = s.factory.create_vault(&config(&s));
+        assert!(s.factory.is_vault(&vault));
+        assert_eq!(s.factory.get_vault(&1u64), vault);
+        assert_eq!(vault_wasm::Client::new(&s.env, &vault).get_info().project_id, 1);
+        assert_eq!(s.token.balance(&vault), BOND);
     }
 }
 

@@ -1005,3 +1005,152 @@ fn a_reentrant_token_cannot_take_a_second_monthly_tranche() {
     assert_eq!(evil.balance(&ops), 500);
     assert_eq!(evil.balance(&f.treasury.address), 500);
 }
+
+// ── Reads the app and the keeper poll ────────────────────────────────────────
+//
+// Each read is checked against the write that moves it, so a wrong clock or a
+// wrong reservation would show up here before it showed up on a dashboard.
+
+#[test]
+fn next_release_at_follows_the_last_release_that_carried() {
+    let f = setup();
+    f.env.ledger().with_mut(|l| l.timestamp = 1_000_000);
+    fees_arrive(&f, 1_000);
+    assert_eq!(f.treasury.next_release_at(), 0, "nothing has carried yet");
+
+    // Opening does not start the clock, and neither does lapsing.
+    f.treasury.open_cycle(&f.holders[0], &f.token);
+    assert_eq!(f.treasury.next_release_at(), 0);
+    f.env.ledger().with_mut(|l| l.timestamp += 8 * DAY);
+    f.treasury.settle_lapsed_cycle();
+    assert_eq!(f.treasury.next_release_at(), 0);
+
+    // Carrying does, from the approval that carried it.
+    f.treasury.open_cycle(&f.holders[0], &f.token);
+    f.treasury.approve_cycle(&f.holders[0]);
+    f.env.ledger().with_mut(|l| l.timestamp += DAY);
+    f.treasury.approve_cycle(&f.holders[1]);
+    let carried_at = f.env.ledger().timestamp();
+    assert_eq!(f.treasury.next_release_at(), carried_at + 30 * DAY);
+
+    // open_cycle keeps to the same clock: refused a second early, open on it.
+    fees_arrive(&f, 500);
+    f.env.ledger().with_mut(|l| l.timestamp = carried_at + 30 * DAY - 1);
+    assert_eq!(
+        f.treasury.try_open_cycle(&f.holders[0], &f.token),
+        Err(Ok(Error::ReleaseTooSoon.into()))
+    );
+    f.env.ledger().with_mut(|l| l.timestamp = carried_at + 30 * DAY);
+    f.treasury.open_cycle(&f.holders[0], &f.token);
+    assert_eq!(f.treasury.get_open_cycle().unwrap().amount, 500);
+}
+
+#[test]
+fn get_available_is_the_balance_less_what_payable_cycles_still_owe() {
+    let f = setup();
+    assert_eq!(f.treasury.get_available(&f.token), 0);
+    fees_arrive(&f, 1_000);
+    assert_eq!(f.treasury.get_available(&f.token), 1_000);
+
+    // Opening snapshots the figure; only carrying reserves it.
+    f.treasury.open_cycle(&f.holders[0], &f.token);
+    assert_eq!(f.treasury.get_open_cycle().unwrap().amount, 1_000);
+    assert_eq!(f.treasury.get_available(&f.token), 1_000);
+    f.treasury.approve_cycle(&f.holders[0]);
+    f.treasury.approve_cycle(&f.holders[1]);
+    assert_eq!(f.treasury.get_reserved(&f.token), 1_000);
+    assert_eq!(f.treasury.get_available(&f.token), 0);
+
+    // Fees arriving now are available; claims pay out of the reservation and
+    // leave them alone.
+    fees_arrive(&f, 400);
+    assert_eq!(f.treasury.get_available(&f.token), 400);
+    f.treasury.claim(&f.holders[0], &1); // 500 paid, 500 less reserved
+    assert_eq!(f.treasury.get_reserved(&f.token), 500);
+    assert_eq!(f.treasury.get_available(&f.token), 400);
+    f.treasury.claim(&f.holders[1], &1);
+    f.treasury.claim(&f.holders[2], &1);
+    assert_eq!(f.treasury.get_reserved(&f.token), 0);
+    assert_eq!(f.treasury.get_available(&f.token), 400);
+    assert_eq!(f.treasury.balance_of(&f.token), 400);
+}
+
+#[test]
+fn has_claimed_is_per_shareholder_and_per_cycle() {
+    let f = setup();
+    fees_arrive(&f, 1_000);
+    f.treasury.open_cycle(&f.holders[0], &f.token);
+    f.treasury.approve_cycle(&f.holders[0]);
+    f.treasury.approve_cycle(&f.holders[1]);
+
+    assert!(!f.treasury.has_claimed(&1, &f.holders[0]));
+    f.treasury.claim(&f.holders[0], &1);
+    assert!(f.treasury.has_claimed(&1, &f.holders[0]));
+    assert!(
+        !f.treasury.has_claimed(&1, &f.holders[1]),
+        "each shareholder claims for themselves"
+    );
+    // The flag is what claim checks.
+    assert_eq!(
+        f.treasury.try_claim(&f.holders[0], &1),
+        Err(Ok(Error::AlreadyClaimed.into()))
+    );
+
+    // A later cycle is a fresh claim, and the earlier one stays recorded.
+    f.treasury.claim(&f.holders[1], &1);
+    f.treasury.claim(&f.holders[2], &1);
+    fees_arrive(&f, 600);
+    f.env.ledger().with_mut(|l| l.timestamp += 31 * DAY);
+    f.treasury.open_cycle(&f.holders[0], &f.token);
+    f.treasury.approve_cycle(&f.holders[0]);
+    f.treasury.approve_cycle(&f.holders[1]);
+    assert!(!f.treasury.has_claimed(&2, &f.holders[0]));
+    assert!(f.treasury.has_claimed(&1, &f.holders[0]));
+    f.treasury.claim(&f.holders[0], &2);
+    assert!(f.treasury.has_claimed(&2, &f.holders[0]));
+}
+
+#[test]
+fn ops_funding_terms_and_clock_are_readable() {
+    let f = setup();
+    f.env.ledger().with_mut(|l| l.timestamp = 1_000_000);
+    let ops = Address::generate(&f.env);
+    assert!(f.treasury.get_ops_funding().is_none(), "unset until the owners vote");
+    assert_eq!(f.treasury.next_ops_funding_at(), 0, "never run");
+    assert_eq!(f.treasury.ops_funding_available(), 0);
+
+    fees_arrive(&f, 1_000);
+    set_ops_funding(&f, &ops, 2_000); // 20%
+    let terms = f.treasury.get_ops_funding().expect("the carried vote set the terms");
+    assert_eq!(terms.vault, ops);
+    assert_eq!(terms.token, f.token);
+    assert_eq!(terms.bps, 2_000);
+    // Configuring does not start the clock: the first run is allowed at once.
+    assert_eq!(f.treasury.next_ops_funding_at(), 0);
+    assert_eq!(f.treasury.ops_funding_available(), 200);
+
+    f.treasury.fund_operations();
+    let ran_at = f.env.ledger().timestamp();
+    assert_eq!(f.treasury.next_ops_funding_at(), ran_at + 30 * DAY);
+
+    // Its own clock: a dividend release in between does not move it, and the
+    // release clock does not read it.
+    f.treasury.open_cycle(&f.holders[0], &f.token);
+    f.treasury.approve_cycle(&f.holders[0]);
+    f.env.ledger().with_mut(|l| l.timestamp += 2 * DAY);
+    f.treasury.approve_cycle(&f.holders[1]);
+    assert_eq!(f.treasury.next_ops_funding_at(), ran_at + 30 * DAY);
+    assert_eq!(f.treasury.next_release_at(), ran_at + 32 * DAY);
+
+    // fund_operations keeps to it: refused a second early, runs on it.
+    fees_arrive(&f, 1_000);
+    f.env.ledger().with_mut(|l| l.timestamp = ran_at + 30 * DAY - 1);
+    assert_eq!(
+        f.treasury.try_fund_operations(),
+        Err(Ok(Error::ReleaseTooSoon.into()))
+    );
+    f.env.ledger().with_mut(|l| l.timestamp = ran_at + 30 * DAY);
+    f.treasury.fund_operations();
+    assert_eq!(f.treasury.next_ops_funding_at(), ran_at + 60 * DAY);
+    assert_eq!(f.token_client.balance(&ops), 400, "20% of the unreserved 1_000, twice");
+}

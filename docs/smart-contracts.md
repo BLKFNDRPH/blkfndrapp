@@ -156,7 +156,7 @@ Soroban charges rent. Every contract instance, persistent entry and uploaded was
 
 ## blkfndr-vault
 
-One vault per project. It holds every stake and the builder's performance bond in the same contract, runs the milestone votes that release money, and returns money when a project misses its goal, fails a milestone or is abandoned. **65 tests.**
+One vault per project. It holds every stake and the builder's performance bond in the same contract, runs the milestone votes that release money, and returns money when a project misses its goal, fails a milestone or is abandoned. **69 tests.**
 
 ### Lifecycle
 
@@ -307,7 +307,7 @@ The indexer ([src/lib/event-indexer.ts](../src/lib/event-indexer.ts)) treats eve
 
 ## blkfndr-factory
 
-Deploys vaults and is the single place that decides what code a vault runs and which platform addresses it trusts. It has no role in moving money: it cannot release a tranche, block a refund or touch a vault's balance. **17 tests** (seven of them deploy the compiled vault wasm and skip when it is absent).
+Deploys vaults and is the single place that decides what code a vault runs and which platform addresses it trusts. It has no role in moving money: it cannot release a tranche, block a refund or touch a vault's balance. **20 tests** (eight of them deploy the compiled vault wasm and skip when it is absent).
 
 | Function | Who | Effect |
 |---|---|---|
@@ -362,7 +362,7 @@ Reads: `get_record(vault)`, `has_record(vault)`, `get_builder_vaults(builder)`, 
 
 ## blkfndr-identity
 
-The KYC gate. Named attestors write approvals, and the vault checks the builder's at `initialize`. Contributors are not identity-gated on-chain, so the 20% cap and the three-wallet floor bind addresses, not people. **19 tests.**
+The KYC gate. Named attestors write approvals, and the vault checks the builder's at `initialize`. Contributors are not identity-gated on-chain, so the 20% cap and the three-wallet floor bind addresses, not people. **20 tests.**
 
 KYC attestors sign from **managed, gas-only wallets**: the platform generates the key, keeps it in Supabase Vault and signs `attest` server-side when a human reviewer approves KYC in the console (see [Architecture](architecture.md)). An attestor key can only `attest` and `revoke`, and it never holds project funds. Appointing an attestor stays with the registry admin's own wallet, because that key also carries `transfer_admin`.
 
@@ -407,7 +407,7 @@ Console access does not come from this contract. Since #88 the app asks the `pla
 
 ## blkfndr-treasury
 
-Where the flat listing fees pool, and the governance seat for the platform. Owners vote **two-thirds by headcount** (`APPROVAL 2/3`: two of three, three of four) to distribute the balance to shareholders and to set platform policy. Nobody, including the deployer, can move money on their own signature. **46 tests.**
+Where the flat listing fees pool, and the governance seat for the platform. Owners vote **two-thirds by headcount** (`APPROVAL 2/3`: two of three, three of four) to distribute the balance to shareholders and to set platform policy. Nobody, including the deployer, can move money on their own signature. **50 tests.**
 
 On testnet the register is three owners at 3,334 / 3,333 / 3,333 bps, and the treasury governs factory `CBRUIRJX…`.
 
@@ -515,6 +515,6 @@ cargo test --workspace            # the full test suite
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 
-Run `build-contracts.sh` before `cargo test`. The factory's six deployment tests need the vault compiled to wasm and skip themselves when it is absent. On 2026-10-03 the suite passed in full: vault 52, treasury 45, operations 25, factory 15, identity 15, attestation 14, admin 9.
+Run `build-contracts.sh` before `cargo test`. The factory's eight deployment tests need the vault compiled to wasm and skip themselves when it is absent. On 2026-10-20 the suite passed in full, 211 tests: vault 69, treasury 50, operations 27, factory 20, identity 20, attestation 16, admin 9; without the wasm build the deployment tests give way to one marker test and the total is 204.
 
 To check a vault, build on the same paths as the build you compare against (see [The vault wasm hash](#the-vault-wasm-hash)), or fetch the deployed code with `stellar contract fetch --wasm-hash <hash>` and compare that directly.

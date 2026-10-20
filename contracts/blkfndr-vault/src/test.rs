@@ -1900,3 +1900,82 @@ fn a_reentrant_attestation_registry_cannot_return_the_bond_twice() {
     assert_eq!(token.balance(&builder), BOND, "bond returned once");
     assert_eq!(token.balance(&vault.address), BOND);
 }
+
+// ── settle and return_bond refusals ────────────────────────────────────────
+
+/// settle is permissionless and idempotent. Before the deadline it reports
+/// Raising and does nothing: no record, no money moved, the raise still open.
+#[test]
+fn settle_before_the_deadline_reports_raising_and_changes_nothing() {
+    let s = setup();
+    s.vault.contribute(&s.alice, &(100 * UNIT));
+
+    advance(&s.env, DEADLINE - 1);
+    assert_eq!(s.vault.try_settle(), Ok(Ok(VaultState::Raising)));
+    assert!(!s.registry.has_record(&s.vault_address), "nothing to attest yet");
+    assert_eq!(s.vault.get_state(), VaultState::Raising);
+    assert_eq!(s.token.balance(&s.vault_address), BOND + 100 * UNIT);
+    assert_eq!(s.token.balance(&s.builder), 0);
+
+    // Still raising: the next backer is accepted, and the bond is still staked.
+    s.vault.contribute(&s.bob, &(100 * UNIT));
+    assert_eq!(s.vault.try_return_bond(), Err(Ok(Error::InvalidStatus.into())));
+}
+
+/// The one refusal settle defines: a vault that was never initialized has no
+/// state to settle and no bond to return.
+#[test]
+fn settle_and_return_bond_refuse_a_vault_that_was_never_initialized() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let vault = BlkfndrVaultClient::new(&env, &env.register(BlkfndrVault, ()));
+
+    assert_eq!(vault.try_settle(), Err(Ok(Error::NotInitialized.into())));
+    assert_eq!(vault.try_return_bond(), Err(Ok(Error::NotInitialized.into())));
+}
+
+/// return_bond pays once. A second call after the bond went back is refused,
+/// and the builder is not paid twice.
+#[test]
+fn return_bond_is_refused_once_the_bond_has_gone_back() {
+    let s = setup();
+    s.vault.contribute(&s.alice, &(100 * UNIT));
+
+    advance(&s.env, DEADLINE + 1);
+    s.vault.return_bond();
+    assert!(s.vault.get_info().bond_returned);
+    assert_eq!(s.token.balance(&s.builder), BOND);
+
+    assert_eq!(s.vault.try_return_bond(), Err(Ok(Error::NoFundsToRefund.into())));
+    assert_eq!(s.token.balance(&s.builder), BOND);
+    // Alice's principal is untouched and still hers to claim.
+    assert_eq!(s.token.balance(&s.vault_address), 100 * UNIT);
+    s.vault.claim_refund(&s.alice);
+    assert_eq!(s.token.balance(&s.alice), 1_000 * UNIT);
+}
+
+/// A forfeited bond belongs to the contributors. The vault is Refunding, not
+/// Failed, so return_bond is refused on status before it looks at the bond:
+/// before the contributors have taken it and after.
+#[test]
+fn return_bond_is_refused_once_the_bond_is_forfeited() {
+    let s = setup();
+    fund_evenly(&s);
+    s.vault.open_milestone_vote(&1u32);
+    advance(&s.env, VOTING_WINDOW + 1);
+    s.vault.settle_lapsed_milestone(&1u32);
+    assert_eq!(s.vault.get_state(), VaultState::Refunding);
+    assert_eq!(s.token.balance(&s.vault_address), GOAL + BOND);
+
+    assert_eq!(s.vault.try_return_bond(), Err(Ok(Error::InvalidStatus.into())));
+    assert_eq!(s.token.balance(&s.builder), 0);
+
+    s.vault.claim_refund(&s.alice);
+    s.vault.claim_refund(&s.bob);
+    s.vault.claim_refund(&s.carol);
+    assert_eq!(s.token.balance(&s.vault_address), 0);
+    assert!(s.vault.get_info().bond_returned, "the last claimant took the forfeit");
+
+    assert_eq!(s.vault.try_return_bond(), Err(Ok(Error::InvalidStatus.into())));
+    assert_eq!(s.token.balance(&s.builder), 0);
+}
