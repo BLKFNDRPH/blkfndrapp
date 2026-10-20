@@ -1,6 +1,6 @@
 # Contribution, Threshold-Release & Attestation Flow
 
-Evidence for the deliverable, as of 2026-10-13. Everything below is on Stellar testnet. Project A completed on 2026-10-06. Project B's 7-day voting window closed at 2026-10-13 14:14:52 UTC, and it was [settled and refunded](#project-b-the-finish-2026-10-13) at 14:17 UTC.
+Evidence for the deliverable, as of 2026-10-20. Everything below is on Stellar testnet. Project A completed on 2026-10-06. Project B's 7-day voting window closed at 2026-10-13 14:14:52 UTC, and it was [settled and refunded](#project-b-the-finish-2026-10-13) at 14:17 UTC. Project C [missed its goal](#project-c-misses-its-goal-2026-10-20) on 2026-10-20: an unrelated account settled it, both backers got their whole principal back, and the bond went back to the builder.
 
 ## The deliverable
 
@@ -28,7 +28,7 @@ The $5 USDC contribution path into the vault; milestone release gated by an on-c
 - No entrypoint exists to update or delete a record.
 - Any Soroban contract can read a builder's history by cross-contract call, and any app or indexer can read the events through Soroban RPC.
 
-**Deployed on Stellar testnet, open source** (MIT, [BLKFNDRPH/blkfndrapp](https://github.com/BLKFNDRPH/blkfndrapp)), **with test transactions** for deposit, threshold approval, milestone release, refund, bond forfeiture and attestation.
+**Deployed on Stellar testnet, open source** (MIT, [BLKFNDRPH/blkfndrapp](https://github.com/BLKFNDRPH/blkfndrapp)), **with test transactions** for deposit, threshold approval, milestone release, refund, bond forfeiture, a missed goal with the bond returned, and attestation.
 
 ### Wording changes from the original text
 
@@ -36,7 +36,7 @@ The $5 USDC contribution path into the vault; milestone release gated by an on-c
 |---|---|---|
 | "with a more-than-50% approval threshold, release mathematically requires at least three distinct wallets" | Three wallets is an explicit rule, or every contributor when fewer than three backed the project. A majority of the money is required too | The arithmetic argument measures 50% against the whole raise. Measured that way, a project with one or two backers, or a concentrated raise, can never release, and its builder forfeits the bond even when every backer approves. So the bar is measured against the capped total. The wallet rule and the money majority stop that lower bar from letting a few wallets decide |
 | "keyed by builder address" | Keyed by vault address, indexed by builder | Project IDs restart in every factory, so only the vault address cannot collide. Reads by builder are unaffected |
-| "completed or failed-with-forfeiture" | Also `FailedToFund` | A raise that misses its goal returns the bond. It is recorded, but not as a default |
+| "completed or failed-with-forfeiture" | Also `FailedToFund` | A raise that misses its goal returns the bond. It is recorded, but not as a default. Project C shows it on testnet |
 | "the permissionless refund path" | Anyone can settle a lapsed milestone. Each contributor claims their own refund with their own signature | No builder, admin or platform approval is involved at any step |
 
 ## Where to check it
@@ -55,6 +55,7 @@ A standalone set, deployed on 2026-10-06 by `GCNNVIOAMIV4AUPFLF7YNX5IVHVUYXJDOI7
 | Admin roster | [`CAT4WDHO4SE3OVJIJU6RHNFIMDKHWIJCZCKQFMZ5E7YA32KOPIMH6JXR`](https://stellar.expert/explorer/testnet/contract/CAT4WDHO4SE3OVJIJU6RHNFIMDKHWIJCZCKQFMZ5E7YA32KOPIMH6JXR) |
 | Project A vault | [`CBAISZEGETRWTXFW7OXBI37UYX3DMK6WVXDCRBKKJX3TRGLRDCB4UUIW`](https://stellar.expert/explorer/testnet/contract/CBAISZEGETRWTXFW7OXBI37UYX3DMK6WVXDCRBKKJX3TRGLRDCB4UUIW) |
 | Project B vault | [`CDMJTHJKT4UNBPU4UMMAPFWKRF2IM7EDCIGJP76GODMX6FIGYBC6WOHL`](https://stellar.expert/explorer/testnet/contract/CDMJTHJKT4UNBPU4UMMAPFWKRF2IM7EDCIGJP76GODMX6FIGYBC6WOHL) |
+| Project C vault | [`CCKLRTWFBHC5C5HOUI33VDHDXQGFHMTAXA3NEJTMJDCXF74HEN4HV2MY`](https://stellar.expert/explorer/testnet/contract/CCKLRTWFBHC5C5HOUI33VDHDXQGFHMTAXA3NEJTMJDCXF74HEN4HV2MY) |
 
 Each wasm was fetched back from testnet (`stellar contract fetch`) and hashed. Every one matches the local build:
 
@@ -114,9 +115,12 @@ Line numbers are for commit `5df0bb7`.
 | Fixed 7-day window, set at creation | Factory constructor, copied into the vault by `create_vault`; [`open_milestone_vote`](../../contracts/blkfndr-vault/src/lib.rs#L821) | `votes_are_rejected_before_the_window_opens_and_after_it_closes`, `only_the_builder_opens_a_window_and_only_once` | The factory reads 604,800 s. Project B milestone 2 opened 2026-10-06 14:14:52 UTC |
 | Fails closed | [`settle_lapsed_milestone`](../../contracts/blkfndr-vault/src/lib.rs#L1022) | `a_window_that_closes_below_threshold_fails_the_milestone`, `silence_never_releases_funds`, `a_lapsed_window_cannot_be_settled_early` | Settling early refused, `#22`. After the window, the unrelated caller settled milestone 2 with one approval behind it: [`968e1ad8…`](https://stellar.expert/explorer/testnet/tx/968e1ad8b7156173cc2c6635aa59072ee26f56a15b79ee8b5d7d9172592afbc1). Milestone failed, vault refunding, bond slashed, in one transaction |
 | Pro-rata refund and bond forfeiture | [`claim_refund`](../../contracts/blkfndr-vault/src/lib.rs#L1167) | `forfeited_bond_is_distributed_pro_rata_with_the_remaining_balance`, `a_backer_claims_once` | c1–c5 each received exactly 2.5 USDC (2 remaining + 0.5 forfeited bond), each with their own signature. The vault ended at 0 |
-| Attestation written once, at close | [`write_attestation`](../../contracts/blkfndr-vault/src/lib.rs#L517) and [`attest`](../../contracts/blkfndr-attestation/src/lib.rs#L238) | `completion_writes_a_permanent_builder_record`, `forfeiture_writes_a_record_against_the_builder`, `a_record_cannot_be_overwritten`, `a_projects_record_is_written_once_and_never_amended` | Project A's closing release [`99e01fee…`](https://stellar.expert/explorer/testnet/tx/99e01fee822412e1c7790ec3d80d7b1d8eedea7b2648efd90d90543125e7bf93) (`Completed`). Project B's settle [`968e1ad8…`](https://stellar.expert/explorer/testnet/tx/968e1ad8b7156173cc2c6635aa59072ee26f56a15b79ee8b5d7d9172592afbc1) (`FailedWithForfeiture`, 1 of 2 milestones approved) |
+| All-or-nothing refund when the goal is missed | `claim_refund` in `Failed`: the whole principal, and the last claimant never sweeps the bond | `an_unfunded_project_returns_principal_and_the_builders_bond`, `a_backer_claims_once` | Project C: c1 and c2 each got exactly 5 USDC back, each with their own signature. A second claim was refused, `#9`. After the last claim the vault still held the 1 USDC bond |
+| Bond returned after a missed goal, by anyone | [`return_bond`](../../contracts/blkfndr-vault/src/lib.rs#L784) | `an_unfunded_project_returns_principal_and_the_builders_bond` | Project C: sent by the unrelated caller, [`97f5c650…`](https://stellar.expert/explorer/testnet/tx/97f5c650b2e0ec76f1a2c6ac24b6d4aec389a1a1ecb4fc05bdc8d55d02017970). The builder ended down only the 1 USDC flat fee. A second call was refused, `#9` |
+| A missed goal is recorded without blaming the builder | [`settle`](../../contracts/blkfndr-vault/src/lib.rs#L767) writes `FailedToFund` | `failing_to_fund_is_recorded_without_blaming_the_builder` | Project C: [`56785fa8…`](https://stellar.expert/explorer/testnet/tx/56785fa811fd00f968d3b16fdd733f3d2bc2e072dc56ee362780a2a8cd8eb206). The builder's summary reads `[1, 1, 1]` |
+| Attestation written once, at close | [`write_attestation`](../../contracts/blkfndr-vault/src/lib.rs#L517) and [`attest`](../../contracts/blkfndr-attestation/src/lib.rs#L238) | `completion_writes_a_permanent_builder_record`, `forfeiture_writes_a_record_against_the_builder`, `a_record_cannot_be_overwritten`, `a_projects_record_is_written_once_and_never_amended` | Project A's closing release [`99e01fee…`](https://stellar.expert/explorer/testnet/tx/99e01fee822412e1c7790ec3d80d7b1d8eedea7b2648efd90d90543125e7bf93) (`Completed`). Project B's settle [`968e1ad8…`](https://stellar.expert/explorer/testnet/tx/968e1ad8b7156173cc2c6635aa59072ee26f56a15b79ee8b5d7d9172592afbc1) (`FailedWithForfeiture`, 1 of 2 milestones approved). Project C's settle [`56785fa8…`](https://stellar.expert/explorer/testnet/tx/56785fa811fd00f968d3b16fdd733f3d2bc2e072dc56ee362780a2a8cd8eb206) (`FailedToFund`, 0 of 2) |
 | No update or delete entrypoint | The registry's whole on-chain interface: `__constructor`, `add_factory`, `disable_factory`, `transfer_admin`, `attest`, `get_record`, `has_record`, `get_builder_vaults`, `get_builder_history`, `get_builder_summary`, `get_factories`, `get_admin`, `is_factory_trusted` | `a_record_cannot_be_overwritten` | `stellar contract info interface --id CDKERKLK… --network testnet` |
-| Emitted as an event, filterable by builder | [`attest`](../../contracts/blkfndr-attestation/src/lib.rs#L315) | `a_record_is_emitted_as_an_event_filterable_by_builder` | `getEvents` filtered on topics `(ATTEST, RECORDED, builder)` returned the event from `99e01fee…`, and Project B's from `968e1ad8…` |
+| Emitted as an event, filterable by builder | [`attest`](../../contracts/blkfndr-attestation/src/lib.rs#L315) | `a_record_is_emitted_as_an_event_filterable_by_builder` | `getEvents` filtered on topics `(ATTEST, RECORDED, builder)` returned the event from `99e01fee…`, Project B's from `968e1ad8…`, and Project C's from `56785fa8…` |
 | Readable by any contract | [`get_builder_history`](../../contracts/blkfndr-attestation/src/lib.rs#L358), [`get_builder_summary`](../../contracts/blkfndr-attestation/src/lib.rs#L384) | `another_contract_can_gate_on_a_builders_record`: a separate grant-programme contract reads the record by cross-contract call and gates on it | — |
 
 Test suite at `5df0bb7`: 56 vault, 16 attestation, 15 factory, and 181 across the workspace, all passing, with `cargo clippy --workspace --all-targets -- -D warnings` clean.
@@ -226,6 +230,58 @@ Each refund is 5/25 of the 10 USDC left after milestone 1, plus 5/25 of the 2.5 
 | A (1) | `CBAISZEG…` | 0, `Completed` | 30 USDC | 3 USDC | 2 of 2 |
 | B (2) | `CDMJTHJK…` | 1, `FailedWithForfeiture` | 25 USDC | 2.5 USDC | 1 of 2 |
 
+### Project C: misses its goal (2026-10-20)
+
+The same builder. Goal 20 USDC in milestones of 12 and 8, with a 1 USDC bond, and a raise open for five minutes (`--raise-secs 300`) so the deadline could pass within one sitting. c1 and c2 put in 5 USDC each, so the raise closed at 10 of 20. `bash scripts/reference-scenario.sh project-c-start` ran at 09:23 UTC and `project-c-finish` at 09:29 UTC. Every check in the script passed.
+
+| Step | Transaction |
+|---|---|
+| Send 2.5 USDC to c1 and to c2, so each holds the 5 USDC minimum | [`a47d5bdf…`](https://stellar.expert/explorer/testnet/tx/a47d5bdfbb9d08ae03103908332e564efba49d399462aefe7b2451416ffdd897), [`5be9d790…`](https://stellar.expert/explorer/testnet/tx/5be9d7906496b31c9c50cd1554d4b2d63ef06c7dfcaf3fc7f3803c4da2cdd2bf) |
+| Create vault, lock 1 USDC bond, pay 1 USDC flat fee; the raise closes at 09:28:50 UTC | [`a54757a7…`](https://stellar.expert/explorer/testnet/tx/a54757a7a31859d38424661513dfee5a37f2ce497762fc0833e09c109285820c) |
+| Deposit 5 USDC (c1) | [`9b89dd3f…`](https://stellar.expert/explorer/testnet/tx/9b89dd3f60828d0c01e91440ec5088f95a0e458579c4b98d721e156634887d04) |
+| Deposit of 16 USDC, which would take the raise past its goal | Refused in simulation, `Error(Contract, #5)` GoalAlreadyReached |
+| Deposit 5 USDC (c2); 10 of 20 raised | [`4d9f2fe0…`](https://stellar.expert/explorer/testnet/tx/4d9f2fe06958bc4863a39acdf606c2f84895a3b89c0c217ce3b01a88a0905aa1) |
+| `return_bond` while the raise is open | Refused in simulation, `Error(Contract, #2)` InvalidStatus |
+| `claim_refund` (c1) while the raise is open | Refused in simulation, `Error(Contract, #2)` InvalidStatus |
+
+**After the deadline.** Before anyone touched the vault, `get_state` already read `Failed`. The transition is lazy, so nobody has to act for the vault to start refusing deposits.
+
+| Step | Transaction |
+|---|---|
+| Settle the missed goal, sent by the unrelated caller. `Failed` persisted and `FailedToFund` recorded, in one transaction | [`56785fa8…`](https://stellar.expert/explorer/testnet/tx/56785fa811fd00f968d3b16fdd733f3d2bc2e072dc56ee362780a2a8cd8eb206) |
+| Deposit 5 USDC after the deadline | Refused in simulation, `Error(Contract, #2)` InvalidStatus. The state check runs before the deadline check, so a late deposit never reaches `#7` |
+| Refund c1: 5 USDC, the whole principal, with c1's own signature | [`46c3287b…`](https://stellar.expert/explorer/testnet/tx/46c3287b585b44a471c686a188389ef48dd6666e650239873fd4f5d7fd016802) |
+| Refund c2: 5 USDC, the last claimant | [`09460e24…`](https://stellar.expert/explorer/testnet/tx/09460e248141b9512fd63ba991445691d6273a1ef8af22a7a8f2431bcab40b6b) |
+| c1 claims a second time | Refused in simulation, `Error(Contract, #9)` NoFundsToRefund |
+| Return the 1 USDC bond to the builder, sent by the unrelated caller | [`97f5c650…`](https://stellar.expert/explorer/testnet/tx/97f5c650b2e0ec76f1a2c6ac24b6d4aec389a1a1ecb4fc05bdc8d55d02017970) |
+| `return_bond` a second time | Refused in simulation, `Error(Contract, #9)` NoFundsToRefund |
+
+The script read each balance before and after:
+- c1 and c2 each went up by exactly 50,000,000 base units (5 USDC). Nothing was ever released, so the principal came back whole.
+- After the last refund the vault still held the 1 USDC bond. The last claimant's sweep applies only to a forfeited bond, never to one the builder is owed.
+- The builder got the bond back and ended 1 USDC down: the flat fee, nothing else.
+- The vault ended at 0.
+
+**The attestation.**
+- `getEvents` filtered on `(ATTEST, RECORDED, <builder>)` returned the event from `56785fa8…`, at ledger 5,292,993.
+- The registry reads:
+
+```json
+{"bond_posted":"10000000","builder":"GBOAWDAGAXHTQYHEPWLBHNVMKBOGZOLUAYONBTSWYTBB6PHF332YSQLO",
+ "closed_at":1792488552,"milestones_approved":0,"milestones_total":2,"outcome":2,
+ "project_id":3,"total_raised":"100000000","vault":"CCKLRTWFBHC5C5HOUI33VDHDXQGFHMTAXA3NEJTMJDCXF74HEN4HV2MY"}
+```
+
+`outcome` 2 is `FailedToFund`, and `closed_at` is 2026-10-20 09:29:12 UTC.
+- `get_builder_summary` reads **`[1, 1, 1]`**: one completed, one forfeited, one unfunded.
+- `get_builder_history` returns all three records:
+
+| Project | Vault | Outcome | Raised | Bond | Milestones approved |
+|---|---|---|---|---|---|
+| A (1) | `CBAISZEG…` | 0, `Completed` | 30 USDC | 3 USDC | 2 of 2 |
+| B (2) | `CDMJTHJK…` | 1, `FailedWithForfeiture` | 25 USDC | 2.5 USDC | 1 of 2 |
+| C (3) | `CCKLRTWF…` | 2, `FailedToFund` | 10 USDC | 1 USDC | 0 of 2 |
+
 ## Rerun it
 
 ```bash
@@ -238,6 +294,9 @@ bash scripts/reference-scenario.sh project-a
 bash scripts/reference-scenario.sh project-b-start
 # seven days later
 bash scripts/reference-scenario.sh project-b-finish
+bash scripts/reference-scenario.sh project-c-start   # the raise stays open 300 s (--raise-secs)
+# five minutes later
+bash scripts/reference-scenario.sh project-c-finish
 ```
 
 A rerun deploys new contracts and writes over the files in `deployments/testnet-reference/`, so run it in a fresh clone. The wasm hash depends on the build machine's cargo-registry path, so compare a deployed contract against a build made on the same paths, or against the hash the chain reports.

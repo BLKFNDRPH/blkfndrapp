@@ -46,3 +46,18 @@ utc	step	transaction
 2026-10-13T14:17:44Z	B: refund c3 (2 USDC remaining + 0.5 USDC forfeited bond)	52dbf45f21d869f9171caddf6238751eb8106c9571a09f8ab9be64e347b070c8
 2026-10-13T14:17:58Z	B: refund c4 (2 USDC remaining + 0.5 USDC forfeited bond)	337e6fb6ab053de37a90a71789916281f61bad9ea3eb3b880be26256640d137c
 2026-10-13T14:18:09Z	B: refund c5 (2 USDC remaining + 0.5 USDC forfeited bond)	238aaac78e74929e862106d3f782dee1746a398c12c6406a9e78ffcaf2fb5fb4
+2026-10-20T09:23:42Z	C: top up c1 to 5 USDC from ba-escrow-deployer	a47d5bdfbb9d08ae03103908332e564efba49d399462aefe7b2451416ffdd897
+2026-10-20T09:23:49Z	C: top up c2 to 5 USDC from ba-escrow-deployer	5be9d7906496b31c9c50cd1554d4b2d63ef06c7dfcaf3fc7f3803c4da2cdd2bf
+2026-10-20T09:24:13Z	C: create vault, lock 1 USDC bond, pay 1 USDC flat fee; raise closes in 300 s	a54757a7a31859d38424661513dfee5a37f2ce497762fc0833e09c109285820c
+2026-10-20T09:24:24Z	C: deposit 5 USDC (c1)	9b89dd3f60828d0c01e91440ec5088f95a0e458579c4b98d721e156634887d04
+2026-10-20T09:24:25Z	C: deposit of 16 USDC refused: 5 + 16 passes the 20 USDC goal (GoalAlreadyReached)	refused in simulation: Error(Contract, #5)
+2026-10-20T09:24:40Z	C: deposit 5 USDC (c2)	4d9f2fe06958bc4863a39acdf606c2f84895a3b89c0c217ce3b01a88a0905aa1
+2026-10-20T09:24:43Z	C: return_bond while the raise is open refused (InvalidStatus)	refused in simulation: Error(Contract, #2)
+2026-10-20T09:24:44Z	C: claim_refund while the raise is open refused (InvalidStatus)	refused in simulation: Error(Contract, #2)
+2026-10-20T09:29:12Z	C: settle the missed goal, by an unrelated account (attestation written)	56785fa811fd00f968d3b16fdd733f3d2bc2e072dc56ee362780a2a8cd8eb206
+2026-10-20T09:31:17Z	C: deposit after the deadline refused (InvalidStatus: the vault already reads Failed)	refused in simulation: Error(Contract, #2)
+2026-10-20T09:31:23Z	C: refund c1, 5 USDC principal, with c1's own signature	46c3287b585b44a471c686a188389ef48dd6666e650239873fd4f5d7fd016802
+2026-10-20T09:31:39Z	C: refund c2, 5 USDC principal, with c2's own signature	09460e248141b9512fd63ba991445691d6273a1ef8af22a7a8f2431bcab40b6b
+2026-10-20T09:31:41Z	C: c1 claims a second time refused (NoFundsToRefund)	refused in simulation: Error(Contract, #9)
+2026-10-20T09:31:47Z	C: return the 1 USDC bond to the builder, by an unrelated account	97f5c650b2e0ec76f1a2c6ac24b6d4aec389a1a1ecb4fc05bdc8d55d02017970
+2026-10-20T09:31:49Z	C: return_bond a second time refused (NoFundsToRefund)	refused in simulation: Error(Contract, #9)
