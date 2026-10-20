@@ -11,6 +11,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON \"src/**/*.test.ts\"",
+    "test:coverage": "node scripts/test-coverage.mjs",
     "perf:baseline": "node scripts/perf-baseline.mjs",
     "audit:gate": "node scripts/audit-gate.mjs",
     "test:authz": "node scripts/authz-check.mjs",
