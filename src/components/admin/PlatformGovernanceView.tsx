@@ -17,6 +17,7 @@ import { FACTORY_ID, IDENTITY_ID } from "@/lib/stellar-clients";
 import { TreasuryGovernancePanel } from "./TreasuryGovernancePanel";
 import { OperationsVaultPanel } from "./OperationsVaultPanel";
 import { shortenAddress } from "@/lib/utils";
+import { CURRENCIES } from "@/lib/currencies";
 
 /**
  * Platform policy, changed by vote rather than by one signature.
@@ -35,7 +36,9 @@ import { shortenAddress } from "@/lib/utils";
  * says so rather than letting a carried vote fail at the last step with a raw
  * error.
  */
-const XLM = 10_000_000;
+
+/** Stellar assets carry 7 decimal places, whichever token a vault holds. */
+const UNIT = 10_000_000;
 
 export function PlatformGovernanceView() {
   const { platformInfo } = usePlatformInfo();
@@ -62,9 +65,10 @@ export function PlatformGovernanceView() {
   );
   const handoverKnown = factoryAdmin !== null;
 
-  // The fee is a flat amount in stroops; the bond is basis points. Presented
-  // as what each actually is.
-  const feeXlm = platformInfo ? Number(platformInfo.platformFeeStroops) / XLM : null;
+  // The fee is a flat amount in base units of whatever token the project
+  // raises in (the vault moves it from the builder in its own token); the bond
+  // is basis points. Presented as what each actually is.
+  const feeUnits = platformInfo ? Number(platformInfo.platformFeeStroops) / UNIT : null;
   const bondPct =
     platformInfo?.bondPercentage != null
       ? Number(platformInfo.bondPercentage) / 100
@@ -92,14 +96,14 @@ export function PlatformGovernanceView() {
                 Listing fee
               </p>
               <p className="text-xl font-semibold">
-                {feeXlm === null ? "—" : feeXlm.toLocaleString(undefined, { maximumFractionDigits: 7 })}
+                {feeUnits === null ? "—" : feeUnits.toLocaleString(undefined, { maximumFractionDigits: 7 })}
                 <span className="ml-1 text-xs font-normal text-muted-foreground">
-                  XLM flat
+                  {CURRENCIES.join(" or ")}, flat
                 </span>
               </p>
               <p className="text-xs text-muted-foreground">
-                A flat amount, charged once per listing. Never a percentage of
-                what a project raises.
+                A flat amount in the project&apos;s own token, charged once per
+                listing. Never a percentage of what a project raises.
               </p>
             </div>
             <div className="rounded-lg border p-3">

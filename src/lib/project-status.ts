@@ -235,6 +235,21 @@ export function describeDeadline(
   return { label: "Ends today", passed: false };
 }
 
+/**
+ * "31 Dec" for a deadline this calendar year, "31 Dec 2027" for any other.
+ * The year is only noise while it is this one, but without it a deadline
+ * fourteen months out read as a near one ("Ends 31 Dec (445 days)").
+ */
+export function formatDeadlineDate(deadlineMs: number, now: number = Date.now()): string {
+  const date = new Date(deadlineMs);
+  const sameYear = date.getFullYear() === new Date(now).getFullYear();
+  return date.toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    ...(sameYear ? {} : { year: "numeric" }),
+  });
+}
+
 /** Tailwind classes per tone, so every pill looks the same everywhere. */
 export const TONE_CLASSES: Record<StatusTone, string> = {
   open: "bg-emerald-500/15 text-emerald-700 border-emerald-500/30 dark:text-emerald-300",

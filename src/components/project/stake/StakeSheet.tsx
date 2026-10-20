@@ -30,7 +30,7 @@ import {
   describeRateAge,
 } from "@/lib/money";
 import { useXlmRate } from "@/lib/xlm-rate";
-import { describeDeadline } from "@/lib/project-status";
+import { describeDeadline, formatDeadlineDate } from "@/lib/project-status";
 import { EXPLORER_BASE, EXPLORER_EXPLAINER, IS_PRACTICE_NETWORK } from "@/lib/network";
 import { explainError, type Outcome, type OutcomeIntent } from "@/lib/explain-error";
 import { readWalletReadiness, type WalletReadiness } from "@/lib/wallet-readiness";
@@ -78,9 +78,6 @@ const DOLLAR_PRESETS = [5, 25, 100];
 const XLM_PRESETS = [100, 500, 2000];
 /** Offer "the remainder" as a preset when less than this is left. */
 const REMAINDER_PRESET_BELOW = 500n * 10_000_000n;
-
-const shortDate = (ms: number) =>
-  new Date(ms).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 
 function termsFromListing(project: Project): VaultTerms {
   return {
@@ -258,7 +255,7 @@ export function StakeSheet({ project, onClose }: { project: Project; onClose: ()
     minimum: display(minRaw),
     remaining: plain(remainingRaw),
     remainingStakeable: remainingRaw >= minRaw && remainingRaw > 0n,
-    deadline: terms.deadlineMs ? shortDate(terms.deadlineMs) : undefined,
+    deadline: terms.deadlineMs ? formatDeadlineDate(terms.deadlineMs, now) : undefined,
   };
 
   const prepare = async (raw: bigint) => {
@@ -410,7 +407,7 @@ export function StakeSheet({ project, onClose }: { project: Project; onClose: ()
             ? `the builder opens a vote when Stage 1 is done. You'll see it on this project's Stages tab.`
             : "you'll see every vote on this project's Stages tab."}{" "}
           If the goal isn&apos;t met
-          {terms.deadlineMs ? ` by ${shortDate(terms.deadlineMs)}` : " by the deadline"}, you collect
+          {terms.deadlineMs ? ` by ${formatDeadlineDate(terms.deadlineMs, now)}` : " by the deadline"}, you collect
           this back.
         </p>
         {step.hash && (
@@ -494,7 +491,7 @@ export function StakeSheet({ project, onClose }: { project: Project; onClose: ()
 
   // ── The form ────────────────────────────────────────────────────────────
   const summaryRaw = amountValid ? amountRaw! : null;
-  const deadlineText = terms.deadlineMs ? shortDate(terms.deadlineMs) : "the deadline";
+  const deadlineText = terms.deadlineMs ? formatDeadlineDate(terms.deadlineMs, now) : "the deadline";
 
   return (
     <section aria-label="Stake" className="w-full space-y-4 rounded-xl border border-border bg-card p-4 text-left">
