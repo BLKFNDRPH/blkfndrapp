@@ -91,7 +91,7 @@ The keep-alive keeps the previous factory and attestation registry alive for as 
 
 ### Reference deployment
 
-A second, standalone set runs the current source, except that its factory predates the starting project id. It was deployed on 2026-10-06 with `scripts/deploy-contracts.sh`, the first live run of the #75 constructor deploy order. The app and its indexer do not use it, and it shares nothing with the sets above. Every on-chain wasm hash-matches a local build. Test transactions for deposits, threshold approval, release, refunds, bond forfeiture and attestation are recorded in [the deliverable evidence](deliverables/contribution-threshold-attestation.md).
+A second, standalone set runs the current source, except that its factory predates the starting project id. It was deployed on 2026-10-06 with `scripts/deploy-contracts.sh`, the first live run of the #75 constructor deploy order. The app and its indexer do not use it, and it shares nothing with the sets above. Every on-chain wasm hash-matches a local build. Test transactions for deposits, threshold approval, release, refunds, bond forfeiture, a missed goal with the bond returned, and attestation are recorded in [the deliverable evidence](deliverables/contribution-threshold-attestation.md).
 
 | Contract | Address |
 |---|---|

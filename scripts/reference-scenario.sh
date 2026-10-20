@@ -21,9 +21,19 @@
 #                    settles the lapse, the bond is forfeited, every backer
 #                    reclaims their pro-rata share, and the attestation reads
 #                    FailedWithForfeiture.
+#   project-c-start  A project that misses its goal: a short raise (default
+#                    five minutes, --raise-secs) with two deposits of 5 USDC
+#                    against a 20 USDC goal, an overshooting deposit refused,
+#                    and refunds and the bond return refused while the raise
+#                    is still open.
+#   project-c-finish Run once the raise has closed: anyone settles it, each
+#                    backer reclaims their whole principal, the last claimant
+#                    leaves the bond alone, anyone returns the bond to the
+#                    builder, and the attestation reads FailedToFund.
 #
 # Usage:
 #   scripts/reference-scenario.sh <step> [--network testnet] [--funder <identity>]
+#                                        [--raise-secs <n>]
 #
 # Requires the Stellar CLI, the contracts in deployments/testnet-reference/
 # contracts.env (written by scripts/deploy-contracts.sh --out), and a funder
@@ -40,12 +50,14 @@ shift || true
 NETWORK="testnet"
 FUNDER="ba-escrow-deployer"
 DEPLOYER="ref-deployer"
+RAISE_SECS=300 # how long Project C's raise stays open
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --network)  NETWORK="$2"; shift 2 ;;
-    --funder)   FUNDER="$2"; shift 2 ;;
-    --deployer) DEPLOYER="$2"; shift 2 ;;
+    --network)    NETWORK="$2"; shift 2 ;;
+    --funder)     FUNDER="$2"; shift 2 ;;
+    --deployer)   DEPLOYER="$2"; shift 2 ;;
+    --raise-secs) RAISE_SECS="$2"; shift 2 ;;
     *) echo "Unknown option: $1" >&2; exit 1 ;;
   esac
 done
@@ -68,16 +80,22 @@ ATTESTATION="${NEXT_PUBLIC_BLKFNDR_ATTESTATION_CONTRACT_ID}"
 IDENTITY="${NEXT_PUBLIC_BLKFNDR_IDENTITY_CONTRACT_ID}"
 
 # Contract error codes this run expects to see.
+ERR_INVALID_STATUS=2
+ERR_GOAL_ALREADY_REACHED=5
+ERR_NO_FUNDS_TO_REFUND=9
 ERR_THRESHOLD_NOT_MET=20
 ERR_VOTING_WINDOW_NOT_ELAPSED=22
 ERR_BELOW_MINIMUM_CONTRIBUTION=24
 
 # VaultState and Outcome are integer enums, so the CLI prints their values.
+STATE_RAISING=0
 STATE_FUNDED=1
+STATE_FAILED=3
 STATE_REFUNDING=4
 STATE_COMPLETED=5
 OUTCOME_COMPLETED=0
 OUTCOME_FAILED_WITH_FORFEITURE=1
+OUTCOME_FAILED_TO_FUND=2
 
 # ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -216,7 +234,7 @@ setup() {
 
 create_vault() {
   local label="$1" goal="$2" bond="$3" m1="$4" m2="$5" cid="$6"
-  local deadline=$(( $(date +%s) + 14 * 24 * 60 * 60 ))
+  local deadline="${7:-$(( $(date +%s) + 14 * 24 * 60 * 60 ))}"
   call "${label}" ref-builder "${FACTORY}" create_vault --config "{
     \"creator\": \"$(addr ref-builder)\",
     \"token\": \"${USDC}\",
@@ -377,10 +395,144 @@ project_b_finish() {
     --offset 0 --limit 10
 }
 
+info_field() { read_ "$1" get_info | grep -oE "$2:-?[0-9]+" | cut -d: -f2; }
+
+# Send USDC from --funder until a backer holds at least what a step needs.
+top_up_to() {
+  local label="$1" who="$2" target="$3" have need out hash
+  have=$(balance "$(addr "ref-${who}")")
+  need=$(( $(usdc "${target}") - ${have:-0} ))
+  if (( need <= 0 )); then
+    printf '  %-58s %s\n' "${label}" "not needed, holds ${have}" >&2
+    return 0
+  fi
+  if ! out=$(stellar tx new payment --source "${FUNDER}" \
+      --destination "$(addr "ref-${who}")" --asset "${USDC_ASSET}" \
+      --amount "${need}" --network "${NETWORK}" 2>&1); then
+    echo "FAIL: ${label}" >&2
+    echo "${out}" >&2
+    return 1
+  fi
+  hash=$(grep -oE 'Signing transaction: [0-9a-f]{64}' <<<"${out}" | awk '{print $3}')
+  log_tx "${label}" "${hash:-submitted}"
+}
+
+project_c_start() {
+  load_state
+  [[ -n "${VAULT_B:-}" ]] || { echo "Run project-b-start first." >&2; exit 1; }
+  [[ -z "${VAULT_C:-}" ]] || { echo "Project C already started (${VAULT_C})." >&2; exit 1; }
+
+  echo "Project C: goal 20 USDC, milestones 12 + 8, bond 1 USDC, raise open for ${RAISE_SECS} s" >&2
+
+  # c1 and c2 kept 2.5 USDC each from Project B's refunds. One deposit needs 5.
+  top_up_to "C: top up c1 to 5 USDC from ${FUNDER}" c1 500
+  top_up_to "C: top up c2 to 5 USDC from ${FUNDER}" c2 500
+
+  local builder_before vault deadline
+  builder_before=$(balance "$(addr ref-builder)")
+  save C_BUILDER_BEFORE "${builder_before}"
+  deadline=$(( $(date +%s) + RAISE_SECS ))
+  vault=$(create_vault "C: create vault, lock 1 USDC bond, pay 1 USDC flat fee; raise closes in ${RAISE_SECS} s" \
+    2000 100 1200 800 "blkfndr-reference/project-c" "${deadline}")
+  save VAULT_C "${vault}"
+  save C_DEADLINE "${deadline}"
+  printf '  vault %s\n' "${vault}" >&2
+  expect "C: vault holds the bond" "$(balance "${vault}")" "$(usdc 100)"
+  expect "C: raising" "$(read_ "${vault}" get_state)" "${STATE_RAISING}"
+
+  contribute "C: deposit 5 USDC (c1)" "${vault}" c1 500
+  refused "C: deposit of 16 USDC refused: 5 + 16 passes the 20 USDC goal (GoalAlreadyReached)" \
+    "${ERR_GOAL_ALREADY_REACHED}" ref-c2 "${vault}" contribute \
+    --contributor "$(addr ref-c2)" --amount "$(usdc 1600)"
+  contribute "C: deposit 5 USDC (c2)" "${vault}" c2 500
+  expect "C: 10 of 20 USDC raised" "$(info_field "${vault}" raised_amount)" "$(usdc 1000)"
+  expect "C: still raising" "$(read_ "${vault}" get_state)" "${STATE_RAISING}"
+
+  # Nothing comes out while the raise is open.
+  refused "C: return_bond while the raise is open refused (InvalidStatus)" \
+    "${ERR_INVALID_STATUS}" ref-anyone "${vault}" return_bond
+  refused "C: claim_refund while the raise is open refused (InvalidStatus)" \
+    "${ERR_INVALID_STATUS}" ref-c1 "${vault}" claim_refund --contributor "$(addr ref-c1)"
+
+  echo "The raise closes at $(date -u -d "@${deadline}" +%FT%TZ 2>/dev/null || echo "${deadline}")." >&2
+  echo "Run: scripts/reference-scenario.sh project-c-finish after that." >&2
+}
+
+project_c_finish() {
+  load_state
+  [[ -n "${VAULT_C:-}" ]] || { echo "Run project-c-start first." >&2; exit 1; }
+  local vault="${VAULT_C}" from state
+  state=$(read_ "${vault}" get_state)
+  if [[ "${state}" != "${STATE_FAILED}" ]]; then
+    echo "The raise has not closed yet (state ${state}). It closes at" \
+      "$(date -u -d "@${C_DEADLINE}" +%FT%TZ 2>/dev/null || echo "${C_DEADLINE}"). Nothing was sent." >&2
+    exit 1
+  fi
+  # The ledger the attestation event is read from. Kept, so that a rerun after
+  # a failed check still finds the event settle emitted the first time.
+  if [[ -n "${C_FROM_LEDGER:-}" ]]; then
+    from="${C_FROM_LEDGER}"
+  else
+    from=$(latest_ledger)
+    save C_FROM_LEDGER "${from}"
+  fi
+
+  # The deadline passed with 10 of 20 USDC raised, so every read already says
+  # Failed. settle persists it and writes the FailedToFund record.
+  expect "C: the vault reads Failed before anyone settles it" "${state}" "${STATE_FAILED}"
+  if [[ "$(outcome_of "${vault}")" == "${OUTCOME_FAILED_TO_FUND}" ]]; then
+    printf '  %-58s %s\n' "C: already settled; the record is on the registry" "not resent" >&2
+  else
+    expect "C: settle returns Failed" \
+      "$(call "C: settle the missed goal, by an unrelated account (attestation written)" \
+        ref-anyone "${vault}" settle)" "${STATE_FAILED}"
+  fi
+  expect "C: attestation outcome is FailedToFund" "$(outcome_of "${vault}")" "${OUTCOME_FAILED_TO_FUND}"
+  # contribute checks the lifecycle state before the deadline, so once the
+  # vault reads Failed a late deposit is refused as InvalidStatus.
+  refused "C: deposit after the deadline refused (InvalidStatus: the vault already reads Failed)" \
+    "${ERR_INVALID_STATUS}" ref-c1 "${vault}" contribute \
+    --contributor "$(addr ref-c1)" --amount "$(usdc 500)"
+
+  # Nothing was ever released, so each backer's principal comes back whole.
+  local who before
+  for who in c1 c2; do
+    before=$(balance "$(addr "ref-${who}")")
+    call "C: refund ${who}, 5 USDC principal, with ${who}'s own signature" "ref-${who}" \
+      "${vault}" claim_refund --contributor "$(addr "ref-${who}")" >/dev/null
+    expect "C: ${who} received" "$(( $(balance "$(addr "ref-${who}")") - before ))" "$(usdc 500)"
+  done
+  refused "C: c1 claims a second time refused (NoFundsToRefund)" \
+    "${ERR_NO_FUNDS_TO_REFUND}" ref-c1 "${vault}" claim_refund --contributor "$(addr ref-c1)"
+  expect "C: the last claimant left the builder's bond alone; the vault still holds it" \
+    "$(balance "${vault}")" "$(usdc 100)"
+
+  before=$(balance "$(addr ref-builder)")
+  call "C: return the 1 USDC bond to the builder, by an unrelated account" ref-anyone \
+    "${vault}" return_bond >/dev/null
+  expect "C: builder received the bond back" "$(( $(balance "$(addr ref-builder)") - before ))" "$(usdc 100)"
+  refused "C: return_bond a second time refused (NoFundsToRefund)" \
+    "${ERR_NO_FUNDS_TO_REFUND}" ref-anyone "${vault}" return_bond
+  expect "C: vault fully drained" "$(balance "${vault}")" "0"
+  expect "C: builder is down only the 1 USDC flat fee" \
+    "$(( $(balance "$(addr ref-builder)") - C_BUILDER_BEFORE ))" "-$(usdc 100)"
+
+  echo "C: attestation event, filtered by builder on Soroban RPC" >&2
+  attestation_events "${from}"
+
+  echo "Builder history, read from the registry" >&2
+  expect "builder summary (completed, forfeited, unfunded)" \
+    "$(read_ "${ATTESTATION}" get_builder_summary --builder "$(addr ref-builder)")" "[1,1,1]"
+  read_ "${ATTESTATION}" get_builder_history --builder "$(addr ref-builder)" \
+    --offset 0 --limit 10
+}
+
 case "${STEP}" in
   setup)            setup ;;
   project-a)        project_a ;;
   project-b-start)  project_b_start ;;
   project-b-finish) project_b_finish ;;
-  *) sed -n '2,32p' "$0"; exit 1 ;;
+  project-c-start)  project_c_start ;;
+  project-c-finish) project_c_finish ;;
+  *) sed -n '2,42p' "$0"; exit 1 ;;
 esac
