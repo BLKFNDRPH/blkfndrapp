@@ -365,6 +365,7 @@ Things a reviewer will ask about. None blocks the plan; each needs an owner deci
 | Now | Hash check of deployed wasm vs build | VLT-48, VLT-49 | `sha256sum` output |
 | ✅ **Done 2026-10-13 14:17 UTC** | `bash scripts/reference-scenario.sh project-b-finish` | VLT-33, VLT-36, VLT-37, CTA-20–CTA-22, CTA-25, CTA-31, CTA-32 | Tx hashes for settle, 5 refunds; `get_record`; `getEvents` by builder; summary `(1, 1, 0)` |
 | ✅ **Done 2026-10-20 09:29 UTC** | `bash scripts/reference-scenario.sh project-c-start`, then `project-c-finish` once the five-minute raise had closed | VLT-14, VLT-15, VLT-27–VLT-32, CTA-26 | Tx hashes for settle, 2 refunds and `return_bond`; `get_record` outcome 2; `getEvents` by builder; summary `(1, 1, 1)` |
+| Next session | The first payout on a live project, per the [payout run checklist](payout-run-checklist.md): launch a 15 USDC project in the app, three scripted stakes, the builder opens the vote, three approvals, the keeper releases | VLT-22, VLT-25 and CTA-24 on production; CTA-23's payout path | Tx hashes for the stakes, the vote opening, the approvals and the keeper's release; `get_record` outcome 0; replay check N of N |
 | This week | Negative simulations on testnet: VLT-21, CTA-15–CTA-17 | listed | `Error(Contract, #n)` per case in `transactions.tsv` |
 | This week | Governance keeper dry run on live, then observe one real lapse | CTA-23, SEC-05 | Keeper response JSON, tx hash sent by the keeper key |
 | This week | Manual web pass §6.1 on desktop + phone | WEB-01–WEB-17 | Screenshots per case, LIVE |

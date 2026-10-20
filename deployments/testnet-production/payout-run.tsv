@@ -1,0 +1,4 @@
+utc	step	transaction
+2026-10-20T09:55:09Z	setup: pay-s1 holds 5 USDC	b1fa0eb1dd2eab8c37d1d35d0e8d8d7357d74c09ae9bde3878c98a0cd0f2c742
+2026-10-20T09:55:18Z	setup: pay-s2 holds 5 USDC	e550f7e4014eb4727ae3e54b8c2ea92badc09dcc6c303104eb4f0caea680c2c7
+2026-10-20T09:55:50Z	setup: pay-s3 holds 5 USDC	fc2f56935789f65f2499207e0a80d3f5a87ec6179ac849395a603765042b2592

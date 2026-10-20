@@ -306,6 +306,8 @@ blkfndrapp/
 | `bash scripts/build-contracts.sh` | Compile contracts to wasm, print sha256 hashes |
 | `bash scripts/deploy-contracts.sh --source <key>` | Deploy and wire the contract set, verifying the result |
 | `node --env-file=.env.local scripts/migrate-kyc.mjs --registry <C…> --source <key>` | Copy every approved KYC into a new identity registry. A dry run unless `--send` is given |
+| `bash scripts/reference-scenario.sh <step>` | Drive the reference deployment through every vault path on testnet, logging each transaction ([evidence](docs/deliverables/contribution-threshold-attestation.md)) |
+| `bash scripts/payout-run.sh <step> <project-id>` | Three scripted stakeholders back and approve a live project so the keeper pays its stage; `--dry-run` simulates ([checklist](docs/deliverables/payout-run-checklist.md)) |
 | `cargo test --workspace` | Contract test suite |
 | `cargo clippy --workspace --all-targets -- -D warnings` | Contract lints |
 
