@@ -61,3 +61,22 @@ utc	step	transaction
 2026-10-20T09:31:41Z	C: c1 claims a second time refused (NoFundsToRefund)	refused in simulation: Error(Contract, #9)
 2026-10-20T09:31:47Z	C: return the 1 USDC bond to the builder, by an unrelated account	97f5c650b2e0ec76f1a2c6ac24b6d4aec389a1a1ecb4fc05bdc8d55d02017970
 2026-10-20T09:31:49Z	C: return_bond a second time refused (NoFundsToRefund)	refused in simulation: Error(Contract, #9)
+2026-10-20T11:48:22Z	D: KYC-approve ref-nousdc, a builder who holds no USDC	7f189e3b8b144b119fb1480691c1697fc918fc0a70a4c3c097a56489b47a4167
+2026-10-20T11:48:42Z	D: top up c3 to 5 USDC from ba-escrow-deployer	a82a981d6736eb382ee902ebf5a05ef50b2b770140eacc2ce25767c1f1000fe1
+2026-10-20T11:48:43Z	D: create_vault with a 0.70 USDC bond on a 15 USDC goal refused (factory BondBelowMinimum: 5% is 0.75)	refused in simulation: Error(Contract, #12)
+2026-10-20T11:48:45Z	D: create_vault by a builder without KYC approval refused (vault KYCInvalid)	refused in simulation: Error(Contract, #12)
+2026-10-20T11:48:45Z	D: the KYC refusal came from the vault the factory was deploying	contract CC6QVIVRRUMJ7SIRJCUGIHYM46OIYFMOYIOW3GO5NJJRXGBQQ4ZAIJAS, in initialize
+2026-10-20T11:49:00Z	D: create_vault by a KYC-approved builder who holds no USDC fails in the bond transfer	refused in simulation: transaction simulation failed: HostError: Error(Contract, #10); raised by CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA
+2026-10-20T11:49:07Z	D: create vault, lock 0.75 USDC bond, pay 1 USDC flat fee	ac971553c39bb457728e9449b39cc89347e6242737df2119cc469b5cd3a32645
+2026-10-20T11:49:32Z	D: deposit 5 USDC (c1)	6b4324de700816b4a632b9ceb226ea2fc91086ce5f3e0a0013ec6eadee0b7db3
+2026-10-20T11:49:37Z	D: deposit 5 USDC (c2)	e48c534f1ff069e95e545c12d9258bdc8a8e4bcd1b70fcf0d6ae2f471b08535b
+2026-10-20T11:50:00Z	D: deposit 5 USDC (c3)	3e41384b1534fbd5ec97def5b27d1f2a1343cd038e2efb7e6a60f90087809e67
+2026-10-20T11:50:02Z	D: deposit 5 USDC after the raise closed refused (InvalidStatus)	refused in simulation: Error(Contract, #2)
+2026-10-20T11:50:03Z	D: c1 approves milestone 1 before its vote is open refused (VotingNotOpen)	refused in simulation: Error(Contract, #15)
+2026-10-20T11:50:12Z	D: open milestone 1 vote (builder; window 7 days)	b66f0c9c64b9972f715cff2c1a17aa92f8f0ace89db10ff9408341dec20d21d3
+2026-10-20T11:50:13Z	D: builder opens milestone 1's vote a second time refused (VotingAlreadyOpen)	refused in simulation: Error(Contract, #16)
+2026-10-20T11:50:40Z	D: approve milestone 1 (c1)	3d8761610552bb92cbb3a2ce9ce0e14a8d924b6ca62c47d39ab85bf3cd5d25c8
+2026-10-20T11:50:42Z	D: c1 approves milestone 1 a second time refused (AlreadyVoted)	refused in simulation: Error(Contract, #18)
+2026-10-20T11:50:42Z	D: an account that never deposited approves milestone 1 refused (NotAContributor)	refused in simulation: Error(Contract, #19)
+2026-10-20T11:50:43Z	D: c2 approves Project B's settled milestone 2 refused (InvalidStatus: that vault is Refunding)	refused in simulation: Error(Contract, #2)
+2026-10-20T11:50:45Z	D: production registry CDEN2LU4M4SDSOWGU7JM5A46M3M2YSEKRLJ75PCNTFMPY72KIXSPSQFX interface (no update, no delete)	__constructor add_factory disable_factory transfer_admin attest get_record has_record get_builder_vaults get_builder_history get_builder_summary get_factories get_admin is_factory_trusted

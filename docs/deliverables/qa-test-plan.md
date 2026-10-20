@@ -75,9 +75,9 @@ Status key: **✅** passing in unit tests and/or shown on testnet; **⏳** sched
 | ID | Case | Expected | Unit test | Testnet |
 |---|---|---|---|---|
 | VLT-01 | Create a vault through the factory with a valid goal, deadline, milestones and bond | One transaction creates the vault, transfers the bond into it and the 1 USDC fee to the treasury. Events `VAULT/INIT`, `BOND/POSTED`, `FACTORY/DEPLOY` | `bond_is_locked_at_creation_and_fee_is_flat`, `deploys_a_vault_with_the_bond_already_locked` | ✅ Project A `ca0f0455…` |
-| VLT-02 | Builder lacks the USDC for the bond | Whole call fails; no vault exists | `a_builder_who_cannot_fund_the_bond_gets_no_vault` | 🔲 |
-| VLT-03 | Bond below 5% of goal | Refused | `rejects_a_bond_below_the_platform_minimum` | 🔲 |
-| VLT-04 | Builder not KYC-approved | Refused, `#12` | `rejects_a_builder_without_kyc` | 🔲 |
+| VLT-02 | Builder lacks the USDC for the bond | Whole call fails; no vault exists | `a_builder_who_cannot_fund_the_bond_gets_no_vault` | ✅ Project D, 2026-10-20: `create_vault` from a KYC-approved builder holding 0 USDC failed in simulation inside the bond transfer. The CLI printed `HostError: Error(Contract, #10)`, raised by the USDC token contract `CBIELTK6…` ("resulting balance is not within the allowed range", 0 − 7,500,000), not a vault or factory code. No vault was created |
+| VLT-03 | Bond below 5% of goal | Refused, factory `#12` BondBelowMinimum | `rejects_a_bond_below_the_platform_minimum` | ✅ Project D, 2026-10-20: a 0.70 USDC bond on a 15 USDC goal (5% is 0.75) refused `#12` in simulation, raised by the factory itself before any vault was deployed |
+| VLT-04 | Builder not KYC-approved | Refused, `#12` | `rejects_a_builder_without_kyc` | ✅ Project D, 2026-10-20: `create_vault` from a fresh, never-approved identity refused `#12` in simulation. The trace shows the factory deploying the vault, the vault's `initialize` asking the identity registry `is_kyc_approved`, and the vault (`CC6QVIVR…`, the address Project D then took) raising the error. The factory's `#12` in VLT-03 is a different enum; the raising contract tells them apart |
 | VLT-05 | Milestone amounts do not sum to the goal | Refused, `#6` | `rejects_milestones_that_do_not_sum_to_the_goal` | — |
 | VLT-06 | More than 20 milestones | Refused | `rejects_more_milestones_than_the_cap` | — |
 | VLT-07 | Deadline in the past | Refused | `rejects_a_deadline_in_the_past` | — |
@@ -94,17 +94,17 @@ Status key: **✅** passing in unit tests and/or shown on testnet; **⏳** sched
 | VLT-13 | Deposit that reaches the goal | Raise closes in the same call, state `Funded`, `VAULT/FUNDED` | `reaching_the_goal_closes_the_raise` | ✅ `3797f538…` |
 | VLT-14 | Deposit that would overshoot the goal | Refused, `#5`; nothing moves; exactly the remainder still fits | `rejects_a_deposit_that_overshoots_the_goal` (added with this plan, finding 6) | ✅ Project C, 2026-10-20: a 16 USDC deposit into a raise 15 short was refused `#5` in simulation; 5 USDC then went in |
 | VLT-15 | Deposit after the deadline | Refused. The state check runs first, so the call fails `#2` (the vault already reads Failed or Funded); the `#7` guard behind it is a backstop | `rejects_contributions_after_the_deadline` | ✅ Project C, 2026-10-20: refused `#2` in simulation after the deadline |
-| VLT-16 | Deposit after the raise closed | Refused, `#2` | `reaching_the_goal_closes_the_raise` | 🔲 |
+| VLT-16 | Deposit after the raise closed | Refused, `#2` | `reaching_the_goal_closes_the_raise` | ✅ Project D, 2026-10-20: a 5 USDC deposit after the third deposit had closed the raise, refused `#2` in simulation |
 | VLT-17 | A wallet tops up | Still one contributor; count unchanged; balance sums | `a_backer_who_tops_up_is_still_one_wallet` | — |
 | VLT-18 | Contributor list read | Paged, page size clamped to 100 | `contributors_are_paged_rather_than_returned_whole`, `an_oversized_page_request_is_clamped` | — |
-| VLT-19 | Deposit, vote or refund signed by someone other than the contributor | Refused by `require_auth`; the same call signed by the right address succeeds | `a_deposit_needs_the_contributors_own_signature`, `a_vote_needs_the_contributors_own_signature`, `a_refund_needs_the_contributors_own_signature` (added with this plan, finding 7) | 🔲 |
+| VLT-19 | Deposit, vote or refund signed by someone other than the contributor | Refused by `require_auth`; the same call signed by the right address succeeds | `a_deposit_needs_the_contributors_own_signature`, `a_vote_needs_the_contributors_own_signature`, `a_refund_needs_the_contributors_own_signature` (added with this plan, finding 7) | — unit only. A testnet refusal is shown by simulation, and simulation runs with recording auth, which supplies whatever signature a call asks for, so a wrong-signer refusal cannot be shown without submitting a transaction that fails at the signature check. The four unit tests authorise exactly one signer and are the evidence |
 
 ### 4.3 Milestone release
 
 | ID | Case | Expected | Unit test | Testnet |
 |---|---|---|---|---|
 | VLT-20 | Builder opens a milestone vote on a funded vault | `MILESTN/VOTEOPEN (project, id, opens, closes)`; closes = opens + 604,800 | `only_the_builder_opens_a_window_and_only_once` | ✅ `031a72fc…` |
-| VLT-21 | Non-builder opens a vote; builder opens twice | Refused (auth), `#16` | `only_the_builders_signature_opens_a_vote`, `only_the_builder_opens_a_window_and_only_once` | 🔲 |
+| VLT-21 | Non-builder opens a vote; builder opens twice | Refused (auth), `#16` | `only_the_builders_signature_opens_a_vote`, `only_the_builder_opens_a_window_and_only_once` | ✅ `#16`: Project D, 2026-10-20, the builder opening milestone 1's vote a second time, refused in simulation. The non-builder half is a signature refusal, not a contract code: unit only, for the reason given at VLT-19 |
 | VLT-22 | Carried milestone released by an unrelated account | Tranche to the builder, `MILESTN/RELEASE (project, id, tranche, released_total)` | `release_is_permissionless_once_contributors_have_voted` | ✅ `d12da348…` |
 | VLT-23 | Release a milestone twice | Refused, `#14` | `a_milestone_cannot_be_released_twice` | — |
 | VLT-24 | Release before a vote opened / below threshold | `#15` / `#20` | `release_requires_at_least_three_distinct_wallets` | ✅ `#20` refused, Project A |
@@ -182,9 +182,9 @@ Status key: **✅** passing in unit tests and/or shown on testnet; **⏳** sched
 | CTA-12 | One or two backers | Every backer must approve; then it carries | `a_sole_backer_releases_with_one_vote`, `two_backers_release_when_both_approve`, `a_tiny_raise_still_releases_when_every_backer_approves` | — |
 | CTA-13 | Sole backer silent | Milestone fails at window close | `a_sole_backer_who_does_not_vote_still_fails_the_milestone` | — |
 | CTA-14 | Window short of the wallet floor | Lapses and fails | `a_window_short_of_the_wallet_floor_lapses` | — |
-| CTA-15 | Vote twice on one milestone | `#18` | `a_contributor_votes_once_per_milestone` | 🔲 |
-| CTA-16 | Non-contributor votes | `#19` | `non_contributors_have_no_vote` | 🔲 |
-| CTA-17 | Vote before window opens / after it closes | `#15` / `#17` | `votes_are_rejected_before_the_window_opens_and_after_it_closes` | 🔲 |
+| CTA-15 | Vote twice on one milestone | `#18` | `a_contributor_votes_once_per_milestone` | ✅ Project D, 2026-10-20: c1's second approval of milestone 1 refused `#18` in simulation |
+| CTA-16 | Non-contributor votes | `#19` | `non_contributors_have_no_vote` | ✅ Project D, 2026-10-20: an approval from the unrelated caller, which never deposited, refused `#19` in simulation |
+| CTA-17 | Vote before window opens / after it closes | `#15` / `#17` | `votes_are_rejected_before_the_window_opens_and_after_it_closes` | ✅ `#15`: Project D, 2026-10-20, c1's approval before the builder opened milestone 1's vote, refused in simulation. 🔲 `#17`: it needs a window that has closed on a vault still `Funded` or `Active`. c2's approval of Project B's settled milestone 2 was refused `#2` instead, because that vault reads `Refunding` and the lifecycle check runs before the window check. Project D's milestone 1 window closes 2026-10-27 11:50:12 UTC with one approval behind it; an approval simulated after that, before anyone settles the lapse, shows `#17` |
 | CTA-18 | No multisig, no appointed keys | Vault has no admin entrypoint; release callable by anyone; only contributor signatures count | `release_is_permissionless_once_contributors_have_voted`; `stellar contract info interface` on the vault | ✅ releases sent by the unrelated caller |
 | CTA-19 | Fixed 7-day window, set at creation | Factory reads 604,800 s; vault copies it; `closes − opens` in `VOTEOPEN` = 604,800 | factory `stores_the_platform_configuration` | ✅ Project B M2 window |
 
@@ -205,7 +205,7 @@ Status key: **✅** passing in unit tests and/or shown on testnet; **⏳** sched
 | CTA-25 | Forfeited project | Outcome 1 `FailedWithForfeiture`, milestones approved = those released before failure | `forfeiture_writes_a_record_against_the_builder` | ✅ Project B: outcome 1, 1 of 2 milestones approved ([`968e1ad8…`](https://stellar.expert/explorer/testnet/tx/968e1ad8b7156173cc2c6635aa59072ee26f56a15b79ee8b5d7d9172592afbc1)) |
 | CTA-26 | Unfunded project | Outcome 2 `FailedToFund` | `failing_to_fund_is_recorded_without_blaming_the_builder` | ✅ Project C: outcome 2, 0 of 2 milestones approved, `get_record` JSON in the evidence doc ([`56785fa8…`](https://stellar.expert/explorer/testnet/tx/56785fa811fd00f968d3b16fdd733f3d2bc2e072dc56ee362780a2a8cd8eb206)) |
 | CTA-27 | Written once | Second `attest` for the same vault refused `#4`; vault's own `attested` flag makes later calls no-ops | `a_record_cannot_be_overwritten`, `a_projects_record_is_written_once_and_never_amended` | — |
-| CTA-28 | No update or delete | Registry interface lists no such entrypoint | `stellar contract info interface --id <registry>` | ✅ reference registry; 🔲 production registry |
+| CTA-28 | No update or delete | Registry interface lists no such entrypoint | `stellar contract info interface --id <registry>` | ✅ reference registry; ✅ production registry `CDEN2LU4…SQFX`, read 2026-10-20. Its whole interface: `__constructor`, `add_factory`, `disable_factory`, `transfer_admin`, `attest`, `get_record`, `has_record`, `get_builder_vaults`, `get_builder_history`, `get_builder_summary`, `get_factories`, `get_admin`, `is_factory_trusted`. Nothing updates or deletes a record |
 | CTA-29 | Only trusted factories' vaults can write | Unknown contract `#3`; untrusted factory `#7`; disabled factory cannot write but its records remain | `rejects_writes_from_contracts_the_factory_does_not_know`, `naming_an_untrusted_factory_is_refused`, `a_disabled_factory_can_no_longer_attest_but_its_records_remain` | — |
 | CTA-30 | Incoherent record | e.g. approved > total, refused `#6` | `rejects_incoherent_records` | — |
 | CTA-31 | Emitted as an event with the builder as a topic | `getEvents` filter `(ATTEST, RECORDED, <builder>)` returns it | `a_record_is_emitted_as_an_event_filterable_by_builder` | ✅ ledger 5,054,473 (A); ledger 5,175,489 (B); ledger 5,292,993 (C) |
@@ -353,7 +353,7 @@ Things a reviewer will ask about. None blocks the plan; each needs an owner deci
 8. VLT-30 was already covered. Checked while preparing this plan.
 9. **VLT-15: the `#7` guard is a backstop.** `contribute` checks the lifecycle state before the deadline, and the state reads `Failed` or `Funded` from the moment the deadline passes, so a late deposit is refused `#2`, never `#7`. Project C showed it on testnet (2026-10-20). The unit test asserts only that the call fails, so it stays correct; the plan's expected code was wrong and is fixed above.
 
-**Testnet paths not yet exercised** (updated 2026-10-20): no stall, and no payout on a production vault. The missed-goal path ran on the reference deployment on 2026-10-20 as Project C: `settle` by an unrelated account, two full refunds, `return_bond`, and a `FailedToFund` record (VLT-27–VLT-32, CTA-26). Refunds after a forfeiture have been collected on production #5, #7 (2026-10-15) and #10 (2026-10-19), and Project B covered forfeiture and refunds on the reference deployment on 2026-10-13.
+**Testnet paths not yet exercised** (updated 2026-10-20): no stall, no payout on a production vault, and no `#17` VotingClosed yet. The missed-goal path ran on the reference deployment on 2026-10-20 as Project C: `settle` by an unrelated account, two full refunds, `return_bond`, and a `FailedToFund` record (VLT-27–VLT-32, CTA-26). The refusals ran the same day as Project D: a bond below 5%, a builder without KYC, a builder without USDC, a deposit after the raise closed, a vote before its window opened, a window opened twice, a double vote, a non-contributor's vote, and the production registry's interface (VLT-02–VLT-04, VLT-16, VLT-21, CTA-15, CTA-16, CTA-17's `#15`, CTA-28). `#17` needs a closed window on a vault that is still `Funded`; Project D's milestone 1 window closes on 2026-10-27 and will show it. The wrong-signer refusals (VLT-19, VLT-21's non-builder half) stay unit-only: simulation runs with recording auth and cannot show a signature refusal. Refunds after a forfeiture have been collected on production #5, #7 (2026-10-15) and #10 (2026-10-19), and Project B covered forfeiture and refunds on the reference deployment on 2026-10-13.
 
 ---
 
@@ -366,7 +366,8 @@ Things a reviewer will ask about. None blocks the plan; each needs an owner deci
 | ✅ **Done 2026-10-13 14:17 UTC** | `bash scripts/reference-scenario.sh project-b-finish` | VLT-33, VLT-36, VLT-37, CTA-20–CTA-22, CTA-25, CTA-31, CTA-32 | Tx hashes for settle, 5 refunds; `get_record`; `getEvents` by builder; summary `(1, 1, 0)` |
 | ✅ **Done 2026-10-20 09:29 UTC** | `bash scripts/reference-scenario.sh project-c-start`, then `project-c-finish` once the five-minute raise had closed | VLT-14, VLT-15, VLT-27–VLT-32, CTA-26 | Tx hashes for settle, 2 refunds and `return_bond`; `get_record` outcome 2; `getEvents` by builder; summary `(1, 1, 1)` |
 | Next session | The first payout on a live project, per the [payout run checklist](payout-run-checklist.md): launch a 15 USDC project in the app, three scripted stakes, the builder opens the vote, three approvals, the keeper releases | VLT-22, VLT-25 and CTA-24 on production; CTA-23's payout path | Tx hashes for the stakes, the vote opening, the approvals and the keeper's release; `get_record` outcome 0; replay check N of N |
-| This week | Negative simulations on testnet: VLT-21, CTA-15–CTA-17 | listed | `Error(Contract, #n)` per case in `transactions.tsv` |
+| ✅ **Done 2026-10-20 11:50 UTC** | `bash scripts/reference-scenario.sh project-d`: negative simulations on testnet around a funded vault | VLT-02–VLT-04, VLT-16, VLT-21 (`#16`), CTA-15, CTA-16, CTA-17 (`#15`), CTA-28 production | `Error(Contract, #n)` per case in `transactions.tsv`, each with the raising contract where two enums share a code; the production registry's entrypoint list; Project D's vault `CC6QVIVR…` funded, milestone 1 vote open with one approval |
+| 2026-10-27 or later | Simulate an approval of Project D's milestone 1 after its window closed, before anyone settles the lapse | CTA-17 (`#17`) | `Error(Contract, #17)` in `transactions.tsv` |
 | This week | Governance keeper dry run on live, then observe one real lapse | CTA-23, SEC-05 | Keeper response JSON, tx hash sent by the keeper key |
 | This week | Manual web pass §6.1 on desktop + phone | WEB-01–WEB-17 | Screenshots per case, LIVE |
 | Demo day | Record per script | DEMO-01–DEMO-05, IDX-07 | Video link, stake tx, replay-check JSON |
@@ -379,7 +380,7 @@ Things a reviewer will ask about. None blocks the plan; each needs an owner deci
 **Entry.** Contracts build from the cited commit; reference and production deployments reachable; test accounts funded (XLM + USDC trustline + USDC); indexer within one pass of the chain.
 
 **Exit, per deliverable.**
-- **I:** every VLT case ✅ or explicitly accepted as unit-only (the 90-day stall); wasm hashes match; the new unit tests from findings 6 and 7 passing.
+- **I:** every VLT case ✅ or explicitly accepted as unit-only (the 90-day stall, and the wrong-signer refusals of VLT-19 and VLT-21, which simulation cannot show); wasm hashes match; the new unit tests from findings 6 and 7 passing.
 - **II:** every CTA case ✅, including Project B's settle, refunds and attestation on testnet; findings 1–5 reflected in the evidence doc.
 - **III:** WEB and IDX cases ✅ on the live site; replay check N of N; demo video published with its tx hash.
 
