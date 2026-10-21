@@ -30,11 +30,9 @@
 
 import path from "node:path";
 import fs from "node:fs";
-import { pathToFileURL, fileURLToPath } from "node:url";
-import { build } from "esbuild";
+import { pathToFileURL } from "node:url";
+import { bundle, repo, stubs } from "./authz/bundle.mjs";
 
-const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const stubs = path.join(repo, "scripts", "authz", "stubs.mjs");
 const outdir = path.join(repo, "node_modules", ".cache", "authz-check");
 const discover = process.argv.includes("--discover");
 
@@ -79,39 +77,7 @@ const actionFiles = files.filter(
 
 // ── Bundle them ───────────────────────────────────────────────────────────
 
-const STUBBED = /^(@\/lib\/supabase\/(server|admin)|@\/ai\/flows\/improve-listing-quality|next\/(headers|server|cache|navigation)|server-only)$/;
-fs.rmSync(outdir, { recursive: true, force: true });
-const entries = [...routeFiles, ...actionFiles];
-const result = await build({
-  entryPoints: Object.fromEntries(entries.map((f, i) => [`e${i}`, f])),
-  bundle: true,
-  splitting: true,
-  format: "esm",
-  platform: "node",
-  outdir,
-  absWorkingDir: repo,
-  logLevel: "error",
-  metafile: true,
-  banner: { js: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);" },
-  plugins: [{
-    name: "authz-stubs",
-    setup(b) {
-      b.onResolve({ filter: STUBBED }, () => ({ path: stubs }));
-      b.onResolve({ filter: /^@\// }, (a) => {
-        const base = path.join(repo, "src", a.path.slice(2));
-        for (const ext of [".ts", ".tsx", "/index.ts", "/index.tsx"]) {
-          if (fs.existsSync(base + ext)) return { path: base + ext };
-        }
-        return null;
-      });
-    },
-  }],
-});
-const bundled = new Map();
-for (const [out, meta] of Object.entries(result.metafile.outputs)) {
-  if (meta.entryPoint) bundled.set(path.resolve(repo, meta.entryPoint), path.resolve(repo, out));
-}
-const load = (file) => import(pathToFileURL(bundled.get(file)).href);
+const load = await bundle([...routeFiles, ...actionFiles], { outdir });
 
 // ── Call them ─────────────────────────────────────────────────────────────
 
