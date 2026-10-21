@@ -525,7 +525,8 @@ The site moved from `testnetv2.blkfndr.com` to `https://blkfndr.com` on
 app, and the app sends it on:
 
 - `LEGACY_HOSTS` lists retired hostnames; compose defaults it to
-  `testnetv2.blkfndr.com`. A request arriving on one of them is answered with a
+  `testnetv2.blkfndr.com,www.blkfndr.com`, so the www name lands on the bare
+  domain the same way. A request arriving on one of them is answered with a
   `308` to the same path and query on `NEXT_PUBLIC_APP_URL`
   ([legacy-hosts.ts](../src/lib/legacy-hosts.ts), run first thing in
   [proxy.ts](../src/proxy.ts)). Nothing else runs for it: no session refresh,
@@ -537,7 +538,10 @@ app, and the app sends it on:
   header cannot turn this into an open redirect. The compose crons call the app
   by its container name, which is never on the list.
 - Check with `curl -I https://testnetv2.blkfndr.com/projects/22`: `308`, with
-  `Location: https://blkfndr.com/projects/22`.
+  `Location: https://blkfndr.com/projects/22`. Same for
+  `https://www.blkfndr.com/projects/22`.
+- `www.blkfndr.com` needs its own proxied DNS record at Cloudflare (a CNAME to
+  `blkfndr.com`) before any request on it reaches the app.
 
 To move again, in order: make the new name answer (DNS, a certificate, and the
 reverse proxy's `server_name`, keeping the old name there too so it still
@@ -869,13 +873,13 @@ plugin reads.
 ```nginx
 server {
     listen 80;
-    server_name blkfndr.com testnetv2.blkfndr.com;
+    server_name blkfndr.com www.blkfndr.com testnetv2.blkfndr.com;
     return 301 https://$server_name$request_uri;
 }
 
 server {
     listen 443 ssl http2;
-    server_name blkfndr.com testnetv2.blkfndr.com;
+    server_name blkfndr.com www.blkfndr.com testnetv2.blkfndr.com;
 
     ssl_certificate /path/to/cert.pem;
     ssl_certificate_key /path/to/key.pem;

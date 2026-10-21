@@ -151,7 +151,7 @@ services:
       # so the old name is the default. Set it empty to switch the redirect off.
       #
       # Runtime, like APP_URLS. Hosts are compared including the port.
-      - LEGACY_HOSTS=${LEGACY_HOSTS-testnetv2.blkfndr.com}
+      - LEGACY_HOSTS=${LEGACY_HOSTS-testnetv2.blkfndr.com,www.blkfndr.com}
 
       # ── Server-side Soroban RPC (optional, may be SECRET) ────────────────
       # The endpoint server code reads the chain through: the read routes that
