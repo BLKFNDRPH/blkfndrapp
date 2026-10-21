@@ -4,6 +4,8 @@ import { consumeWalletLinkChallenge } from "@/lib/data/platform";
 import { linkWallet } from "@/lib/data/profiles";
 import { requireCaller, AuthError } from "@/lib/supabase/auth";
 import { walletLinkDigest } from "@/lib/wallet-link-message";
+import { jsonObject } from "@/lib/json-body";
+import { isStellarAccount } from "@/lib/stellar-address";
 
 /**
  * Link a Stellar address to the signed-in account.
@@ -18,8 +20,16 @@ export async function POST(req: NextRequest) {
   try {
     const caller = await requireCaller();
 
-    const { publicKey, signature, nonce } = await req.json();
-    if (!publicKey || !signature || !nonce) {
+    const body = await jsonObject(req);
+    const publicKey = body?.publicKey;
+    const signature = body?.signature;
+    const nonce = body?.nonce;
+    if (
+      !isStellarAccount(publicKey) ||
+      !signature ||
+      typeof nonce !== "string" ||
+      !nonce
+    ) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 

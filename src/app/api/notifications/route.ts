@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
+import { ZodError } from "zod";
 import {
   listOwnNotifications,
   markRead,
   dismiss,
   dismissAll,
 } from "@/lib/data/notifications";
-import { AuthError } from "@/lib/supabase/auth";
+import { AuthError, requireCaller } from "@/lib/supabase/auth";
+import { jsonObject } from "@/lib/json-body";
 
 // Every handler is scoped to the caller by RLS, not by a filter written here.
 // The IDOR this route used to have — updateMany by id with no ownership check —
@@ -14,6 +16,11 @@ import { AuthError } from "@/lib/supabase/auth";
 const fail = (error: unknown, label: string) => {
   if (error instanceof AuthError) {
     return NextResponse.json({ error: error.message }, { status: error.status });
+  }
+  // Ids that aren't notification uuids are the caller's mistake, not the
+  // server's (the ZAP active scan got a 500 for them).
+  if (error instanceof ZodError) {
+    return NextResponse.json({ error: "Invalid notification id" }, { status: 400 });
   }
   console.error(`${label}:`, error);
   return NextResponse.json({ error: "Internal server error" }, { status: 500 });
@@ -41,7 +48,8 @@ export async function GET() {
 
 export async function PATCH(req: NextRequest) {
   try {
-    const { ids } = await req.json();
+    await requireCaller();
+    const ids = (await jsonObject(req))?.ids;
     await markRead(Array.isArray(ids) ? ids : []);
     return NextResponse.json({ success: true });
   } catch (error) {
