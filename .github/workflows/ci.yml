@@ -39,6 +39,31 @@ jobs:
         # endpoint is missing from scripts/authz-manifest.mjs.
         run: npm run test:authz
 
+      - name: Route behaviour check
+        # The abuse cases the authorization check cannot see, sent to the real
+        # handlers with a stubbed Supabase holding in-memory rows: the proxy's
+        # nonce CSP and next.config.js's headers on a page response, a KYC
+        # reviewer deciding their own check, wallet-link signatures over anything
+        # but the stored challenge, malformed bodies (401 signed out, 400 signed
+        # in, never 500), and /api/health and the platform health counts.
+        run: npm run test:routes
+
+      - name: Production build
+        # Stand-in configuration: nothing is fetched at build time, and the
+        # Supabase URL refuses connections, so the pages render signed out.
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:9
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: stub
+          NEXT_PUBLIC_APP_URL: http://localhost:9002
+          NEXT_TELEMETRY_DISABLED: 1
+        run: npm run build
+
+      - name: Header delivery check
+        # Starts the standalone build and reads what a browser gets: the full
+        # nonce CSP on every page with the nonce on every script, and the
+        # next.config.js headers on pages, API routes and static files.
+        run: npm run test:headers
+
       - name: Database policy check
         # Replays every migration, in version order, into an in-memory Postgres
         # (PGlite) and tries the browser-session abuse cases the migrations were

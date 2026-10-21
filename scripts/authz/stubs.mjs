@@ -11,30 +11,90 @@
 // fetch is recorded in globalThis.__authz.effects, which is what the check
 // asserts on: a refused caller must cause none.
 
-export const authz = (globalThis.__authz ??= { who: null, effects: [] });
+export const authz = (globalThis.__authz ??= { who: null, effects: [], db: null, writes: [] });
 
 const record = (what) => authz.effects.push(what);
 
+// When globalThis.__authz.db is set ({ table: [rows] }), the service-role
+// client reads and writes those rows instead, honouring eq/neq/gt/gte/lt/lte/
+// in/is, so a test can put a row in front of the code (scripts/route-behaviour
+// .test.mjs). An update or delete that matches nothing is then not a write, as
+// in Postgres. Each write is also listed in globalThis.__authz.writes with its
+// values. The session client is unchanged: reads empty, every write recorded.
+const MATCHERS = {
+  eq: (x, v) => x === v,
+  neq: (x, v) => x !== v,
+  gt: (x, v) => x > v,
+  gte: (x, v) => x >= v,
+  lt: (x, v) => x < v,
+  lte: (x, v) => x <= v,
+  in: (x, v) => v.includes(x),
+  is: (x, v) => (v === null ? x === null || x === undefined : x === v),
+};
+
 function query(table, client) {
   let op = "select";
+  let values;
+  let options = {};
+  const filters = [];
   const q = {
-    select: () => q,
-    insert: () => ((op = "insert"), q),
-    update: () => ((op = "update"), q),
-    upsert: () => ((op = "upsert"), q),
+    select: (_columns, opts) => ((options = { ...options, ...opts }), q),
+    insert: (v) => ((op = "insert"), (values = v), q),
+    update: (v) => ((op = "update"), (values = v), q),
+    upsert: (v, opts) => ((op = "upsert"), (values = v), (options = { ...options, ...opts }), q),
     delete: () => ((op = "delete"), q),
     maybeSingle: () => ((q.single = true), q),
     single: () => ((q.single = true), q),
     then(resolve, reject) {
-      if (op !== "select") record(`${client}: ${op} ${table}`);
-      const data = op === "select" ? (q.single ? null : []) : null;
-      return Promise.resolve({ data, error: null, count: 0 }).then(resolve, reject);
+      const db = client === "service" ? authz.db : null;
+      const result = db ? runOnRows(db) : runEmpty();
+      return Promise.resolve(result).then(resolve, reject);
     },
     throwOnError: () => q,
   };
-  // Filters, ordering and paging change nothing here.
+  function runEmpty() {
+    if (op !== "select") {
+      record(`${client}: ${op} ${table}`);
+      authz.writes?.push({ client, op, table, values });
+    }
+    const data = op === "select" ? (q.single ? null : []) : null;
+    return { data, error: null, count: 0 };
+  }
+  function runOnRows(db) {
+    const rows = (db[table] ??= []);
+    const match = (row) => filters.every(([kind, column, value]) => MATCHERS[kind](row[column], value));
+    const out = (list) => (q.single ? (list[0] ? { ...list[0] } : null) : list.map((r) => ({ ...r })));
+    const write = (matched) => {
+      record(`${client}: ${op} ${table}`);
+      authz.writes.push({ client, op, table, values, matched });
+    };
+    if (op === "select") {
+      const found = rows.filter(match);
+      return { data: options.head ? null : out(found), error: null, count: found.length };
+    }
+    if (op === "insert" || op === "upsert") {
+      const added = (Array.isArray(values) ? values : [values]).map((v) => ({ ...v }));
+      for (const row of added) {
+        const key = op === "upsert" ? options.onConflict : undefined;
+        const at = key ? rows.findIndex((r) => r[key] === row[key]) : -1;
+        if (at >= 0) rows[at] = { ...rows[at], ...row };
+        else rows.push(row);
+      }
+      write(added.length);
+      return { data: out(added), error: null, count: added.length };
+    }
+    const found = rows.filter(match);
+    if (found.length) write(found.length);
+    if (op === "update") for (const row of found) Object.assign(row, values);
+    else db[table] = rows.filter((r) => !found.includes(r));
+    return { data: out(found), error: null, count: found.length };
+  }
+  for (const kind of Object.keys(MATCHERS)) {
+    q[kind] = (column, value) => (filters.push([kind, column, value]), q);
+  }
+  // Other filters, ordering and paging change nothing here.
   for (const name of [
-    "eq", "neq", "gt", "gte", "lt", "lte", "in", "is", "not", "or", "and", "filter", "match",
+    "not", "or", "and", "filter", "match",
     "like", "ilike", "contains", "containedBy", "overlaps", "textSearch", "order", "limit", "range",
     "returns", "csv", "abortSignal",
   ]) q[name] = () => q;
