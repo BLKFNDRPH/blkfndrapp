@@ -14,6 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useHydrated } from "@/hooks/use-hydrated";
 
 /**
  * Every address the landing page hands out, in one place. There is no contact
@@ -59,6 +60,19 @@ const CHANNELS = [
   },
 ];
 
+/**
+ * The address as the server HTML shows it: "hello (at) blkfndr.com".
+ *
+ * Cloudflare's Email Address Obfuscation rewrites any address it finds in the
+ * HTML to "[email protected]" and adds a decoder script without the CSP nonce,
+ * which the policy blocks. React then finds HTML it did not render and throws
+ * a hydration error (#418). So the real address and its mailto: link only
+ * appear once the page has hydrated, and the HTML holds nothing to rewrite.
+ */
+function spelledOut(address: string): string {
+  return address.replace("@", " (at) ");
+}
+
 const TOPICS = [
   { value: "general", label: "General question", to: CONTACT.general },
   { value: "stake", label: "I want to stake in a project", to: CONTACT.general },
@@ -71,6 +85,8 @@ export function ContactSection() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [message, setMessage] = useState("");
+  const hydrated = useHydrated();
+  const shown = (address: string) => (hydrated ? address : spelledOut(address));
 
   const selected = TOPICS.find((t) => t.value === topic) ?? TOPICS[0];
 
@@ -110,7 +126,7 @@ export function ContactSection() {
             {CHANNELS.map(({ icon: Icon, title, body, action, href }) => (
               <a
                 key={title}
-                href={href}
+                href={hydrated || !href.startsWith("mailto:") ? href : undefined}
                 {...(href.startsWith("http")
                   ? { target: "_blank", rel: "noopener noreferrer" }
                   : {})}
@@ -127,7 +143,7 @@ export function ContactSection() {
                     {body}
                   </span>
                   <span className="mt-2 block break-all font-code text-xs text-accent group-hover:underline">
-                    {action}
+                    {href.startsWith("mailto:") ? shown(action) : action}
                   </span>
                 </span>
               </a>
@@ -186,7 +202,7 @@ export function ContactSection() {
               </Select>
               <p className="text-xs text-muted-foreground">
                 Goes to{" "}
-                <span className="font-code text-accent">{selected.to}</span>
+                <span className="font-code text-accent">{shown(selected.to)}</span>
               </p>
             </div>
 
