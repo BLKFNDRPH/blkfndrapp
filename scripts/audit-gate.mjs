@@ -12,14 +12,12 @@
 import { spawnSync } from "node:child_process";
 
 const ACCEPTED = {
-  // Prometheus exporter crash on a malformed HTTP request. Reaches us through
-  // genkit's OpenTelemetry tree (@genkit-ai/core pins @opentelemetry/sdk-node
-  // ^0.52; no genkit release, latest or next, moves past it). This app starts
-  // no Prometheus exporter: src/ai/genkit.ts enables no telemetry plugin, and
-  // no OTEL_* variable is set anywhere in the deployment.
-  "GHSA-q7rr-3cgh-j5r3": "Prometheus exporter is never started",
-  // JaegerPropagator DoS on a malformed header. Same genkit pin. The propagator
-  // only runs when OTEL_PROPAGATORS names jaeger, which nothing sets.
+  // JaegerPropagator DoS on a malformed header. Reaches us through genkit's
+  // OpenTelemetry tree (@genkit-ai/core pins @opentelemetry/sdk-node ^0.52; no
+  // genkit release, latest or next, moves past it). The propagator only runs
+  // when OTEL_PROPAGATORS names jaeger, which nothing sets. The Prometheus
+  // exporter advisory that sat beside it (GHSA-q7rr-3cgh-j5r3) is no longer
+  // reported, so its entry is gone.
   "GHSA-45rx-2jwx-cxfr": "Jaeger propagator is never configured",
 };
 
