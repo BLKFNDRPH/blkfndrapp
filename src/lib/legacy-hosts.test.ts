@@ -18,6 +18,18 @@ test("a request on the retired host goes to the same path and query on the canon
   assert.equal(legacyHostRedirect(req("testnetv2.blkfndr.com", "/"), env), "https://blkfndr.com/");
 });
 
+test("the compose default sends www to the bare domain as well", () => {
+  const compose = { ...env, legacyHosts: "testnetv2.blkfndr.com,www.blkfndr.com" };
+  assert.equal(
+    legacyHostRedirect(req("www.blkfndr.com", "/projects/22", "?tab=record"), compose),
+    "https://blkfndr.com/projects/22?tab=record",
+  );
+  assert.equal(legacyHostRedirect(req("WWW.blkfndr.com", "/"), compose), "https://blkfndr.com/");
+  assert.equal(legacyHostRedirect(req("blkfndr-app:3000", "/", "", "www.blkfndr.com"), compose), "https://blkfndr.com/");
+  assert.equal(legacyHostRedirect(req("testnetv2.blkfndr.com", "/"), compose), "https://blkfndr.com/");
+  assert.equal(legacyHostRedirect(req("blkfndr.com"), compose), null);
+});
+
 test("the canonical host and unlisted hosts are served as usual", () => {
   assert.equal(legacyHostRedirect(req("blkfndr.com"), env), null);
   assert.equal(legacyHostRedirect(req("staging.blkfndr.com"), env), null);
