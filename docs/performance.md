@@ -49,7 +49,7 @@ QA's audit of 4 October 2026 (QA-RPT-BLKFNDR-2026-10-04-PERF) found the browser 
 
 ### Before and after, on the live site
 
-All measured against https://testnetv2.blkfndr.com with `npm run perf:baseline` (Lighthouse 13.5.0, median of 5 runs per row):
+All measured against https://testnetv2.blkfndr.com (the address at the time; the site is now https://blkfndr.com) with `npm run perf:baseline` (Lighthouse 13.5.0, median of 5 runs per row):
 
 - **12 Oct, before:** after #154 and #155 had been deployed ([baseline-2026-10-12-live.md](performance/baseline-2026-10-12-live.md)).
 - **12 Oct, after:** with #156–#158 deployed ([2026-10-12-live-after-158.md](performance/2026-10-12-live-after-158.md)).

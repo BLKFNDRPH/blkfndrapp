@@ -15,7 +15,7 @@ Read-only checks, not inferred from merges, made at 11:38–11:42 UTC and again 
 
 | Area | State |
 |---|---|
-| **App** | ✅ The site answers 200 and sends #204's nonce-based Content-Security-Policy with no `X-Powered-By` header (#203). At 13:42 UTC the project page showed a deadline's year (#216) and the live keeper's dry run listed bond returns (#214), so the host runs `main` through #216, on Next 16.4.1 (#194). #205–#213 and #215 change no app code |
+| **App** | ✅ The site now lives at https://blkfndr.com (moved 21 Oct 2026; testnetv2.blkfndr.com redirects there through `LEGACY_HOSTS` once the stack is rebuilt with the new `NEXT_PUBLIC_APP_URL`). It answers 200 and sends #204's nonce-based Content-Security-Policy with no `X-Powered-By` header (#203). At 13:42 UTC the project page showed a deadline's year (#216) and the live keeper's dry run listed bond returns (#214), so the host runs `main` through #216, on Next 16.4.1 (#194). #205–#213 and #215 change no app code |
 | **Stellar SDK** | ✅ 16.3.1. Testnet runs protocol 29 (stellar-rpc 29.0.1 on 2026-10-20), which no JS SDK supports yet ([item 14](#14-protocol-29-and-the-stellar-sdk)) |
 | **Indexer** | ✅ Current: the cursor moved at 13:41 UTC (ledger 5,296,020, within a minute of the chain's tip), nothing is unprocessed and no event has been skipped. 172 events stored, nine more than on 19 Oct: three vaults opened that evening (#26–#28), nothing since |
 | **Vault state rebuilt from events (#164)** | ✅ **28 of 28 vaults match the chain**, field by field, at 11:41 UTC and again at 13:45 UTC |

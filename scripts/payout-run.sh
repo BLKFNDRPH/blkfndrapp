@@ -54,7 +54,7 @@ FUNDER="ba-escrow-deployer"
 DRY_RUN=0
 MILESTONE=""
 ENV_FILE=".env.local"
-APP_URL="https://testnetv2.blkfndr.com"
+APP_URL="https://blkfndr.com"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in

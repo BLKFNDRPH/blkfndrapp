@@ -2,7 +2,7 @@
 
 > A secure, on-chain vault for real-world projects — built on Stellar and Soroban.
 
-**Live on testnet: [testnetv2.blkfndr.com](https://testnetv2.blkfndr.com/)**
+**Live on testnet: [blkfndr.com](https://blkfndr.com/)**
 
 Running against the Stellar test network. Balances are testnet assets with no
 value, and the data is not a rehearsal for mainnet so much as a live one — treat
@@ -20,7 +20,7 @@ Under the hood the vault is bonded and stakeholder-governed. The builder's perfo
 
 **Current phase: Testnet.**
 
-Release authority is contribution-weighted rather than held by appointed signers, the contracts are **deployed to testnet**, and the app runs against them at [testnetv2.blkfndr.com](https://testnetv2.blkfndr.com/). Every table is Postgres with Row Level Security.
+Release authority is contribution-weighted rather than held by appointed signers, the contracts are **deployed to testnet**, and the app runs against them at [blkfndr.com](https://blkfndr.com/) since 21 Oct 2026 (the old address, testnetv2.blkfndr.com, redirects there). Every table is Postgres with Row Level Security.
 
 **[progress.md](progress.md)** tracks what is live, what is merged but not yet active on-chain, and the owner actions still pending. Merged is not deployed: a contract change reaches testnet only when it is redeployed.
 
@@ -132,7 +132,7 @@ blkfndr_vault.wasm  sha256:e9009410b9cbb4c5bfb7cca747812dcad6a044d09c648a1e392a8
 
 Projects created before then run `70e5f3a8…` or the earlier `9c20bca3…`.
 
-A reviewer checks any project's vault against that hash. The landing page's "Check it yourself" box reads the factory's current hash live from [`/api/vault-wasm-hash`](https://testnetv2.blkfndr.com/api/vault-wasm-hash) rather than quoting a constant. `scripts/build-contracts.sh` builds it from source; the wasm embeds absolute dependency paths in its panic locations, so a matching hash needs the same build paths (a pinned Docker build would remove that caveat).
+A reviewer checks any project's vault against that hash. The landing page's "Check it yourself" box reads the factory's current hash live from [`/api/vault-wasm-hash`](https://blkfndr.com/api/vault-wasm-hash) rather than quoting a constant. `scripts/build-contracts.sh` builds it from source; the wasm embeds absolute dependency paths in its panic locations, so a matching hash needs the same build paths (a pinned Docker build would remove that caveat).
 
 Platform parameters as deployed, read from the factory on 2026-10-07:
 - **Flat fee:** 1 unit of the project's token, paid by the builder.
@@ -200,7 +200,7 @@ cargo test --workspace
 | `NEXT_PUBLIC_SUPABASE_URL` | Yes | Supabase project URL. Public |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes | Publishable key. Public — RLS is what protects the data |
 | `SUPABASE_SECRET_KEY` | Yes | Service-role key. Bypasses RLS. **Server-only — never prefix `NEXT_PUBLIC_`** |
-| `NEXT_PUBLIC_APP_URL` | Yes | Application origin. `http://localhost:9002` locally, `https://testnetv2.blkfndr.com` on testnet. Must match the Supabase Site URL |
+| `NEXT_PUBLIC_APP_URL` | Yes | Application origin. `http://localhost:9002` locally, `https://blkfndr.com` on testnet. Must match the Supabase Site URL |
 | `NEXT_PUBLIC_BLKFNDR_FACTORY_CONTRACT_ID` | Yes | Factory contract ID |
 | `NEXT_PUBLIC_BLKFNDR_IDENTITY_CONTRACT_ID` | Yes | Identity registry contract ID |
 | `NEXT_PUBLIC_BLKFNDR_ADMIN_CONTRACT_ID` | Yes | Admin roster contract ID |
@@ -211,6 +211,7 @@ cargo test --workspace
 | `NEXT_PUBLIC_SOROBAN_RPC_URL`, `NEXT_PUBLIC_HORIZON_URL` | Testnet: optional | RPC and Horizon endpoints. Default to Testnet's. A Mainnet build must set the RPC URL |
 | `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | Optional | Map on a project's Location section |
 | `APP_URLS` | Optional | Extra allowed origins, comma-separated, for a host answering on several domains. Read at runtime, so a change needs the container recreated (a stack update), not a rebuild. Use https only on a public host |
+| `LEGACY_HOSTS` | Optional | Retired hostnames, comma-separated. A request arriving on one is sent permanently (308) to the same path on `NEXT_PUBLIC_APP_URL`. Runtime. See [Moving the site to a new domain](docs/deployment.md#moving-the-site-to-a-new-domain) |
 | `PINATA_JWT` | Yes | Pinata API JWT for IPFS uploads. Server-only. An owner can instead store it in the Supabase Vault from the console, which then takes precedence |
 | `PINATA_GATEWAY_URL` | Recommended | Dedicated Pinata gateway hostname. The indexer reads metadata from it first, then from the shared `gateway.pinata.cloud`, which rate-limits |
 | `PINATA_GATEWAY_KEY` | With a dedicated gateway | That gateway's Gateway Key (not the JWT), sent only to it as `x-pinata-gateway-token`. Without it the dedicated gateway answers 401 and every read falls back to the shared one. Server-only, runtime |

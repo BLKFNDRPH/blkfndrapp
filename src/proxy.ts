@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { buildCsp, createNonce } from "@/lib/csp";
+import { legacyHostRedirect } from "@/lib/legacy-hosts";
 import { FRIENDBOT_URL, HORIZON_URL, SOROBAN_RPC_URL } from "@/lib/network";
 
 /**
@@ -17,8 +18,23 @@ import { FRIENDBOT_URL, HORIZON_URL, SOROBAN_RPC_URL } from "@/lib/network";
  * request's CSP header and stamps it on its inline scripts, and the root layout
  * reads x-nonce for the theme script. CSP_REPORT_ONLY=1 at runtime sends it as
  * Content-Security-Policy-Report-Only instead, to back it out without a build.
+ *
+ * Before any of that, a request that arrived on a retired hostname
+ * (LEGACY_HOSTS, runtime) is sent to the same path on NEXT_PUBLIC_APP_URL with
+ * a permanent redirect (src/lib/legacy-hosts.ts). Nothing else runs for it.
  */
 export async function proxy(request: NextRequest) {
+  const moved = legacyHostRedirect(
+    {
+      forwardedHost: request.headers.get("x-forwarded-host"),
+      host: request.headers.get("host"),
+      pathname: request.nextUrl.pathname,
+      search: request.nextUrl.search,
+    },
+    { legacyHosts: process.env.LEGACY_HOSTS, appUrl: process.env.NEXT_PUBLIC_APP_URL },
+  );
+  if (moved) return NextResponse.redirect(moved, 308);
+
   const nonce = createNonce();
   const csp = buildCsp({
     nonce,

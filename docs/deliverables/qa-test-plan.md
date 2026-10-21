@@ -34,7 +34,7 @@ Identity/KYC, admin roster, treasury and operations contracts beyond their role 
 |---|---|---|
 | **Unit (Soroban test env)** | `cargo test --workspace`, mocked ledger time, Stellar Asset Contract test token | Every contract rule, including paths that take days or months on a real network (7-day window, 90-day stall) |
 | **Reference testnet deployment** | Factory `CBYDZWQQ…3ZK6`, attestation `CDKERKLK…I4UG`, vault wasm `e9009410…`, accounts builder + c1–c5 + an unrelated caller | Scripted end-to-end transactions ([reference-scenario.sh](../../scripts/reference-scenario.sh)), log in [transactions.tsv](../../deployments/testnet-reference/transactions.tsv) |
-| **Production testnet** | [testnetv2.blkfndr.com](https://testnetv2.blkfndr.com), factory `CBRUIRJX…PLINO`, attestation `CDEN2LU4…SQFX` ([contracts.env](../../deployments/testnet-production/contracts.env)) | Web app, Freighter, indexer, replay check, demo |
+| **Production testnet** | [blkfndr.com](https://blkfndr.com), factory `CBRUIRJX…PLINO`, attestation `CDEN2LU4…SQFX` ([contracts.env](../../deployments/testnet-production/contracts.env)) | Web app, Freighter, indexer, replay check, demo |
 | **Local web** | `npm test` (node --test), `npm run dev` | Indexer scan, vault replay, vote panel, live-project parsing |
 
 **Token.** Circle testnet USDC, SAC `CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA`, 7 decimals (5 USDC = 50,000,000 base units).
