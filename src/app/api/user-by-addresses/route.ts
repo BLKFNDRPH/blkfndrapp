@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { resolveAddresses } from "@/lib/data/profiles";
-import { AuthError } from "@/lib/supabase/auth";
+import { AuthError, requireCaller } from "@/lib/supabase/auth";
+import { jsonObject } from "@/lib/json-body";
 
 export async function POST(req: NextRequest) {
   try {
-    const { addresses } = await req.json();
+    await requireCaller();
+    const addresses = (await jsonObject(req))?.addresses;
     if (!Array.isArray(addresses)) return NextResponse.json({});
     return NextResponse.json(await resolveAddresses(addresses));
   } catch (error) {

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { issueWalletLinkChallenge } from "@/lib/data/platform";
 import { publicOrigin } from "@/lib/auth/app-origin";
 import { requireCaller, AuthError } from "@/lib/supabase/auth";
+import { jsonObject } from "@/lib/json-body";
+import { isStellarAccount } from "@/lib/stellar-address";
 
 // Issues the challenge a wallet signs to prove control before it is linked.
 // Requires a session: linking attaches an address to *an account*, so there
@@ -12,9 +14,12 @@ export async function POST(req: NextRequest) {
   try {
     const caller = await requireCaller();
 
-    const { publicKey } = await req.json();
+    const publicKey = (await jsonObject(req))?.publicKey;
     if (!publicKey) {
       return NextResponse.json({ error: "Public key is required" }, { status: 400 });
+    }
+    if (!isStellarAccount(publicKey)) {
+      return NextResponse.json({ error: "Not a Stellar account address" }, { status: 400 });
     }
 
     const { nonce, message } = await issueWalletLinkChallenge({
