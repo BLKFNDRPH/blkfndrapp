@@ -1,6 +1,6 @@
 # Web Interface, Lightweight Indexer & Testnet Demo
 
-Evidence for the deliverable, as of 2026-10-12, with the recorded demo stake added on 2026-10-17. Everything below runs on Stellar Testnet against the live app at [testnetv2.blkfndr.com](https://testnetv2.blkfndr.com). Only the video's public link is still to come; it is listed under [Still to do](#still-to-do).
+Evidence for the deliverable, as of 2026-10-12, with the recorded demo stake added on 2026-10-17. Everything below runs on Stellar Testnet against the live app at [blkfndr.com](https://blkfndr.com; it was testnetv2.blkfndr.com until 21 Oct 2026, and the old address now redirects). Only the video's public link is still to come; it is listed under [Still to do](#still-to-do).
 
 ## The deliverable
 
@@ -26,7 +26,7 @@ A React web app with Freighter wallet integration, where a contributor backs a p
 
 ### Backing a project in six taps
 
-Measured on the live site on 2026-10-12, project #22 ([AniDry – Smart Hybrid Rice Dryer](https://testnetv2.blkfndr.com/projects/22)), for a signed-in person with a ready wallet:
+Measured on the live site on 2026-10-12, project #22 ([AniDry – Smart Hybrid Rice Dryer](https://blkfndr.com/projects/22)), for a signed-in person with a ready wallet:
 
 | # | Tap | What the person sees |
 |---|---|---|

@@ -16,7 +16,7 @@ A recorded end-to-end demo on Stellar Testnet. A contributor stakes in a project
 
 ## Dry run, 2026-10-12
 
-I walked the flow on the live site (`testnetv2.blkfndr.com`) up to the point where you sign in. The steps after sign-in come from the stake sheet's code.
+I walked the flow on the live site (then testnetv2.blkfndr.com; `blkfndr.com` since 21 Oct 2026) up to the point where you sign in. The steps after sign-in come from the stake sheet's code.
 
 - **Project #22** is open for stakes until 31 Dec 2027: $200 staked of $5,500, from 2 stakers, with a $275 deposit locked. It runs the current vault code (`e9009410…`), raises USDC and has 8 stages. Avoid #9: its title shows twice and its deadline is set in the year 9999.
 - **Taps**, for someone signed in with a ready wallet:
@@ -42,13 +42,13 @@ I walked the flow on the live site (`testnetv2.blkfndr.com`) up to the point whe
 - [ ] At least **30 test USDC** from [faucet.circle.com](https://faucet.circle.com/) (Stellar, Testnet).
 
 **BLKFNDR account**
-- [ ] Signed in to `testnetv2.blkfndr.com` with a demo account, not one that shows a personal email.
+- [ ] Signed in to `blkfndr.com` with a demo account, not one that shows a personal email.
 - [ ] Wallet linked in **Settings → Wallet**. Already linked means no link signature on camera.
 - [ ] Open project #22's stake sheet once and check that every gate card is gone. Then close it.
 
 **Screen**
 - [ ] Browser at 1920×1080, zoom 100%, bookmarks bar hidden, no other extensions showing.
-- [ ] Tab 1: `https://testnetv2.blkfndr.com/projects`
+- [ ] Tab 1: `https://blkfndr.com/projects`
 - [ ] Tab 2: `https://stellar.expert/explorer/testnet/contract/CDLUNKTDXPCCOEBKE4UCWVVQ2UUCLD43LSCLAO64NKQV2APS7TDTRXAK`
 - [ ] A terminal at the repo root, font large enough to read, with the command ready:
 

@@ -19,7 +19,7 @@ import { createHash } from "node:crypto";
  */
 
 export interface WalletLinkFields {
-  /** The site's host, from configuration, e.g. testnetv2.blkfndr.com. */
+  /** The site's host, from configuration, e.g. blkfndr.com. */
   domain: string;
   /** The account the wallet is being linked to, as its owner knows it: their email. */
   account: string;

@@ -140,6 +140,19 @@ services:
       # including port, so https://example.com does not match example.com:8443.
       - APP_URLS=${APP_URLS:-}
 
+      # ── Retired hostnames ────────────────────────────────────────────────
+      # Comma-separated hostnames this deployment used to answer on. A request
+      # arriving on one of them is sent, permanently (308), to the same path on
+      # NEXT_PUBLIC_APP_URL. Only listed hosts are redirected, and only to that
+      # origin; a host that is itself NEXT_PUBLIC_APP_URL is ignored, so this is
+      # inert until the build points at the new domain.
+      #
+      # The site moved from testnetv2.blkfndr.com to blkfndr.com on 21 Oct 2026,
+      # so the old name is the default. Set it empty to switch the redirect off.
+      #
+      # Runtime, like APP_URLS. Hosts are compared including the port.
+      - LEGACY_HOSTS=${LEGACY_HOSTS-testnetv2.blkfndr.com}
+
       # ── Server-side Soroban RPC (optional, may be SECRET) ────────────────
       # The endpoint server code reads the chain through: the read routes that
       # serve browsers, the indexer and the keepers. Empty means the public

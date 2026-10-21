@@ -4,7 +4,7 @@ blkfndr runs as one Docker Compose stack: the Next.js app plus six small cron
 containers that call it on a schedule. The stack is deployed through Portainer.
 The database and sign-in live in Supabase, and the contracts live on Stellar.
 
-The current deployment is testnet, at `https://testnetv2.blkfndr.com`. Nothing
+The current deployment is testnet, at `https://blkfndr.com`. Nothing
 deploys automatically. CI ([.github/workflows/ci.yml](../.github/workflows/ci.yml))
 type-checks and lints the app and builds and tests the contracts. The host is
 rebuilt by hand.
@@ -270,6 +270,7 @@ stellar contract id asset --asset USDC:<ISSUER_G_ADDRESS> --network testnet
 | `PINATA_GROUP_BLKDFNDR` | No | [upload-image/route.ts](../src/app/api/upload-image/route.ts) | Pinata group id that uploads are added to. The spelling is the one the code reads |
 | `OPS_FUNDING_SUBMITTER_SECRET` | No | [ops-funding.ts](../src/lib/ops-funding.ts), [settle-stalled.ts](../src/lib/settle-stalled.ts), [ttl-keeper.ts](../src/lib/ttl-keeper.ts), [governance-keeper.ts](../src/lib/governance-keeper.ts) | Stellar secret seed of a funded, gas-only account. See [The gas payer](#the-gas-payer) |
 | `APP_URLS` | No | [auth/app-origin.ts](../src/lib/auth/app-origin.ts) | Extra origins, comma separated. See [Serving from more than one domain](#serving-from-more-than-one-domain) |
+| `LEGACY_HOSTS` | No | [legacy-hosts.ts](../src/lib/legacy-hosts.ts), through [proxy.ts](../src/proxy.ts) | Retired hostnames, comma separated. A request on one is sent permanently to the same path on `NEXT_PUBLIC_APP_URL`. See [Moving the site to a new domain](#moving-the-site-to-a-new-domain) |
 | `GEMINI_API_KEY` | No | The `@genkit-ai/googleai` plugin, set up in [src/ai/genkit.ts](../src/ai/genkit.ts) | AI listing review. The plugin reads `GEMINI_API_KEY`, then `GOOGLE_API_KEY`, then `GOOGLE_GENAI_API_KEY`. Compose passes only `GEMINI_API_KEY` |
 | `RESEND_API_KEY` | No | [secrets.ts](../src/lib/secrets.ts) | Env fallback for the `resend_api_key` Vault secret, which the notification emails cron sends with. Prefer the Vault (Settings in the admin console). Without either, nothing is emailed |
 | `EMAIL_FROM` | No | [notification-emails.ts](../src/lib/email/notification-emails.ts) | Sender, e.g. `BLKFNDR <notifications@blkfndr.com>` (the default). Its domain must be verified in Resend. See [Email](#email) |
@@ -465,9 +466,9 @@ Authentication → URL Configuration:
 
 | Setting | Value on testnet |
 |---|---|
-| `NEXT_PUBLIC_APP_URL` | `https://testnetv2.blkfndr.com` |
-| **Site URL** | `https://testnetv2.blkfndr.com` |
-| **Redirect URLs** | `https://testnetv2.blkfndr.com/auth/callback`<br>`https://testnetv2.blkfndr.com/auth/confirm` |
+| `NEXT_PUBLIC_APP_URL` | `https://blkfndr.com` |
+| **Site URL** | `https://blkfndr.com` |
+| **Redirect URLs** | `https://blkfndr.com/auth/callback`<br>`https://blkfndr.com/auth/confirm` |
 
 Use `https://`, and exact paths with no wildcard. The app asks Supabase to
 return to `<origin>/auth/callback` (Google) and `<origin>/auth/confirm` (email
@@ -503,7 +504,7 @@ today.
 comma separated:
 
 ```
-NEXT_PUBLIC_APP_URL=https://testnetv2.blkfndr.com
+NEXT_PUBLIC_APP_URL=https://blkfndr.com
 APP_URLS=https://app.blkfndr.com,https://staging.blkfndr.com
 ```
 
@@ -516,6 +517,36 @@ not an open redirect.
 - `APP_URLS` is runtime. Adding a domain needs a redeploy, not a rebuild.
 - Hosts are compared including the port. `https://example.com` does not match
   `example.com:8443`.
+
+### Moving the site to a new domain
+
+The site moved from `testnetv2.blkfndr.com` to `https://blkfndr.com` on
+21 Oct 2026. The old name keeps resolving at Cloudflare and keeps reaching the
+app, and the app sends it on:
+
+- `LEGACY_HOSTS` lists retired hostnames; compose defaults it to
+  `testnetv2.blkfndr.com`. A request arriving on one of them is answered with a
+  `308` to the same path and query on `NEXT_PUBLIC_APP_URL`
+  ([legacy-hosts.ts](../src/lib/legacy-hosts.ts), run first thing in
+  [proxy.ts](../src/proxy.ts)). Nothing else runs for it: no session refresh,
+  no page.
+- It is inert while `NEXT_PUBLIC_APP_URL` still names a listed host, so the
+  redirect starts with the first build whose `NEXT_PUBLIC_APP_URL` is
+  `https://blkfndr.com`. That is a build argument: a rebuild, not a restart.
+- Only listed hosts are redirected, and only to that origin, so a forged `Host`
+  header cannot turn this into an open redirect. The compose crons call the app
+  by its container name, which is never on the list.
+- Check with `curl -I https://testnetv2.blkfndr.com/projects/22`: `308`, with
+  `Location: https://blkfndr.com/projects/22`.
+
+To move again, in order: make the new name answer (DNS, a certificate, and the
+reverse proxy's `server_name`, keeping the old name there too so it still
+reaches the app); in Supabase set the Site URL to the new origin and add its two
+Redirect URL entries, keeping the old ones for a while; list the old origin in
+`APP_URLS` so a sign-in started there still completes; rebuild with the new
+`NEXT_PUBLIC_APP_URL`; add the old host to `LEGACY_HOSTS` and update the stack.
+The same redirect can also be set at the edge as a Cloudflare redirect rule,
+which works even while the origin is down; the two do not conflict.
 
 ### First administrator
 
@@ -726,7 +757,7 @@ fetch a page, list its `/_next/static/…js` chunks, and grep them for a string
 from the change:
 
 ```bash
-curl -sL https://testnetv2.blkfndr.com/ | grep -o '/_next/static/[^"]*\.js' | sort -u
+curl -sL https://blkfndr.com/ | grep -o '/_next/static/[^"]*\.js' | sort -u
 ```
 
 ## Troubleshooting
@@ -838,13 +869,13 @@ plugin reads.
 ```nginx
 server {
     listen 80;
-    server_name testnetv2.blkfndr.com;
+    server_name blkfndr.com testnetv2.blkfndr.com;
     return 301 https://$server_name$request_uri;
 }
 
 server {
     listen 443 ssl http2;
-    server_name testnetv2.blkfndr.com;
+    server_name blkfndr.com testnetv2.blkfndr.com;
 
     ssl_certificate /path/to/cert.pem;
     ssl_certificate_key /path/to/key.pem;

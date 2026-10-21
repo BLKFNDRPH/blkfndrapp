@@ -8,7 +8,7 @@
 //   npm run perf:baseline -- --pages /,/projects/11 --form mobile
 //
 // Options:
-//   --url    base URL                    (default https://testnetv2.blkfndr.com)
+//   --url    base URL                    (default https://blkfndr.com)
 //   --pages  comma-separated paths       (default /,/projects,/projects/11,/projects/11?tab=stages)
 //   --runs   runs per page and form      (default 5)
 //   --form   desktop | mobile | both     (default both)
@@ -55,7 +55,7 @@ const METRICS = [
 
 function parseArgs(argv) {
   const args = {
-    url: "https://testnetv2.blkfndr.com",
+    url: "https://blkfndr.com",
     pages: "/,/projects,/projects/11,/projects/11?tab=stages",
     runs: "5",
     form: "both",
