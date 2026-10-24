@@ -19,7 +19,7 @@ Last full review: **2026-10-02 to 2026-10-03**, against `main` at #104. Every pa
 | HTTP routes and server actions | [api-reference.md](api-reference.md) | Current | Every `src/app/api` route and exported action |
 | Auth, sessions, wallet linking | [authentication.md](authentication.md) | Current | Supabase Auth, Google, Freighter linking and signing, admin roster, KYC deletion and renewal (reviewed 2026-10-07) |
 | Personal data and retention | [privacy.md](privacy.md) | Current | What is held, who sees it, how long; identity-document deletion, renewal, record check; 2026-10-07 audit and open items (added 2026-10-07) |
-| AI listing review | [ai-features.md](ai-features.md) | Current | Implemented Genkit flow; query analysis and sentiment tracking are design specs only |
+| AI listing review | [ai-features.md](ai-features.md) | Current | Implemented listing review; query analysis and sentiment tracking are design specs only |
 | Deployment and operations | [deployment.md](deployment.md) | Current | Docker, Portainer, compose crons, env vars, contract deploys |
 | Contributing | [contributing.md](contributing.md) | Current | Setup, checks, migrations, PR conventions |
 | Product blueprint | [blueprint.md](blueprint.md) | Current | Core features and style guide |

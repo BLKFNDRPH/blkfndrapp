@@ -20,7 +20,7 @@ import { cn } from "@/lib/utils"
 
 const appearanceFormSchema = z.object({
   theme: z.enum(["light", "dark", "system"], {
-    required_error: "Please select a theme.",
+    error: "Please select a theme.",
   }),
 })
 

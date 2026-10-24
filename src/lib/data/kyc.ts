@@ -77,7 +77,7 @@ const SubmissionInput = z.object({
   ]),
   detailsHash: z.string().trim().length(64),
   consentGiven: z.literal(true, {
-    errorMap: () => ({ message: "Consent is required to submit identity documents" }),
+    error: "Consent is required to submit identity documents",
   }),
 });
 

@@ -114,7 +114,7 @@ Every exported async function in a `"use server"` file is a public HTTP endpoint
 
 | Action | Who may call | What it does |
 |---|---|---|
-| `runImproveListingQuality(input)` | Signed in | Runs the Genkit listing review (Gemini 2.5 Flash). Returns `{ suggestions[], flags[], overallQualityScore }`, or `null` when signed out, when the model fails, or without `GEMINI_API_KEY` |
+| `runImproveListingQuality(input)` | Signed in | Runs the AI listing review (Gemini 2.5 Flash). Returns `{ suggestions[], flags[], overallQualityScore }`, or `null` when signed out, when the model fails, or without `GEMINI_API_KEY` |
 | `submitKycRequest(input)` | Signed in | Files or resubmits the caller's own KYC, through their own session. The address must be the caller's linked wallet, and the document path must be under the caller's own prefix. An approved check can be resubmitted only to renew it, from 30 days before its ID expires (`verified_until`), and a resubmission cannot change the address. Deletes the upload it replaces. Tells the KYC reviewers, in the bell and by email |
 | `getMyKycStatus()` | Signed in | The caller's own status fields, including `verified_until`. Never the identity details |
 | `attachMyKycWallet()` | Signed in | Attaches the caller's linked wallet to their own check, if it was filed without one, and recomputes the details hash with it. Refused on a rejected check. On an approved check, the same update deletes the ID details and tells the KYC reviewers it is ready to record |
@@ -340,7 +340,7 @@ The dedicated gateway gets `PINATA_GATEWAY_KEY` as an `x-pinata-gateway-token` h
 | Service | Used for | Secret |
 |---|---|---|
 | Pinata (IPFS) | Listing images and metadata, milestone proof photos | `pinata_jwt` in Supabase Vault, or `PINATA_JWT` (server-only) |
-| Gemini 2.5 Flash (Genkit) | AI listing review | `GEMINI_API_KEY` (server-only, optional) |
+| Gemini 2.5 Flash (`@google/genai`) | AI listing review | `GEMINI_API_KEY` (server-only, optional) |
 | Supabase Storage | Private KYC documents behind signed URLs, deleted through the Storage API after the decision ([privacy.md](privacy.md)) | Service role (`SUPABASE_SECRET_KEY`, server-only) |
 | Supabase Vault | Managed attestor keys, platform secrets | Service role (server-only) |
 | Friendbot (testnet only) | Funding a newly generated attestor key | None |

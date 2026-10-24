@@ -16,7 +16,7 @@ A secure, on-chain vault for real-world projects, on Stellar. Each project's mon
 - KYC Review: Reviewers approve identity in the console. The server signs the on-chain attestation with the reviewer's managed, gas-only wallet, so reviewers never handle a wallet and never touch project funds. The ID document and details are deleted once a reviewer decides, leaving the name and a fingerprint on the public record. A verification lasts until the ID expires and is renewed with a current one. See [Private data](privacy.md).
 - Platform Governance: Owners govern the fee treasury and the Operations Vault from the console with their own wallets, by two-thirds vote: distributions, platform parameters, and the monthly gas budget for moderation.
 - Secure Authentication with Wallet + Session: Supabase Auth sessions (email/password, Google) plus Freighter wallet linking. Every stake, vote and release is signed in the stakeholder's own wallet, and the signing wallet must match the account the action names.
-- AI-Powered Listing Quality Tool: A listing quality review (Genkit + Gemini 2.5 Flash) scans a draft listing from the create form and suggests improvements or flags issues before it goes live.
+- AI-Powered Listing Quality Tool: A listing quality review (Gemini 2.5 Flash) scans a draft listing from the create form and suggests improvements or flags issues before it goes live.
 
 ## Style Guidelines:
 

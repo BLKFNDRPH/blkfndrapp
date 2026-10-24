@@ -54,10 +54,11 @@ const MAX_MARK_READ = 200;
 
 export async function markRead(ids: string[]) {
   await requireCaller();
-  // zod 3 parses every element before it applies .max(), one issue per bad id,
+  // zod 3 parsed every element before it applied .max(), one issue per bad id,
   // so the bound bounded nothing: a 1 MB body of numbers built 500,000 issues
-  // and ~180 MB of heap (GHSA-mrhx-c7xc-m3w5, which zod 3 never gets a fix
-  // for). One id past the bound is all .max() needs to refuse the list.
+  // and ~180 MB of heap (GHSA-mrhx-c7xc-m3w5). zod 4.6.6 and later check .max()
+  // first; the slice stays so the bound never rests on the zod version. One id
+  // past the bound is all .max() needs to refuse the list.
   const parsed = z
     .array(z.string().uuid())
     .max(MAX_MARK_READ)

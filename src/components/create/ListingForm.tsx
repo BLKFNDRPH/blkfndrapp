@@ -168,17 +168,17 @@ const formSchema = z.object({
     .trim()
     .min(3, "Say where the project is.")
     .refine(...withinLimit(LISTING_LIMITS.location, "Location")),
-  fundingGoal: z.coerce.number().min(1, "The goal, the sum of your stages, must be at least 1."),
+  fundingGoal: z.coerce.number<number>().min(1, "The goal, the sum of your stages, must be at least 1."),
   // Derived from CURRENCIES rather than restated. A hand-maintained copy drifts,
   // and the drift is silent: this list accepted three currencies that had no
   // token address configured and no code path that would have used one.
   currencyType: z.enum(CURRENCIES, {
-    required_error: "Choose a currency.",
+    error: "Choose a currency.",
   }),
   // NaN when the date field is empty or half-typed: see handleDeadlineChange.
   // The minimum is read at validation time, not once when the module loads.
   fundingDeadline: z.coerce
-    .number({ invalid_type_error: "Choose a deadline to reach the goal." })
+    .number<number>({ error: "Choose a deadline to reach the goal." })
     .refine((ms) => ms >= MIN_DEADLINE_MS(), "Pick a deadline at least a day from now."),
   image: z
     .any()

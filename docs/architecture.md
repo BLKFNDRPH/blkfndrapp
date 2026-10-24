@@ -30,7 +30,7 @@ graph TB
     end
 
     PIN[Pinata IPFS]
-    GEM[Gemini 2.5 Flash via Genkit]
+    GEM[Gemini 2.5 Flash]
 
     UI -->|actions, /api| APP
     UI -->|sign| FW
@@ -111,11 +111,11 @@ After a transaction the client calls `triggerIndexerSync`. That action runs only
 
 ```
 Builder presses Analyze on the create form → runImproveListingQuality (signed in only)
-    → Genkit flow on Gemini 2.5 Flash → { suggestions[], flags[], overallQualityScore (0-100) }
+    → one Gemini 2.5 Flash call → { suggestions[], flags[], overallQualityScore (0-100) }, checked with zod
     → shown to the builder in a dialog
 ```
 
-The flow is in [src/ai/flows/improve-listing-quality.ts](../src/ai/flows/improve-listing-quality.ts). Without `GEMINI_API_KEY` it returns nothing and the feature is off.
+The review is in [src/ai/flows/improve-listing-quality.ts](../src/ai/flows/improve-listing-quality.ts). Without `GEMINI_API_KEY` it returns nothing and the feature is off.
 
 ## The event indexer
 
@@ -256,9 +256,9 @@ Authorization is enforced by the database, not only by application code. The pub
 
 Seven Rust contracts; see [Smart Contracts](smart-contracts.md) for the full API and for where the deployed contracts differ from source. Clients are built in [src/lib/stellar-clients.ts](../src/lib/stellar-clients.ts). The network passphrase and endpoints come from [src/lib/network.ts](../src/lib/network.ts): Testnet unless `NEXT_PUBLIC_STELLAR_NETWORK=public`.
 
-### AI — Genkit + Gemini
+### AI — Gemini
 
-Flows in `src/ai/flows/`, registered with `ai.defineFlow()`, running on Gemini 2.5 Flash. The one flow reviews a draft listing for the builder. It is off without `GEMINI_API_KEY`.
+One feature in `src/ai/flows/`: a review of a draft listing for the builder, one call to Gemini 2.5 Flash through Google's Gen AI SDK (`@google/genai`) with a JSON Schema for the reply, which zod checks before it is returned. It is off without `GEMINI_API_KEY`. See [AI Features](ai-features.md).
 
 ## The vault release rule
 
@@ -396,7 +396,7 @@ blkfndrapp/
 │   └── deploy-contracts.sh     # Deploys and wires the suite, verifying the result
 ├── src/
 │   ├── actions/                # Server actions: admins, moderation, restrictions, secrets…
-│   ├── ai/                     # Genkit configuration and flows
+│   ├── ai/                     # The AI listing review (Gemini)
 │   ├── app/                    # App Router pages, api/ routes, auth/ routes, actions.ts
 │   ├── components/             # React components (shadcn/ui; admin/, create/, project/…)
 │   ├── context/                # React Context providers

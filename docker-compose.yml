@@ -183,11 +183,10 @@ services:
       # only needs XLM for gas. Unset means those endpoints skip.
       - OPS_FUNDING_SUBMITTER_SECRET=${OPS_FUNDING_SUBMITTER_SECRET:-}
 
-      # ── Genkit / Gemini (optional) ───────────────────────────────────────
-      # The @genkit-ai/googleai plugin reads GEMINI_API_KEY, GOOGLE_API_KEY or
-      # GOOGLE_GENAI_API_KEY. This stack previously set
-      # GOOGLE_GENERATIVEAI_API_KEY, which matches none of them, so the AI
-      # listing review silently did nothing however valid the key was.
+      # ── Gemini (optional) ────────────────────────────────────────────────
+      # The AI listing review's key. Only GEMINI_API_KEY is read. This stack
+      # once set GOOGLE_GENERATIVEAI_API_KEY, which nothing reads, so the
+      # review silently did nothing however valid the key was.
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
 
       # ── Email (optional) ─────────────────────────────────────────────────
