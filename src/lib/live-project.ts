@@ -47,6 +47,7 @@ export function withVaultState(project: Project, state: VaultState): Project {
     fundingDeadline: state.fundingDeadline,
     bondPosted: state.bondPosted,
     bondAmount: state.bondAmount,
+    bondReturned: state.bondReturned,
     releasedTotal: state.releasedTotal,
     milestones:
       state.milestones.length > 0

@@ -45,6 +45,12 @@ export interface VaultState {
   fundingDeadline: number;
   bondPosted: boolean;
   bondAmount: number;
+  /**
+   * The deposit has left the vault: back to the builder after a missed goal or
+   * the last payout, or out to stakeholders with the last refund. Missing from
+   * vault code that predates the flag.
+   */
+  bondReturned?: boolean;
   releasedTotal: number;
   milestones: OnChainMilestone[];
 }
@@ -91,6 +97,7 @@ export async function readVaultState(vaultAddress: string): Promise<VaultState |
       fundingDeadline: Number(info.deadline) * 1000,
       bondPosted: Boolean(info.bond_posted),
       bondAmount: Number(info.bond_amount) / STROOPS,
+      bondReturned: typeof info.bond_returned === "boolean" ? info.bond_returned : undefined,
       releasedTotal: Number(info.released_total) / STROOPS,
       milestones: (info.milestones ?? []).map((m: any) => ({
         id: Number(m.id),

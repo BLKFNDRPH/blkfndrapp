@@ -54,6 +54,7 @@ import { useXlmRate } from "@/lib/xlm-rate";
 import {
   describeStatus,
   describeDeadline,
+  describeDeposit,
   formatDeadlineDate,
   TONE_CLASSES,
   type StatusView,
@@ -554,7 +555,7 @@ export function ProjectView({
     else if (deadline.label === "Ends today") statsLine.push("Ends today");
     else statsLine.push(`Ends ${deadlineDate} (${deadline.label.replace(/ left$/, "")})`);
   }
-  if (depositView) statsLine.push(`Builder's deposit ${depositView.primary} locked`);
+  if (depositView) statsLine.push(describeDeposit(project, depositView.primary));
 
   // The sentence that stands in for the stake button when stakes are closed.
   const closedReason: { chip: string; sentence: string; chipClass: string } | null = (() => {
