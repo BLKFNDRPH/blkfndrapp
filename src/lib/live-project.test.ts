@@ -59,6 +59,13 @@ test("stages keep the listing's words and take the vault's amount and payout", (
   assert.equal(live.title, "AquaPure 2");
 });
 
+test("the vault's word on its deposit carries over", () => {
+  assert.equal(withVaultState(indexed, { ...ledger, bondReturned: true }).bondReturned, true);
+  assert.equal(withVaultState(indexed, { ...ledger, bondReturned: false }).bondReturned, false);
+  // Vault code older than the flag says nothing, and nor does the project.
+  assert.equal(withVaultState(indexed, ledger).bondReturned, undefined);
+});
+
 test("a vault reporting no stages leaves the listing's stages alone", () => {
   const live = withVaultState(indexed, { ...ledger, milestones: [] });
   assert.equal(live.milestones, indexed.milestones);
