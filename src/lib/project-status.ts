@@ -250,6 +250,39 @@ export function formatDeadlineDate(deadlineMs: number, now: number = Date.now())
   });
 }
 
+/**
+ * Where the builder's deposit is, for the line under the money. "Locked" only
+ * while the vault still holds it.
+ *
+ * The vault's bond_returned says the deposit has left, not where it went: a
+ * missed goal and the last payout hand it back to the builder, and in a
+ * refunding vault the last refund sweeps it out to stakeholders. So the status
+ * says where and the flag says whether yet. Without the flag (the indexed
+ * copy, before the vault is read) the line says where the deposit goes, which
+ * is true on either side of it moving.
+ */
+export function describeDeposit(
+  project: Pick<Project, "status" | "bondReturned">,
+  amount: string,
+): string {
+  const left = project.bondReturned === true;
+  switch (project.status) {
+    case "completed":
+      return `Builder's deposit ${amount} returned`;
+    case "failed":
+    case "expired":
+      return left
+        ? `Builder's deposit ${amount} returned`
+        : `Builder's deposit ${amount} goes back to the builder`;
+    case "refunding":
+      return left
+        ? `Builder's deposit ${amount} paid out to stakeholders`
+        : `Builder's deposit ${amount} set aside for stakeholders`;
+    default:
+      return `Builder's deposit ${amount} locked`;
+  }
+}
+
 /** Tailwind classes per tone, so every pill looks the same everywhere. */
 export const TONE_CLASSES: Record<StatusTone, string> = {
   open: "bg-emerald-500/15 text-emerald-700 border-emerald-500/30 dark:text-emerald-300",

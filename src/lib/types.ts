@@ -36,6 +36,11 @@ export type Project = {
   vaultAddress?: string;
   bondAmount?: number;
   bondPosted?: boolean;
+  /**
+   * The vault's bond_returned: the deposit has left the vault. Only from a
+   * live read of the vault; the indexed copy does not carry it.
+   */
+  bondReturned?: boolean;
   releasedTotal?: number;
   milestones?: {
     id: number;
