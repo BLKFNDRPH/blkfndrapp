@@ -39,6 +39,7 @@ globalThis.fetch = async (url) => {
 const src = (p) => path.join(repo, "src", p);
 const FILES = {
   notifications: src("app/api/notifications/route.ts"),
+  notificationsData: src("lib/data/notifications.ts"),
   userByAddresses: src("app/api/user-by-addresses/route.ts"),
   nonce: src("app/api/auth/freighter/nonce/route.ts"),
   verify: src("app/api/auth/freighter/verify/route.ts"),
@@ -418,6 +419,41 @@ describe("BF-L-01: malformed input is refused with 401 signed out and 400 signed
     reset(PLATFORM_ADMIN, { platform_settings: [{ id: true, fee_wallet_email: "old@behaviour.test" }] });
     assert.equal((await call(mods.platformSettings, "POST", { body: { feeWalletEmail: "fees@behaviour.test" } })).status, 200);
     assert.equal(authz.db.platform_settings[0].fee_wallet_email, "fees@behaviour.test");
+  });
+});
+
+// ── GHSA-mrhx-c7xc-m3w5: an oversized id list is refused cheaply ─────────
+
+describe("GHSA-mrhx-c7xc-m3w5: an oversized notification id list costs no more than a full one", () => {
+  // zod 3 parses every element before it applies .max(200), one issue per bad
+  // element. 500,000 numbers is a 1 MB body; it used to build 500,001 issues
+  // and ~180 MB of heap in one request.
+  const HUGE = Array(500_000).fill(0);
+  const uuids = (n) => Array.from({ length: n }, (_, i) => `20000000-0000-4000-8000-${String(i).padStart(12, "0")}`);
+
+  test("markRead refuses it having looked at no more than 201 elements", async () => {
+    reset(ALICE);
+    const error = await mods.notificationsData.markRead(HUGE).catch((e) => e);
+    assert.ok(Array.isArray(error?.issues), String(error));
+    assert.ok(error.issues.length <= 202, `${error.issues.length} issues`);
+    assert.ok(error.issues.some((i) => i.code === "too_big"));
+    assert.deepEqual(authz.effects, []);
+  });
+
+  test("PATCH /api/notifications with it: 400, nothing written", async () => {
+    reset(ALICE);
+    const res = await call(mods.notifications, "PATCH", { body: { ids: HUGE } });
+    assert.equal(res.status, 400, res.text);
+    assert.deepEqual(authz.effects, []);
+  });
+
+  test("200 ids are still marked read, 201 are still refused", async () => {
+    reset(ALICE);
+    assert.equal((await call(mods.notifications, "PATCH", { body: { ids: uuids(200) } })).status, 200);
+    assert.deepEqual(authz.effects, ["session: update notifications"]);
+    reset(ALICE);
+    assert.equal((await call(mods.notifications, "PATCH", { body: { ids: uuids(201) } })).status, 400);
+    assert.deepEqual(authz.effects, []);
   });
 });
 

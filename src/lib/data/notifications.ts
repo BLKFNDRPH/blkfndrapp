@@ -50,9 +50,18 @@ export async function listOwnNotifications(): Promise<Notification[]> {
   });
 }
 
+const MAX_MARK_READ = 200;
+
 export async function markRead(ids: string[]) {
   await requireCaller();
-  const parsed = z.array(z.string().uuid()).max(200).parse(ids);
+  // zod 3 parses every element before it applies .max(), one issue per bad id,
+  // so the bound bounded nothing: a 1 MB body of numbers built 500,000 issues
+  // and ~180 MB of heap (GHSA-mrhx-c7xc-m3w5, which zod 3 never gets a fix
+  // for). One id past the bound is all .max() needs to refuse the list.
+  const parsed = z
+    .array(z.string().uuid())
+    .max(MAX_MARK_READ)
+    .parse(ids.slice(0, MAX_MARK_READ + 1));
   if (parsed.length === 0) return;
 
   const supabase = await createClient();
