@@ -229,7 +229,7 @@ takes effect when the container is recreated: a Portainer stack update, or
 ## Environment variables
 
 Every variable the code reads, from a search of `process.env` in `src/`, plus the
-ones the Genkit plugin and compose read.
+ones compose reads.
 
 ### Build time (public)
 
@@ -271,7 +271,7 @@ stellar contract id asset --asset USDC:<ISSUER_G_ADDRESS> --network testnet
 | `OPS_FUNDING_SUBMITTER_SECRET` | No | [ops-funding.ts](../src/lib/ops-funding.ts), [settle-stalled.ts](../src/lib/settle-stalled.ts), [ttl-keeper.ts](../src/lib/ttl-keeper.ts), [governance-keeper.ts](../src/lib/governance-keeper.ts) | Stellar secret seed of a funded, gas-only account. See [The gas payer](#the-gas-payer) |
 | `APP_URLS` | No | [auth/app-origin.ts](../src/lib/auth/app-origin.ts) | Extra origins, comma separated. See [Serving from more than one domain](#serving-from-more-than-one-domain) |
 | `LEGACY_HOSTS` | No | [legacy-hosts.ts](../src/lib/legacy-hosts.ts), through [proxy.ts](../src/proxy.ts) | Retired hostnames, comma separated. A request on one is sent permanently to the same path on `NEXT_PUBLIC_APP_URL`. See [Moving the site to a new domain](#moving-the-site-to-a-new-domain) |
-| `GEMINI_API_KEY` | No | The `@genkit-ai/googleai` plugin, set up in [src/ai/genkit.ts](../src/ai/genkit.ts) | AI listing review. The plugin reads `GEMINI_API_KEY`, then `GOOGLE_API_KEY`, then `GOOGLE_GENAI_API_KEY`. Compose passes only `GEMINI_API_KEY` |
+| `GEMINI_API_KEY` | No | [improve-listing-quality.ts](../src/ai/flows/improve-listing-quality.ts) | AI listing review. Passed to Google's Gen AI SDK as its key; `GOOGLE_API_KEY` and `GOOGLE_GENAI_API_KEY` are not read. Runtime only, so a change needs a redeploy, not a rebuild. See [AI Features](ai-features.md#model-and-configuration) |
 | `RESEND_API_KEY` | No | [secrets.ts](../src/lib/secrets.ts) | Env fallback for the `resend_api_key` Vault secret, which the notification emails cron sends with. Prefer the Vault (Settings in the admin console). Without either, nothing is emailed |
 | `EMAIL_FROM` | No | [notification-emails.ts](../src/lib/email/notification-emails.ts) | Sender, e.g. `BLKFNDR <notifications@blkfndr.com>` (the default). Its domain must be verified in Resend. See [Email](#email) |
 
@@ -860,8 +860,11 @@ and funded, then run a [dry run](#keep-alive-cron).
 
 ### AI listing review does nothing
 
-`GEMINI_API_KEY` is unset. `GOOGLE_GENERATIVEAI_API_KEY` is not a name the
-plugin reads.
+Every press shows "The quality check didn't answer" and the server logs
+`AI analysis failed:` with the reason. `GEMINI_API_KEY is not set` means the
+key is missing from the stack: `GOOGLE_API_KEY` and
+`GOOGLE_GENERATIVEAI_API_KEY` are not names the app reads. Anything else is
+Gemini's answer, such as a key it refuses.
 
 ### Contract calls fail
 

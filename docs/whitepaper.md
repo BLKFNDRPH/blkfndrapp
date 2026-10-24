@@ -57,7 +57,7 @@ blkfndr treats that as a design constraint rather than a policy problem.
 | Database | Supabase (Postgres with Row Level Security) |
 | Auth | Supabase Auth (email/password, Google); Freighter for wallet linking and signing |
 | Storage | Pinata (IPFS) for blueprints and listing media; private Supabase Storage for identity documents, deleted after the decision |
-| AI | Google Genkit with Gemini 2.5 Flash, for listing-quality review |
+| AI | Gemini 2.5 Flash, through Google's Gen AI SDK, for listing-quality review |
 
 Stellar is purpose-built for payments and asset issuance, which makes it a natural home for a protocol whose unit of work is a small stake that may come from anywhere.
 

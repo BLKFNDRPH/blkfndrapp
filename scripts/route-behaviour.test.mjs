@@ -425,9 +425,10 @@ describe("BF-L-01: malformed input is refused with 401 signed out and 400 signed
 // ── GHSA-mrhx-c7xc-m3w5: an oversized id list is refused cheaply ─────────
 
 describe("GHSA-mrhx-c7xc-m3w5: an oversized notification id list costs no more than a full one", () => {
-  // zod 3 parses every element before it applies .max(200), one issue per bad
+  // zod 3 parsed every element before it applied .max(200), one issue per bad
   // element. 500,000 numbers is a 1 MB body; it used to build 500,001 issues
-  // and ~180 MB of heap in one request.
+  // and ~180 MB of heap in one request. zod 4.6.6 checks .max() first, and
+  // markRead slices the list to 201 besides; this holds either way.
   const HUGE = Array(500_000).fill(0);
   const uuids = (n) => Array.from({ length: n }, (_, i) => `20000000-0000-4000-8000-${String(i).padStart(12, "0")}`);
 

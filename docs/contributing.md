@@ -49,8 +49,6 @@ cargo test --workspace
 | `npm run test:coverage` | The same suite under Node's coverage, plus the share of `src/lib` and `src` the tests reach (see [Coverage](#coverage)) |
 | `npm run test:authz` | Calls every route handler and server action as each identity that must not reach it |
 | `npm run test:db` | Replays the migrations into an in-memory Postgres and runs the policy abuse cases |
-| `npm run genkit:dev` | Genkit Developer UI for the AI flows (see [AI Features](ai-features.md#local-development)) |
-| `npm run genkit:watch` | The same, restarting on file changes |
 | `bash scripts/build-contracts.sh` | Build every contract to wasm and print its size and sha256 |
 | `cargo test --workspace` | Contract tests |
 | `cargo clippy --workspace --all-targets -- -D warnings` | Contract lints, as CI runs them |
@@ -189,9 +187,9 @@ rm src/packages/blkfndr_vault/{package.json,tsconfig.json,README.md}
 
 Delete the generated `package.json`, `tsconfig.json` and `README.md`. Installing a binding as a package creates a second copy of `@stellar/stellar-sdk`, and its types no longer match the app's. Never hand-edit a binding. ESLint ignores `src/packages/` for this reason.
 
-## AI flows
+## AI features
 
-The single Genkit flow and how to add another are in [AI Features](ai-features.md#adding-a-flow).
+The one AI feature, the listing review, and how to add another are in [AI Features](ai-features.md#adding-a-feature).
 
 ## Documentation
 

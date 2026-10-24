@@ -11,24 +11,11 @@
 
 import { spawnSync } from "node:child_process";
 
-const ACCEPTED = {
-  // JaegerPropagator DoS on a malformed header. Reaches us through genkit's
-  // OpenTelemetry tree (@genkit-ai/core pins @opentelemetry/sdk-node ^0.52; no
-  // genkit release, latest or next, moves past it). The propagator only runs
-  // when OTEL_PROPAGATORS names jaeger, which nothing sets. The Prometheus
-  // exporter advisory that sat beside it (GHSA-q7rr-3cgh-j5r3) is no longer
-  // reported, so its entry is gone.
-  "GHSA-45rx-2jwx-cxfr": "Jaeger propagator is never configured",
-  // Zod's array, set and map parsers walk every element before .max() applies,
-  // one issue per bad element. Fixed in zod 4.6.6, never in zod 3, and genkit
-  // (1.43, latest) still needs zod 3, so moving the app to zod 4 leaves genkit's
-  // copy reported. The app's one schema over a request-sized collection,
-  // markRead's ids, gives zod at most 201 of them
-  // (scripts/route-behaviour.test.mjs), and src/lib/zod-collections.test.ts fails
-  // on any new one. genkit checks flows with ajv, not zod. Owner sign-off
-  // 2026-10-24, PR #228.
-  "GHSA-mrhx-c7xc-m3w5": "markRead caps ids before zod; genkit validates with ajv",
-};
+// Empty. The two entries it last held, GHSA-45rx-2jwx-cxfr (the OpenTelemetry
+// Jaeger propagator in genkit's tree) and GHSA-mrhx-c7xc-m3w5 (zod 3's
+// collection walk, which genkit's zod 3 kept reported), went when genkit was
+// removed and the app moved to zod 4.
+const ACCEPTED = {};
 
 const BLOCKING = new Set(["high", "critical"]);
 

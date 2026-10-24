@@ -2,7 +2,7 @@
 
 ## Overview
 
-blkfndr has one AI feature: an advisory review of a draft listing. On the create-listing form, the **AI Suggestions** button sends the draft to Gemini through a Google Genkit flow. The builder gets back a quality score, suggestions, and any potential issues.
+blkfndr has one AI feature: an advisory review of a draft listing. On the create-listing form, the **AI Suggestions** button sends the draft to Gemini in one call through Google's Gen AI SDK (`@google/genai`). The builder gets back a quality score, suggestions, and any potential issues.
 
 The review is advice for the builder and nothing more. The result is not stored, admins never see it, and it does not gate launch, admin approval, or anything on-chain.
 
@@ -18,47 +18,57 @@ Query analysis and sentiment tracking appear at the end of this page as design s
 
 | Piece | File | Role |
 |---|---|---|
-| Genkit instance | [src/ai/genkit.ts](../src/ai/genkit.ts) | Registers the `googleAI()` plugin and sets the default model |
-| Flow | [src/ai/flows/improve-listing-quality.ts](../src/ai/flows/improve-listing-quality.ts) | Schemas, the prompt `improveListingQualityPrompt`, the flow `improveListingQualityFlow`, and the exported wrapper `improveListingQuality()` |
-| Server Action | [src/app/actions.ts](../src/app/actions.ts) | `runImproveListingQuality()`, the only caller of the flow |
+| Review | [src/ai/flows/improve-listing-quality.ts](../src/ai/flows/improve-listing-quality.ts) | The input and output schemas, the prompt, and `improveListingQuality()`, which makes the Gemini call and checks the reply |
+| Tests | [src/ai/flows/improve-listing-quality.test.ts](../src/ai/flows/improve-listing-quality.test.ts) | The request and the reply checks against a stand-in for the Gemini API, part of `npm test`. Nothing reaches Google |
+| Server Action | [src/app/actions.ts](../src/app/actions.ts) | `runImproveListingQuality()`, the only caller of the review |
 | Form | [src/components/create/ListingForm.tsx](../src/components/create/ListingForm.tsx) | The **AI Suggestions** button on `/create-listing` |
 | Result dialog | [src/components/create/AiAnalysisDialog.tsx](../src/components/create/AiAnalysisDialog.tsx) | Shows the score, suggestions and issues |
-| Dev entry point | [src/ai/dev.ts](../src/ai/dev.ts) | Loads `.env` and registers the flow for the Genkit Developer UI |
 
 ### Request path
 
 ```mermaid
 flowchart LR
     A[ListingForm<br/>AI Suggestions] -->|title, description, category,<br/>fundingGoal, image data URI| B[runImproveListingQuality<br/>Server Action]
-    B -->|requireCaller| C[improveListingQuality<br/>Genkit flow]
-    C --> D[Gemini 2.5 Flash]
-    D -->|structured output| C
-    C --> B
+    B -->|requireCaller| C[improveListingQuality]
+    C -->|prompt, image,<br/>reply JSON Schema| D[Gemini 2.5 Flash]
+    D -->|JSON reply| C
+    C -->|checked against the output schema| B
     B -->|result or null| E[AiAnalysisDialog<br/>or failure toast]
 ```
 
-1. The builder picks a project image. The browser reads it into a base64 data URI. Without an image, the button shows "Image Required" and sends nothing.
+1. The builder picks a project image. The browser reads it into a base64 data URI. Without an image, the button shows "Add a picture first" and sends nothing.
 2. The form sends the title, description, category, funding goal and image data URI to `runImproveListingQuality`.
 3. The action calls `requireCaller()`, because every call is billed. A signed-out caller gets `null`.
-4. The flow fills the prompt, attaches the image as media, and asks the model for output that matches the output schema.
-5. Any error is logged on the server as `AI analysis failed:` and returned as `null`. That covers a missing key, a provider failure and output that does not fit the schema. The form then shows "AI Analysis Failed".
-6. On success, the dialog shows the score as a progress bar and `N/100`, then the suggestions. It shows a "Potential Issues" list only when `flags` is non-empty.
+4. `improveListingQuality()` checks the input against the input schema, then sends one `generateContent` request: the prompt with the listing details, the image as inline data, and the output schema as the reply's JSON Schema (`responseMimeType: application/json`).
+5. It parses the reply as JSON and checks it against the output schema with zod before returning it. A reply that is not JSON, or does not fit, throws.
+6. Any error is logged on the server as `AI analysis failed:` and returned as `null`. That covers a missing key, input that does not fit, a provider failure, a blocked reply and a reply that does not fit the schema. The form then shows "The quality check didn't answer".
+7. On success, the dialog shows the score as a progress bar and `N/100`, then the suggestions. It shows a "Potential Issues" list only when `flags` is non-empty.
 
 ## Schemas
 
-Copied from [src/ai/flows/improve-listing-quality.ts](../src/ai/flows/improve-listing-quality.ts). `z` is the zod instance that `genkit` re-exports.
+Copied from [src/ai/flows/improve-listing-quality.ts](../src/ai/flows/improve-listing-quality.ts). `z` is zod 4.
 
 ### Input
 
 ```typescript
+/** A picture as FileReader.readAsDataURL writes it: the MIME type, then the Base64 bytes. */
+const IMAGE_DATA_URI = /^data:(image\/[\w.+-]+);base64,([A-Za-z0-9+/]+={0,2})$/;
+
+const TEXT_MAX = 10_000;
+
 const ImproveListingQualityInputSchema = z.object({
-  title: z.string().describe('The title of the project listing.'),
-  description: z.string().describe('The detailed description of the project.'),
-  category: z.string().describe('The category the project belongs to (e.g., Technology, Art, Charity).'),
+  title: z.string().max(TEXT_MAX).describe('The title of the project listing.'),
+  description: z.string().max(TEXT_MAX).describe('The detailed description of the project.'),
+  category: z.string().max(200).describe('The category the project belongs to (e.g., Technology, Art, Charity).'),
   fundingGoal: z.number().describe('The total funding amount being sought for the project.'),
-  imageUrl: z.string().describe("URL for an image representing the project, as a data URI that must include a MIME type and use Base64 encoding. Expected format: 'data:<mimetype>;base64,<encoded_data>'."),
+  imageUrl: z
+    .string()
+    .regex(IMAGE_DATA_URI, 'Expected an image as a Base64 data URI')
+    .describe("An image representing the project, as a data URI that must include a MIME type and use Base64 encoding. Expected format: 'data:<mimetype>;base64,<encoded_data>'."),
 });
 ```
+
+`TEXT_MAX` is well past every listing limit, so a draft that is over one still gets reviewed. It bounds what one press can send to the model.
 
 What the form actually sends:
 
@@ -73,40 +83,47 @@ What the form actually sends:
 
 ```typescript
 const ImproveListingQualityOutputSchema = z.object({
-  suggestions: z.array(
-    z.string().describe('Specific suggestions for improving the listing.')
-  ).describe('A list of AI-powered suggestions to enhance the project listing.'),
-  flags: z.array(
-    z.string().describe('Potential issues or concerns identified in the listing.')
-  ).describe('A list of potential issues or concerns that need review.'),
-  overallQualityScore: z.number().describe('An overall quality score (0-100) for the listing based on AI analysis.'),
+  suggestions: z
+    .array(z.string().describe('Specific suggestions for improving the listing.'))
+    .max(10)
+    .describe('A list of AI-powered suggestions to enhance the project listing.'),
+  flags: z
+    .array(z.string().describe('Potential issues or concerns identified in the listing.'))
+    .max(10)
+    .describe('A list of potential issues or concerns that need review.'),
+  overallQualityScore: z
+    .number()
+    .int()
+    .min(0)
+    .max(100)
+    .describe('An overall quality score (0-100) for the listing based on AI analysis.'),
 });
 ```
 
-The 0–100 range is a description for the model. The schema does not enforce it.
+The same schema does both jobs. `z.toJSONSchema()` turns it into the JSON Schema sent with the request, minus `$schema`, which is not a keyword Gemini lists. Gemini enforces `maxItems`, `minimum` and `maximum`, and reads the descriptions as instructions. zod then checks the reply against it, so the bounds hold even if the model ignores them.
 
 ## Model and configuration
 
 | Setting | Value |
 |---|---|
-| Model | `googleai/gemini-2.5-flash`, the Genkit default set in [src/ai/genkit.ts](../src/ai/genkit.ts). The prompt does not override it |
-| Packages | `genkit` and `@genkit-ai/googleai`, plus `genkit-cli` for development |
-| Bundling | [next.config.js](../next.config.js) lists the Genkit packages in `serverExternalPackages`. They load only on the server |
-| API key | `GEMINI_API_KEY`. The plugin also accepts `GOOGLE_API_KEY` or `GOOGLE_GENAI_API_KEY`. Server-only — never prefix it `NEXT_PUBLIC_` |
+| Model | `gemini-2.5-flash`, the `MODEL` constant in [src/ai/flows/improve-listing-quality.ts](../src/ai/flows/improve-listing-quality.ts) |
+| Package | `@google/genai`, Google's Gen AI SDK. It runs only on the server: the form imports the review's types, never the module |
+| API key | `GEMINI_API_KEY`, passed to the SDK explicitly. `GOOGLE_API_KEY` is not used, though the SDK would prefer it if left to read the environment itself. Server-only — never prefix it `NEXT_PUBLIC_` |
+| Retries and timeout | No retries, and a 60-second timeout. The SDK retries only when given `retryOptions`, so one press is one billable call |
 
-The old name `GOOGLE_GENERATIVEAI_API_KEY` is not read by anything.
+The old names `GOOGLE_GENERATIVEAI_API_KEY` and `GOOGLE_GENAI_API_KEY` are not read by anything. If `GOOGLE_API_KEY` is set as well, the SDK logs "Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY." That message is wrong here: the key it is given, `GEMINI_API_KEY`, is the one it sends.
 
 In Docker, [docker-compose.yml](../docker-compose.yml) passes `GEMINI_API_KEY` to the app container at runtime. It is not a build argument, so setting or changing it needs a redeploy, not a rebuild.
 
 ### When `GEMINI_API_KEY` is unset
 
-The app starts and the flow module imports normally. Each call then fails with:
+The app starts and the review module imports normally. Each call then fails, before anything is sent, with:
 
 ```
-FAILED_PRECONDITION: Please pass in the API key or set the GEMINI_API_KEY or GOOGLE_API_KEY environment variable.
+GEMINI_API_KEY is not set, so the listing review is off
 ```
 
-The action catches this and returns `null`, so the builder sees "AI Analysis Failed". Nothing else in the app depends on the feature.
+The action catches this and returns `null`, so the builder sees "The quality check didn't answer". Nothing else in the app depends on the feature.
 
 ### Limits
 
@@ -116,23 +133,14 @@ The action catches this and returns `null`, so the builder sees "AI Analysis Fai
 
 ## Local development
 
-```bash
-npm run genkit:dev     # genkit start -- tsx src/ai/dev.ts
-npm run genkit:watch   # the same, restarting on file changes
-```
+`npm run dev` reads `GEMINI_API_KEY` from `.env.local`, and the **AI Suggestions** button on `/create-listing` then makes real, billable calls. `npm test` covers the request and the reply checks without one.
 
-This starts the Genkit Developer UI. In it you can run `improveListingQualityFlow` with your own input, check it against the schemas, and inspect traces.
+## Adding a feature
 
-- [src/ai/dev.ts](../src/ai/dev.ts) calls dotenv's `config()`, which loads `.env` from the repo root, not `.env.local`. For the Developer UI, put `GEMINI_API_KEY` in `.env` or export it in your shell. `npm run dev` reads `.env.local` as usual.
-- On first run the Genkit CLI shows a Google analytics and cookies notice and waits for Enter. `genkit config set analyticsOptOut true` opts out.
-- `tsx` is not a direct dependency. It is installed with `genkit-cli`.
-
-## Adding a flow
-
-1. Create a file in `src/ai/flows/`. Define the input and output schemas with `z` from `genkit`, the prompt with `ai.definePrompt()`, the flow with `ai.defineFlow()`, and export an async wrapper.
-2. Import the file in [src/ai/dev.ts](../src/ai/dev.ts) so the Developer UI can see it.
-3. Expose it only through a guarded Server Action or route handler, the way `runImproveListingQuality` does. Every exported async function in a `"use server"` file is a public endpoint, so the wrapper authenticates the caller, validates its input, and catches errors.
-4. Never import a flow into a client component.
+1. Create a file in `src/ai/flows/`. Define the input and output schemas with zod, check the input against its schema, call Gemini through `@google/genai` with the output schema as `responseJsonSchema`, and check the reply against the output schema before returning it. Pass `GEMINI_API_KEY` as `apiKey`.
+2. Do not make it a `"use server"` module. Expose it only through a guarded Server Action or route handler, the way `runImproveListingQuality` does. Every exported async function in a `"use server"` file is a public endpoint, so the wrapper authenticates the caller, validates its input, and catches errors.
+3. Bound every array in its schemas with `.max()`. [src/lib/zod-collections.test.ts](../src/lib/zod-collections.test.ts) fails on a zod collection in server code until it is listed there with its bound.
+4. Never import it into a client component, other than its types with `import type`.
 
 ---
 
