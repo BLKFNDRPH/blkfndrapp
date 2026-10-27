@@ -1,28 +1,38 @@
 /**
  * Not a "use server" module: that would make improveListingQuality a server
- * action anyone can call, a billable model call with no sign-in check. The one
- * entry point is runImproveListingQuality in src/app/actions.ts, which requires
- * a signed-in caller first.
+ * action anyone can call, a model call with no sign-in check. The one entry
+ * point is runImproveListingQuality in src/app/actions.ts, which requires a
+ * signed-in caller first.
  *
- * @fileOverview The AI listing review: one Gemini call through Google's Gen AI
- * SDK (@google/genai). The model is asked for JSON in the shape of the output
- * schema below, and its reply is checked against that schema before anything
- * returns it, so a malformed reply throws instead of reaching the dialog.
+ * @fileOverview The AI listing review: one chat request to an Ollama server
+ * (OLLAMA_BASE_URL, self-hosted or Ollama Cloud) running a vision model. Ollama
+ * holds the model's answer to the output schema below, and the reply is checked
+ * against that schema before anything returns it, so a malformed reply throws
+ * instead of reaching the dialog.
  *
  * It exports the `improveListingQuality` function, the `ImproveListingQualityInput` type, and the `ImproveListingQualityOutput` type.
  */
 
-import { GoogleGenAI } from '@google/genai';
 import { z } from 'zod';
 
-const MODEL = 'gemini-2.5-flash';
+/** Used when OLLAMA_MODEL is unset. It has to read pictures. */
+const DEFAULT_MODEL = 'gemma4:12b';
 
-/** A picture as FileReader.readAsDataURL writes it: the MIME type, then the Base64 bytes. */
-const IMAGE_DATA_URI = /^data:(image\/[\w.+-]+);base64,([A-Za-z0-9+/]+={0,2})$/;
+/**
+ * A picture as FileReader.readAsDataURL writes it, in a format Ollama's vision
+ * models read. Ollama refuses AVIF ("Failed to load image"), so a picture in
+ * any other format is refused here, before a request is made.
+ */
+const IMAGE_DATA_URI = /^data:image\/(?:png|jpeg|webp|gif);base64,([A-Za-z0-9+/]+={0,2})$/;
 
 // Well past every listing limit (src/lib/listing-limits.ts), so a draft that is
 // over one still gets reviewed. It bounds what one press can send to the model.
 const TEXT_MAX = 10_000;
+
+// Cloudflare, in front of blkfndr.com, drops a request that takes over 100
+// seconds. Giving up first means the builder gets the form's failure toast
+// rather than an error from Cloudflare.
+const TIMEOUT_MS = 90_000;
 
 const ImproveListingQualityInputSchema = z.object({
   title: z.string().max(TEXT_MAX).describe('The title of the project listing.'),
@@ -31,7 +41,7 @@ const ImproveListingQualityInputSchema = z.object({
   fundingGoal: z.number().describe('The total funding amount being sought for the project.'),
   imageUrl: z
     .string()
-    .regex(IMAGE_DATA_URI, 'Expected an image as a Base64 data URI')
+    .regex(IMAGE_DATA_URI, 'Expected a PNG, JPEG, WebP or GIF picture as a Base64 data URI')
     .describe("An image representing the project, as a data URI that must include a MIME type and use Base64 encoding. Expected format: 'data:<mimetype>;base64,<encoded_data>'."),
 });
 export type ImproveListingQualityInput = z.infer<typeof ImproveListingQualityInputSchema>;
@@ -54,30 +64,20 @@ const ImproveListingQualityOutputSchema = z.object({
 });
 export type ImproveListingQualityOutput = z.infer<typeof ImproveListingQualityOutputSchema>;
 
-// The reply's JSON Schema, sent with the request. Gemini enforces maxItems,
-// minimum and maximum, and reads the descriptions as instructions. $schema is
-// not a keyword Gemini lists, so it is left out.
+// The reply's JSON Schema. Ollama turns it into a grammar the model's output
+// has to follow, but the model never reads it there, so the prompt carries it
+// too, descriptions and all. $schema is left out as noise.
 const replyJsonSchema: Record<string, unknown> = z.toJSONSchema(ImproveListingQualityOutputSchema);
 delete replyJsonSchema.$schema;
 
-export async function improveListingQuality(input: ImproveListingQualityInput): Promise<ImproveListingQualityOutput> {
-  const listing = ImproveListingQualityInputSchema.parse(input);
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) throw new Error('GEMINI_API_KEY is not set, so the listing review is off');
-  const [, mimeType, data] = IMAGE_DATA_URI.exec(listing.imageUrl)!;
+/** The part of Ollama's /api/chat answer the review reads. */
+const OllamaChatReply = z.object({
+  message: z.object({ content: z.string() }),
+  done_reason: z.string().optional(),
+});
 
-  // The key is passed rather than left to the SDK, which would prefer
-  // GOOGLE_API_KEY. Without retryOptions the SDK makes one attempt, so one press
-  // is one billable call; the timeout stops a hung call holding the action.
-  const ai = new GoogleGenAI({ apiKey, httpOptions: { timeout: 60_000 } });
-  const response = await ai.models.generateContent({
-    model: MODEL,
-    contents: [
-      {
-        role: 'user',
-        parts: [
-          {
-            text: `You are an AI-powered listing quality tool that reviews project listings and provides suggestions for improvement and flags potential issues.
+function prompt(listing: ImproveListingQualityInput): string {
+  return `You are an AI-powered listing quality tool that reviews project listings and provides suggestions for improvement and flags potential issues.
 
 Analyze the following project listing details:
 
@@ -85,29 +85,44 @@ Title: ${listing.title}
 Description: ${listing.description}
 Category: ${listing.category}
 Funding Goal: ${listing.fundingGoal}
-Image:`,
-          },
-          { inlineData: { mimeType, data } },
-          {
-            text: `Provide specific, actionable suggestions to improve the listing's quality and user engagement.
+Image: the attached picture.
+
+Provide specific, actionable suggestions to improve the listing's quality and user engagement.
 Identify any potential issues or concerns that an admin should review, such as misleading information, unrealistic funding goals, or inappropriate content.
 Assess the overall quality of the listing and assign a score between 0 and 100.
 
 Ensure that the suggestions and flags are clear, concise, and directly related to the listing details.
-Use output schema descriptions to ensure suggestions, flags and overallQualityScore are in the format requested.`,
-          },
-        ],
-      },
-    ],
-    config: {
-      responseMimeType: 'application/json',
-      responseJsonSchema: replyJsonSchema,
-    },
-  });
+Reply with JSON that matches this JSON Schema, using its descriptions to ensure suggestions, flags and overallQualityScore are in the format requested:
+${JSON.stringify(replyJsonSchema)}`;
+}
 
-  const text = response.text;
-  if (!text) {
-    throw new Error(`Gemini returned no text (finish reason ${response.candidates?.[0]?.finishReason ?? 'none'})`);
-  }
-  return ImproveListingQualityOutputSchema.parse(JSON.parse(text));
+export async function improveListingQuality(input: ImproveListingQualityInput): Promise<ImproveListingQualityOutput> {
+  const listing = ImproveListingQualityInputSchema.parse(input);
+  const base = process.env.OLLAMA_BASE_URL;
+  if (!base) throw new Error('OLLAMA_BASE_URL is not set, so the listing review is off');
+  const [, picture] = IMAGE_DATA_URI.exec(listing.imageUrl)!;
+
+  const headers: Record<string, string> = { 'content-type': 'application/json' };
+  // Ollama Cloud takes a key, as can a proxy in front of a self-hosted server.
+  if (process.env.OLLAMA_API_KEY) headers.authorization = `Bearer ${process.env.OLLAMA_API_KEY}`;
+
+  const res = await fetch(`${base.replace(/\/+$/, '')}/api/chat`, {
+    method: 'POST',
+    headers,
+    signal: AbortSignal.timeout(TIMEOUT_MS),
+    body: JSON.stringify({
+      model: process.env.OLLAMA_MODEL || DEFAULT_MODEL,
+      stream: false,
+      // The answer is held to the schema anyway; thinking first only adds time.
+      think: false,
+      format: replyJsonSchema,
+      messages: [{ role: 'user', content: prompt(listing), images: [picture] }],
+    }),
+  });
+  const body = await res.text();
+  if (!res.ok) throw new Error(`Ollama answered ${res.status}: ${body.slice(0, 500)}`);
+
+  const { message, done_reason } = OllamaChatReply.parse(JSON.parse(body));
+  if (!message.content) throw new Error(`Ollama returned no text (done reason ${done_reason ?? 'none'})`);
+  return ImproveListingQualityOutputSchema.parse(JSON.parse(message.content));
 }

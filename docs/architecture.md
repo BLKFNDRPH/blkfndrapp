@@ -30,7 +30,7 @@ graph TB
     end
 
     PIN[Pinata IPFS]
-    GEM[Gemini 2.5 Flash]
+    GEM[Ollama: vision model]
 
     UI -->|actions, /api| APP
     UI -->|sign| FW
@@ -111,11 +111,11 @@ After a transaction the client calls `triggerIndexerSync`. That action runs only
 
 ```
 Builder presses Analyze on the create form → runImproveListingQuality (signed in only)
-    → one Gemini 2.5 Flash call → { suggestions[], flags[], overallQualityScore (0-100) }, checked with zod
+    → one Ollama chat request (vision model) → { suggestions[], flags[], overallQualityScore (0-100) }, checked with zod
     → shown to the builder in a dialog
 ```
 
-The review is in [src/ai/flows/improve-listing-quality.ts](../src/ai/flows/improve-listing-quality.ts). Without `GEMINI_API_KEY` it returns nothing and the feature is off.
+The review is in [src/ai/flows/improve-listing-quality.ts](../src/ai/flows/improve-listing-quality.ts). Without `OLLAMA_BASE_URL` it returns nothing and the feature is off.
 
 ## The event indexer
 
@@ -256,9 +256,9 @@ Authorization is enforced by the database, not only by application code. The pub
 
 Seven Rust contracts; see [Smart Contracts](smart-contracts.md) for the full API and for where the deployed contracts differ from source. Clients are built in [src/lib/stellar-clients.ts](../src/lib/stellar-clients.ts). The network passphrase and endpoints come from [src/lib/network.ts](../src/lib/network.ts): Testnet unless `NEXT_PUBLIC_STELLAR_NETWORK=public`.
 
-### AI — Gemini
+### AI — Ollama
 
-One feature in `src/ai/flows/`: a review of a draft listing for the builder, one call to Gemini 2.5 Flash through Google's Gen AI SDK (`@google/genai`) with a JSON Schema for the reply, which zod checks before it is returned. It is off without `GEMINI_API_KEY`. See [AI Features](ai-features.md).
+One feature in `src/ai/flows/`: a review of a draft listing for the builder, one `/api/chat` request to an Ollama server running a vision model (default `gemma4:12b`), self-hosted or Ollama Cloud. Ollama holds the answer to a JSON Schema, and zod checks it before it is returned. It is off without `OLLAMA_BASE_URL`. See [AI Features](ai-features.md).
 
 ## The vault release rule
 
@@ -375,7 +375,7 @@ No owner key signs a transfer. A carried vote is the authority, and execution is
 - **Roles from the roster,** asked fresh on every request, never from a token claim.
 - **Hostile-argument server actions.** Every `"use server"` export and every route handler authenticates, authorizes and validates for itself.
 - **Service role only in server-only code,** behind an explicit check beside each query.
-- **No secret is ever `NEXT_PUBLIC_`.** Anything so prefixed is inlined into the browser bundle at build time. `SUPABASE_SECRET_KEY`, `PINATA_JWT`, `INDEXER_SECRET`, `OPS_FUNDING_SUBMITTER_SECRET` and `GEMINI_API_KEY` are server-only.
+- **No secret is ever `NEXT_PUBLIC_`.** Anything so prefixed is inlined into the browser bundle at build time. `SUPABASE_SECRET_KEY`, `PINATA_JWT`, `INDEXER_SECRET`, `OPS_FUNDING_SUBMITTER_SECRET` and `OLLAMA_API_KEY` are server-only.
 - **No platform key in the money path.** Stakes, releases and refunds move only on stakeholder actions and votes, enforced by the contracts rather than by policy. The keys the server holds pay gas or write KYC attestations.
 
 ## Directory structure
@@ -396,7 +396,7 @@ blkfndrapp/
 │   └── deploy-contracts.sh     # Deploys and wires the suite, verifying the result
 ├── src/
 │   ├── actions/                # Server actions: admins, moderation, restrictions, secrets…
-│   ├── ai/                     # The AI listing review (Gemini)
+│   ├── ai/                     # The AI listing review (Ollama)
 │   ├── app/                    # App Router pages, api/ routes, auth/ routes, actions.ts
 │   ├── components/             # React components (shadcn/ui; admin/, create/, project/…)
 │   ├── context/                # React Context providers

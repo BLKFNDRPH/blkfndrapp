@@ -183,11 +183,18 @@ services:
       # only needs XLM for gas. Unset means those endpoints skip.
       - OPS_FUNDING_SUBMITTER_SECRET=${OPS_FUNDING_SUBMITTER_SECRET:-}
 
-      # ── Gemini (optional) ────────────────────────────────────────────────
-      # The AI listing review's key. Only GEMINI_API_KEY is read. This stack
-      # once set GOOGLE_GENERATIVEAI_API_KEY, which nothing reads, so the
-      # review silently did nothing however valid the key was.
-      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      # ── Ollama (optional) ────────────────────────────────────────────────
+      # The AI listing review runs on an Ollama server with a vision model.
+      # Unset OLLAMA_BASE_URL means the review is off: every press fails with a
+      # toast. For Ollama on this Docker host, use
+      # http://host.docker.internal:11434 (the extra_hosts entry below makes
+      # that name work on Linux too) and have Ollama listen beyond loopback
+      # (OLLAMA_HOST=0.0.0.0 on the Ollama side). For Ollama Cloud, use
+      # https://ollama.com with OLLAMA_API_KEY. OLLAMA_MODEL unset means
+      # gemma4:12b; the server must have it pulled.
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-}
+      - OLLAMA_API_KEY=${OLLAMA_API_KEY:-}
 
       # ── Email (optional) ─────────────────────────────────────────────────
       # Notifications are also emailed through Resend once a key is set. Set
@@ -202,6 +209,10 @@ services:
       - next-cache:/app/.next/cache
     networks:
       - blkfndr-network
+    # Lets OLLAMA_BASE_URL name an Ollama server on the Docker host as
+    # host.docker.internal, which Docker Desktop provides and Linux does not.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)}).on('error', () => process.exit(1))"]
       interval: 30s
