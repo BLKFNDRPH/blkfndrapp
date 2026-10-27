@@ -19,7 +19,6 @@
     "test:db": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON \"supabase/tests/*.test.ts\""
   },
   "dependencies": {
-    "@google/genai": "^2.30.0",
     "@hookform/resolvers": "^5.9.2",
     "@radix-ui/react-alert-dialog": "^1.1.6",
     "@radix-ui/react-avatar": "^1.1.3",

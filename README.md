@@ -43,7 +43,7 @@ Release authority is contribution-weighted rather than held by appointed signers
 | Identity documents and details deleted once a check is decided; verification renews when the ID expires | ✅ Live. See [privacy.md](docs/privacy.md) |
 | Event indexer, stalled-vault keeper, storage keep-alive, governance keeper that sends carried payouts and closes lapsed stages (compose crons) | ✅ Live |
 | Mainnet | 🔜 Planned, not deployed. The app takes its network from one build variable, `NEXT_PUBLIC_STELLAR_NETWORK` |
-| AI listing quality analysis | ✅ Live (Gemini 2.5 Flash) |
+| AI listing quality analysis | ✅ Built (a vision model on Ollama); on once `OLLAMA_BASE_URL` is set |
 | AI query analysis & sentiment tracking | 📝 Documented, not implemented |
 
 See [the rebuild PR](https://github.com/BLKFNDRPH/blkfndrapp/pull/1) for what changed and why.
@@ -88,7 +88,7 @@ This rule applies to vaults the factory creates after its wasm hash was switched
 | **Database** | Supabase (Postgres with Row Level Security) |
 | **Auth** | Supabase Auth — email/password and Google; Freighter for wallet linking |
 | **Storage** | Supabase Storage (identity documents, deleted after the decision), Pinata IPFS (listing metadata, media, milestone proof photos) |
-| **AI** | Gemini 2.5 Flash through Google's Gen AI SDK (`@google/genai`) |
+| **AI** | Ollama with a vision model (default `gemma4:12b`), self-hosted or Ollama Cloud |
 | **Deployment** | Docker Compose on Portainer: the app plus six cron services (indexer, ops funding, stalled-vault keeper, storage keep-alive, governance keeper, notification emails) |
 
 ## Smart Contracts
@@ -216,7 +216,9 @@ cargo test --workspace
 | `PINATA_GATEWAY_URL` | Recommended | Dedicated Pinata gateway hostname. The indexer reads metadata from it first, then from the shared `gateway.pinata.cloud`, which rate-limits |
 | `PINATA_GATEWAY_KEY` | With a dedicated gateway | That gateway's Gateway Key (not the JWT), sent only to it as `x-pinata-gateway-token`. Without it the dedicated gateway answers 401 and every read falls back to the shared one. Server-only, runtime |
 | `PINATA_GROUP_BLKDFNDR` | Optional | Pinata group that uploads are filed into |
-| `GEMINI_API_KEY` | Optional | Gemini API key for the AI listing review, read at runtime. Server-only; `GOOGLE_API_KEY` is not read. Without it the AI Suggestions button still shows, and every press fails with a toast |
+| `OLLAMA_BASE_URL` | Optional | The Ollama server for the AI listing review, e.g. `http://host.docker.internal:11434`, or `https://ollama.com` for Ollama Cloud. Server-only, runtime. Without it the AI Suggestions button still shows, and every press fails with a toast |
+| `OLLAMA_MODEL` | Optional | The vision model the review uses. Default `gemma4:12b` |
+| `OLLAMA_API_KEY` | Optional | Sent as a bearer token, for Ollama Cloud or a proxy that asks for one. Server-only |
 | `INDEXER_SECRET` | Yes | Bearer token for the cron endpoints: `/api/indexer`, `/api/ops-funding`, `/api/settle-stalled`, `/api/keep-alive`. Generate with `openssl rand -hex 32` |
 | `OPS_FUNDING_SUBMITTER_SECRET` | Recommended | Gas-only funded account that pays the fees for the ops-funding transfer, the stalled-vault keeper and the storage keep-alive. Server-only. Unset means those jobs skip cleanly |
 
@@ -270,7 +272,7 @@ blkfndrapp/
 │   └── reference-scenario.sh   # Test transactions on the reference deployment
 ├── src/
 │   ├── actions/                # Server actions: admins, moderation, restrictions, secrets…
-│   ├── ai/                     # The AI listing review (Gemini)
+│   ├── ai/                     # The AI listing review (Ollama)
 │   ├── app/                    # Next.js App Router pages and API routes
 │   │   ├── auth/               # Supabase auth actions and callbacks
 │   │   └── api/                # REST endpoints (indexer, crons, session, uploads…)
@@ -322,7 +324,7 @@ blkfndrapp/
 - [API Reference](docs/api-reference.md) — HTTP routes, server actions, Horizon and Soroban RPC
 - [Authentication](docs/authentication.md) — Supabase Auth, wallet linking and signing, admin roles
 - [Private data](docs/privacy.md) — What personal data is held and for how long, identity-document deletion, the 2026-10-07 audit
-- [AI Features](docs/ai-features.md) — The AI listing review and its Gemini call
+- [AI Features](docs/ai-features.md) — The AI listing review and its Ollama call
 - [Deployment](docs/deployment.md) — Docker, Portainer, crons, and contract deploys
 - [Contributing](docs/contributing.md) — Development setup and guidelines
 - [Blueprint](docs/blueprint.md) — Product and technical blueprint

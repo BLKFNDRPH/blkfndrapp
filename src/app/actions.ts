@@ -30,7 +30,7 @@ import { readVaultState } from "@/lib/vault-state";
 export async function runImproveListingQuality(
   input: ImproveListingQualityInput,
 ): Promise<ImproveListingQualityOutput | null> {
-  // Billable model call — signed-in callers only.
+  // A model call costs GPU time, or Ollama Cloud quota — signed-in callers only.
   try {
     await requireCaller();
   } catch {
