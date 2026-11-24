@@ -8,6 +8,7 @@ members = [
   "contracts/blkfndr-identity",
   "contracts/blkfndr-treasury",
   "contracts/blkfndr-operations",
+  "contracts/blkfndr-report-anchor",
 ]
 
 [workspace.dependencies]
