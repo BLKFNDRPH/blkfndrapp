@@ -26,6 +26,10 @@ const ALLOWED: Record<string, { count: number; why: string }> = {
     count: 2,
     why: "the model's reply: suggestions and flags are each .max(10)",
   },
+  "src/lib/risk/report.ts": {
+    count: 1,
+    why: "a risk report's factors are .max(12)",
+  },
 };
 
 /** The names a module binds zod to: `import { z } from "zod"`, `import * as z from "zod"`, `import { z as y } from "zod/v4"`. */
