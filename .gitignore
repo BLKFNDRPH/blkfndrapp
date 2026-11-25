@@ -88,3 +88,6 @@ src/packages/*/dist
 /verify-*-tmp*.*
 /*-tmp.*
 /*_tmp.*
+
+# Local CI output (scripts/ci-local.sh)
+/ci-local/
