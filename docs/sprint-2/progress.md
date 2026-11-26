@@ -14,12 +14,12 @@ Progress against the [Sprint 2 plan](plan.md). Item numbers match the plan. The 
 
 | Week | Dates | Items | Done | Expected output met? |
 |---|---|---:|---:|---|
-| 1 | 23–27 Nov | 7 | 3 | 🔧 2 of 5 met |
+| 1 | 23–27 Nov | 7 | 4 | 🔧 2 of 5 met |
 | 2 | 30 Nov–4 Dec | 7 | 0 | ⬜ |
 | 3 | 7–11 Dec | 7 | 0 | ⬜ |
 | 4 | 14–18 Dec | 5 | 0 | ⬜ |
 
-**This week in short:** The report-anchor registry is live on both testnet sets, and the first 28 risk reports, one per listed vault, are stored and anchored (rules only). Campaign and fee sponsorship are written and tested on local branch `sprint-2/day-1`, not pushed. The campaign and sponsorship migrations are not applied, so the onboarding path and the campaign are not live yet.
+**This week in short:** The report-anchor registry is live on both testnet sets, and the first 28 risk reports, one per listed vault, are stored and anchored (rules only). Campaign, fee sponsorship and the container build are written and tested on local branch `sprint-2/day-1`, not pushed. The campaign and sponsorship migrations are not applied, so the onboarding path and the campaign are not live yet.
 
 ---
 
@@ -65,7 +65,7 @@ How each was counted: accounts from `auth.users`; linked wallets from profiles w
 | 1.4 | Campaign landing page, Freighter guide, testnet USDC claim, referral tracking | 🔧 | — | `/campaign`, `/campaign/freighter`, `POST /api/campaign/claim`, `GET /api/campaign/me`, migration `20261127100000_campaign_referrals.sql`. Tested locally, not live: needs the migration applied, a funded USDC distributor account, and `CAMPAIGN_USDC_*` env set. Email still failing |
 | 1.5 | User baseline recorded | ✅ | — | [Campaign baseline](#campaign-baseline) above |
 | 1.6 | Fee-bump sponsorship with caps, allowlist, kill switch | 🔧 | — | `POST /api/sponsor` on the ops key, wired into `use-stellar-contract.ts` with a self-pay fallback; migration `20261127110000_sponsor_usage.sql`. Off by default (`SPONSOR_ENABLED`); caps are placeholders until D3. Not live: migration not applied, no fee-bump on testnet yet |
-| 1.7 | Reproducible build set up | ⬜ | — | — |
+| 1.7 | Reproducible build set up | 🔧 | — | `Dockerfile.contracts` (rust 1.81.0 pinned by digest), `scripts/reproducible-build.sh --compare`, used by CI and `ci:local`; [docs/reproducible-build.md](../reproducible-build.md). Same hashes across four container builds on this machine (vault `279f6d77…`). Second machine not run yet. The deployed contracts, including the report-anchor registry (`c4ff0e4b…`) and the vault (`e9009410…`), are host builds; those hashes can only be rebuilt on Windows as user `admin` |
 
 | Expected output | Met? | Evidence |
 |---|---|---|
@@ -73,7 +73,7 @@ How each was counted: accounts from `auth.users`; linked wallets from profiles w
 | First risk reports generated on existing listings | ✅ | 28 of 28 anchored. First: project 20, report `ab63f45d…437c`, anchor tx `f069133c73492d6763505885ec5ebca59a9d468b93ebaf83dcd333e6d224a170`; `sha256sum` of `/api/risk-reports/ab63f45d…` equals the hash, and `find` on the registry returns it |
 | Onboarding path live with sponsored fees | ⬜ | fee-bump tx: — |
 | Campaign opens | ⬜ | URL: — |
-| Same wasm hashes from two machines | ⬜ | hash table: — |
+| Same wasm hashes from two machines | ⬜ | Machine 1 recorded in docs/reproducible-build.md; machine 2 still to run |
 
 ## Week 2 — 30 Nov–4 Dec
 
@@ -152,6 +152,7 @@ Open decisions from the plan. Record the answer, who gave it and the date.
 | Day 1 ran a day late | Open | Week 1 | Six items remain for three working days |
 | Owner votes on the critical path | Open | 2.5, 3.3, 3.4 | Book dates (D4) |
 | Email still failing on 24 Nov (Resend `422 Invalid from field`, 0 ever sent) | Open | Campaign (1.4) | Fix the sender address before the campaign opens |
+| Deployed wasm is not reproducible: every live contract was built on the host, whose hashes embed Windows paths and the user name | Open | 1.3, 1.7, audit readiness (4.3) | Deploy from the container build from now on; decide whether to redeploy the report-anchor registry from it before more anchors accumulate |
 | Testnet moved to protocol 30; app on JS SDK 16.3.1, contracts on `soroban-sdk` 22 | Open | 1.3 and any deploy | Test a deploy on the reference set first; decide whether to move to JS SDK 17 |
 
 ## On-chain log
