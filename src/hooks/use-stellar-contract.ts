@@ -90,7 +90,9 @@ export interface PreparedAction {
   /** The network fee the wallet will be asked to pay, in XLM base units. */
   feeRaw: bigint | null;
   /** Ask the wallet to approve it, send it, and wait for the ledger. */
-  send: (onPhase?: (phase: SendPhase) => void) => Promise<{ hash: string | null }>;
+  send: (
+    onPhase?: (phase: SendPhase) => void,
+  ) => Promise<{ hash: string | null; sponsored?: boolean }>;
 }
 
 /**
@@ -114,6 +116,24 @@ function toPrepared<T>(assembled: AssembledTransaction<T>): PreparedAction {
       onPhase?.("waiting-for-wallet");
       await assembled.sign();
       onPhase?.("sending");
+
+      // Offer the signed transaction to BLKFNDR's fee sponsor first. Any
+      // refusal (switched off, over a cap, not a listed contract, network
+      // trouble) falls through to sending it ourselves, the wallet paying the
+      // fee as before. Once the sponsor has submitted it, there is no
+      // fallback: the same transaction cannot run twice.
+      const signedXdr = assembled.signed?.toXDR();
+      if (signedXdr) {
+        const { requestSponsorship, waitForSponsored } = await import("@/lib/sponsor/client");
+        const attempt = await requestSponsorship(signedXdr);
+        if (attempt.sponsored) {
+          onPhase?.("confirming");
+          const status = await waitForSponsored(attempt.hash);
+          if (status !== "SUCCESS") throw new LedgerFailedError(attempt.hash, status);
+          return { hash: attempt.hash, sponsored: true };
+        }
+      }
+
       const sent = await assembled.send({
         onSubmitted: () => onPhase?.("confirming"),
       });

@@ -26,6 +26,10 @@ const ALLOWED: Record<string, { count: number; why: string }> = {
     count: 2,
     why: "the model's reply: suggestions and flags are each .max(10)",
   },
+  "src/lib/risk/model.ts": {
+    count: 1,
+    why: "the model's risk findings are .max(5), and the reply is held to the schema by Ollama",
+  },
   "src/lib/risk/report.ts": {
     count: 1,
     why: "a risk report's factors are .max(12)",

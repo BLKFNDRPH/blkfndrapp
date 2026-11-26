@@ -16,7 +16,8 @@
     "test:routes": "node --test scripts/route-behaviour.test.mjs",
     "test:headers": "node --test scripts/header-delivery.test.mjs",
     "keeper:dry-run": "node scripts/keeper-dry-run.mjs",
-    "test:db": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON \"supabase/tests/*.test.ts\""
+    "test:db": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON \"supabase/tests/*.test.ts\"",
+    "ci:local": "bash scripts/ci-local.sh"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.9.2",
@@ -52,7 +53,7 @@
     "framer-motion": "^11.2.10",
     "lodash": "^4.17.21",
     "lucide-react": "^0.563.0",
-    "next": "16.4.6",
+    "next": "16.4.1",
     "next-themes": "^0.3.0",
     "pinata": "^2.5.4",
     "react": "19.2.1",
@@ -73,7 +74,7 @@
     "@types/react-dom": "^18",
     "esbuild": "^0.28.2",
     "eslint": "^9.39.4",
-    "eslint-config-next": "^16.4.6",
+    "eslint-config-next": "^16.4.1",
     "postcss": "^8",
     "tailwindcss": "^3.4.1",
     "tailwindcss-animate": "^1.0.7",

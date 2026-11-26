@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { consumeNextPath } from "@/lib/auth/next-cookie";
 import { publicOrigin } from "@/lib/auth/app-origin";
+import { attributeReferral } from "@/lib/campaign/referrals";
 
 export const dynamic = "force-dynamic";
 
@@ -39,12 +40,16 @@ export async function GET(request: NextRequest) {
   }
 
   const supabase = await createClient();
-  const { error } = await supabase.auth.exchangeCodeForSession(code);
+  const { data, error } = await supabase.auth.exchangeCodeForSession(code);
 
   if (error) {
     console.error("[auth] Code exchange failed:", error.message);
     return NextResponse.redirect(new URL("/login?error=Exchange", origin));
   }
+
+  // A new account that followed a campaign referral link counts as referred.
+  // Only an account created after the link was followed, and recently.
+  if (data?.user) await attributeReferral(data.user);
 
   return NextResponse.redirect(new URL(next, origin));
 }

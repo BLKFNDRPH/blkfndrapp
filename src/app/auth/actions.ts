@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/server";
 import { safeInternalPath } from "@/lib/auth/safe-redirect";
 import { rememberNextPath } from "@/lib/auth/next-cookie";
 import { publicOrigin } from "@/lib/auth/app-origin";
+import { pendingReferralCode } from "@/lib/campaign/referrals";
 
 // Every export here is a public HTTP endpoint. Arguments are treated as
 // hostile and validated before use.
@@ -45,12 +46,16 @@ export async function signUpWithPassword(formData: FormData): Promise<AuthAction
 
   const supabase = await createClient();
   const origin = await publicOrigin();
+  // A campaign referral code from the cookie, kept with the new account so
+  // the confirmation link still counts the referral when it is opened on
+  // another device (attributeReferral in /auth/confirm).
+  const referralCode = await pendingReferralCode();
 
   const { error } = await supabase.auth.signUp({
     email: parsed.data.email,
     password: parsed.data.password,
     options: {
-      data: { full_name: parsed.data.name },
+      data: { full_name: parsed.data.name, ...(referralCode ? { referral_code: referralCode } : {}) },
       emailRedirectTo: `${origin}/auth/confirm`,
     },
   });

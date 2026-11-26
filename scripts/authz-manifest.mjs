@@ -31,16 +31,23 @@ export const ROUTES = {
   "GET /api/projects/[id]/record": "public",
   "GET /api/projects/[id]/stake": "public",
   "GET /api/projects/[id]/votes": "public",
+  "GET /api/risk-reports": "public",
+  "GET /api/risk-reports/[hash]": "public",
   "GET /api/vault-wasm-hash": "public",
   "GET /auth/callback": "public",
   "GET /auth/confirm": "public",
 
   // Any signed-in account, acting on its own data.
   "POST /api/auth/freighter/disconnect": "user",
+  // The caller's own referral link and claim; the claim pays only their linked wallet.
+  "GET /api/campaign/me": "user",
+  "POST /api/campaign/claim": "user",
   "POST /api/auth/freighter/nonce": "user",
   // A signed-in caller with no challenge on file gets the challenge refusal.
   "POST /api/auth/freighter/verify": { level: "user", positiveOk: /Invalid or expired challenge/ },
   "POST /api/kyc-document": "user",
+  // Pays the fee for the caller's own signed call; refusals are 4xx/5xx codes, not 403.
+  "POST /api/sponsor": "user",
   "GET /api/me/decisions": "user",
   "GET /api/notifications": "user",
   "PATCH /api/notifications": "user",
@@ -58,6 +65,7 @@ export const ROUTES = {
 
   // The scheduler, with INDEXER_SECRET.
   "POST /api/governance-keeper": "cron",
+  "POST /api/risk-run": "cron",
   "GET /api/indexer": "cron",
   "POST /api/indexer": "cron",
   "POST /api/keep-alive": "cron",

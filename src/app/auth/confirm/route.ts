@@ -3,6 +3,7 @@ import type { EmailOtpType } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { safeInternalPath } from "@/lib/auth/safe-redirect";
 import { publicOrigin } from "@/lib/auth/app-origin";
+import { attributeReferral } from "@/lib/campaign/referrals";
 
 export const dynamic = "force-dynamic";
 
@@ -35,11 +36,17 @@ export async function GET(request: NextRequest) {
   }
 
   const supabase = await createClient();
-  const { error } = await supabase.auth.verifyOtp({ type, token_hash: tokenHash });
+  const { data, error } = await supabase.auth.verifyOtp({ type, token_hash: tokenHash });
 
   if (error) {
     console.error("[auth] OTP verification failed:", error.message);
     return NextResponse.redirect(new URL("/login?error=LinkExpired", origin));
+  }
+
+  // Confirming a new address completes an email sign-up: count a campaign
+  // referral, from the cookie or from the code the sign-up stored.
+  if (data?.user && (type === "signup" || type === "email")) {
+    await attributeReferral(data.user, { fromSignupMetadata: true });
   }
 
   return NextResponse.redirect(new URL(next, origin));
