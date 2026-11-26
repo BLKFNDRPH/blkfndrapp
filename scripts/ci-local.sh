@@ -27,7 +27,10 @@
 # does, so only the first contracts run compiles from scratch.
 #
 # Needs Node 24 and the Rust toolchain in rust-toolchain.toml (1.81.0, with
-# the wasm32-unknown-unknown target and clippy), as CI installs them.
+# the wasm32-unknown-unknown target and clippy), as CI installs them. The
+# contracts job also needs Docker running: the hashes it records come from the
+# pinned container build (scripts/reproducible-build.sh), as CI's do, and land
+# in ci-local/wasm-hashes.txt for comparing with another machine.
 #
 # Keep this in step with ci.yml: a step added there belongs here too.
 
@@ -118,13 +121,21 @@ check_toolchain() {
   rustup target list --installed | grep -q wasm32-unknown-unknown
 }
 
+# The clean folder has no .git, so tell the build which commit it is.
+reproducible_build() {
+  REPRO_COMMIT="${COMMIT}" REPRO_DIRTY="${DIRTY}" SOURCE_DATE_EPOCH="${EPOCH}" \
+    bash scripts/reproducible-build.sh --out "${OUT}"
+}
+
 build_hashes() {
   {
-    echo "## Contract build hashes"
+    echo "## Contract build hashes (reproducible container build)"
+    echo
+    echo "Base image: \`$(grep -E '^FROM ' Dockerfile.contracts | head -1 | awk '{print $2}')\`"
     echo
     echo '| Contract | Bytes | sha256 |'
     echo '|---|---:|---|'
-    for wasm in target/wasm32-unknown-unknown/release/*.wasm; do
+    for wasm in "${OUT}"/wasm/*.wasm; do
       name=$(basename "$wasm" .wasm)
       size=$(wc -c < "$wasm" | tr -d ' ')
       hash=$(sha256sum "$wasm" | cut -d' ' -f1)
@@ -156,12 +167,16 @@ run_contracts() {
   step contracts "Build wasm artifacts" bash scripts/build-contracts.sh
   step contracts "Clippy" cargo clippy --workspace --all-targets -- -D warnings
   step contracts "Test" cargo test --workspace
+  step contracts "Reproducible build" reproducible_build
   step contracts "Record build hashes" build_hashes
 }
 
+COMMIT="$(git rev-parse HEAD)"
+EPOCH="$(git log -1 --format=%ct)"
+DIRTY=no
 echo "Local CI on $(git rev-parse --abbrev-ref HEAD) at $(git rev-parse --short HEAD)"
 [ -z "$(git status --porcelain)" ] \
-  || echo "Includes uncommitted changes; GitHub CI would see only what is pushed."
+  || { DIRTY=yes; echo "Includes uncommitted changes; GitHub CI would see only what is pushed."; }
 echo "Clean folder: ${CHECKOUT}"
 prepare_checkout
 echo
