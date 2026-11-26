@@ -19,11 +19,19 @@ import { createAdminClient } from "@/lib/supabase/admin";
 const ENV_FALLBACK: Record<string, string | undefined> = {
   pinata_jwt: process.env.PINATA_JWT,
   resend_api_key: process.env.RESEND_API_KEY,
+  // The campaign's practice-USDC distributor (src/lib/campaign/usdc-claim.ts):
+  // a Testnet account holding USDC that pays each claim. Env only for now:
+  // set_platform_secret accepts only the two names above, so the Vault lookup
+  // misses and this fallback answers.
+  campaign_usdc_distributor_secret: process.env.CAMPAIGN_USDC_DISTRIBUTOR_SECRET,
 };
 
-export async function getSecret(
-  name: "pinata_jwt" | "resend_api_key",
-): Promise<string | null> {
+export type PlatformSecretName =
+  | "pinata_jwt"
+  | "resend_api_key"
+  | "campaign_usdc_distributor_secret";
+
+export async function getSecret(name: PlatformSecretName): Promise<string | null> {
   try {
     const admin = createAdminClient();
     const { data, error } = await admin.rpc("get_platform_secret", {

@@ -39,6 +39,9 @@ export const ROUTES = {
 
   // Any signed-in account, acting on its own data.
   "POST /api/auth/freighter/disconnect": "user",
+  // The caller's own referral link and claim; the claim pays only their linked wallet.
+  "GET /api/campaign/me": "user",
+  "POST /api/campaign/claim": "user",
   "POST /api/auth/freighter/nonce": "user",
   // A signed-in caller with no challenge on file gets the challenge refusal.
   "POST /api/auth/freighter/verify": { level: "user", positiveOk: /Invalid or expired challenge/ },
