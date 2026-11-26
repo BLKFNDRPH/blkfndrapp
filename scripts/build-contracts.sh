@@ -30,7 +30,7 @@ fi
 
 for contract in "${CONTRACTS[@]}"; do
   echo "Building ${contract}..."
-  cargo build --release --target wasm32-unknown-unknown -p "${contract}"
+  cargo build --locked --release --target wasm32-unknown-unknown -p "${contract}"
 done
 
 OUT=target/wasm32-unknown-unknown/release

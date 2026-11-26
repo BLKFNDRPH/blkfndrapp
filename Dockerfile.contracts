@@ -1,0 +1,44 @@
+# Pinned build environment for the Soroban contracts.
+#
+# Used by scripts/reproducible-build.sh, which is what CI and a reviewer's
+# second machine run. The image holds only the toolchain: the source is copied
+# in at run time from a read-only mount, so the image never changes with the
+# code and needs no build context (`docker build - < Dockerfile.contracts`).
+#
+# What makes the wasm the same on every machine:
+#   - the base image is pinned by digest, not by tag, so rustc, cargo and
+#     the wasm32 standard library are byte-for-byte the same everywhere;
+#   - the build runs at the fixed path /build with CARGO_HOME at
+#     /usr/local/cargo, and both are remapped, so no machine's absolute
+#     path can reach a panic location string in the wasm;
+#   - Cargo.lock is enforced with --locked (in scripts/build-contracts.sh);
+#   - the release profile is the workspace's own ([profile.release] in
+#     Cargo.toml), built by the same scripts/build-contracts.sh the host uses.
+#
+# The digest is the multi-arch index for rust:1.81.0-slim-bookworm, which
+# matches rust-toolchain.toml. reproducible-build.sh runs it as linux/amd64 on
+# every host (Apple silicon included, under emulation) so the compiler binary
+# itself is identical too. To move to a new Rust version, change
+# rust-toolchain.toml and ci.yml, then refresh the digest with:
+#   docker pull rust:<version>-slim-bookworm
+#   docker inspect --format '{{index .RepoDigests 0}}' rust:<version>-slim-bookworm
+#
+# No `stellar contract optimize` step: the wasm deployed on chain is the plain
+# cargo release output (scripts/deploy-contracts.sh uploads it as built), so
+# that is what this reproduces.
+
+FROM rust:1.81.0-slim-bookworm@sha256:f9fb6bdb0483de4ade93b262a3f6cf8c2985fca1d34784914bbcabd5a34d3197
+
+RUN rustup target add wasm32-unknown-unknown \
+ && rustc --version \
+ && rustup target list --installed
+
+ENV CARGO_HOME=/usr/local/cargo \
+    CARGO_TERM_COLOR=never \
+    CARGO_INCREMENTAL=0 \
+    RUSTFLAGS="--remap-path-prefix=/build=/blkfndr --remap-path-prefix=/usr/local/cargo=/cargo --remap-path-prefix=/usr/local/rustup=/rustup" \
+    TZ=UTC \
+    LC_ALL=C.UTF-8 \
+    SOURCE_DATE_EPOCH=0
+
+WORKDIR /build
