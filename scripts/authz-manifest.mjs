@@ -41,6 +41,8 @@ export const ROUTES = {
   // A signed-in caller with no challenge on file gets the challenge refusal.
   "POST /api/auth/freighter/verify": { level: "user", positiveOk: /Invalid or expired challenge/ },
   "POST /api/kyc-document": "user",
+  // Pays the fee for the caller's own signed call; refusals are 4xx/5xx codes, not 403.
+  "POST /api/sponsor": "user",
   "GET /api/me/decisions": "user",
   "GET /api/notifications": "user",
   "PATCH /api/notifications": "user",

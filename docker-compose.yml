@@ -182,6 +182,12 @@ services:
       # SetOpsFunding vote, and every vault call is gated by the vault — so it
       # only needs XLM for gas. Unset means those endpoints skip.
       - OPS_FUNDING_SUBMITTER_SECRET=${OPS_FUNDING_SUBMITTER_SECRET:-}
+      # Fee sponsorship (/api/sponsor) on the same key: off unless
+      # SPONSOR_ENABLED=true. Caps are D3 placeholders; see .env.example.
+      - SPONSOR_ENABLED=${SPONSOR_ENABLED:-}
+      - SPONSOR_PER_ACCOUNT_DAILY=${SPONSOR_PER_ACCOUNT_DAILY:-}
+      - SPONSOR_DAILY_BUDGET_STROOPS=${SPONSOR_DAILY_BUDGET_STROOPS:-}
+      - SPONSOR_MAX_FEE_STROOPS=${SPONSOR_MAX_FEE_STROOPS:-}
 
       # ── Ollama (optional) ────────────────────────────────────────────────
       # The AI listing review runs on an Ollama server with a vision model.
