@@ -1,6 +1,6 @@
 # BLKFNDR — Sprint 2 progress (Instawards SOW)
 
-_Last updated: 2026-11-24 · Day 1 checklist run on Tue 24 Nov, a day late · sprint runs Mon 23 Nov to Fri 18 Dec 2026_
+_Last updated: 2026-11-27 · sprint runs Mon 23 Nov to Fri 18 Dec 2026_
 
 Progress against the [Sprint 2 plan](plan.md). Item numbers match the plan. The platform-wide status stays in the root [progress.md](../../progress.md).
 
@@ -14,12 +14,12 @@ Progress against the [Sprint 2 plan](plan.md). Item numbers match the plan. The 
 
 | Week | Dates | Items | Done | Expected output met? |
 |---|---|---:|---:|---|
-| 1 | 23–27 Nov | 7 | 1 | ⬜ |
+| 1 | 23–27 Nov | 7 | 3 | 🔧 2 of 5 met |
 | 2 | 30 Nov–4 Dec | 7 | 0 | ⬜ |
 | 3 | 7–11 Dec | 7 | 0 | ⬜ |
 | 4 | 14–18 Dec | 5 | 0 | ⬜ |
 
-**This week in short:** Day 1 checklist run on 24 Nov. Live state re-read and baseline recorded (1.5 done). Builder-record reader (1.1) and the risk report schema are written and tested on a local branch, not merged. D1 and D5 decided on 25 Nov; the report-anchor contract (1.3) is written and tested, not deployed. Testnet is now on protocol 30.
+**This week in short:** The report-anchor registry is live on both testnet sets, and the first 28 risk reports, one per listed vault, are stored and anchored (rules only). Campaign and fee sponsorship are written and tested on local branch `sprint-2/day-1`, not pushed. The campaign and sponsorship migrations are not applied, so the onboarding path and the campaign are not live yet.
 
 ---
 
@@ -59,18 +59,18 @@ How each was counted: accounts from `auth.users`; linked wallets from profiles w
 
 | # | Planned work | Status | PR | Evidence |
 |---|---|---|---|---|
-| 1.1 | Unified builder-record reader | 🔧 | — | Written with tests on local branch `sprint-2/day-1`: `src/lib/builder-record.ts`, `src/lib/data/builder-record.ts`. Nothing reads it yet, and it has not been run against the live registry from the app |
-| 1.2 | Risk analysis pipeline (three inputs, band and factors) | 🔧 | — | Report schema and deterministic hash only (`src/lib/risk/report.ts`). No pipeline yet. The three inputs are assumed, see blockers |
-| 1.3 | Report-anchor registry written, tested, deployed on testnet | 🔧 | — | Contract written with 16 tests on local branch `sprint-2/day-1` (`contracts/blkfndr-report-anchor`), wasm sha256 `c4ff0e4b…` built locally. Not deployed: needs the attestor key and a deploy test on protocol 30 |
-| 1.4 | Campaign landing page, Freighter guide, testnet USDC claim, referral tracking | ⬜ | — | — |
+| 1.1 | Unified builder-record reader | ✅ | — | Read by the risk pipeline; run against the live attestation registry for all 15 builders on 27 Nov. Each report names the record it used by hash (`inputs.builderRecord`). Local branch, not merged |
+| 1.2 | Risk analysis pipeline (three inputs, band and factors) | ✅ | — | `src/lib/risk/` (inputs, rules, model, build, pipeline), `POST /api/risk-run`, public reads at `/api/risk-reports?vault=` and `/api/risk-reports/<hash>`. `risk_reports` table applied to the live database on 27 Nov. 28 reports written on 27 Nov, rules only: 1 low, 23 medium, 4 high. The three inputs are still assumed, see blockers |
+| 1.3 | Report-anchor registry written, tested, deployed on testnet | ✅ | — | Deployed on the reference set (`CD64QR4B…JHYC`) then on production testnet (`CAQ3KAVM…UQHF`), wasm sha256 `c4ff0e4b…`, admin the deployer key, attestor `GBT3SV7N…N6PP` (D1). Protocol 30 deploy works with `soroban-sdk` 22. `scripts/deploy-report-anchor.sh` |
+| 1.4 | Campaign landing page, Freighter guide, testnet USDC claim, referral tracking | 🔧 | — | `/campaign`, `/campaign/freighter`, `POST /api/campaign/claim`, `GET /api/campaign/me`, migration `20261127100000_campaign_referrals.sql`. Tested locally, not live: needs the migration applied, a funded USDC distributor account, and `CAMPAIGN_USDC_*` env set. Email still failing |
 | 1.5 | User baseline recorded | ✅ | — | [Campaign baseline](#campaign-baseline) above |
-| 1.6 | Fee-bump sponsorship with caps, allowlist, kill switch | ⬜ | — | — |
+| 1.6 | Fee-bump sponsorship with caps, allowlist, kill switch | 🔧 | — | `POST /api/sponsor` on the ops key, wired into `use-stellar-contract.ts` with a self-pay fallback; migration `20261127110000_sponsor_usage.sql`. Off by default (`SPONSOR_ENABLED`); caps are placeholders until D3. Not live: migration not applied, no fee-bump on testnet yet |
 | 1.7 | Reproducible build set up | ⬜ | — | — |
 
 | Expected output | Met? | Evidence |
 |---|---|---|
-| Report-anchor registry live on testnet | ⬜ | contract address: — |
-| First risk reports generated on existing listings | ⬜ | anchor tx: — |
+| Report-anchor registry live on testnet | ✅ | `CAQ3KAVM2MOWVAMEZIODYUIZFLTHYLZTPFDE45JZFXEF5X7RE3EFUQHF` (production testnet); `CD64QR4B743HQX4COLPKBGO7DSQDR5QPODQ7NREEMKZ4JOZLWNJNJHYC` (reference) |
+| First risk reports generated on existing listings | ✅ | 28 of 28 anchored. First: project 20, report `ab63f45d…437c`, anchor tx `f069133c73492d6763505885ec5ebca59a9d468b93ebaf83dcd333e6d224a170`; `sha256sum` of `/api/risk-reports/ab63f45d…` equals the hash, and `find` on the registry returns it |
 | Onboarding path live with sponsored fees | ⬜ | fee-bump tx: — |
 | Campaign opens | ⬜ | URL: — |
 | Same wasm hashes from two machines | ⬜ | hash table: — |
@@ -160,7 +160,10 @@ One row per transaction that counts as evidence: deploys, anchors, sponsored fee
 
 | Date (UTC) | What | Network / deployment | Transaction or address |
 |---|---|---|---|
-| — | — | — | — |
+| 2026-11-26 | Report-anchor registry deployed, attestor added | testnet-reference | `CD64QR4B743HQX4COLPKBGO7DSQDR5QPODQ7NREEMKZ4JOZLWNJNJHYC`; add_attestor tx `19b425d8…1e31` |
+| 2026-11-26 | Report-anchor registry deployed, attestor added | testnet-production | `CAQ3KAVM2MOWVAMEZIODYUIZFLTHYLZTPFDE45JZFXEF5X7RE3EFUQHF`; txs `4cde64a3…c63d`, `c2a3c5ea…82a3` |
+| 2026-11-26 17:56 | First risk report anchored (project 20, seq 0) | testnet-production | `f069133c73492d6763505885ec5ebca59a9d468b93ebaf83dcd333e6d224a170` |
+| 2026-11-26 17:56–17:59 | 27 more risk reports anchored | testnet-production | `select anchor_tx from risk_reports` |
 
 ## Update log
 
@@ -168,4 +171,5 @@ One row per transaction that counts as evidence: deploys, anchors, sponsored fee
 |---|---|
 | 2026-11-20 | Document prepared. Nothing started. |
 | 2026-11-25 | D1 (dedicated attestor key) and D5 (hash only) decided. Report-anchor contract written with 16 tests, added to the workspace and `build-contracts.sh`; not deployed. |
+| 2026-11-27 | Week 1 close: risk pipeline built, report-anchor registry deployed on both testnet sets, 28 reports stored and anchored. Campaign (1.4) and fee sponsorship (1.6) built and tested locally, not live. `risk_reports` migration applied to the live database through the Supabase connector, so its recorded version is the apply time, not `20261127120000`. |
 | 2026-11-24 | Day 1 checklist run. Checkout synced, CI green. Live state re-read and campaign baseline recorded (1.5). Builder-record reader and risk report schema written with tests, and the report-anchor interface drafted, on local branch `sprint-2/day-1` (uncommitted). |
