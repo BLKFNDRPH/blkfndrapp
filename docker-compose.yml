@@ -183,6 +183,16 @@ services:
       # only needs XLM for gas. Unset means those endpoints skip.
       - OPS_FUNDING_SUBMITTER_SECRET=${OPS_FUNDING_SUBMITTER_SECRET:-}
 
+      # ── Testnet campaign: practice-USDC dispenser (optional, SECRET) ─────
+      # POST /api/campaign/claim pays testnet USDC to the caller's own linked
+      # wallet, once per account and wallet, under a daily cap. Closed unless
+      # CAMPAIGN_USDC_CLAIM_ENABLED=1 (the kill switch); refused on Mainnet.
+      # The distributor is a Testnet account holding USDC, not the issuer.
+      - CAMPAIGN_USDC_CLAIM_ENABLED=${CAMPAIGN_USDC_CLAIM_ENABLED:-}
+      - CAMPAIGN_USDC_CLAIM_AMOUNT=${CAMPAIGN_USDC_CLAIM_AMOUNT:-}
+      - CAMPAIGN_USDC_DAILY_CAP=${CAMPAIGN_USDC_DAILY_CAP:-}
+      - CAMPAIGN_USDC_DISTRIBUTOR_SECRET=${CAMPAIGN_USDC_DISTRIBUTOR_SECRET:-}
+
       # ── Ollama (optional) ────────────────────────────────────────────────
       # The AI listing review runs on an Ollama server with a vision model.
       # Unset OLLAMA_BASE_URL means the review is off: every press fails with a

@@ -55,6 +55,72 @@ export type Database = {
         }
         Relationships: []
       }
+      campaign_referrals: {
+        Row: {
+          code: string
+          created_at: string
+          id: number
+          referred_user_id: string
+          referrer_id: string
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          id?: never
+          referred_user_id: string
+          referrer_id: string
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          id?: never
+          referred_user_id?: string
+          referrer_id?: string
+        }
+        Relationships: []
+      }
+      campaign_usdc_claims: {
+        Row: {
+          amount_stroops: number
+          asset_code: string
+          asset_issuer: string
+          created_at: string
+          error: string | null
+          id: number
+          settled_at: string | null
+          status: string
+          tx_hash: string | null
+          user_id: string | null
+          wallet_address: string
+        }
+        Insert: {
+          amount_stroops: number
+          asset_code: string
+          asset_issuer: string
+          created_at?: string
+          error?: string | null
+          id?: never
+          settled_at?: string | null
+          status?: string
+          tx_hash?: string | null
+          user_id?: string | null
+          wallet_address: string
+        }
+        Update: {
+          amount_stroops?: number
+          asset_code?: string
+          asset_issuer?: string
+          created_at?: string
+          error?: string | null
+          id?: never
+          settled_at?: string | null
+          status?: string
+          tx_hash?: string | null
+          user_id?: string | null
+          wallet_address?: string
+        }
+        Relationships: []
+      }
       claim_requests: {
         Row: {
           created_at: string
@@ -700,6 +766,24 @@ export type Database = {
         }
         Relationships: []
       }
+      referral_codes: {
+        Row: {
+          code: string
+          created_at: string
+          user_id: string
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          user_id: string
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       projects: {
         Row: {
           bond_amount: number | null
@@ -840,6 +924,20 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      campaign_reserve_usdc_claim: {
+        Args: {
+          p_amount_stroops: number
+          p_asset_code: string
+          p_asset_issuer: string
+          p_daily_cap: number
+          p_user_id: string
+          p_wallet: string
+        }
+        Returns: {
+          claim_id: number | null
+          outcome: string
+        }[]
+      }
       can_restrict_projects: { Args: never; Returns: boolean }
       creator_is_banned: { Args: { addr: string }; Returns: boolean }
       delete_managed_key: { Args: { key_ref: string }; Returns: undefined }
