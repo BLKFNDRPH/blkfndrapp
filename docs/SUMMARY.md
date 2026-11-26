@@ -5,6 +5,7 @@
 - [Whitepaper](whitepaper.md)
 - [Architecture](architecture.md)
 - [Smart Contracts](smart-contracts.md)
+- [Reproducible Build](reproducible-build.md)
 - [Contract Bindings](blkfndr-stellar-cntrct-setup.md)
 - [API Reference](api-reference.md)
 - [Authentication](authentication.md)
