@@ -808,6 +808,69 @@ export type Database = {
         }
         Relationships: []
       }
+      risk_reports: {
+        Row: {
+          anchor_contract: string | null
+          anchor_seq: number | null
+          anchor_tx: string | null
+          anchored_at: string | null
+          band: string
+          builder_record_hash: string
+          created_at: string
+          generated_at: string
+          id: number
+          listing_hash: string
+          project_id: string
+          report_hash: string
+          report_json: string
+          rules_version: number
+          schema_version: number
+          score: number
+          vault_address: string
+          vault_terms_hash: string
+        }
+        Insert: {
+          anchor_contract?: string | null
+          anchor_seq?: number | null
+          anchor_tx?: string | null
+          anchored_at?: string | null
+          band: string
+          builder_record_hash: string
+          created_at?: string
+          generated_at: string
+          id?: never
+          listing_hash: string
+          project_id: string
+          report_hash: string
+          report_json: string
+          rules_version: number
+          schema_version: number
+          score: number
+          vault_address: string
+          vault_terms_hash: string
+        }
+        Update: {
+          anchor_contract?: string | null
+          anchor_seq?: number | null
+          anchor_tx?: string | null
+          anchored_at?: string | null
+          band?: string
+          builder_record_hash?: string
+          created_at?: string
+          generated_at?: string
+          id?: never
+          listing_hash?: string
+          project_id?: string
+          report_hash?: string
+          report_json?: string
+          rules_version?: number
+          schema_version?: number
+          score?: number
+          vault_address?: string
+          vault_terms_hash?: string
+        }
+        Relationships: []
+      }
       wallet_link_challenges: {
         Row: {
           created_at: string

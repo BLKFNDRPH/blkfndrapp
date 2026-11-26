@@ -31,6 +31,8 @@ export const ROUTES = {
   "GET /api/projects/[id]/record": "public",
   "GET /api/projects/[id]/stake": "public",
   "GET /api/projects/[id]/votes": "public",
+  "GET /api/risk-reports": "public",
+  "GET /api/risk-reports/[hash]": "public",
   "GET /api/vault-wasm-hash": "public",
   "GET /auth/callback": "public",
   "GET /auth/confirm": "public",
@@ -58,6 +60,7 @@ export const ROUTES = {
 
   // The scheduler, with INDEXER_SECRET.
   "POST /api/governance-keeper": "cron",
+  "POST /api/risk-run": "cron",
   "GET /api/indexer": "cron",
   "POST /api/indexer": "cron",
   "POST /api/keep-alive": "cron",
