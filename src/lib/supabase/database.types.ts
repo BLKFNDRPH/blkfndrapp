@@ -493,16 +493,19 @@ export type Database = {
         Row: {
           fee_wallet_email: string
           id: boolean
+          sponsor_paused: boolean
           updated_at: string
         }
         Insert: {
           fee_wallet_email?: string
           id?: boolean
+          sponsor_paused?: boolean
           updated_at?: string
         }
         Update: {
           fee_wallet_email?: string
           id?: boolean
+          sponsor_paused?: boolean
           updated_at?: string
         }
         Relationships: []
@@ -871,6 +874,48 @@ export type Database = {
         }
         Relationships: []
       }
+      sponsor_usage: {
+        Row: {
+          account: string
+          contract_id: string
+          created_at: string
+          day: string
+          fee_stroops: number
+          function_name: string
+          id: number
+          status: string
+          tx_hash: string | null
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          account: string
+          contract_id: string
+          created_at?: string
+          day?: string
+          fee_stroops: number
+          function_name: string
+          id?: never
+          status?: string
+          tx_hash?: string | null
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          account?: string
+          contract_id?: string
+          created_at?: string
+          day?: string
+          fee_stroops?: number
+          function_name?: string
+          id?: never
+          status?: string
+          tx_hash?: string | null
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       wallet_link_challenges: {
         Row: {
           created_at: string
@@ -904,6 +949,18 @@ export type Database = {
     }
     Functions: {
       can_restrict_projects: { Args: never; Returns: boolean }
+      claim_sponsor_slot: {
+        Args: {
+          p_account: string
+          p_contract_id: string
+          p_daily_budget_stroops: number
+          p_fee_stroops: number
+          p_function_name: string
+          p_per_account_daily: number
+          p_user_id: string | null
+        }
+        Returns: { refusal: string | null; slot_id: number | null }[]
+      }
       creator_is_banned: { Args: { addr: string }; Returns: boolean }
       delete_managed_key: { Args: { key_ref: string }; Returns: undefined }
       feature_request_consensus: {
@@ -970,6 +1027,10 @@ export type Database = {
       }
       set_project_locked: {
         Args: { lock: boolean; reason?: string; vault: string }
+        Returns: undefined
+      }
+      settle_sponsor_slot: {
+        Args: { p_slot_id: number; p_status: string; p_tx_hash: string | null }
         Returns: undefined
       }
       stroops_to_units: { Args: { raw: number }; Returns: number }
